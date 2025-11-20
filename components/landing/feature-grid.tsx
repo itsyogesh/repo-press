@@ -63,7 +63,7 @@ export default function FeatureGrid() {
             </p>
           </div>
           <Button variant="secondary" className="mt-6 w-full rounded-full" asChild>
-            <Link href="https://github.com" target="_blank">
+            <Link href="https://github.com/itsyogesh/repo-press" target="_blank">
               Star on GitHub
             </Link>
           </Button>

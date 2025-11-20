@@ -42,7 +42,7 @@ export default function Footer() {
               <span className="sr-only">Twitter</span>
             </Link>
             <Link
-              href="https://github.com/itsyogesh"
+              href="https://github.com/itsyogesh/repo-press"
               target="_blank"
               className="text-muted-foreground hover:text-foreground transition-colors"
             >
