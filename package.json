@@ -45,8 +45,6 @@
     "@radix-ui/react-toggle-group": "1.1.1",
     "@radix-ui/react-tooltip": "1.1.6",
     "@standard-schema/spec": "latest",
-    "@supabase/ssr": "0.8.0",
-    "@supabase/supabase-js": "latest",
     "@tanstack/react-start": "latest",
     "@tanstack/solid-start": "latest",
     "@vercel/analytics": "latest",
