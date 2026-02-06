@@ -1,4 +1,3 @@
-import { createClient } from "@/lib/supabase/server"
 import { redirect } from "next/navigation"
 import { getFileContent } from "@/lib/github"
 import { RepoBreadcrumb } from "@/components/repo-breadcrumb"
@@ -7,7 +6,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { AlertCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
-import { cookies } from "next/headers"
+import { getGitHubToken } from "@/lib/auth-server"
 
 interface FilePageProps {
   params: Promise<{
@@ -21,14 +20,7 @@ interface FilePageProps {
 }
 
 export default async function FilePage({ params, searchParams }: FilePageProps) {
-  const supabase = await createClient()
-  const {
-    data: { session },
-  } = await supabase.auth.getSession()
-
-  const cookieStore = await cookies()
-  const pat = cookieStore.get("github_pat")?.value
-  const token = session?.provider_token || pat
+  const token = await getGitHubToken()
 
   if (!token) {
     redirect("/login")

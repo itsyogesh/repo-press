@@ -1,6 +1,6 @@
 "use client"
 
-import { createClient } from "@/lib/supabase/client"
+import { signIn } from "@/lib/auth-client"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -19,20 +19,14 @@ export default function LoginPage() {
   const error = searchParams.get("error")
 
   const handleLogin = async () => {
-    const supabase = createClient()
     setIsLoading(true)
-
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
+      await signIn.social({
         provider: "github",
-        options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
-          scopes: "repo user",
-        },
+        callbackURL: "/dashboard",
       })
-      if (error) throw error
-    } catch (error) {
-      console.error("Error logging in:", error)
+    } catch (err) {
+      console.error("Error logging in:", err)
     } finally {
       setIsLoading(false)
     }
