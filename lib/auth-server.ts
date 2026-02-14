@@ -1,18 +1,21 @@
 import { convexBetterAuthNextJs } from "@convex-dev/better-auth/nextjs"
 import { cookies } from "next/headers"
 
-export const {
-  handler,
-  preloadAuthQuery,
-  isAuthenticated,
-  getToken,
-  fetchAuthQuery,
-  fetchAuthMutation,
-  fetchAuthAction,
-} = convexBetterAuthNextJs({
-  convexUrl: process.env.NEXT_PUBLIC_CONVEX_URL!,
-  convexSiteUrl: process.env.NEXT_PUBLIC_CONVEX_SITE_URL!,
-})
+const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL
+const convexSiteUrl = process.env.NEXT_PUBLIC_CONVEX_SITE_URL
+
+// Only initialize when both env vars are available
+const authHelpers = convexUrl && convexSiteUrl
+  ? convexBetterAuthNextJs({ convexUrl, convexSiteUrl })
+  : null
+
+export const handler = authHelpers?.handler
+export const preloadAuthQuery = authHelpers?.preloadAuthQuery
+export const isAuthenticated = authHelpers?.isAuthenticated
+export const getToken = authHelpers?.getToken
+export const fetchAuthQuery = authHelpers?.fetchAuthQuery
+export const fetchAuthMutation = authHelpers?.fetchAuthMutation
+export const fetchAuthAction = authHelpers?.fetchAuthAction
 
 /**
  * Get GitHub access token from PAT cookie.
