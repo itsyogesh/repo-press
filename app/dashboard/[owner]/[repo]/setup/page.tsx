@@ -1,8 +1,7 @@
-import { createClient } from "@/lib/supabase/server"
 import { redirect } from "next/navigation"
 import { getRepoBranches } from "@/lib/github"
 import { RepoSetupForm } from "@/components/repo-setup-form"
-import { cookies } from "next/headers"
+import { getGitHubToken } from "@/lib/auth-server"
 
 interface SetupPageProps {
   params: Promise<{
@@ -12,14 +11,7 @@ interface SetupPageProps {
 }
 
 export default async function SetupPage({ params }: SetupPageProps) {
-  const supabase = await createClient()
-  const {
-    data: { session },
-  } = await supabase.auth.getSession()
-
-  const cookieStore = await cookies()
-  const pat = cookieStore.get("github_pat")?.value
-  const token = session?.provider_token || pat
+  const token = await getGitHubToken()
 
   if (!token) {
     redirect("/login")

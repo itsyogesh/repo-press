@@ -1,17 +1,9 @@
-import { createClient } from "@/lib/supabase/server"
 import { saveFileContent } from "@/lib/github"
 import { NextResponse } from "next/server"
-import { cookies } from "next/headers"
+import { getGitHubToken } from "@/lib/auth-server"
 
 export async function POST(request: Request) {
-  const supabase = await createClient()
-  const {
-    data: { session },
-  } = await supabase.auth.getSession()
-
-  const cookieStore = await cookies()
-  const pat = cookieStore.get("github_pat")?.value
-  const token = session?.provider_token || pat
+  const token = await getGitHubToken()
 
   if (!token) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })

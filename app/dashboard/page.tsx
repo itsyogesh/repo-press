@@ -1,28 +1,15 @@
-import { createClient } from "@/lib/supabase/server"
 import { redirect } from "next/navigation"
 import { getUserRepos } from "@/lib/github"
 import { RepoCard } from "@/components/repo-card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { AlertCircle } from "lucide-react"
-import { cookies } from "next/headers"
+import { getGitHubToken } from "@/lib/auth-server"
 
 export default async function DashboardPage() {
-  const supabase = await createClient()
-  const {
-    data: { session },
-  } = await supabase.auth.getSession()
-
-  const cookieStore = await cookies()
-  const pat = cookieStore.get("github_pat")?.value
-  const token = session?.provider_token || pat
+  const token = await getGitHubToken()
 
   if (!token) {
     redirect("/login")
-  }
-
-  // Check for non-ASCII characters which cause the "Headers" error
-  if (/[^\x20-\x7E]/.test(token)) {
-    console.error("Token contains invalid characters")
   }
 
   let repos = []

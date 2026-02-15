@@ -1,4 +1,3 @@
-import { createClient } from "@/lib/supabase/server"
 import { redirect } from "next/navigation"
 import { getRepoContents, getFile } from "@/lib/github"
 import { StudioLayout } from "@/components/studio/studio-layout"
@@ -6,7 +5,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { AlertCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
-import { cookies } from "next/headers"
+import { getGitHubToken } from "@/lib/auth-server"
 
 interface StudioPageProps {
   params: Promise<{
@@ -20,14 +19,7 @@ interface StudioPageProps {
 }
 
 export default async function StudioPage({ params, searchParams }: StudioPageProps) {
-  const supabase = await createClient()
-  const {
-    data: { session },
-  } = await supabase.auth.getSession()
-
-  const cookieStore = await cookies()
-  const pat = cookieStore.get("github_pat")?.value
-  const token = session?.provider_token || pat
+  const token = await getGitHubToken()
 
   if (!token) {
     redirect("/login")
