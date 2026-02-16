@@ -35,6 +35,28 @@ export const getByRepo = query({
   },
 })
 
+// Server-side lookup by repo owner/name. Uses the by_repo index (no userId required).
+// Optionally filters by branch. Returns the first matching project.
+export const findByRepo = query({
+  args: {
+    repoOwner: v.string(),
+    repoName: v.string(),
+    branch: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const q = ctx.db
+      .query("projects")
+      .withIndex("by_repo", (q) =>
+        q.eq("repoOwner", args.repoOwner).eq("repoName", args.repoName),
+      )
+
+    if (args.branch) {
+      return await q.filter((q) => q.eq(q.field("branch"), args.branch)).first()
+    }
+    return await q.first()
+  },
+})
+
 const frameworkValidator = v.optional(
   v.union(
     v.literal("fumadocs"),

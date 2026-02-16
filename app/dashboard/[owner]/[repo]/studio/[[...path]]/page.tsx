@@ -1,4 +1,6 @@
 import { redirect } from "next/navigation"
+import { ConvexHttpClient } from "convex/browser"
+import { api } from "@/convex/_generated/api"
 import { getRepoContents, getFile } from "@/lib/github"
 import { StudioLayout } from "@/components/studio/studio-layout"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -15,7 +17,6 @@ interface StudioPageProps {
   }>
   searchParams: Promise<{
     branch?: string
-    projectId?: string
   }>
 }
 
@@ -27,26 +28,42 @@ export default async function StudioPage({ params, searchParams }: StudioPagePro
   }
 
   const { owner, repo, path } = await params
-  const { branch, projectId } = await searchParams
+  const { branch } = await searchParams
   const currentBranch = branch || "main"
   const currentPath = path ? path.join("/") : ""
+
+  // Look up the project server-side by repo owner/name + branch
+  const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
+  const project = await convex.query(api.projects.findByRepo, {
+    repoOwner: owner,
+    repoName: repo,
+    branch: currentBranch,
+  })
+
+  // Use project's contentRoot to scope file listing (falls back to repo root)
+  const contentRoot = project?.contentRoot || ""
 
   let files: any[] = []
   let fileData = null
   let error = null
 
   try {
-    // Try to fetch as a file first
-    const potentialFileData = await getFile(token, owner, repo, currentPath, currentBranch)
+    // When a specific path is requested, try to fetch it as a file
+    if (currentPath) {
+      const potentialFileData = await getFile(token, owner, repo, currentPath, currentBranch)
 
-    if (potentialFileData) {
-      fileData = potentialFileData
-      // Fetch parent directory for the sidebar
-      const parentPath = currentPath.split("/").slice(0, -1).join("/")
-      files = await getRepoContents(token, owner, repo, parentPath, currentBranch)
+      if (potentialFileData) {
+        fileData = potentialFileData
+        // Fetch parent directory for the sidebar
+        const parentPath = currentPath.split("/").slice(0, -1).join("/")
+        files = await getRepoContents(token, owner, repo, parentPath, currentBranch)
+      } else {
+        // It is a directory
+        files = await getRepoContents(token, owner, repo, currentPath, currentBranch)
+      }
     } else {
-      // It is a directory
-      files = await getRepoContents(token, owner, repo, currentPath, currentBranch)
+      // No path specified — scope to the project's contentRoot
+      files = await getRepoContents(token, owner, repo, contentRoot, currentBranch)
     }
   } catch (e) {
     console.error("Error fetching studio data:", e)
@@ -85,7 +102,7 @@ export default async function StudioPage({ params, searchParams }: StudioPagePro
           repo={repo}
           branch={currentBranch}
           currentPath={currentPath}
-          projectId={projectId}
+          projectId={project?._id}
         />
       )}
     </div>

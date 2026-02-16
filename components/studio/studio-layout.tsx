@@ -94,9 +94,8 @@ export function StudioLayout({ files, initialFile, owner, repo, branch, currentP
     const studioBase = `/dashboard/${owner}/${repo}/studio`
     const params = new URLSearchParams()
     params.set("branch", branch)
-    if (projectId) params.set("projectId", projectId)
     router.push(`${studioBase}/${filePath}?${params.toString()}`)
-  }, [owner, repo, branch, projectId, router])
+  }, [owner, repo, branch, router])
 
   const handleSelectFile = (file: GitHubFile) => {
     navigateToFile(file.path)

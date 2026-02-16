@@ -49,7 +49,7 @@ export function RepoSetupForm({ owner, repo, branches, defaultBranch, frameworkC
     setIsLoading(true)
 
     try {
-      const projectId = await getOrCreateProject({
+      await getOrCreateProject({
         userId: user._id,
         name: `${owner}/${repo}`,
         repoOwner: owner,
@@ -64,10 +64,11 @@ export function RepoSetupForm({ owner, repo, branches, defaultBranch, frameworkC
       })
 
       toast.success("Project created successfully!")
-      router.push(`/dashboard/${owner}/${repo}/studio?branch=${selectedBranch}&projectId=${projectId}`)
+      router.push(`/dashboard/${owner}/${repo}/studio?branch=${selectedBranch}`)
     } catch (error) {
       console.error("Error creating project:", error)
       toast.error("Failed to create project. Please try again.")
+    } finally {
       setIsLoading(false)
     }
   }
