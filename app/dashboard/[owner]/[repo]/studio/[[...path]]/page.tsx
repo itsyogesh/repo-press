@@ -1,13 +1,13 @@
-import { redirect } from "next/navigation"
 import { ConvexHttpClient } from "convex/browser"
-import { api } from "@/convex/_generated/api"
-import { getRepoContents, getFile } from "@/lib/github"
+import { AlertCircle } from "lucide-react"
+import Link from "next/link"
+import { redirect } from "next/navigation"
 import { StudioLayout } from "@/components/studio/studio-layout"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { AlertCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import Link from "next/link"
+import { api } from "@/convex/_generated/api"
 import { getGitHubToken } from "@/lib/auth-server"
+import { getFile, getRepoContents } from "@/lib/github"
 
 interface StudioPageProps {
   params: Promise<{

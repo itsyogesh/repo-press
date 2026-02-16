@@ -7,10 +7,7 @@ import { ProjectCard } from "./project-card"
 
 export function ProjectList() {
   const user = useQuery(api.auth.getCurrentUser)
-  const projects = useQuery(
-    api.projects.list,
-    user?._id ? { userId: user._id as unknown as Id<"users"> } : "skip",
-  )
+  const projects = useQuery(api.projects.list, user?._id ? { userId: user._id as unknown as Id<"users"> } : "skip")
 
   if (!user || projects === undefined) {
     return null

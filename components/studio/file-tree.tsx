@@ -1,11 +1,11 @@
 "use client"
 
-import * as React from "react"
 import { File, Folder } from "lucide-react"
-import { cn } from "@/lib/utils"
-import type { GitHubFile } from "@/lib/github"
+import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import type { GitHubFile } from "@/lib/github"
+import { cn } from "@/lib/utils"
 
 interface FileTreeProps {
   files: GitHubFile[]

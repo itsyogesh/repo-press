@@ -1,5 +1,5 @@
-import { handler } from "@/lib/auth-server"
 import { NextResponse } from "next/server"
+import { handler } from "@/lib/auth-server"
 
 const fallback = () =>
   NextResponse.json(

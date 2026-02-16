@@ -1,10 +1,10 @@
-import { redirect } from "next/navigation"
-import { getUserRepos } from "@/lib/github"
-import { RepoCard } from "@/components/repo-card"
-import { ProjectList } from "@/components/project-list"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { AlertCircle } from "lucide-react"
+import { redirect } from "next/navigation"
+import { ProjectList } from "@/components/project-list"
+import { RepoCard } from "@/components/repo-card"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { getGitHubToken } from "@/lib/auth-server"
+import { getUserRepos } from "@/lib/github"
 
 export default async function DashboardPage() {
   const token = await getGitHubToken()

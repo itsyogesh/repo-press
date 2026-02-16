@@ -1,19 +1,18 @@
 "use client"
 
-import type React from "react"
-
-import { useState } from "react"
-import { useRouter } from "next/navigation"
 import { useMutation, useQuery } from "convex/react"
-import { api } from "@/convex/_generated/api"
-import type { Id } from "@/convex/_generated/dataModel"
+import { Folder, GitBranch, Loader2 } from "lucide-react"
+import { useRouter } from "next/navigation"
+import type React from "react"
+import { useState } from "react"
+import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { GitBranch, Folder, Loader2 } from "lucide-react"
-import { toast } from "sonner"
+import { api } from "@/convex/_generated/api"
+import type { Id } from "@/convex/_generated/dataModel"
 
 interface RepoSetupFormProps {
   owner: string
@@ -58,7 +57,15 @@ export function RepoSetupForm({ owner, repo, branches, defaultBranch, frameworkC
         branch: selectedBranch,
         contentRoot: contentPath,
         detectedFramework: frameworkConfig.framework as
-          | "fumadocs" | "nextra" | "astro" | "hugo" | "docusaurus" | "jekyll" | "contentlayer" | "next-mdx" | "custom"
+          | "fumadocs"
+          | "nextra"
+          | "astro"
+          | "hugo"
+          | "docusaurus"
+          | "jekyll"
+          | "contentlayer"
+          | "next-mdx"
+          | "custom"
           | undefined,
         contentType: contentType as "blog" | "docs" | "pages" | "changelog" | "custom",
         frontmatterSchema: frameworkConfig.frontmatterFields,
@@ -80,7 +87,10 @@ export function RepoSetupForm({ owner, repo, branches, defaultBranch, frameworkC
         <CardTitle>Configure Repository</CardTitle>
         <CardDescription>
           {frameworkConfig.framework !== "custom" ? (
-            <>Detected <span className="font-medium text-foreground">{frameworkConfig.framework}</span> framework. Configure your content settings below.</>
+            <>
+              Detected <span className="font-medium text-foreground">{frameworkConfig.framework}</span> framework.
+              Configure your content settings below.
+            </>
           ) : (
             "Select the branch and folder you want to manage."
           )}

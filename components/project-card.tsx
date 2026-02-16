@@ -1,9 +1,9 @@
 "use client"
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { GitBranch, Folder, ArrowRight } from "lucide-react"
+import { ArrowRight, Folder, GitBranch } from "lucide-react"
 import Link from "next/link"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 
 interface ProjectCardProps {
   project: {
@@ -25,7 +25,9 @@ export function ProjectCard({ project }: ProjectCardProps) {
       <CardHeader>
         <div className="flex items-start justify-between">
           <div className="space-y-1">
-            <CardTitle className="text-lg">{project.repoOwner}/{project.repoName}</CardTitle>
+            <CardTitle className="text-lg">
+              {project.repoOwner}/{project.repoName}
+            </CardTitle>
             <CardDescription className="flex items-center gap-2">
               <GitBranch className="h-3 w-3" />
               {project.branch}

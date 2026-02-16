@@ -1,7 +1,7 @@
 import { v } from "convex/values"
 import type { Id } from "./_generated/dataModel"
-import { mutation, query } from "./_generated/server"
 import type { MutationCtx } from "./_generated/server"
+import { mutation, query } from "./_generated/server"
 import { authComponent } from "./auth"
 
 /**
@@ -69,9 +69,7 @@ export const findByRepo = query({
   handler: async (ctx, args) => {
     const q = ctx.db
       .query("projects")
-      .withIndex("by_repo", (q) =>
-        q.eq("repoOwner", args.repoOwner).eq("repoName", args.repoName),
-      )
+      .withIndex("by_repo", (q) => q.eq("repoOwner", args.repoOwner).eq("repoName", args.repoName))
 
     if (args.branch) {
       return await q.filter((q) => q.eq(q.field("branch"), args.branch)).first()
@@ -141,12 +139,7 @@ export const getOrCreate = mutation({
       .withIndex("by_userId_repo", (q) =>
         q.eq("userId", args.userId).eq("repoOwner", args.repoOwner).eq("repoName", args.repoName),
       )
-      .filter((q) =>
-        q.and(
-          q.eq(q.field("branch"), args.branch),
-          q.eq(q.field("contentRoot"), args.contentRoot),
-        ),
-      )
+      .filter((q) => q.and(q.eq(q.field("branch"), args.branch), q.eq(q.field("contentRoot"), args.contentRoot)))
       .first()
 
     if (existing) return existing._id

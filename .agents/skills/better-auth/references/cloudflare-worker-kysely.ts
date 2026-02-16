@@ -13,25 +13,25 @@
  * There is NO direct d1Adapter()!
  */
 
-import { Hono } from "hono";
-import { cors } from "hono/cors";
-import { betterAuth } from "better-auth";
-import { Kysely, CamelCasePlugin } from "kysely";
-import { D1Dialect } from "@noxharmonium/kysely-d1";
+import { D1Dialect } from "@noxharmonium/kysely-d1"
+import { betterAuth } from "better-auth"
+import { Hono } from "hono"
+import { cors } from "hono/cors"
+import { CamelCasePlugin, Kysely } from "kysely"
 
 // ═══════════════════════════════════════════════════════════════
 // Environment bindings
 // ═══════════════════════════════════════════════════════════════
 type Env = {
-  DB: D1Database;
-  BETTER_AUTH_SECRET: string;
-  BETTER_AUTH_URL: string;
-  GOOGLE_CLIENT_ID: string;
-  GOOGLE_CLIENT_SECRET: string;
-  FRONTEND_URL: string;
-};
+  DB: D1Database
+  BETTER_AUTH_SECRET: string
+  BETTER_AUTH_URL: string
+  GOOGLE_CLIENT_ID: string
+  GOOGLE_CLIENT_SECRET: string
+  FRONTEND_URL: string
+}
 
-const app = new Hono<{ Bindings: Env }>();
+const app = new Hono<{ Bindings: Env }>()
 
 // ═══════════════════════════════════════════════════════════════
 // CORS configuration for SPA
@@ -42,9 +42,9 @@ app.use("/api/*", async (c, next) => {
     credentials: true,
     allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowHeaders: ["Content-Type", "Authorization"],
-  });
-  return corsMiddleware(c, next);
-});
+  })
+  return corsMiddleware(c, next)
+})
 
 // ═══════════════════════════════════════════════════════════════
 // Helper: Initialize auth with Kysely
@@ -79,8 +79,8 @@ function createAuth(env: Env) {
       requireEmailVerification: true,
       sendVerificationEmail: async ({ user, url, token }) => {
         // TODO: Implement email sending
-        console.log(`Verification email for ${user.email}: ${url}`);
-        console.log(`Verification code: ${token}`);
+        console.log(`Verification email for ${user.email}: ${url}`)
+        console.log(`Verification code: ${token}`)
       },
     },
 
@@ -98,30 +98,30 @@ function createAuth(env: Env) {
       expiresIn: 60 * 60 * 24 * 7, // 7 days
       updateAge: 60 * 60 * 24, // Update every 24 hours
     },
-  });
+  })
 }
 
 // ═══════════════════════════════════════════════════════════════
 // Auth routes - handle all better-auth endpoints
 // ═══════════════════════════════════════════════════════════════
 app.all("/api/auth/*", async (c) => {
-  const auth = createAuth(c.env);
-  return auth.handler(c.req.raw);
-});
+  const auth = createAuth(c.env)
+  return auth.handler(c.req.raw)
+})
 
 // ═══════════════════════════════════════════════════════════════
 // Example: Protected API route
 // ═══════════════════════════════════════════════════════════════
 app.get("/api/protected", async (c) => {
-  const auth = createAuth(c.env);
+  const auth = createAuth(c.env)
 
   // Verify session
   const session = await auth.api.getSession({
     headers: c.req.raw.headers,
-  });
+  })
 
   if (!session) {
-    return c.json({ error: "Unauthorized" }, 401);
+    return c.json({ error: "Unauthorized" }, 401)
   }
 
   return c.json({
@@ -131,37 +131,37 @@ app.get("/api/protected", async (c) => {
       email: session.user.email,
       name: session.user.name,
     },
-  });
-});
+  })
+})
 
 // ═══════════════════════════════════════════════════════════════
 // Example: User profile endpoint
 // ═══════════════════════════════════════════════════════════════
 app.get("/api/user/profile", async (c) => {
-  const auth = createAuth(c.env);
+  const auth = createAuth(c.env)
 
   const session = await auth.api.getSession({
     headers: c.req.raw.headers,
-  });
+  })
 
   if (!session) {
-    return c.json({ error: "Unauthorized" }, 401);
+    return c.json({ error: "Unauthorized" }, 401)
   }
 
   // Fetch user data using Kysely
   const db = new Kysely({
     dialect: new D1Dialect({ database: c.env.DB }),
     plugins: [new CamelCasePlugin()],
-  });
+  })
 
   const user = await db
     .selectFrom("user")
     .select(["id", "email", "name", "image", "createdAt"])
     .where("id", "=", session.user.id)
-    .executeTakeFirst();
+    .executeTakeFirst()
 
-  return c.json(user);
-});
+  return c.json(user)
+})
 
 // ═══════════════════════════════════════════════════════════════
 // Health check
@@ -170,13 +170,13 @@ app.get("/health", (c) => {
   return c.json({
     status: "ok",
     timestamp: new Date().toISOString(),
-  });
-});
+  })
+})
 
 // ═══════════════════════════════════════════════════════════════
 // Export Worker
 // ═══════════════════════════════════════════════════════════════
-export default app;
+export default app
 
 /**
  * ═══════════════════════════════════════════════════════════════

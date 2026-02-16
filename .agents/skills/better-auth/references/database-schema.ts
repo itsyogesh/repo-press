@@ -28,8 +28,8 @@
  * ═══════════════════════════════════════════════════════════════
  */
 
-import { integer, sqliteTable, text, index } from "drizzle-orm/sqlite-core";
-import { sql } from "drizzle-orm";
+import { sql } from "drizzle-orm"
+import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core"
 
 // ═══════════════════════════════════════════════════════════════
 // better-auth CORE TABLES
@@ -46,17 +46,13 @@ export const user = sqliteTable(
     email: text().notNull().unique(),
     emailVerified: integer({ mode: "boolean" }).notNull().default(false),
     image: text(), // Profile picture URL
-    createdAt: integer({ mode: "timestamp" })
-      .notNull()
-      .default(sql`(unixepoch())`),
-    updatedAt: integer({ mode: "timestamp" })
-      .notNull()
-      .default(sql`(unixepoch())`),
+    createdAt: integer({ mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
+    updatedAt: integer({ mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
   },
   (table) => ({
     emailIdx: index("user_email_idx").on(table.email),
-  })
-);
+  }),
+)
 
 /**
  * Sessions table - stores active user sessions
@@ -75,18 +71,14 @@ export const session = sqliteTable(
     expiresAt: integer({ mode: "timestamp" }).notNull(),
     ipAddress: text(),
     userAgent: text(),
-    createdAt: integer({ mode: "timestamp" })
-      .notNull()
-      .default(sql`(unixepoch())`),
-    updatedAt: integer({ mode: "timestamp" })
-      .notNull()
-      .default(sql`(unixepoch())`),
+    createdAt: integer({ mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
+    updatedAt: integer({ mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
   },
   (table) => ({
     userIdIdx: index("session_user_id_idx").on(table.userId),
     tokenIdx: index("session_token_idx").on(table.token),
-  })
-);
+  }),
+)
 
 /**
  * Accounts table - stores OAuth provider accounts and passwords
@@ -107,21 +99,14 @@ export const account = sqliteTable(
     scope: text(), // OAuth scopes granted
     idToken: text(), // OpenID Connect ID token
     password: text(), // Hashed password for email/password auth
-    createdAt: integer({ mode: "timestamp" })
-      .notNull()
-      .default(sql`(unixepoch())`),
-    updatedAt: integer({ mode: "timestamp" })
-      .notNull()
-      .default(sql`(unixepoch())`),
+    createdAt: integer({ mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
+    updatedAt: integer({ mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
   },
   (table) => ({
     userIdIdx: index("account_user_id_idx").on(table.userId),
-    providerIdx: index("account_provider_idx").on(
-      table.providerId,
-      table.accountId
-    ),
-  })
-);
+    providerIdx: index("account_provider_idx").on(table.providerId, table.accountId),
+  }),
+)
 
 /**
  * Verification tokens - for email verification, password reset, etc.
@@ -133,18 +118,14 @@ export const verification = sqliteTable(
     identifier: text().notNull(), // Email or user ID
     value: text().notNull(), // Token value
     expiresAt: integer({ mode: "timestamp" }).notNull(),
-    createdAt: integer({ mode: "timestamp" })
-      .notNull()
-      .default(sql`(unixepoch())`),
-    updatedAt: integer({ mode: "timestamp" })
-      .notNull()
-      .default(sql`(unixepoch())`),
+    createdAt: integer({ mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
+    updatedAt: integer({ mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
   },
   (table) => ({
     identifierIdx: index("verification_identifier_idx").on(table.identifier),
     valueIdx: index("verification_value_idx").on(table.value),
-  })
-);
+  }),
+)
 
 // ═══════════════════════════════════════════════════════════════
 // OPTIONAL: Additional tables for better-auth plugins
@@ -163,14 +144,12 @@ export const twoFactor = sqliteTable(
     secret: text().notNull(), // TOTP secret
     backupCodes: text(), // JSON array of backup codes
     enabled: integer({ mode: "boolean" }).notNull().default(false),
-    createdAt: integer({ mode: "timestamp" })
-      .notNull()
-      .default(sql`(unixepoch())`),
+    createdAt: integer({ mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
   },
   (table) => ({
     userIdIdx: index("two_factor_user_id_idx").on(table.userId),
-  })
-);
+  }),
+)
 
 /**
  * Organizations table (if using organization plugin)
@@ -180,13 +159,9 @@ export const organization = sqliteTable("organization", {
   name: text().notNull(),
   slug: text().notNull().unique(),
   logo: text(),
-  createdAt: integer({ mode: "timestamp" })
-    .notNull()
-    .default(sql`(unixepoch())`),
-  updatedAt: integer({ mode: "timestamp" })
-    .notNull()
-    .default(sql`(unixepoch())`),
-});
+  createdAt: integer({ mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
+  updatedAt: integer({ mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
+})
 
 /**
  * Organization members table (if using organization plugin)
@@ -202,15 +177,13 @@ export const organizationMember = sqliteTable(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     role: text().notNull(), // "owner", "admin", "member"
-    createdAt: integer({ mode: "timestamp" })
-      .notNull()
-      .default(sql`(unixepoch())`),
+    createdAt: integer({ mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
   },
   (table) => ({
     orgIdIdx: index("org_member_org_id_idx").on(table.organizationId),
     userIdIdx: index("org_member_user_id_idx").on(table.userId),
-  })
-);
+  }),
+)
 
 // ═══════════════════════════════════════════════════════════════
 // YOUR APPLICATION TABLES
@@ -228,13 +201,9 @@ export const profile = sqliteTable("profile", {
   website: text(),
   location: text(),
   phone: text(),
-  createdAt: integer({ mode: "timestamp" })
-    .notNull()
-    .default(sql`(unixepoch())`),
-  updatedAt: integer({ mode: "timestamp" })
-    .notNull()
-    .default(sql`(unixepoch())`),
-});
+  createdAt: integer({ mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
+  updatedAt: integer({ mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
+})
 
 /**
  * Example: User preferences
@@ -248,13 +217,9 @@ export const userPreferences = sqliteTable("user_preferences", {
   language: text().notNull().default("en"),
   emailNotifications: integer({ mode: "boolean" }).notNull().default(true),
   pushNotifications: integer({ mode: "boolean" }).notNull().default(false),
-  createdAt: integer({ mode: "timestamp" })
-    .notNull()
-    .default(sql`(unixepoch())`),
-  updatedAt: integer({ mode: "timestamp" })
-    .notNull()
-    .default(sql`(unixepoch())`),
-});
+  createdAt: integer({ mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
+  updatedAt: integer({ mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
+})
 
 // ═══════════════════════════════════════════════════════════════
 // Export all schemas for Drizzle
@@ -269,7 +234,7 @@ export const schema = {
   organizationMember,
   profile,
   userPreferences,
-} as const;
+} as const
 
 /**
  * ═══════════════════════════════════════════════════════════════

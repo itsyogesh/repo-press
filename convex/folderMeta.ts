@@ -19,9 +19,7 @@ export const getByPath = query({
   handler: async (ctx, args) => {
     return await ctx.db
       .query("folderMeta")
-      .withIndex("by_projectId_folderPath", (q) =>
-        q.eq("projectId", args.projectId).eq("folderPath", args.folderPath),
-      )
+      .withIndex("by_projectId_folderPath", (q) => q.eq("projectId", args.projectId).eq("folderPath", args.folderPath))
       .first()
   },
 })
@@ -39,9 +37,7 @@ export const upsert = mutation({
   handler: async (ctx, args) => {
     const existing = await ctx.db
       .query("folderMeta")
-      .withIndex("by_projectId_folderPath", (q) =>
-        q.eq("projectId", args.projectId).eq("folderPath", args.folderPath),
-      )
+      .withIndex("by_projectId_folderPath", (q) => q.eq("projectId", args.projectId).eq("folderPath", args.folderPath))
       .first()
 
     const now = Date.now()

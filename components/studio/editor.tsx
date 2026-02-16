@@ -1,14 +1,14 @@
 "use client"
 
+import { ChevronDown, ChevronRight, Save, Upload } from "lucide-react"
 import * as React from "react"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
-import { ChevronDown, ChevronRight, Save, Upload } from "lucide-react"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Textarea } from "@/components/ui/textarea"
 
 type FrontmatterFieldDef = {
   name: string
@@ -70,7 +70,12 @@ export function Editor({
             <Save className="h-4 w-4 mr-1" />
             {isSaving ? "Saving..." : "Save Draft"}
           </Button>
-          <Button size="sm" onClick={onPublish} disabled={isSaving || isPublishing || !canPublish} title={canPublish ? "Publish to GitHub" : "Only draft or approved documents can be published"}>
+          <Button
+            size="sm"
+            onClick={onPublish}
+            disabled={isSaving || isPublishing || !canPublish}
+            title={canPublish ? "Publish to GitHub" : "Only draft or approved documents can be published"}
+          >
             <Upload className="h-4 w-4 mr-1" />
             {isPublishing ? "Publishing..." : "Publish"}
           </Button>
@@ -133,11 +138,7 @@ function FrontmatterField({
     case "boolean":
       return (
         <div className="flex items-center gap-2">
-          <Checkbox
-            id={field.name}
-            checked={!!value}
-            onCheckedChange={(checked) => onChange(checked)}
-          />
+          <Checkbox id={field.name} checked={!!value} onCheckedChange={(checked) => onChange(checked)} />
           <Label htmlFor={field.name} className="text-sm font-normal">
             {field.description}
           </Label>
@@ -148,12 +149,7 @@ function FrontmatterField({
       return (
         <div className="grid gap-2">
           <Label htmlFor={field.name}>{field.description}</Label>
-          <Input
-            id={field.name}
-            type="date"
-            value={value || ""}
-            onChange={(e) => onChange(e.target.value)}
-          />
+          <Input id={field.name} type="date" value={value || ""} onChange={(e) => onChange(e.target.value)} />
         </div>
       )
 
@@ -179,7 +175,14 @@ function FrontmatterField({
             value={Array.isArray(value) ? value.join(", ") : value || ""}
             onChange={(e) => {
               const raw = e.target.value
-              onChange(raw ? raw.split(",").map((s: string) => s.trim()).filter(Boolean) : [])
+              onChange(
+                raw
+                  ? raw
+                      .split(",")
+                      .map((s: string) => s.trim())
+                      .filter(Boolean)
+                  : [],
+              )
             }}
             placeholder={`e.g. item1, item2, item3`}
           />
@@ -198,11 +201,14 @@ function FrontmatterField({
           />
         </div>
       )
-
-    case "string":
     default:
       // Use textarea for description-like fields
-      if (field.name === "description" || field.name === "summary" || field.name === "excerpt" || field.name === "bio") {
+      if (
+        field.name === "description" ||
+        field.name === "summary" ||
+        field.name === "excerpt" ||
+        field.name === "bio"
+      ) {
         return (
           <div className="grid gap-2">
             <Label htmlFor={field.name}>{field.description}</Label>

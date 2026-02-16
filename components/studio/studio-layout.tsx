@@ -1,21 +1,21 @@
 "use client"
 
-import * as React from "react"
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
-import { FileTree } from "./file-tree"
-import { DocumentList } from "./document-list"
-import { Editor } from "./editor"
-import { Preview } from "./preview"
-import { StatusActions } from "./status-actions"
-import type { GitHubFile } from "@/lib/github"
-import { useQuery, useMutation } from "convex/react"
-import { api } from "@/convex/_generated/api"
-import type { Id } from "@/convex/_generated/dataModel"
+import { useMutation, useQuery } from "convex/react"
 import matter from "gray-matter"
 import { useRouter } from "next/navigation"
+import * as React from "react"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { api } from "@/convex/_generated/api"
+import type { Id } from "@/convex/_generated/dataModel"
+import type { GitHubFile } from "@/lib/github"
+import { DocumentList } from "./document-list"
+import { Editor } from "./editor"
+import { FileTree } from "./file-tree"
+import { Preview } from "./preview"
+import { StatusActions } from "./status-actions"
 
 interface StudioLayoutProps {
   files: GitHubFile[]
@@ -53,10 +53,7 @@ export function StudioLayout({ files, initialFile, owner, repo, branch, currentP
   const user = useQuery(api.auth.getCurrentUser)
   // Better Auth returns Id<"user"> (singular) but mutations expect Id<"users"> (plural)
   const userId = user?._id as unknown as Id<"users"> | undefined
-  const project = useQuery(
-    api.projects.get,
-    projectId ? { id: projectId as Id<"projects"> } : "skip",
-  )
+  const project = useQuery(api.projects.get, projectId ? { id: projectId as Id<"projects"> } : "skip")
   const document = useQuery(
     api.documents.getByFilePath,
     projectId && selectedFile?.type === "file"
@@ -92,12 +89,15 @@ export function StudioLayout({ files, initialFile, owner, repo, branch, currentP
     }
   }, [initialFile, files])
 
-  const navigateToFile = React.useCallback((filePath: string) => {
-    const studioBase = `/dashboard/${owner}/${repo}/studio`
-    const params = new URLSearchParams()
-    params.set("branch", branch)
-    router.push(`${studioBase}/${filePath}?${params.toString()}`)
-  }, [owner, repo, branch, router])
+  const navigateToFile = React.useCallback(
+    (filePath: string) => {
+      const studioBase = `/dashboard/${owner}/${repo}/studio`
+      const params = new URLSearchParams()
+      params.set("branch", branch)
+      router.push(`${studioBase}/${filePath}?${params.toString()}`)
+    },
+    [owner, repo, branch, router],
+  )
 
   const handleSelectFile = (file: GitHubFile) => {
     navigateToFile(file.path)
@@ -282,12 +282,7 @@ export function StudioLayout({ files, initialFile, owner, repo, branch, currentP
               statusBadge={
                 <div className="flex items-center gap-1">
                   <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
-                  {document && (
-                    <StatusActions
-                      documentId={document._id}
-                      currentStatus={currentStatus as any}
-                    />
-                  )}
+                  {document && <StatusActions documentId={document._id} currentStatus={currentStatus as any} />}
                 </div>
               }
             />

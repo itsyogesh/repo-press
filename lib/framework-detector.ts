@@ -1,5 +1,5 @@
 import type { GitHubFile } from "./github"
-import { getFileContent, getRepoContents, createGitHubClient } from "./github"
+import { getFileContent, getRepoContents } from "./github"
 
 export type DetectedFramework =
   | "fumadocs"
@@ -149,7 +149,11 @@ export async function detectFramework(
   }
 
   // Detect Hugo
-  if (rootFileNames.includes("hugo.toml") || rootFileNames.includes("hugo.yaml") || rootFileNames.includes("config.toml")) {
+  if (
+    rootFileNames.includes("hugo.toml") ||
+    rootFileNames.includes("hugo.yaml") ||
+    rootFileNames.includes("config.toml")
+  ) {
     return {
       framework: "hugo",
       contentType: "blog",
@@ -201,7 +205,7 @@ export async function detectFramework(
   }
 
   // Detect Nextra
-  if (deps["nextra"] || deps["nextra-theme-docs"] || deps["nextra-theme-blog"]) {
+  if (deps.nextra || deps["nextra-theme-docs"] || deps["nextra-theme-blog"]) {
     const contentType = deps["nextra-theme-blog"] ? "blog" : "docs"
     return {
       framework: "nextra",
@@ -224,7 +228,7 @@ export async function detectFramework(
   }
 
   // Detect Astro
-  if (deps["astro"] || rootFileNames.includes("astro.config.mjs") || rootFileNames.includes("astro.config.ts")) {
+  if (deps.astro || rootFileNames.includes("astro.config.mjs") || rootFileNames.includes("astro.config.ts")) {
     return {
       framework: "astro",
       contentType: "blog",
@@ -235,7 +239,7 @@ export async function detectFramework(
   }
 
   // Detect Contentlayer
-  if (deps["contentlayer"] || deps["contentlayer2"] || deps["next-contentlayer"] || deps["next-contentlayer2"]) {
+  if (deps.contentlayer || deps.contentlayer2 || deps["next-contentlayer"] || deps["next-contentlayer2"]) {
     return {
       framework: "contentlayer",
       contentType: "blog",
@@ -246,7 +250,7 @@ export async function detectFramework(
   }
 
   // Detect generic Next.js with MDX
-  if (deps["next"] && (deps["@next/mdx"] || deps["next-mdx-remote"] || deps["mdx-bundler"])) {
+  if (deps.next && (deps["@next/mdx"] || deps["next-mdx-remote"] || deps["mdx-bundler"])) {
     return {
       framework: "next-mdx",
       contentType: "blog",

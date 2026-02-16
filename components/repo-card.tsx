@@ -1,8 +1,8 @@
-import type { GitHubRepo } from "@/lib/github"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { GitFork, Star, Eye, Calendar } from "lucide-react"
+import { Calendar, Eye, GitFork, Star } from "lucide-react"
 import Link from "next/link"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import type { GitHubRepo } from "@/lib/github"
 
 interface RepoCardProps {
   repo: GitHubRepo

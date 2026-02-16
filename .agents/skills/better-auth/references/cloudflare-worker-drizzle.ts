@@ -14,34 +14,34 @@
  * There is NO direct d1Adapter()!
  */
 
-import { Hono } from "hono";
-import { cors } from "hono/cors";
-import { betterAuth } from "better-auth";
-import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { drizzle, type DrizzleD1Database } from "drizzle-orm/d1";
-import { rateLimit } from "better-auth/plugins";
-import * as schema from "../db/schema"; // Your Drizzle schema
+import { betterAuth } from "better-auth"
+import { drizzleAdapter } from "better-auth/adapters/drizzle"
+import { rateLimit } from "better-auth/plugins"
+import { type DrizzleD1Database, drizzle } from "drizzle-orm/d1"
+import { Hono } from "hono"
+import { cors } from "hono/cors"
+import * as schema from "../db/schema" // Your Drizzle schema
 
 // ═══════════════════════════════════════════════════════════════
 // Environment bindings
 // ═══════════════════════════════════════════════════════════════
 type Env = {
-  DB: D1Database;
-  SESSIONS_KV: KVNamespace;
-  RATE_LIMIT_KV: KVNamespace;
-  BETTER_AUTH_SECRET: string;
-  BETTER_AUTH_URL: string;
-  GOOGLE_CLIENT_ID: string;
-  GOOGLE_CLIENT_SECRET: string;
-  GITHUB_CLIENT_ID: string;
-  GITHUB_CLIENT_SECRET: string;
-  FRONTEND_URL: string;
-};
+  DB: D1Database
+  SESSIONS_KV: KVNamespace
+  RATE_LIMIT_KV: KVNamespace
+  BETTER_AUTH_SECRET: string
+  BETTER_AUTH_URL: string
+  GOOGLE_CLIENT_ID: string
+  GOOGLE_CLIENT_SECRET: string
+  GITHUB_CLIENT_ID: string
+  GITHUB_CLIENT_SECRET: string
+  FRONTEND_URL: string
+}
 
 // Database type
-export type Database = DrizzleD1Database<typeof schema>;
+export type Database = DrizzleD1Database<typeof schema>
 
-const app = new Hono<{ Bindings: Env }>();
+const app = new Hono<{ Bindings: Env }>()
 
 // ═══════════════════════════════════════════════════════════════
 // CORS configuration for SPA
@@ -52,15 +52,15 @@ app.use("/api/*", async (c, next) => {
     credentials: true,
     allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowHeaders: ["Content-Type", "Authorization"],
-  });
-  return corsMiddleware(c, next);
-});
+  })
+  return corsMiddleware(c, next)
+})
 
 // ═══════════════════════════════════════════════════════════════
 // Helper: Initialize Drizzle database
 // ═══════════════════════════════════════════════════════════════
 function createDatabase(d1: D1Database): Database {
-  return drizzle(d1, { schema });
+  return drizzle(d1, { schema })
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -87,8 +87,8 @@ function createAuth(db: Database, env: Env) {
       sendVerificationEmail: async ({ user, url, token }) => {
         // TODO: Implement email sending
         // Use Resend, SendGrid, or Cloudflare Email Routing
-        console.log(`Verification email for ${user.email}: ${url}`);
-        console.log(`Verification code: ${token}`);
+        console.log(`Verification email for ${user.email}: ${url}`)
+        console.log(`Verification code: ${token}`)
       },
     },
 
@@ -114,16 +114,16 @@ function createAuth(db: Database, env: Env) {
       // Use KV for sessions (strong consistency vs D1 eventual consistency)
       storage: {
         get: async (sessionId) => {
-          const session = await env.SESSIONS_KV.get(sessionId);
-          return session ? JSON.parse(session) : null;
+          const session = await env.SESSIONS_KV.get(sessionId)
+          return session ? JSON.parse(session) : null
         },
         set: async (sessionId, session, ttl) => {
           await env.SESSIONS_KV.put(sessionId, JSON.stringify(session), {
             expirationTtl: ttl,
-          });
+          })
         },
         delete: async (sessionId) => {
-          await env.SESSIONS_KV.delete(sessionId);
+          await env.SESSIONS_KV.delete(sessionId)
         },
       },
     },
@@ -135,42 +135,42 @@ function createAuth(db: Database, env: Env) {
         max: 10, // 10 requests per window
         storage: {
           get: async (key) => {
-            return await env.RATE_LIMIT_KV.get(key);
+            return await env.RATE_LIMIT_KV.get(key)
           },
           set: async (key, value, ttl) => {
             await env.RATE_LIMIT_KV.put(key, value, {
               expirationTtl: ttl,
-            });
+            })
           },
         },
       }),
     ],
-  });
+  })
 }
 
 // ═══════════════════════════════════════════════════════════════
 // Auth routes - handle all better-auth endpoints
 // ═══════════════════════════════════════════════════════════════
 app.all("/api/auth/*", async (c) => {
-  const db = createDatabase(c.env.DB);
-  const auth = createAuth(db, c.env);
-  return auth.handler(c.req.raw);
-});
+  const db = createDatabase(c.env.DB)
+  const auth = createAuth(db, c.env)
+  return auth.handler(c.req.raw)
+})
 
 // ═══════════════════════════════════════════════════════════════
 // Example: Protected API route
 // ═══════════════════════════════════════════════════════════════
 app.get("/api/protected", async (c) => {
-  const db = createDatabase(c.env.DB);
-  const auth = createAuth(db, c.env);
+  const db = createDatabase(c.env.DB)
+  const auth = createAuth(db, c.env)
 
   // Verify session
   const session = await auth.api.getSession({
     headers: c.req.raw.headers,
-  });
+  })
 
   if (!session) {
-    return c.json({ error: "Unauthorized" }, 401);
+    return c.json({ error: "Unauthorized" }, 401)
   }
 
   return c.json({
@@ -180,78 +180,75 @@ app.get("/api/protected", async (c) => {
       email: session.user.email,
       name: session.user.name,
     },
-  });
-});
+  })
+})
 
 // ═══════════════════════════════════════════════════════════════
 // Example: User profile endpoint
 // ═══════════════════════════════════════════════════════════════
 app.get("/api/user/profile", async (c) => {
-  const db = createDatabase(c.env.DB);
-  const auth = createAuth(db, c.env);
+  const db = createDatabase(c.env.DB)
+  const auth = createAuth(db, c.env)
 
   const session = await auth.api.getSession({
     headers: c.req.raw.headers,
-  });
+  })
 
   if (!session) {
-    return c.json({ error: "Unauthorized" }, 401);
+    return c.json({ error: "Unauthorized" }, 401)
   }
 
   // Fetch additional user data from D1
   const userProfile = await db.query.user.findFirst({
     where: (user, { eq }) => eq(user.id, session.user.id),
-  });
+  })
 
-  return c.json(userProfile);
-});
+  return c.json(userProfile)
+})
 
 // ═══════════════════════════════════════════════════════════════
 // Example: Update user profile
 // ═══════════════════════════════════════════════════════════════
 app.patch("/api/user/profile", async (c) => {
-  const db = createDatabase(c.env.DB);
-  const auth = createAuth(db, c.env);
+  const db = createDatabase(c.env.DB)
+  const auth = createAuth(db, c.env)
 
   const session = await auth.api.getSession({
     headers: c.req.raw.headers,
-  });
+  })
 
   if (!session) {
-    return c.json({ error: "Unauthorized" }, 401);
+    return c.json({ error: "Unauthorized" }, 401)
   }
 
-  const { name } = await c.req.json();
+  const { name } = await c.req.json()
 
   // Update user in D1 using Drizzle
-  await db
-    .update(schema.user)
-    .set({ name, updatedAt: new Date() })
-    .where(eq(schema.user.id, session.user.id));
+  await db.update(schema.user).set({ name, updatedAt: new Date() }).where(eq(schema.user.id, session.user.id))
 
-  return c.json({ success: true });
-});
+  return c.json({ success: true })
+})
 
 // ═══════════════════════════════════════════════════════════════
 // Example: Admin-only endpoint
 // ═══════════════════════════════════════════════════════════════
 app.get("/api/admin/users", async (c) => {
-  const db = createDatabase(c.env.DB);
-  const auth = createAuth(db, c.env);
+  const db = createDatabase(c.env.DB)
+  const auth = createAuth(db, c.env)
 
   const session = await auth.api.getSession({
     headers: c.req.raw.headers,
-  });
+  })
 
   if (!session) {
-    return c.json({ error: "Unauthorized" }, 401);
+    return c.json({ error: "Unauthorized" }, 401)
   }
 
   // Check admin role (you'd store this in users table)
   const user = await db.query.user.findFirst({
     where: (user, { eq }) => eq(user.id, session.user.id),
     // Add role field to your schema if needed
-  });
+  })
 
   // if (user.role !== 'admin') {
   //   return c.json({ error: 'Forbidden' }, 403)
@@ -265,10 +262,10 @@ app.get("/api/admin/users", async (c) => {
       name: true,
       createdAt: true,
     },
-  });
+  })
 
-  return c.json(users);
-});
+  return c.json(users)
+})
 
 // ═══════════════════════════════════════════════════════════════
 // Health check
@@ -277,13 +274,13 @@ app.get("/health", (c) => {
   return c.json({
     status: "ok",
     timestamp: new Date().toISOString(),
-  });
-});
+  })
+})
 
 // ═══════════════════════════════════════════════════════════════
 // Export Worker
 // ═══════════════════════════════════════════════════════════════
-export default app;
+export default app
 
 /**
  * ═══════════════════════════════════════════════════════════════

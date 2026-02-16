@@ -10,14 +10,14 @@
  * - Organization switcher
  */
 
-'use client'
+"use client"
 
-import { createAuthClient, useSession } from 'better-auth/client'
-import { useState, useEffect } from 'react'
+import { createAuthClient, useSession } from "better-auth/client"
+import { useEffect, useState } from "react"
 
 // Initialize auth client
 export const authClient = createAuthClient({
-  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'
+  baseURL: process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000",
 })
 
 // ============================================================================
@@ -25,20 +25,20 @@ export const authClient = createAuthClient({
 // ============================================================================
 
 export function LoginForm() {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState('')
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
 
   const handleEmailSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
-    setError('')
+    setError("")
     setLoading(true)
 
     try {
       const { data, error } = await authClient.signIn.email({
         email,
-        password
+        password,
       })
 
       if (error) {
@@ -47,9 +47,9 @@ export function LoginForm() {
       }
 
       // Redirect on success
-      window.location.href = '/dashboard'
+      window.location.href = "/dashboard"
     } catch (err) {
-      setError('An error occurred. Please try again.')
+      setError("An error occurred. Please try again.")
     } finally {
       setLoading(false)
     }
@@ -58,16 +58,16 @@ export function LoginForm() {
   const handleGoogleSignIn = async () => {
     setLoading(true)
     await authClient.signIn.social({
-      provider: 'google',
-      callbackURL: '/dashboard'
+      provider: "google",
+      callbackURL: "/dashboard",
     })
   }
 
   const handleGitHubSignIn = async () => {
     setLoading(true)
     await authClient.signIn.social({
-      provider: 'github',
-      callbackURL: '/dashboard'
+      provider: "github",
+      callbackURL: "/dashboard",
     })
   }
 
@@ -75,11 +75,7 @@ export function LoginForm() {
     <div className="max-w-md mx-auto p-6 bg-white rounded-lg shadow">
       <h2 className="text-2xl font-bold mb-6">Sign In</h2>
 
-      {error && (
-        <div className="mb-4 p-3 bg-red-100 text-red-700 rounded">
-          {error}
-        </div>
-      )}
+      {error && <div className="mb-4 p-3 bg-red-100 text-red-700 rounded">{error}</div>}
 
       <form onSubmit={handleEmailSignIn} className="space-y-4">
         <div>
@@ -117,7 +113,7 @@ export function LoginForm() {
           disabled={loading}
           className="w-full py-2 px-4 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
         >
-          {loading ? 'Signing in...' : 'Sign In'}
+          {loading ? "Signing in..." : "Sign In"}
         </button>
       </form>
 
@@ -150,7 +146,7 @@ export function LoginForm() {
       </div>
 
       <p className="mt-4 text-center text-sm text-gray-600">
-        Don't have an account?{' '}
+        Don't have an account?{" "}
         <a href="/signup" className="text-blue-600 hover:underline">
           Sign up
         </a>
@@ -164,23 +160,23 @@ export function LoginForm() {
 // ============================================================================
 
 export function SignUpForm() {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [name, setName] = useState('')
-  const [error, setError] = useState('')
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [name, setName] = useState("")
+  const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault()
-    setError('')
+    setError("")
     setLoading(true)
 
     try {
       const { data, error } = await authClient.signUp.email({
         email,
         password,
-        name
+        name,
       })
 
       if (error) {
@@ -190,7 +186,7 @@ export function SignUpForm() {
 
       setSuccess(true)
     } catch (err) {
-      setError('An error occurred. Please try again.')
+      setError("An error occurred. Please try again.")
     } finally {
       setLoading(false)
     }
@@ -201,8 +197,7 @@ export function SignUpForm() {
       <div className="max-w-md mx-auto p-6 bg-white rounded-lg shadow">
         <h2 className="text-2xl font-bold mb-4">Check your email</h2>
         <p className="text-gray-600">
-          We've sent a verification link to <strong>{email}</strong>.
-          Click the link to verify your account.
+          We've sent a verification link to <strong>{email}</strong>. Click the link to verify your account.
         </p>
       </div>
     )
@@ -212,11 +207,7 @@ export function SignUpForm() {
     <div className="max-w-md mx-auto p-6 bg-white rounded-lg shadow">
       <h2 className="text-2xl font-bold mb-6">Sign Up</h2>
 
-      {error && (
-        <div className="mb-4 p-3 bg-red-100 text-red-700 rounded">
-          {error}
-        </div>
-      )}
+      {error && <div className="mb-4 p-3 bg-red-100 text-red-700 rounded">{error}</div>}
 
       <form onSubmit={handleSignUp} className="space-y-4">
         <div>
@@ -263,9 +254,7 @@ export function SignUpForm() {
             className="w-full px-3 py-2 border rounded-md"
             placeholder="••••••••"
           />
-          <p className="mt-1 text-xs text-gray-500">
-            At least 8 characters
-          </p>
+          <p className="mt-1 text-xs text-gray-500">At least 8 characters</p>
         </div>
 
         <button
@@ -273,12 +262,12 @@ export function SignUpForm() {
           disabled={loading}
           className="w-full py-2 px-4 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
         >
-          {loading ? 'Creating account...' : 'Sign Up'}
+          {loading ? "Creating account..." : "Sign Up"}
         </button>
       </form>
 
       <p className="mt-4 text-center text-sm text-gray-600">
-        Already have an account?{' '}
+        Already have an account?{" "}
         <a href="/login" className="text-blue-600 hover:underline">
           Sign in
         </a>
@@ -311,27 +300,20 @@ export function UserProfile() {
 
   const handleSignOut = async () => {
     await authClient.signOut()
-    window.location.href = '/login'
+    window.location.href = "/login"
   }
 
   return (
     <div className="p-4 bg-white rounded-lg shadow">
       <div className="flex items-center gap-4">
         {session.user.image && (
-          <img
-            src={session.user.image}
-            alt={session.user.name || 'User'}
-            className="w-12 h-12 rounded-full"
-          />
+          <img src={session.user.image} alt={session.user.name || "User"} className="w-12 h-12 rounded-full" />
         )}
         <div className="flex-1">
           <h3 className="font-semibold">{session.user.name}</h3>
           <p className="text-sm text-gray-600">{session.user.email}</p>
         </div>
-        <button
-          onClick={handleSignOut}
-          className="px-4 py-2 text-sm border rounded-md hover:bg-gray-50"
-        >
+        <button onClick={handleSignOut} className="px-4 py-2 text-sm border rounded-md hover:bg-gray-50">
           Sign Out
         </button>
       </div>
@@ -359,8 +341,8 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
   if (!session) {
     // Redirect to login
-    if (typeof window !== 'undefined') {
-      window.location.href = '/login'
+    if (typeof window !== "undefined") {
+      window.location.href = "/login"
     }
     return null
   }
@@ -395,10 +377,7 @@ export function OrganizationSwitcher() {
   if (loading) return <div>Loading organizations...</div>
 
   return (
-    <select
-      onChange={(e) => switchOrganization(e.target.value)}
-      className="px-3 py-2 border rounded-md"
-    >
+    <select onChange={(e) => switchOrganization(e.target.value)} className="px-3 py-2 border rounded-md">
       {organizations.map((org) => (
         <option key={org.id} value={org.id}>
           {org.name}
@@ -413,12 +392,12 @@ export function OrganizationSwitcher() {
 // ============================================================================
 
 export function TwoFactorSetup() {
-  const [qrCode, setQrCode] = useState('')
-  const [verifyCode, setVerifyCode] = useState('')
+  const [qrCode, setQrCode] = useState("")
+  const [verifyCode, setVerifyCode] = useState("")
   const [enabled, setEnabled] = useState(false)
 
   const enable2FA = async () => {
-    const { data } = await authClient.twoFactor.enable({ method: 'totp' })
+    const { data } = await authClient.twoFactor.enable({ method: "totp" })
     setQrCode(data.qrCode)
   }
 
@@ -448,10 +427,7 @@ export function TwoFactorSetup() {
             className="w-full px-3 py-2 border rounded-md"
             maxLength={6}
           />
-          <button
-            type="submit"
-            className="w-full py-2 px-4 bg-blue-600 text-white rounded-md"
-          >
+          <button type="submit" className="w-full py-2 px-4 bg-blue-600 text-white rounded-md">
             Verify & Enable
           </button>
         </form>
@@ -460,10 +436,7 @@ export function TwoFactorSetup() {
   }
 
   return (
-    <button
-      onClick={enable2FA}
-      className="px-4 py-2 bg-blue-600 text-white rounded-md"
-    >
+    <button onClick={enable2FA} className="px-4 py-2 bg-blue-600 text-white rounded-md">
       Enable 2FA
     </button>
   )

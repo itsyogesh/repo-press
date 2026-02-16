@@ -19,9 +19,7 @@ export const listByProject = query({
     if (args.status) {
       return await ctx.db
         .query("documents")
-        .withIndex("by_projectId_status", (q) =>
-          q.eq("projectId", args.projectId).eq("status", args.status!),
-        )
+        .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", args.status!))
         .order("desc")
         .collect()
     }
@@ -41,9 +39,7 @@ export const getByFilePath = query({
   handler: async (ctx, args) => {
     return await ctx.db
       .query("documents")
-      .withIndex("by_projectId_filePath", (q) =>
-        q.eq("projectId", args.projectId).eq("filePath", args.filePath),
-      )
+      .withIndex("by_projectId_filePath", (q) => q.eq("projectId", args.projectId).eq("filePath", args.filePath))
       .first()
   },
 })
@@ -107,9 +103,7 @@ export const getOrCreate = mutation({
   handler: async (ctx, args) => {
     const existing = await ctx.db
       .query("documents")
-      .withIndex("by_projectId_filePath", (q) =>
-        q.eq("projectId", args.projectId).eq("filePath", args.filePath),
-      )
+      .withIndex("by_projectId_filePath", (q) => q.eq("projectId", args.projectId).eq("filePath", args.filePath))
       .first()
 
     if (existing) return existing._id
@@ -184,9 +178,7 @@ export const search = query({
   handler: async (ctx, args) => {
     return await ctx.db
       .query("documents")
-      .withSearchIndex("search_title", (q) =>
-        q.search("title", args.searchTerm).eq("projectId", args.projectId),
-      )
+      .withSearchIndex("search_title", (q) => q.search("title", args.searchTerm).eq("projectId", args.projectId))
       .collect()
   },
 })
@@ -247,9 +239,7 @@ export const publish = mutation({
     // Enforce state machine: only draft/approved can be published
     const publishableStatuses = ["draft", "approved"]
     if (!publishableStatuses.includes(doc.status)) {
-      throw new Error(
-        `Cannot publish from "${doc.status}" status. Document must be in draft or approved state.`,
-      )
+      throw new Error(`Cannot publish from "${doc.status}" status. Document must be in draft or approved state.`)
     }
 
     // Verify ownership: editedBy must own the project
@@ -308,9 +298,7 @@ export const transitionStatus = mutation({
 
     const allowed = ALLOWED_TRANSITIONS[doc.status] || []
     if (!allowed.includes(args.newStatus)) {
-      throw new Error(
-        `Cannot transition from "${doc.status}" to "${args.newStatus}". Allowed: ${allowed.join(", ")}`,
-      )
+      throw new Error(`Cannot transition from "${doc.status}" to "${args.newStatus}". Allowed: ${allowed.join(", ")}`)
     }
 
     const updates: Record<string, any> = {

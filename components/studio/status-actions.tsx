@@ -1,18 +1,10 @@
 "use client"
 
-import * as React from "react"
 import { useMutation, useQuery } from "convex/react"
-import { api } from "@/convex/_generated/api"
-import type { Id } from "@/convex/_generated/dataModel"
+import { Archive, CheckCircle, ChevronDown, Send, Undo2, XCircle } from "lucide-react"
+import * as React from "react"
+import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
-import { Textarea } from "@/components/ui/textarea"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 import {
   Dialog,
   DialogContent,
@@ -21,15 +13,26 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { ChevronDown, Send, CheckCircle, XCircle, Archive, Undo2 } from "lucide-react"
-import { toast } from "sonner"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { Textarea } from "@/components/ui/textarea"
+import { api } from "@/convex/_generated/api"
+import type { Id } from "@/convex/_generated/dataModel"
 
 type DocumentStatus = "draft" | "in_review" | "approved" | "published" | "scheduled" | "archived"
 
 // Statuses reachable via transitionStatus (excludes "published" which requires GitHub commit)
 type TransitionableStatus = "draft" | "in_review" | "approved" | "scheduled" | "archived"
 
-const STATUS_ACTIONS: Record<DocumentStatus, { label: string; icon: React.ElementType; targetStatus: TransitionableStatus }[]> = {
+const STATUS_ACTIONS: Record<
+  DocumentStatus,
+  { label: string; icon: React.ElementType; targetStatus: TransitionableStatus }[]
+> = {
   draft: [
     { label: "Submit for Review", icon: Send, targetStatus: "in_review" },
     { label: "Archive", icon: Archive, targetStatus: "archived" },
@@ -51,9 +54,7 @@ const STATUS_ACTIONS: Record<DocumentStatus, { label: string; icon: React.Elemen
     { label: "Cancel Schedule (back to Draft)", icon: Undo2, targetStatus: "draft" },
     { label: "Archive", icon: Archive, targetStatus: "archived" },
   ],
-  archived: [
-    { label: "Restore to Draft", icon: Undo2, targetStatus: "draft" },
-  ],
+  archived: [{ label: "Restore to Draft", icon: Undo2, targetStatus: "draft" }],
 }
 
 interface StatusActionsProps {
@@ -133,9 +134,7 @@ export function StatusActions({ documentId, currentStatus }: StatusActionsProps)
       <Dialog open={reviewDialogOpen} onOpenChange={setReviewDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>
-              {pendingAction === "in_review" ? "Submit for Review" : "Request Changes"}
-            </DialogTitle>
+            <DialogTitle>{pendingAction === "in_review" ? "Submit for Review" : "Request Changes"}</DialogTitle>
             <DialogDescription>
               {pendingAction === "in_review"
                 ? "Add an optional note for the reviewer."

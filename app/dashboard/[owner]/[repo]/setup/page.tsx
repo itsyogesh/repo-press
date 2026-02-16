@@ -1,8 +1,8 @@
 import { redirect } from "next/navigation"
-import { getRepoBranches } from "@/lib/github"
-import { detectFramework } from "@/lib/framework-detector"
 import { RepoSetupForm } from "@/components/repo-setup-form"
 import { getGitHubToken } from "@/lib/auth-server"
+import { detectFramework } from "@/lib/framework-detector"
+import { getRepoBranches } from "@/lib/github"
 
 interface SetupPageProps {
   params: Promise<{

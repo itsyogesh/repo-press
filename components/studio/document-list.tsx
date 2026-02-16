@@ -1,20 +1,23 @@
 "use client"
 
-import * as React from "react"
 import { useQuery } from "convex/react"
-import { api } from "@/convex/_generated/api"
-import type { Id } from "@/convex/_generated/dataModel"
+import { FileText, Search } from "lucide-react"
+import * as React from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { FileText, Search } from "lucide-react"
+import { api } from "@/convex/_generated/api"
+import type { Id } from "@/convex/_generated/dataModel"
 import { cn } from "@/lib/utils"
 
 type DocumentStatus = "draft" | "in_review" | "approved" | "published" | "scheduled" | "archived"
 
-const STATUS_CONFIG: Record<DocumentStatus, { label: string; variant: "default" | "secondary" | "outline" | "destructive" }> = {
+const STATUS_CONFIG: Record<
+  DocumentStatus,
+  { label: string; variant: "default" | "secondary" | "outline" | "destructive" }
+> = {
   draft: { label: "Draft", variant: "secondary" },
   in_review: { label: "In Review", variant: "outline" },
   approved: { label: "Approved", variant: "outline" },
@@ -42,23 +45,18 @@ export function DocumentList({ projectId, selectedFilePath, onSelectDocument }: 
 
   const searchResults = useQuery(
     api.documents.search,
-    searchTerm.length >= 2
-      ? { projectId: projectId as Id<"projects">, searchTerm }
-      : "skip",
+    searchTerm.length >= 2 ? { projectId: projectId as Id<"projects">, searchTerm } : "skip",
   )
 
   // When searching, apply the status filter client-side since the search index doesn't support it
-  const filteredSearchResults = searchResults && statusFilter !== "all"
-    ? searchResults.filter((doc) => doc.status === statusFilter)
-    : searchResults
+  const filteredSearchResults =
+    searchResults && statusFilter !== "all" ? searchResults.filter((doc) => doc.status === statusFilter) : searchResults
 
   const displayedDocs = searchTerm.length >= 2 ? filteredSearchResults : documents
 
   return (
     <div className="h-full flex flex-col">
-      <div className="p-2 border-b text-xs font-medium text-muted-foreground uppercase tracking-wider">
-        Documents
-      </div>
+      <div className="p-2 border-b text-xs font-medium text-muted-foreground uppercase tracking-wider">Documents</div>
 
       <div className="p-2 space-y-2 border-b">
         <div className="relative">
@@ -76,9 +74,13 @@ export function DocumentList({ projectId, selectedFilePath, onSelectDocument }: 
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All statuses</SelectItem>
-            {(Object.entries(STATUS_CONFIG) as [DocumentStatus, typeof STATUS_CONFIG[DocumentStatus]][]).map(([key, config]) => (
-              <SelectItem key={key} value={key}>{config.label}</SelectItem>
-            ))}
+            {(Object.entries(STATUS_CONFIG) as [DocumentStatus, (typeof STATUS_CONFIG)[DocumentStatus]][]).map(
+              ([key, config]) => (
+                <SelectItem key={key} value={key}>
+                  {config.label}
+                </SelectItem>
+              ),
+            )}
           </SelectContent>
         </Select>
       </div>

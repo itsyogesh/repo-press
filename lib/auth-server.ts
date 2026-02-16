@@ -5,9 +5,7 @@ const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL
 const convexSiteUrl = process.env.NEXT_PUBLIC_CONVEX_SITE_URL
 
 // Only initialize when both env vars are available
-const authHelpers = convexUrl && convexSiteUrl
-  ? convexBetterAuthNextJs({ convexUrl, convexSiteUrl })
-  : null
+const authHelpers = convexUrl && convexSiteUrl ? convexBetterAuthNextJs({ convexUrl, convexSiteUrl }) : null
 
 export const handler = authHelpers?.handler
 export const preloadAuthQuery = authHelpers?.preloadAuthQuery

@@ -1,8 +1,8 @@
-import Navbar from "@/components/landing/navbar"
-import Hero from "@/components/landing/hero"
-import FeatureGrid from "@/components/landing/feature-grid"
 import CTA from "@/components/landing/cta"
+import FeatureGrid from "@/components/landing/feature-grid"
 import Footer from "@/components/landing/footer"
+import Hero from "@/components/landing/hero"
+import Navbar from "@/components/landing/navbar"
 
 export default function LandingPage() {
   return (

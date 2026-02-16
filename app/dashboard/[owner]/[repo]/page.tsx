@@ -1,12 +1,12 @@
-import { redirect } from "next/navigation"
-import { getRepoContents } from "@/lib/github"
-import { RepoBreadcrumb } from "@/components/repo-breadcrumb"
-import { FileBrowser } from "@/components/file-browser"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { AlertCircle, GitBranch } from "lucide-react"
-import { Button } from "@/components/ui/button"
 import Link from "next/link"
+import { redirect } from "next/navigation"
+import { FileBrowser } from "@/components/file-browser"
+import { RepoBreadcrumb } from "@/components/repo-breadcrumb"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Button } from "@/components/ui/button"
 import { getGitHubToken } from "@/lib/auth-server"
+import { getRepoContents } from "@/lib/github"
 
 interface RepoPageProps {
   params: Promise<{
