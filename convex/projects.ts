@@ -1,5 +1,26 @@
 import { v } from "convex/values"
+import type { Id } from "./_generated/dataModel"
 import { mutation, query } from "./_generated/server"
+import type { MutationCtx } from "./_generated/server"
+import { authComponent } from "./auth"
+
+/**
+ * Verify that the caller is the user they claim to be.
+ * - OAuth users: checks auth identity from session token
+ * - PAT users (no auth session): falls back to verifying the user exists
+ */
+async function verifyCallerIdentity(ctx: MutationCtx, claimedUserId: Id<"users">) {
+  const authUser = await authComponent.getAuthUser(ctx)
+  if (authUser) {
+    if (authUser._id !== claimedUserId) {
+      throw new Error("Unauthorized: caller identity does not match userId")
+    }
+    return
+  }
+  // No auth session (PAT user) — verify the user record exists
+  const user = await ctx.db.get(claimedUserId)
+  if (!user) throw new Error("Unauthorized: user not found")
+}
 
 export const list = query({
   args: { userId: v.id("users") },
@@ -95,9 +116,7 @@ const projectArgs = {
 export const create = mutation({
   args: projectArgs,
   handler: async (ctx, args) => {
-    // Verify userId references a real user
-    const user = await ctx.db.get(args.userId)
-    if (!user) throw new Error("Unauthorized: user not found")
+    await verifyCallerIdentity(ctx, args.userId)
 
     const now = Date.now()
     return await ctx.db.insert("projects", {
@@ -113,9 +132,7 @@ export const create = mutation({
 export const getOrCreate = mutation({
   args: projectArgs,
   handler: async (ctx, args) => {
-    // Verify userId references a real user
-    const user = await ctx.db.get(args.userId)
-    if (!user) throw new Error("Unauthorized: user not found")
+    await verifyCallerIdentity(ctx, args.userId)
 
     const existing = await ctx.db
       .query("projects")

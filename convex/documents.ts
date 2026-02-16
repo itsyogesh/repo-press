@@ -1,5 +1,5 @@
 import { v } from "convex/values"
-import { mutation, query } from "./_generated/server"
+import { internalMutation, mutation, query } from "./_generated/server"
 
 export const listByProject = query({
   args: {
@@ -55,7 +55,8 @@ export const get = query({
   },
 })
 
-export const create = mutation({
+// Internal only — not callable from the client. Use getOrCreate for client-facing usage.
+export const create = internalMutation({
   args: {
     projectId: v.id("projects"),
     collectionId: v.optional(v.id("collections")),
