@@ -32,27 +32,27 @@ echo "[1/3] Installing Tier 1 (Essential) skills..."
 echo ""
 
 echo "  -> Convex best practices (waynesutton/convexskills)"
-npx skills add waynesutton/convexskills --skill convex-best-practices
-npx skills add waynesutton/convexskills --skill convex-functions
-npx skills add waynesutton/convexskills --skill convex-schema-validator
-npx skills add waynesutton/convexskills --skill convex-security-check
+npx skills add waynesutton/convexskills --skill convex-best-practices -y
+npx skills add waynesutton/convexskills --skill convex-functions -y
+npx skills add waynesutton/convexskills --skill convex-schema-validator -y
+npx skills add waynesutton/convexskills --skill convex-security-check -y
 
 echo "  -> Next.js 16 best practices (vercel-labs/next-skills)"
-npx skills add vercel-labs/next-skills --skill next-best-practices
-npx skills add vercel-labs/next-skills --skill next-cache-components
+npx skills add vercel-labs/next-skills --skill next-best-practices -y
+npx skills add vercel-labs/next-skills --skill next-cache-components -y
 
 echo "  -> React best practices (vercel-labs/agent-skills)"
-npx skills add vercel-labs/agent-skills --skill react-best-practices
+npx skills add vercel-labs/agent-skills --skill vercel-react-best-practices -y
 
 echo "  -> Tailwind v4 + shadcn/ui (secondsky/claude-skills)"
-npx skills add secondsky/claude-skills --skill tailwind-v4-shadcn
+npx skills add secondsky/claude-skills --skill tailwind-v4-shadcn -y
 
 echo "  -> Better Auth (secondsky/claude-skills)"
-npx skills add secondsky/claude-skills --skill better-auth
+npx skills add secondsky/claude-skills --skill better-auth -y
 
 echo "  -> Security (trailofbits/skills)"
-npx skills add trailofbits/skills --skill differential-review
-npx skills add trailofbits/skills --skill insecure-defaults
+npx skills add trailofbits/skills --skill differential-review -y
+npx skills add trailofbits/skills --skill insecure-defaults -y
 
 echo ""
 
@@ -63,20 +63,20 @@ echo "[2/3] Installing Tier 2 (Recommended) skills..."
 echo ""
 
 echo "  -> Web design guidelines (vercel-labs/agent-skills)"
-npx skills add vercel-labs/agent-skills --skill web-design-guidelines
-npx skills add vercel-labs/agent-skills --skill composition-patterns
+npx skills add vercel-labs/agent-skills --skill web-design-guidelines -y
+npx skills add vercel-labs/agent-skills --skill vercel-composition-patterns -y
 
 echo "  -> Convex advanced patterns (waynesutton/convexskills)"
-npx skills add waynesutton/convexskills --skill convex-http-actions
-npx skills add waynesutton/convexskills --skill convex-cron-jobs
-npx skills add waynesutton/convexskills --skill convex-file-storage
-npx skills add waynesutton/convexskills --skill convex-realtime
+npx skills add waynesutton/convexskills --skill convex-http-actions -y
+npx skills add waynesutton/convexskills --skill convex-cron-jobs -y
+npx skills add waynesutton/convexskills --skill convex-file-storage -y
+npx skills add waynesutton/convexskills --skill convex-realtime -y
 
 echo "  -> Testing (secondsky/claude-skills)"
-npx skills add secondsky/claude-skills --skill vitest-testing
+npx skills add secondsky/claude-skills --skill vitest-testing -y
 
 echo "  -> Engineering superpowers (obra/superpowers)"
-npx skills add obra/superpowers
+npx skills add obra/superpowers -y
 
 echo ""
 
@@ -87,16 +87,16 @@ echo "[3/3] Installing Tier 3 (Nice to Have) skills..."
 echo ""
 
 echo "  -> UI/UX guidelines (nextlevelbuilder)"
-npx skills add nextlevelbuilder/ui-ux-pro-max-skill --skill ui-ux-pro-max
+npx skills add nextlevelbuilder/ui-ux-pro-max-skill --skill ui-ux-pro-max -y
 
 echo "  -> Advanced security (trailofbits/skills)"
-npx skills add trailofbits/skills --skill sharp-edges
+npx skills add trailofbits/skills --skill sharp-edges -y
 
 echo "  -> Convex security audit (waynesutton/convexskills)"
-npx skills add waynesutton/convexskills --skill convex-security-audit
+npx skills add waynesutton/convexskills --skill convex-security-audit -y
 
 echo "  -> Playwright E2E testing (secondsky/claude-skills)"
-npx skills add secondsky/claude-skills --skill playwright-testing
+npx skills add secondsky/claude-skills --skill playwright -y
 
 echo ""
 echo "============================================"
