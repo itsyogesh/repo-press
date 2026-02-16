@@ -15,6 +15,7 @@ interface StudioPageProps {
   }>
   searchParams: Promise<{
     branch?: string
+    projectId?: string
   }>
 }
 
@@ -26,36 +27,30 @@ export default async function StudioPage({ params, searchParams }: StudioPagePro
   }
 
   const { owner, repo, path } = await params
-  const { branch } = await searchParams
+  const { branch, projectId } = await searchParams
   const currentBranch = branch || "main"
   const currentPath = path ? path.join("/") : ""
 
-  let files = []
+  let files: any[] = []
   let fileData = null
   let error = null
 
-  if (!token) {
-    error = "GitHub access token not found. Please sign out and sign in again."
-  } else {
-    try {
-      // Try to fetch as a file first
-      const potentialFileData = await getFile(token, owner, repo, currentPath, currentBranch)
+  try {
+    // Try to fetch as a file first
+    const potentialFileData = await getFile(token, owner, repo, currentPath, currentBranch)
 
-      if (potentialFileData) {
-        // It is a file
-        fileData = potentialFileData
-        // Fetch parent directory for the sidebar
-        const parentPath = currentPath.split("/").slice(0, -1).join("/")
-        files = await getRepoContents(token, owner, repo, parentPath, currentBranch)
-      } else {
-        // It is likely a directory (or invalid path)
-        // Fetch directory contents
-        files = await getRepoContents(token, owner, repo, currentPath, currentBranch)
-      }
-    } catch (e) {
-      console.error("Error fetching studio data:", e)
-      error = "Failed to fetch repository data. Please try again later."
+    if (potentialFileData) {
+      fileData = potentialFileData
+      // Fetch parent directory for the sidebar
+      const parentPath = currentPath.split("/").slice(0, -1).join("/")
+      files = await getRepoContents(token, owner, repo, parentPath, currentBranch)
+    } else {
+      // It is a directory
+      files = await getRepoContents(token, owner, repo, currentPath, currentBranch)
     }
+  } catch (e) {
+    console.error("Error fetching studio data:", e)
+    error = "Failed to fetch repository data. Please try again later."
   }
 
   return (
@@ -69,7 +64,7 @@ export default async function StudioPage({ params, searchParams }: StudioPagePro
             <span className="text-sm text-muted-foreground">Studio</span>
           </div>
           <Button variant="outline" size="sm" asChild>
-            <Link href={`/dashboard/${owner}/${repo}?branch=${currentBranch}`}>Exit Studio</Link>
+            <Link href="/dashboard">Back to Dashboard</Link>
           </Button>
         </div>
       </div>
@@ -90,6 +85,7 @@ export default async function StudioPage({ params, searchParams }: StudioPagePro
           repo={repo}
           branch={currentBranch}
           currentPath={currentPath}
+          projectId={projectId}
         />
       )}
     </div>
