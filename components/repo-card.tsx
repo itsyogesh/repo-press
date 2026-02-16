@@ -42,7 +42,7 @@ export function RepoCard({ repo }: RepoCardProps) {
           </div>
           <div className="flex items-center gap-1">
             <Calendar className="h-3 w-3" />
-            <span>{new Date(repo.updated_at).toLocaleDateString()}</span>
+            <span>{repo.updated_at ? new Date(repo.updated_at).toLocaleDateString() : "N/A"}</span>
           </div>
         </div>
 

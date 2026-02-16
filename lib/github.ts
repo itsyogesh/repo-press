@@ -17,9 +17,9 @@ export type GitHubRepo = {
   description: string | null
   fork: boolean
   url: string
-  created_at: string
-  updated_at: string
-  pushed_at: string
+  created_at: string | null
+  updated_at: string | null
+  pushed_at: string | null
   homepage: string | null
   size: number
   stargazers_count: number

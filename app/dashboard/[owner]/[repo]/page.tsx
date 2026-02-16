@@ -31,7 +31,7 @@ export default async function RepoPage({ params, searchParams }: RepoPageProps) 
   const currentPath = path || ""
   const currentBranch = branch || "main"
 
-  let files = []
+  let files: Awaited<ReturnType<typeof getRepoContents>> = []
   let error = null
 
   try {

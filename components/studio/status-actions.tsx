@@ -26,7 +26,10 @@ import { toast } from "sonner"
 
 type DocumentStatus = "draft" | "in_review" | "approved" | "published" | "scheduled" | "archived"
 
-const STATUS_ACTIONS: Record<DocumentStatus, { label: string; icon: React.ElementType; targetStatus: DocumentStatus }[]> = {
+// Statuses reachable via transitionStatus (excludes "published" which requires GitHub commit)
+type TransitionableStatus = "draft" | "in_review" | "approved" | "scheduled" | "archived"
+
+const STATUS_ACTIONS: Record<DocumentStatus, { label: string; icon: React.ElementType; targetStatus: TransitionableStatus }[]> = {
   draft: [
     { label: "Submit for Review", icon: Send, targetStatus: "in_review" },
     { label: "Archive", icon: Archive, targetStatus: "archived" },
@@ -64,13 +67,13 @@ export function StatusActions({ documentId, currentStatus }: StatusActionsProps)
   const [isLoading, setIsLoading] = React.useState(false)
   const [reviewDialogOpen, setReviewDialogOpen] = React.useState(false)
   const [reviewNote, setReviewNote] = React.useState("")
-  const [pendingAction, setPendingAction] = React.useState<DocumentStatus | null>(null)
+  const [pendingAction, setPendingAction] = React.useState<TransitionableStatus | null>(null)
 
   const actions = STATUS_ACTIONS[currentStatus] || []
 
   if (actions.length === 0) return null
 
-  const handleAction = async (targetStatus: DocumentStatus) => {
+  const handleAction = async (targetStatus: TransitionableStatus) => {
     // For review-related actions, show the note dialog
     if (targetStatus === "in_review" || (currentStatus === "in_review" && targetStatus === "draft")) {
       setPendingAction(targetStatus)
@@ -81,7 +84,7 @@ export function StatusActions({ documentId, currentStatus }: StatusActionsProps)
     await executeTransition(targetStatus)
   }
 
-  const executeTransition = async (targetStatus: DocumentStatus, note?: string) => {
+  const executeTransition = async (targetStatus: TransitionableStatus, note?: string) => {
     if (!user?._id) return
     setIsLoading(true)
 
@@ -89,7 +92,7 @@ export function StatusActions({ documentId, currentStatus }: StatusActionsProps)
       await transitionStatus({
         id: documentId as Id<"documents">,
         newStatus: targetStatus,
-        reviewerId: user._id,
+        reviewerId: user._id as unknown as Id<"users">,
         reviewNote: note,
       })
 

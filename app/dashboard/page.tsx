@@ -13,7 +13,7 @@ export default async function DashboardPage() {
     redirect("/login")
   }
 
-  let repos = []
+  let repos: Awaited<ReturnType<typeof getUserRepos>> = []
   let error = null
   let shouldRedirect = false
 

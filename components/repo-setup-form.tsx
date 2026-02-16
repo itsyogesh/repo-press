@@ -6,6 +6,7 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { useMutation, useQuery } from "convex/react"
 import { api } from "@/convex/_generated/api"
+import type { Id } from "@/convex/_generated/dataModel"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
@@ -50,7 +51,7 @@ export function RepoSetupForm({ owner, repo, branches, defaultBranch, frameworkC
 
     try {
       await getOrCreateProject({
-        userId: user._id,
+        userId: user._id as unknown as Id<"users">,
         name: `${owner}/${repo}`,
         repoOwner: owner,
         repoName: repo,

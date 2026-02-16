@@ -12,7 +12,9 @@ import { authComponent } from "./auth"
 async function verifyCallerIdentity(ctx: MutationCtx, claimedUserId: Id<"users">) {
   const authUser = await authComponent.getAuthUser(ctx)
   if (authUser) {
-    if (authUser._id !== claimedUserId) {
+    // Better Auth returns Id<"user"> (singular) while schema uses Id<"users"> (plural).
+    // They reference the same table at runtime, so compare as strings.
+    if ((authUser._id as string) !== (claimedUserId as string)) {
       throw new Error("Unauthorized: caller identity does not match userId")
     }
     return

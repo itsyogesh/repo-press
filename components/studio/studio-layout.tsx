@@ -51,6 +51,8 @@ export function StudioLayout({ files, initialFile, owner, repo, branch, currentP
 
   // Convex queries/mutations
   const user = useQuery(api.auth.getCurrentUser)
+  // Better Auth returns Id<"user"> (singular) but mutations expect Id<"users"> (plural)
+  const userId = user?._id as unknown as Id<"users"> | undefined
   const project = useQuery(
     api.projects.get,
     projectId ? { id: projectId as Id<"projects"> } : "skip",
@@ -107,7 +109,7 @@ export function StudioLayout({ files, initialFile, owner, repo, branch, currentP
 
   // Ensure document record exists in Convex (atomic getOrCreate prevents duplicates)
   const ensureDocumentRecord = React.useCallback(async (): Promise<Id<"documents"> | null> => {
-    if (!projectId || !selectedFile || selectedFile.type !== "file" || !user?._id) return null
+    if (!projectId || !selectedFile || selectedFile.type !== "file" || !userId) return null
 
     if (document) return document._id
 
@@ -125,11 +127,11 @@ export function StudioLayout({ files, initialFile, owner, repo, branch, currentP
       console.error("Error creating document record:", error)
       return null
     }
-  }, [projectId, selectedFile, user, document, getOrCreateDocument, frontmatter, content, sha])
+  }, [projectId, selectedFile, userId, document, getOrCreateDocument, frontmatter, content, sha])
 
   // Save Draft — Convex only, no GitHub commit
   const handleSaveDraft = async () => {
-    if (!selectedFile || !user?._id) return
+    if (!selectedFile || !userId) return
     setIsSaving(true)
 
     try {
@@ -140,7 +142,7 @@ export function StudioLayout({ files, initialFile, owner, repo, branch, currentP
         id: docId,
         body: content,
         frontmatter,
-        editedBy: user._id,
+        editedBy: userId!,
         message: "Draft saved",
       })
 
@@ -155,7 +157,7 @@ export function StudioLayout({ files, initialFile, owner, repo, branch, currentP
 
   // Publish — saves draft, commits to GitHub, then transitions status via state machine
   const handlePublish = async () => {
-    if (!selectedFile || !user?._id) return
+    if (!selectedFile || !userId) return
     setIsPublishing(true)
 
     try {
@@ -167,7 +169,7 @@ export function StudioLayout({ files, initialFile, owner, repo, branch, currentP
         id: docId,
         body: content,
         frontmatter,
-        editedBy: user._id,
+        editedBy: userId!,
         message: "Pre-publish save",
       })
 
@@ -196,7 +198,7 @@ export function StudioLayout({ files, initialFile, owner, repo, branch, currentP
       await publishDoc({
         id: docId,
         commitSha,
-        editedBy: user._id,
+        editedBy: userId!,
       })
 
       toast.success("Published to GitHub")
@@ -216,7 +218,7 @@ export function StudioLayout({ files, initialFile, owner, repo, branch, currentP
 
   return (
     <div className="h-[calc(100vh-4rem)] w-full border-t">
-      <ResizablePanelGroup direction="horizontal">
+      <ResizablePanelGroup orientation="horizontal">
         {/* Left sidebar: file tree + document list tabs */}
         <ResizablePanel defaultSize={20} minSize={15} maxSize={30}>
           {projectId ? (
