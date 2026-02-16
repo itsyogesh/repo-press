@@ -3,8 +3,10 @@
 import * as React from "react"
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
 import { FileTree } from "./file-tree"
+import { DocumentList } from "./document-list"
 import { Editor } from "./editor"
 import { Preview } from "./preview"
+import { StatusActions } from "./status-actions"
 import type { GitHubFile } from "@/lib/github"
 import { useQuery, useMutation } from "convex/react"
 import { api } from "@/convex/_generated/api"
@@ -13,6 +15,7 @@ import matter from "gray-matter"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 interface StudioLayoutProps {
   files: GitHubFile[]
@@ -87,22 +90,28 @@ export function StudioLayout({ files, initialFile, owner, repo, branch, currentP
     }
   }, [initialFile, files])
 
-  const handleSelectFile = (file: GitHubFile) => {
+  const navigateToFile = React.useCallback((filePath: string) => {
     const studioBase = `/dashboard/${owner}/${repo}/studio`
     const params = new URLSearchParams()
     params.set("branch", branch)
     if (projectId) params.set("projectId", projectId)
-    router.push(`${studioBase}/${file.path}?${params.toString()}`)
+    router.push(`${studioBase}/${filePath}?${params.toString()}`)
+  }, [owner, repo, branch, projectId, router])
+
+  const handleSelectFile = (file: GitHubFile) => {
+    navigateToFile(file.path)
+  }
+
+  const handleSelectDocument = (filePath: string) => {
+    navigateToFile(filePath)
   }
 
   // Ensure document record exists in Convex
   const ensureDocumentRecord = React.useCallback(async (): Promise<Id<"documents"> | null> => {
     if (!projectId || !selectedFile || selectedFile.type !== "file" || !user?._id) return null
 
-    // Already exists
     if (document) return document._id
 
-    // Create it
     try {
       const docId = await createDocument({
         projectId: projectId as Id<"projects">,
@@ -155,6 +164,15 @@ export function StudioLayout({ files, initialFile, owner, repo, branch, currentP
       const docId = await ensureDocumentRecord()
       if (!docId) throw new Error("Could not create document record")
 
+      // Save draft first so Convex has the latest content
+      await saveDraft({
+        id: docId,
+        body: content,
+        frontmatter,
+        editedBy: user._id,
+        message: "Pre-publish save",
+      })
+
       // Reconstruct file content and save to GitHub
       const fileContent = matter.stringify(content, frontmatter)
       const response = await fetch("/api/github/save", {
@@ -176,7 +194,6 @@ export function StudioLayout({ files, initialFile, owner, repo, branch, currentP
       const commitSha = data.commit?.sha || data.content?.sha || ""
       setSha(data.content?.sha || sha)
 
-      // Record the publish in Convex
       await publishDoc({
         id: docId,
         commitSha,
@@ -195,23 +212,58 @@ export function StudioLayout({ files, initialFile, owner, repo, branch, currentP
   const currentStatus = document?.status || "draft"
   const statusInfo = STATUS_LABELS[currentStatus] || STATUS_LABELS.draft
 
-  // Frontmatter schema from the project (or fall back to default fields)
   const frontmatterSchema = project?.frontmatterSchema as any[] | undefined
 
   return (
     <div className="h-[calc(100vh-4rem)] w-full border-t">
       <ResizablePanelGroup direction="horizontal">
+        {/* Left sidebar: file tree + document list tabs */}
         <ResizablePanel defaultSize={20} minSize={15} maxSize={30}>
-          <FileTree
-            files={files}
-            onSelect={handleSelectFile}
-            selectedPath={selectedFile?.path}
-            currentPath={currentPath}
-          />
+          {projectId ? (
+            <Tabs defaultValue="files" className="h-full flex flex-col">
+              <TabsList className="w-full rounded-none border-b h-9 bg-transparent p-0">
+                <TabsTrigger
+                  value="files"
+                  className="flex-1 rounded-none border-b-2 border-transparent data-[state=active]:border-foreground data-[state=active]:bg-transparent h-9 text-xs"
+                >
+                  Files
+                </TabsTrigger>
+                <TabsTrigger
+                  value="documents"
+                  className="flex-1 rounded-none border-b-2 border-transparent data-[state=active]:border-foreground data-[state=active]:bg-transparent h-9 text-xs"
+                >
+                  Documents
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent value="files" className="flex-1 m-0 overflow-hidden">
+                <FileTree
+                  files={files}
+                  onSelect={handleSelectFile}
+                  selectedPath={selectedFile?.path}
+                  currentPath={currentPath}
+                />
+              </TabsContent>
+              <TabsContent value="documents" className="flex-1 m-0 overflow-hidden">
+                <DocumentList
+                  projectId={projectId}
+                  selectedFilePath={selectedFile?.path}
+                  onSelectDocument={handleSelectDocument}
+                />
+              </TabsContent>
+            </Tabs>
+          ) : (
+            <FileTree
+              files={files}
+              onSelect={handleSelectFile}
+              selectedPath={selectedFile?.path}
+              currentPath={currentPath}
+            />
+          )}
         </ResizablePanel>
 
         <ResizableHandle />
 
+        {/* Editor panel */}
         <ResizablePanel defaultSize={40} minSize={30}>
           {selectedFile ? (
             <Editor
@@ -225,7 +277,15 @@ export function StudioLayout({ files, initialFile, owner, repo, branch, currentP
               isSaving={isSaving}
               isPublishing={isPublishing}
               statusBadge={
-                <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
+                <div className="flex items-center gap-1">
+                  <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
+                  {document && (
+                    <StatusActions
+                      documentId={document._id}
+                      currentStatus={currentStatus as any}
+                    />
+                  )}
+                </div>
               }
             />
           ) : (
@@ -235,6 +295,7 @@ export function StudioLayout({ files, initialFile, owner, repo, branch, currentP
 
         <ResizableHandle />
 
+        {/* Preview panel */}
         <ResizablePanel defaultSize={40} minSize={30}>
           <Preview content={content} frontmatter={frontmatter} />
         </ResizablePanel>

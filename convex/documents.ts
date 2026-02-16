@@ -221,3 +221,67 @@ export const publish = mutation({
     })
   },
 })
+
+// Status transition state machine
+const ALLOWED_TRANSITIONS: Record<string, string[]> = {
+  draft: ["in_review", "scheduled", "archived"],
+  in_review: ["approved", "draft", "archived"],
+  approved: ["published", "draft", "archived"],
+  published: ["draft", "archived"],
+  scheduled: ["published", "draft", "archived"],
+  archived: ["draft"],
+}
+
+export const transitionStatus = mutation({
+  args: {
+    id: v.id("documents"),
+    newStatus: v.union(
+      v.literal("draft"),
+      v.literal("in_review"),
+      v.literal("approved"),
+      v.literal("published"),
+      v.literal("scheduled"),
+      v.literal("archived"),
+    ),
+    reviewerId: v.optional(v.id("users")),
+    reviewNote: v.optional(v.string()),
+    scheduledAt: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const doc = await ctx.db.get(args.id)
+    if (!doc) throw new Error("Document not found")
+
+    const allowed = ALLOWED_TRANSITIONS[doc.status] || []
+    if (!allowed.includes(args.newStatus)) {
+      throw new Error(
+        `Cannot transition from "${doc.status}" to "${args.newStatus}". Allowed: ${allowed.join(", ")}`,
+      )
+    }
+
+    const updates: Record<string, any> = {
+      status: args.newStatus,
+      updatedAt: Date.now(),
+    }
+
+    // Set review fields when submitting for review or approving/rejecting
+    if (args.reviewerId) updates.reviewerId = args.reviewerId
+    if (args.reviewNote !== undefined) updates.reviewNote = args.reviewNote
+
+    // Set scheduled date
+    if (args.newStatus === "scheduled" && args.scheduledAt) {
+      updates.scheduledAt = args.scheduledAt
+    }
+
+    // Clear scheduled date if moving away from scheduled
+    if (doc.status === "scheduled" && args.newStatus !== "scheduled") {
+      updates.scheduledAt = undefined
+    }
+
+    // Set publishedAt when publishing
+    if (args.newStatus === "published") {
+      updates.publishedAt = Date.now()
+    }
+
+    await ctx.db.patch(args.id, updates)
+  },
+})
