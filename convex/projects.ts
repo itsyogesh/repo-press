@@ -73,6 +73,10 @@ const projectArgs = {
 export const create = mutation({
   args: projectArgs,
   handler: async (ctx, args) => {
+    // Verify userId references a real user
+    const user = await ctx.db.get(args.userId)
+    if (!user) throw new Error("Unauthorized: user not found")
+
     const now = Date.now()
     return await ctx.db.insert("projects", {
       ...args,
@@ -83,16 +87,25 @@ export const create = mutation({
 })
 
 // Atomically returns existing project or creates a new one.
-// Prevents duplicate projects for the same user + repo + contentRoot.
+// Prevents duplicate projects for the same user + repo + branch + contentRoot.
 export const getOrCreate = mutation({
   args: projectArgs,
   handler: async (ctx, args) => {
+    // Verify userId references a real user
+    const user = await ctx.db.get(args.userId)
+    if (!user) throw new Error("Unauthorized: user not found")
+
     const existing = await ctx.db
       .query("projects")
       .withIndex("by_userId_repo", (q) =>
         q.eq("userId", args.userId).eq("repoOwner", args.repoOwner).eq("repoName", args.repoName),
       )
-      .filter((q) => q.eq(q.field("contentRoot"), args.contentRoot))
+      .filter((q) =>
+        q.and(
+          q.eq(q.field("branch"), args.branch),
+          q.eq(q.field("contentRoot"), args.contentRoot),
+        ),
+      )
       .first()
 
     if (existing) return existing._id

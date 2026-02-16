@@ -128,30 +128,21 @@ export const getOrCreate = mutation({
   },
 })
 
+// Generic update for document metadata. Status changes are NOT allowed here —
+// use `publish` or `transitionStatus` instead.
 export const update = mutation({
   args: {
     id: v.id("documents"),
+    userId: v.id("users"),
     title: v.optional(v.string()),
     description: v.optional(v.string()),
     slug: v.optional(v.string()),
-    status: v.optional(
-      v.union(
-        v.literal("draft"),
-        v.literal("in_review"),
-        v.literal("approved"),
-        v.literal("published"),
-        v.literal("scheduled"),
-        v.literal("archived"),
-      ),
-    ),
     body: v.optional(v.string()),
     frontmatter: v.optional(v.any()),
     coverImage: v.optional(v.string()),
     authorIds: v.optional(v.array(v.id("authors"))),
     tagIds: v.optional(v.array(v.id("tags"))),
     categoryIds: v.optional(v.array(v.id("categories"))),
-    reviewerId: v.optional(v.id("users")),
-    reviewNote: v.optional(v.string()),
     order: v.optional(v.number()),
     githubSha: v.optional(v.string()),
     lastSyncedAt: v.optional(v.number()),
@@ -160,7 +151,16 @@ export const update = mutation({
     expiresAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const { id, ...updates } = args
+    const { id, userId, ...updates } = args
+
+    // Verify ownership
+    const doc = await ctx.db.get(id)
+    if (!doc) throw new Error("Document not found")
+    const project = await ctx.db.get(doc.projectId)
+    if (!project || project.userId !== userId) {
+      throw new Error("Unauthorized")
+    }
+
     await ctx.db.patch(id, {
       ...updates,
       updatedAt: Date.now(),
@@ -202,6 +202,12 @@ export const saveDraft = mutation({
   handler: async (ctx, args) => {
     const doc = await ctx.db.get(args.id)
     if (!doc) throw new Error("Document not found")
+
+    // Verify ownership: editedBy must own the project
+    const project = await ctx.db.get(doc.projectId)
+    if (!project || project.userId !== args.editedBy) {
+      throw new Error("Unauthorized")
+    }
 
     // Create history entry with current content before overwriting
     if (doc.body) {
@@ -245,9 +251,11 @@ export const publish = mutation({
       )
     }
 
-    // Verify the caller owns this project
+    // Verify ownership: editedBy must own the project
     const project = await ctx.db.get(doc.projectId)
-    if (!project) throw new Error("Project not found")
+    if (!project || project.userId !== args.editedBy) {
+      throw new Error("Unauthorized")
+    }
 
     await ctx.db.patch(args.id, {
       status: "published",
@@ -278,7 +286,6 @@ export const transitionStatus = mutation({
       v.literal("draft"),
       v.literal("in_review"),
       v.literal("approved"),
-      v.literal("published"),
       v.literal("scheduled"),
       v.literal("archived"),
     ),
@@ -289,6 +296,14 @@ export const transitionStatus = mutation({
   handler: async (ctx, args) => {
     const doc = await ctx.db.get(args.id)
     if (!doc) throw new Error("Document not found")
+
+    // Verify ownership
+    if (args.reviewerId) {
+      const project = await ctx.db.get(doc.projectId)
+      if (!project || project.userId !== args.reviewerId) {
+        throw new Error("Unauthorized")
+      }
+    }
 
     const allowed = ALLOWED_TRANSITIONS[doc.status] || []
     if (!allowed.includes(args.newStatus)) {
@@ -314,11 +329,6 @@ export const transitionStatus = mutation({
     // Clear scheduled date if moving away from scheduled
     if (doc.status === "scheduled" && args.newStatus !== "scheduled") {
       updates.scheduledAt = undefined
-    }
-
-    // Set publishedAt when publishing
-    if (args.newStatus === "published") {
-      updates.publishedAt = Date.now()
     }
 
     await ctx.db.patch(args.id, updates)
