@@ -37,6 +37,7 @@ interface EditorProps {
   onPublish: () => void
   isSaving: boolean
   isPublishing: boolean
+  canPublish: boolean
   statusBadge: React.ReactNode
 }
 
@@ -50,6 +51,7 @@ export function Editor({
   onPublish,
   isSaving,
   isPublishing,
+  canPublish,
   statusBadge,
 }: EditorProps) {
   const [isFrontmatterOpen, setIsFrontmatterOpen] = React.useState(true)
@@ -68,7 +70,7 @@ export function Editor({
             <Save className="h-4 w-4 mr-1" />
             {isSaving ? "Saving..." : "Save Draft"}
           </Button>
-          <Button size="sm" onClick={onPublish} disabled={isSaving || isPublishing}>
+          <Button size="sm" onClick={onPublish} disabled={isSaving || isPublishing || !canPublish} title={canPublish ? "Publish to GitHub" : "Only draft or approved documents can be published"}>
             <Upload className="h-4 w-4 mr-1" />
             {isPublishing ? "Publishing..." : "Publish"}
           </Button>

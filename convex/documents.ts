@@ -92,6 +92,42 @@ export const create = mutation({
   },
 })
 
+// Atomically returns existing document or creates a new one.
+// Prevents duplicate documents for the same projectId + filePath.
+export const getOrCreate = mutation({
+  args: {
+    projectId: v.id("projects"),
+    filePath: v.string(),
+    title: v.string(),
+    body: v.optional(v.string()),
+    frontmatter: v.optional(v.any()),
+    githubSha: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("documents")
+      .withIndex("by_projectId_filePath", (q) =>
+        q.eq("projectId", args.projectId).eq("filePath", args.filePath),
+      )
+      .first()
+
+    if (existing) return existing._id
+
+    const now = Date.now()
+    return await ctx.db.insert("documents", {
+      projectId: args.projectId,
+      filePath: args.filePath,
+      title: args.title,
+      status: "draft",
+      body: args.body,
+      frontmatter: args.frontmatter,
+      githubSha: args.githubSha,
+      createdAt: now,
+      updatedAt: now,
+    })
+  },
+})
+
 export const update = mutation({
   args: {
     id: v.id("documents"),
@@ -188,7 +224,9 @@ export const saveDraft = mutation({
   },
 })
 
-// Publish - update status and record the commit SHA
+// Publish - checks state transition, updates status, and records the commit SHA.
+// Only callable from "draft" or "approved" states. This is the only path to "published"
+// since publishing requires a GitHub commit.
 export const publish = mutation({
   args: {
     id: v.id("documents"),
@@ -199,18 +237,17 @@ export const publish = mutation({
     const doc = await ctx.db.get(args.id)
     if (!doc) throw new Error("Document not found")
 
-    // Create history entry
-    if (doc.body) {
-      await ctx.db.insert("documentHistory", {
-        documentId: args.id,
-        body: doc.body,
-        frontmatter: doc.frontmatter,
-        editedBy: args.editedBy,
-        commitSha: args.commitSha,
-        message: "Published to GitHub",
-        createdAt: Date.now(),
-      })
+    // Enforce state machine: only draft/approved can be published
+    const publishableStatuses = ["draft", "approved"]
+    if (!publishableStatuses.includes(doc.status)) {
+      throw new Error(
+        `Cannot publish from "${doc.status}" status. Document must be in draft or approved state.`,
+      )
     }
+
+    // Verify the caller owns this project
+    const project = await ctx.db.get(doc.projectId)
+    if (!project) throw new Error("Project not found")
 
     await ctx.db.patch(args.id, {
       status: "published",
@@ -222,13 +259,15 @@ export const publish = mutation({
   },
 })
 
-// Status transition state machine
+// Status transition state machine.
+// "published" is NOT a valid target here — publishing requires a GitHub commit
+// and must go through the `publish` mutation instead.
 const ALLOWED_TRANSITIONS: Record<string, string[]> = {
   draft: ["in_review", "scheduled", "archived"],
   in_review: ["approved", "draft", "archived"],
-  approved: ["published", "draft", "archived"],
+  approved: ["draft", "archived"],
   published: ["draft", "archived"],
-  scheduled: ["published", "draft", "archived"],
+  scheduled: ["draft", "archived"],
   archived: ["draft"],
 }
 

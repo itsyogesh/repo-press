@@ -31,7 +31,7 @@ interface RepoSetupFormProps {
 export function RepoSetupForm({ owner, repo, branches, defaultBranch, frameworkConfig }: RepoSetupFormProps) {
   const router = useRouter()
   const user = useQuery(api.auth.getCurrentUser)
-  const createProject = useMutation(api.projects.create)
+  const getOrCreateProject = useMutation(api.projects.getOrCreate)
 
   const [selectedBranch, setSelectedBranch] = useState(defaultBranch)
   const [contentPath, setContentPath] = useState(frameworkConfig.suggestedContentRoots[0] || "")
@@ -49,15 +49,17 @@ export function RepoSetupForm({ owner, repo, branches, defaultBranch, frameworkC
     setIsLoading(true)
 
     try {
-      const projectId = await createProject({
+      const projectId = await getOrCreateProject({
         userId: user._id,
         name: `${owner}/${repo}`,
         repoOwner: owner,
         repoName: repo,
         branch: selectedBranch,
         contentRoot: contentPath,
-        detectedFramework: frameworkConfig.framework as any,
-        contentType: contentType as any,
+        detectedFramework: frameworkConfig.framework as
+          | "fumadocs" | "nextra" | "astro" | "hugo" | "docusaurus" | "jekyll" | "contentlayer" | "next-mdx" | "custom"
+          | undefined,
+        contentType: contentType as "blog" | "docs" | "pages" | "changelog" | "custom",
         frontmatterSchema: frameworkConfig.frontmatterFields,
       })
 

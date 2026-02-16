@@ -34,9 +34,9 @@ interface StudioLayoutProps {
 const STATUS_LABELS: Record<string, { label: string; variant: "default" | "secondary" | "outline" | "destructive" }> = {
   draft: { label: "Draft", variant: "secondary" },
   in_review: { label: "In Review", variant: "outline" },
-  approved: { label: "Approved", variant: "default" },
+  approved: { label: "Approved", variant: "outline" },
   published: { label: "Published", variant: "default" },
-  scheduled: { label: "Scheduled", variant: "outline" },
+  scheduled: { label: "Scheduled", variant: "secondary" },
   archived: { label: "Archived", variant: "destructive" },
 }
 
@@ -62,7 +62,7 @@ export function StudioLayout({ files, initialFile, owner, repo, branch, currentP
       : "skip",
   )
 
-  const createDocument = useMutation(api.documents.create)
+  const getOrCreateDocument = useMutation(api.documents.getOrCreate)
   const saveDraft = useMutation(api.documents.saveDraft)
   const publishDoc = useMutation(api.documents.publish)
 
@@ -106,18 +106,17 @@ export function StudioLayout({ files, initialFile, owner, repo, branch, currentP
     navigateToFile(filePath)
   }
 
-  // Ensure document record exists in Convex
+  // Ensure document record exists in Convex (atomic getOrCreate prevents duplicates)
   const ensureDocumentRecord = React.useCallback(async (): Promise<Id<"documents"> | null> => {
     if (!projectId || !selectedFile || selectedFile.type !== "file" || !user?._id) return null
 
     if (document) return document._id
 
     try {
-      const docId = await createDocument({
+      const docId = await getOrCreateDocument({
         projectId: projectId as Id<"projects">,
         filePath: selectedFile.path,
         title: frontmatter.title || selectedFile.name.replace(/\.(mdx?|markdown)$/i, ""),
-        status: "draft",
         body: content,
         frontmatter,
         githubSha: sha || undefined,
@@ -127,7 +126,7 @@ export function StudioLayout({ files, initialFile, owner, repo, branch, currentP
       console.error("Error creating document record:", error)
       return null
     }
-  }, [projectId, selectedFile, user, document, createDocument, frontmatter, content, sha])
+  }, [projectId, selectedFile, user, document, getOrCreateDocument, frontmatter, content, sha])
 
   // Save Draft — Convex only, no GitHub commit
   const handleSaveDraft = async () => {
@@ -155,7 +154,7 @@ export function StudioLayout({ files, initialFile, owner, repo, branch, currentP
     }
   }
 
-  // Publish — saves to GitHub, then records commit in Convex
+  // Publish — saves draft, commits to GitHub, then transitions status via state machine
   const handlePublish = async () => {
     if (!selectedFile || !user?._id) return
     setIsPublishing(true)
@@ -164,7 +163,7 @@ export function StudioLayout({ files, initialFile, owner, repo, branch, currentP
       const docId = await ensureDocumentRecord()
       if (!docId) throw new Error("Could not create document record")
 
-      // Save draft first so Convex has the latest content
+      // Save draft first so Convex has the latest content (creates history entry)
       await saveDraft({
         id: docId,
         body: content,
@@ -173,7 +172,7 @@ export function StudioLayout({ files, initialFile, owner, repo, branch, currentP
         message: "Pre-publish save",
       })
 
-      // Reconstruct file content and save to GitHub
+      // Reconstruct file content and commit to GitHub
       const fileContent = matter.stringify(content, frontmatter)
       const response = await fetch("/api/github/save", {
         method: "POST",
@@ -194,6 +193,7 @@ export function StudioLayout({ files, initialFile, owner, repo, branch, currentP
       const commitSha = data.commit?.sha || data.content?.sha || ""
       setSha(data.content?.sha || sha)
 
+      // Transition to published (enforces state machine: must be draft or approved)
       await publishDoc({
         id: docId,
         commitSha,
@@ -201,9 +201,9 @@ export function StudioLayout({ files, initialFile, owner, repo, branch, currentP
       })
 
       toast.success("Published to GitHub")
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error publishing:", error)
-      toast.error("Failed to publish")
+      toast.error(error.message || "Failed to publish")
     } finally {
       setIsPublishing(false)
     }
@@ -211,6 +211,7 @@ export function StudioLayout({ files, initialFile, owner, repo, branch, currentP
 
   const currentStatus = document?.status || "draft"
   const statusInfo = STATUS_LABELS[currentStatus] || STATUS_LABELS.draft
+  const canPublish = ["draft", "approved"].includes(currentStatus)
 
   const frontmatterSchema = project?.frontmatterSchema as any[] | undefined
 
@@ -276,6 +277,7 @@ export function StudioLayout({ files, initialFile, owner, repo, branch, currentP
               onPublish={handlePublish}
               isSaving={isSaving}
               isPublishing={isPublishing}
+              canPublish={canPublish}
               statusBadge={
                 <div className="flex items-center gap-1">
                   <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>

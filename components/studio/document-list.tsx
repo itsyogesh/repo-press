@@ -17,9 +17,9 @@ type DocumentStatus = "draft" | "in_review" | "approved" | "published" | "schedu
 const STATUS_CONFIG: Record<DocumentStatus, { label: string; variant: "default" | "secondary" | "outline" | "destructive" }> = {
   draft: { label: "Draft", variant: "secondary" },
   in_review: { label: "In Review", variant: "outline" },
-  approved: { label: "Approved", variant: "default" },
+  approved: { label: "Approved", variant: "outline" },
   published: { label: "Published", variant: "default" },
-  scheduled: { label: "Scheduled", variant: "outline" },
+  scheduled: { label: "Scheduled", variant: "secondary" },
   archived: { label: "Archived", variant: "destructive" },
 }
 
@@ -47,7 +47,12 @@ export function DocumentList({ projectId, selectedFilePath, onSelectDocument }: 
       : "skip",
   )
 
-  const displayedDocs = searchTerm.length >= 2 ? searchResults : documents
+  // When searching, apply the status filter client-side since the search index doesn't support it
+  const filteredSearchResults = searchResults && statusFilter !== "all"
+    ? searchResults.filter((doc) => doc.status === statusFilter)
+    : searchResults
+
+  const displayedDocs = searchTerm.length >= 2 ? filteredSearchResults : documents
 
   return (
     <div className="h-full flex flex-col">

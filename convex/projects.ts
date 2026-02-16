@@ -35,38 +35,68 @@ export const getByRepo = query({
   },
 })
 
+const frameworkValidator = v.optional(
+  v.union(
+    v.literal("fumadocs"),
+    v.literal("nextra"),
+    v.literal("astro"),
+    v.literal("hugo"),
+    v.literal("docusaurus"),
+    v.literal("jekyll"),
+    v.literal("contentlayer"),
+    v.literal("next-mdx"),
+    v.literal("custom"),
+  ),
+)
+
+const contentTypeValidator = v.union(
+  v.literal("blog"),
+  v.literal("docs"),
+  v.literal("pages"),
+  v.literal("changelog"),
+  v.literal("custom"),
+)
+
+const projectArgs = {
+  userId: v.id("users"),
+  name: v.string(),
+  description: v.optional(v.string()),
+  repoOwner: v.string(),
+  repoName: v.string(),
+  branch: v.string(),
+  contentRoot: v.string(),
+  detectedFramework: frameworkValidator,
+  contentType: contentTypeValidator,
+  frontmatterSchema: v.optional(v.any()),
+}
+
 export const create = mutation({
-  args: {
-    userId: v.id("users"),
-    name: v.string(),
-    description: v.optional(v.string()),
-    repoOwner: v.string(),
-    repoName: v.string(),
-    branch: v.string(),
-    contentRoot: v.string(),
-    detectedFramework: v.optional(
-      v.union(
-        v.literal("fumadocs"),
-        v.literal("nextra"),
-        v.literal("astro"),
-        v.literal("hugo"),
-        v.literal("docusaurus"),
-        v.literal("jekyll"),
-        v.literal("contentlayer"),
-        v.literal("next-mdx"),
-        v.literal("custom"),
-      ),
-    ),
-    contentType: v.union(
-      v.literal("blog"),
-      v.literal("docs"),
-      v.literal("pages"),
-      v.literal("changelog"),
-      v.literal("custom"),
-    ),
-    frontmatterSchema: v.optional(v.any()),
-  },
+  args: projectArgs,
   handler: async (ctx, args) => {
+    const now = Date.now()
+    return await ctx.db.insert("projects", {
+      ...args,
+      createdAt: now,
+      updatedAt: now,
+    })
+  },
+})
+
+// Atomically returns existing project or creates a new one.
+// Prevents duplicate projects for the same user + repo + contentRoot.
+export const getOrCreate = mutation({
+  args: projectArgs,
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("projects")
+      .withIndex("by_userId_repo", (q) =>
+        q.eq("userId", args.userId).eq("repoOwner", args.repoOwner).eq("repoName", args.repoName),
+      )
+      .filter((q) => q.eq(q.field("contentRoot"), args.contentRoot))
+      .first()
+
+    if (existing) return existing._id
+
     const now = Date.now()
     return await ctx.db.insert("projects", {
       ...args,
@@ -83,28 +113,8 @@ export const update = mutation({
     description: v.optional(v.string()),
     branch: v.optional(v.string()),
     contentRoot: v.optional(v.string()),
-    detectedFramework: v.optional(
-      v.union(
-        v.literal("fumadocs"),
-        v.literal("nextra"),
-        v.literal("astro"),
-        v.literal("hugo"),
-        v.literal("docusaurus"),
-        v.literal("jekyll"),
-        v.literal("contentlayer"),
-        v.literal("next-mdx"),
-        v.literal("custom"),
-      ),
-    ),
-    contentType: v.optional(
-      v.union(
-        v.literal("blog"),
-        v.literal("docs"),
-        v.literal("pages"),
-        v.literal("changelog"),
-        v.literal("custom"),
-      ),
-    ),
+    detectedFramework: frameworkValidator,
+    contentType: v.optional(contentTypeValidator),
     frontmatterSchema: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
