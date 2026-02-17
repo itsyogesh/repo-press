@@ -7,7 +7,8 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { api } from "@/convex/_generated/api"
 import { getGitHubToken } from "@/lib/auth-server"
-import { getFile, getRepoContents } from "@/lib/github"
+import type { FileTreeNode } from "@/lib/github"
+import { getContentTree, getFile } from "@/lib/github"
 
 interface StudioPageProps {
   params: Promise<{
@@ -43,27 +44,17 @@ export default async function StudioPage({ params, searchParams }: StudioPagePro
   // Use project's contentRoot to scope file listing (falls back to repo root)
   const contentRoot = project?.contentRoot || ""
 
-  let files: any[] = []
+  let tree: FileTreeNode[] = []
   let fileData = null
   let error = null
 
   try {
-    // When a specific path is requested, try to fetch it as a file
-    if (currentPath) {
-      const potentialFileData = await getFile(token, owner, repo, currentPath, currentBranch)
+    // Always fetch the full content tree (filtered to .md/.mdx files)
+    tree = await getContentTree(token, owner, repo, currentBranch, contentRoot)
 
-      if (potentialFileData) {
-        fileData = potentialFileData
-        // Fetch parent directory for the sidebar
-        const parentPath = currentPath.split("/").slice(0, -1).join("/")
-        files = await getRepoContents(token, owner, repo, parentPath, currentBranch)
-      } else {
-        // It is a directory
-        files = await getRepoContents(token, owner, repo, currentPath, currentBranch)
-      }
-    } else {
-      // No path specified — scope to the project's contentRoot
-      files = await getRepoContents(token, owner, repo, contentRoot, currentBranch)
+    // When a specific path is requested, fetch the file content
+    if (currentPath) {
+      fileData = await getFile(token, owner, repo, currentPath, currentBranch)
     }
   } catch (e) {
     console.error("Error fetching studio data:", e)
@@ -96,7 +87,7 @@ export default async function StudioPage({ params, searchParams }: StudioPagePro
         </div>
       ) : (
         <StudioLayout
-          files={files}
+          tree={tree}
           initialFile={fileData}
           owner={owner}
           repo={repo}

@@ -10,7 +10,7 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/componen
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
-import type { GitHubFile } from "@/lib/github"
+import type { FileTreeNode } from "@/lib/github"
 import { DocumentList } from "./document-list"
 import { Editor } from "./editor"
 import { FileTree } from "./file-tree"
@@ -18,7 +18,7 @@ import { Preview } from "./preview"
 import { StatusActions } from "./status-actions"
 
 interface StudioLayoutProps {
-  files: GitHubFile[]
+  tree: FileTreeNode[]
   initialFile?: {
     path: string
     content: string
@@ -40,9 +40,21 @@ const STATUS_LABELS: Record<string, { label: string; variant: "default" | "secon
   archived: { label: "Archived", variant: "destructive" },
 }
 
-export function StudioLayout({ files, initialFile, owner, repo, branch, currentPath, projectId }: StudioLayoutProps) {
+/** Find a node in the tree by path */
+function findNode(nodes: FileTreeNode[], path: string): FileTreeNode | null {
+  for (const node of nodes) {
+    if (node.path === path) return node
+    if (node.children) {
+      const found = findNode(node.children, path)
+      if (found) return found
+    }
+  }
+  return null
+}
+
+export function StudioLayout({ tree, initialFile, owner, repo, branch, currentPath, projectId }: StudioLayoutProps) {
   const router = useRouter()
-  const [selectedFile, setSelectedFile] = React.useState<GitHubFile | null>(null)
+  const [selectedFile, setSelectedFile] = React.useState<FileTreeNode | null>(null)
   const [content, setContent] = React.useState("")
   const [frontmatter, setFrontmatter] = React.useState<Record<string, any>>({})
   const [sha, setSha] = React.useState<string | null>(null)
@@ -51,8 +63,7 @@ export function StudioLayout({ files, initialFile, owner, repo, branch, currentP
 
   // Convex queries/mutations
   const user = useQuery(api.auth.getCurrentUser)
-  // Better Auth returns Id<"user"> (singular) but mutations expect Id<"users"> (plural)
-  const userId = user?._id as unknown as Id<"users"> | undefined
+  const userId = user?._id as string | undefined
   const project = useQuery(api.projects.get, projectId ? { id: projectId as Id<"projects"> } : "skip")
   const document = useQuery(
     api.documents.getByFilePath,
@@ -73,21 +84,21 @@ export function StudioLayout({ files, initialFile, owner, repo, branch, currentP
         setFrontmatter(data)
         setContent(fileContent)
         setSha(initialFile.sha)
-        const fileObj = files.find((f) => f.path === initialFile.path) || {
+        // Find the node in the tree, or create a minimal one
+        const treeNode = findNode(tree, initialFile.path) || {
           name: initialFile.path.split("/").pop() || "",
           path: initialFile.path,
           sha: initialFile.sha,
           type: "file" as const,
-          download_url: null,
         }
-        setSelectedFile(fileObj)
+        setSelectedFile(treeNode)
       } catch (e) {
         console.error("Error parsing frontmatter:", e)
         setContent(initialFile.content)
         setFrontmatter({})
       }
     }
-  }, [initialFile, files])
+  }, [initialFile, tree])
 
   const navigateToFile = React.useCallback(
     (filePath: string) => {
@@ -99,8 +110,10 @@ export function StudioLayout({ files, initialFile, owner, repo, branch, currentP
     [owner, repo, branch, router],
   )
 
-  const handleSelectFile = (file: GitHubFile) => {
-    navigateToFile(file.path)
+  const handleSelectFile = (node: FileTreeNode) => {
+    if (node.type === "file") {
+      navigateToFile(node.path)
+    }
   }
 
   const handleSelectDocument = (filePath: string) => {
@@ -142,7 +155,7 @@ export function StudioLayout({ files, initialFile, owner, repo, branch, currentP
         id: docId,
         body: content,
         frontmatter,
-        editedBy: userId!,
+        editedBy: userId,
         message: "Draft saved",
       })
 
@@ -169,7 +182,7 @@ export function StudioLayout({ files, initialFile, owner, repo, branch, currentP
         id: docId,
         body: content,
         frontmatter,
-        editedBy: userId!,
+        editedBy: userId,
         message: "Pre-publish save",
       })
 
@@ -198,7 +211,7 @@ export function StudioLayout({ files, initialFile, owner, repo, branch, currentP
       await publishDoc({
         id: docId,
         commitSha,
-        editedBy: userId!,
+        editedBy: userId,
       })
 
       toast.success("Published to GitHub")
@@ -238,12 +251,7 @@ export function StudioLayout({ files, initialFile, owner, repo, branch, currentP
                 </TabsTrigger>
               </TabsList>
               <TabsContent value="files" className="flex-1 m-0 overflow-hidden">
-                <FileTree
-                  files={files}
-                  onSelect={handleSelectFile}
-                  selectedPath={selectedFile?.path}
-                  currentPath={currentPath}
-                />
+                <FileTree tree={tree} onSelect={handleSelectFile} selectedPath={selectedFile?.path} />
               </TabsContent>
               <TabsContent value="documents" className="flex-1 m-0 overflow-hidden">
                 <DocumentList
@@ -254,12 +262,7 @@ export function StudioLayout({ files, initialFile, owner, repo, branch, currentP
               </TabsContent>
             </Tabs>
           ) : (
-            <FileTree
-              files={files}
-              onSelect={handleSelectFile}
-              selectedPath={selectedFile?.path}
-              currentPath={currentPath}
-            />
+            <FileTree tree={tree} onSelect={handleSelectFile} selectedPath={selectedFile?.path} />
           )}
         </ResizablePanel>
 

@@ -1,83 +1,30 @@
 "use client"
 
-import { File, Folder } from "lucide-react"
+import { ChevronDown, ChevronRight, File, Folder, FolderOpen } from "lucide-react"
 import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import type { GitHubFile } from "@/lib/github"
+import type { FileTreeNode } from "@/lib/github"
 import { cn } from "@/lib/utils"
 
 interface FileTreeProps {
-  files: GitHubFile[]
-  onSelect: (file: GitHubFile) => void
+  tree: FileTreeNode[]
+  onSelect: (node: FileTreeNode) => void
   selectedPath?: string
-  currentPath: string
 }
 
-export function FileTree({ files, onSelect, selectedPath, currentPath }: FileTreeProps) {
-  // Group files by directory structure
-  // For simplicity in this version, we'll just show a flat list or simple grouping
-  // But the requirement is a "File Browser".
-  // Since the API returns a flat list for a specific path, we might need to fetch recursively or just show the current level.
-  // However, the "Studio" usually implies a full tree.
-  // Given the GitHub API limitations (fetching tree recursively can be large),
-  // we'll implement a simple explorer that can navigate folders.
-
-  // Actually, for a true "VS Code" like experience, we need a recursive tree.
-  // But let's start with the provided flat list and handle navigation.
-
-  // Wait, the `files` prop comes from `getRepoContents`.
-  // If we want a full tree, we need `git/trees` API with recursive=1.
-  // For now, let's assume `files` is the current directory content and we handle navigation.
-
-  // To make it "Studio-like", we should probably fetch the whole tree if possible,
-  // or just handle the current directory and allow navigating up/down.
-
-  // Let's stick to the current directory for now to match the existing logic,
-  // but style it as a sidebar.
-
-  const sortedFiles = React.useMemo(() => {
-    return [...files].sort((a, b) => {
-      if (a.type === b.type) {
-        return a.name.localeCompare(b.name)
-      }
-      return a.type === "dir" ? -1 : 1
-    })
-  }, [files])
-
-  const parentPath = currentPath.split("/").slice(0, -1).join("/")
-  const showUp = currentPath !== "" && !files.some((f) => f.path === parentPath) // Only show if not at root
-
+export function FileTree({ tree, onSelect, selectedPath }: FileTreeProps) {
   return (
     <div className="h-full flex flex-col">
       <div className="p-2 border-b text-xs font-medium text-muted-foreground uppercase tracking-wider">Explorer</div>
       <ScrollArea className="flex-1">
-        <div className="p-2 space-y-1">
-          {showUp && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="w-full justify-start gap-2 px-2 h-8 font-normal text-muted-foreground"
-              onClick={() =>
-                onSelect({
-                  name: "..",
-                  path: parentPath,
-                  type: "dir",
-                  sha: "",
-                  download_url: null,
-                })
-              }
-            >
-              <Folder className="h-4 w-4 shrink-0" />
-              <span className="truncate text-sm">..</span>
-            </Button>
-          )}
-
-          {sortedFiles.map((file) => (
-            <FileTreeItem key={file.path} file={file} isSelected={selectedPath === file.path} onSelect={onSelect} />
-          ))}
-          {sortedFiles.length === 0 && !showUp && (
-            <div className="text-xs text-muted-foreground p-2 text-center">No files found</div>
+        <div className="p-1">
+          {tree.length === 0 ? (
+            <div className="text-xs text-muted-foreground p-3 text-center">No content files found</div>
+          ) : (
+            tree.map((node) => (
+              <TreeItem key={node.path} node={node} depth={0} onSelect={onSelect} selectedPath={selectedPath} />
+            ))
           )}
         </div>
       </ScrollArea>
@@ -85,29 +32,62 @@ export function FileTree({ files, onSelect, selectedPath, currentPath }: FileTre
   )
 }
 
-interface FileTreeItemProps {
-  file: GitHubFile
-  isSelected: boolean
-  onSelect: (file: GitHubFile) => void
+interface TreeItemProps {
+  node: FileTreeNode
+  depth: number
+  onSelect: (node: FileTreeNode) => void
+  selectedPath?: string
 }
 
-function FileTreeItem({ file, isSelected, onSelect }: FileTreeItemProps) {
+function TreeItem({ node, depth, onSelect, selectedPath }: TreeItemProps) {
+  const [isOpen, setIsOpen] = React.useState(depth < 2)
+
+  if (node.type === "dir") {
+    return (
+      <div>
+        <Button
+          variant="ghost"
+          size="sm"
+          className={cn("w-full justify-start gap-1 px-1 h-7 font-normal rounded-sm hover:bg-accent")}
+          style={{ paddingLeft: `${depth * 12 + 4}px` }}
+          onClick={() => setIsOpen(!isOpen)}
+        >
+          {isOpen ? (
+            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          )}
+          {isOpen ? (
+            <FolderOpen className="h-4 w-4 shrink-0 text-blue-500" />
+          ) : (
+            <Folder className="h-4 w-4 shrink-0 text-blue-500" />
+          )}
+          <span className="truncate text-sm">{node.name}</span>
+        </Button>
+        {isOpen && node.children && (
+          <div>
+            {node.children.map((child) => (
+              <TreeItem key={child.path} node={child} depth={depth + 1} onSelect={onSelect} selectedPath={selectedPath} />
+            ))}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   return (
     <Button
       variant="ghost"
       size="sm"
       className={cn(
-        "w-full justify-start gap-2 px-2 h-8 font-normal",
-        isSelected && "bg-accent text-accent-foreground",
+        "w-full justify-start gap-1 px-1 h-7 font-normal rounded-sm",
+        selectedPath === node.path && "bg-accent text-accent-foreground",
       )}
-      onClick={() => onSelect(file)}
+      style={{ paddingLeft: `${depth * 12 + 22}px` }}
+      onClick={() => onSelect(node)}
     >
-      {file.type === "dir" ? (
-        <Folder className="h-4 w-4 shrink-0 text-blue-500" />
-      ) : (
-        <File className="h-4 w-4 shrink-0 text-muted-foreground" />
-      )}
-      <span className="truncate text-sm">{file.name}</span>
+      <File className="h-4 w-4 shrink-0 text-muted-foreground" />
+      <span className="truncate text-sm">{node.name}</span>
     </Button>
   )
 }
