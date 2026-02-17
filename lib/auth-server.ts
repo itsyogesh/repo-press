@@ -16,9 +16,7 @@ export const fetchAuthMutation = authHelpers?.fetchAuthMutation
 export const fetchAuthAction = authHelpers?.fetchAuthAction
 
 /**
- * Get GitHub access token from PAT cookie.
- * OAuth access tokens are stored in Convex accounts table
- * and can be fetched via a Convex query when needed.
+ * Get GitHub access token from PAT cookie or Convex accounts table (OAuth users).
  */
 export async function getGitHubToken(): Promise<string | null> {
   // Check PAT cookie first (simple flow)
@@ -28,7 +26,17 @@ export async function getGitHubToken(): Promise<string | null> {
     return pat
   }
 
-  // For OAuth users, the token is in Convex's accounts table.
-  // Pages that need it should fetch it via a Convex query.
+  // For OAuth users, fetch the token from Convex
+  if (fetchAuthQuery) {
+    try {
+      const { api } = await import("../convex/_generated/api")
+      const token = await fetchAuthQuery(api.auth.getGitHubAccessToken)
+      return token ?? null
+    } catch {
+      // Not authenticated or query failed
+      return null
+    }
+  }
+
   return null
 }

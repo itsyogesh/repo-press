@@ -59,6 +59,7 @@ export async function getRepoBranches(accessToken: string, owner: string, repo: 
   const { data } = await octokit.repos.listBranches({
     owner,
     repo,
+    per_page: 100,
   })
   return data
 }

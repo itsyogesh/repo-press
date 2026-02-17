@@ -128,7 +128,7 @@ export const getOrCreate = mutation({
 export const update = mutation({
   args: {
     id: v.id("documents"),
-    userId: v.id("users"),
+    userId: v.string(),
     title: v.optional(v.string()),
     description: v.optional(v.string()),
     slug: v.optional(v.string()),
@@ -189,7 +189,7 @@ export const saveDraft = mutation({
     id: v.id("documents"),
     body: v.string(),
     frontmatter: v.optional(v.any()),
-    editedBy: v.id("users"),
+    editedBy: v.string(),
     message: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -230,7 +230,7 @@ export const publish = mutation({
   args: {
     id: v.id("documents"),
     commitSha: v.string(),
-    editedBy: v.id("users"),
+    editedBy: v.string(),
   },
   handler: async (ctx, args) => {
     const doc = await ctx.db.get(args.id)
@@ -280,7 +280,7 @@ export const transitionStatus = mutation({
       v.literal("scheduled"),
       v.literal("archived"),
     ),
-    reviewerId: v.optional(v.id("users")),
+    reviewerId: v.optional(v.string()),
     reviewNote: v.optional(v.string()),
     scheduledAt: v.optional(v.number()),
   },

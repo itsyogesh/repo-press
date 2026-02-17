@@ -1,5 +1,4 @@
 import { v } from "convex/values"
-import type { Id } from "./_generated/dataModel"
 import type { MutationCtx } from "./_generated/server"
 import { mutation, query } from "./_generated/server"
 import { authComponent } from "./auth"
@@ -7,29 +6,43 @@ import { authComponent } from "./auth"
 /**
  * Verify that the caller is the user they claim to be.
  * - OAuth users: checks auth identity from session token
- * - PAT users (no auth session): falls back to verifying the user exists
+ * - PAT users (no auth session): accepts the claimed userId
  */
-async function verifyCallerIdentity(ctx: MutationCtx, claimedUserId: Id<"users">) {
-  const authUser = await authComponent.getAuthUser(ctx)
+async function verifyCallerIdentity(ctx: MutationCtx, claimedUserId: string) {
+  const authUser = await authComponent.safeGetAuthUser(ctx)
   if (authUser) {
-    // Better Auth returns Id<"user"> (singular) while schema uses Id<"users"> (plural).
-    // They reference the same table at runtime, so compare as strings.
-    if ((authUser._id as string) !== (claimedUserId as string)) {
+    if ((authUser._id as string) !== claimedUserId) {
       throw new Error("Unauthorized: caller identity does not match userId")
     }
     return
   }
-  // No auth session (PAT user) — verify the user record exists
-  const user = await ctx.db.get(claimedUserId)
-  if (!user) throw new Error("Unauthorized: user not found")
+  // No auth session (PAT user) — allow through
 }
 
 export const list = query({
-  args: { userId: v.id("users") },
+  args: { userId: v.string() },
   handler: async (ctx, args) => {
     return await ctx.db
       .query("projects")
       .withIndex("by_userId", (q) => q.eq("userId", args.userId))
+      .order("desc")
+      .collect()
+  },
+})
+
+// Authenticated version — gets projects for the current logged-in user.
+// Uses the auth component's user ID (which lives in a different table namespace
+// than the app's "users" table), so we query by matching IDs as strings.
+export const listMyProjects = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await authComponent.safeGetAuthUser(ctx)
+    if (!user) return []
+
+    const userId = user._id as string
+    return await ctx.db
+      .query("projects")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
       .order("desc")
       .collect()
   },
@@ -44,7 +57,7 @@ export const get = query({
 
 export const getByRepo = query({
   args: {
-    userId: v.id("users"),
+    userId: v.string(),
     repoOwner: v.string(),
     repoName: v.string(),
   },
@@ -101,7 +114,7 @@ const contentTypeValidator = v.union(
 )
 
 const projectArgs = {
-  userId: v.id("users"),
+  userId: v.string(),
   name: v.string(),
   description: v.optional(v.string()),
   repoOwner: v.string(),

@@ -12,7 +12,6 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { api } from "@/convex/_generated/api"
-import type { Id } from "@/convex/_generated/dataModel"
 
 interface RepoSetupFormProps {
   owner: string
@@ -50,7 +49,7 @@ export function RepoSetupForm({ owner, repo, branches, defaultBranch, frameworkC
 
     try {
       await getOrCreateProject({
-        userId: user._id as unknown as Id<"users">,
+        userId: user._id as string,
         name: `${owner}/${repo}`,
         repoOwner: owner,
         repoName: repo,

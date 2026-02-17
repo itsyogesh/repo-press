@@ -57,7 +57,7 @@ export default defineSchema({
 
   // ─── Core Project Layer ────────────────────────────────────
   projects: defineTable({
-    userId: v.id("users"),
+    userId: v.string(), // Auth component user ID (not app's "users" table)
     name: v.string(),
     description: v.optional(v.string()),
     repoOwner: v.string(),
@@ -175,7 +175,7 @@ export default defineSchema({
     tagIds: v.optional(v.array(v.id("tags"))),
     categoryIds: v.optional(v.array(v.id("categories"))),
     // Review/Workflow
-    reviewerId: v.optional(v.id("users")),
+    reviewerId: v.optional(v.string()),
     reviewNote: v.optional(v.string()),
     // Ordering (Fumadocs/Docusaurus sidebar)
     order: v.optional(v.number()),
@@ -201,7 +201,7 @@ export default defineSchema({
     documentId: v.id("documents"),
     body: v.string(),
     frontmatter: v.optional(v.any()),
-    editedBy: v.id("users"),
+    editedBy: v.string(),
     commitSha: v.optional(v.string()),
     message: v.optional(v.string()),
     createdAt: v.number(),
