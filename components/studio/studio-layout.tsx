@@ -1,15 +1,16 @@
 "use client"
 
-import { useMutation, useQuery } from "convex/react"
+import { useAction, useMutation, useQuery } from "convex/react"
 import matter from "gray-matter"
 import { useRouter } from "next/navigation"
 import * as React from "react"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
+import { getFrameworkConfig, normalizeFrontmatterDates } from "@/lib/framework-adapters"
+import type { FieldVariantMap } from "@/lib/framework-adapters"
 import type { FileTreeNode } from "@/lib/github"
 import { DocumentList } from "./document-list"
 import { Editor } from "./editor"
@@ -29,6 +30,7 @@ interface StudioLayoutProps {
   branch: string
   currentPath: string
   projectId?: string
+  githubToken?: string
 }
 
 const STATUS_LABELS: Record<string, { label: string; variant: "default" | "secondary" | "outline" | "destructive" }> = {
@@ -52,7 +54,7 @@ function findNode(nodes: FileTreeNode[], path: string): FileTreeNode | null {
   return null
 }
 
-export function StudioLayout({ tree, initialFile, owner, repo, branch, currentPath, projectId }: StudioLayoutProps) {
+export function StudioLayout({ tree, initialFile, owner, repo, branch, currentPath, projectId, githubToken }: StudioLayoutProps) {
   const router = useRouter()
   const [selectedFile, setSelectedFile] = React.useState<FileTreeNode | null>(null)
   const [content, setContent] = React.useState("")
@@ -72,6 +74,13 @@ export function StudioLayout({ tree, initialFile, owner, repo, branch, currentPa
       : "skip",
   )
 
+  // File tree title data
+  const titleEntries = useQuery(
+    api.documents.listTitlesForProject,
+    projectId ? { projectId: projectId as Id<"projects"> } : "skip",
+  )
+  const syncTreeTitles = useAction(api.documents.syncTreeTitles)
+
   const getOrCreateDocument = useMutation(api.documents.getOrCreate)
   const saveDraft = useMutation(api.documents.saveDraft)
   const publishDoc = useMutation(api.documents.publish)
@@ -81,7 +90,7 @@ export function StudioLayout({ tree, initialFile, owner, repo, branch, currentPa
     if (initialFile) {
       try {
         const { data, content: fileContent } = matter(initialFile.content)
-        setFrontmatter(data)
+        setFrontmatter(normalizeFrontmatterDates(data))
         setContent(fileContent)
         setSha(initialFile.sha)
         // Find the node in the tree, or create a minimal one
@@ -100,14 +109,58 @@ export function StudioLayout({ tree, initialFile, owner, repo, branch, currentPa
     }
   }, [initialFile, tree])
 
+  // Build title map for the file tree sidebar
+  const titleMap = React.useMemo(() => {
+    if (!titleEntries) return {}
+    const map: Record<string, string> = {}
+    for (const entry of titleEntries) {
+      map[entry.filePath] = entry.title
+    }
+    return map
+  }, [titleEntries])
+
+  // Trigger background sync of file tree titles on first mount
+  const hasSynced = React.useRef(false)
+  React.useEffect(() => {
+    if (hasSynced.current || !projectId || !githubToken || tree.length === 0) return
+    hasSynced.current = true
+
+    // Flatten tree to get all file paths + shas
+    const files: { path: string; sha: string }[] = []
+    function collectFiles(nodes: FileTreeNode[]) {
+      for (const node of nodes) {
+        if (node.type === "file") {
+          files.push({ path: node.path, sha: node.sha })
+        } else if (node.children) {
+          collectFiles(node.children)
+        }
+      }
+    }
+    collectFiles(tree)
+
+    if (files.length > 0) {
+      syncTreeTitles({
+        projectId: projectId as Id<"projects">,
+        owner,
+        repo,
+        branch,
+        files,
+        githubToken,
+      }).catch((err) => {
+        console.error("Failed to sync tree titles:", err)
+      })
+    }
+  }, [projectId, githubToken, tree, owner, repo, branch, syncTreeTitles])
+
   const navigateToFile = React.useCallback(
     (filePath: string) => {
       const studioBase = `/dashboard/${owner}/${repo}/studio`
       const params = new URLSearchParams()
       params.set("branch", branch)
+      if (projectId) params.set("projectId", projectId)
       router.push(`${studioBase}/${filePath}?${params.toString()}`)
     },
-    [owner, repo, branch, router],
+    [owner, repo, branch, projectId, router],
   )
 
   const handleSelectFile = (node: FileTreeNode) => {
@@ -229,52 +282,86 @@ export function StudioLayout({ tree, initialFile, owner, repo, branch, currentPa
 
   const frontmatterSchema = project?.frontmatterSchema as any[] | undefined
 
+  // Derive fieldVariants from the project's detected framework
+  const fieldVariants: FieldVariantMap = React.useMemo(() => {
+    if (!project?.detectedFramework) return {}
+    const config = getFrameworkConfig(project.detectedFramework as string)
+    return config.fieldVariants
+  }, [project?.detectedFramework])
+
+  // Scroll sync between editor and preview
+  const editorScrollRef = React.useRef<HTMLDivElement>(null)
+  const previewScrollRef = React.useRef<HTMLDivElement>(null)
+  const isSyncingScroll = React.useRef(false)
+
+  const syncScroll = React.useCallback((source: "editor" | "preview") => {
+    if (isSyncingScroll.current) return
+    isSyncingScroll.current = true
+
+    const sourceEl = source === "editor" ? editorScrollRef.current : previewScrollRef.current
+    const targetEl = source === "editor" ? previewScrollRef.current : editorScrollRef.current
+
+    if (sourceEl && targetEl) {
+      const maxScroll = sourceEl.scrollHeight - sourceEl.clientHeight
+      const pct = maxScroll > 0 ? sourceEl.scrollTop / maxScroll : 0
+      const targetMax = targetEl.scrollHeight - targetEl.clientHeight
+      targetEl.scrollTop = pct * targetMax
+    }
+
+    requestAnimationFrame(() => {
+      isSyncingScroll.current = false
+    })
+  }, [])
+
+  const handleEditorScroll = React.useCallback(() => syncScroll("editor"), [syncScroll])
+  const handlePreviewScroll = React.useCallback(() => syncScroll("preview"), [syncScroll])
+
   return (
-    <div className="h-[calc(100vh-4rem)] w-full border-t">
-      <ResizablePanelGroup orientation="horizontal">
-        {/* Left sidebar: file tree + document list tabs */}
-        <ResizablePanel defaultSize={20} minSize={15} maxSize={30}>
-          {projectId ? (
-            <Tabs defaultValue="files" className="h-full flex flex-col">
-              <TabsList className="w-full rounded-none border-b h-9 bg-transparent p-0">
-                <TabsTrigger
-                  value="files"
-                  className="flex-1 rounded-none border-b-2 border-transparent data-[state=active]:border-foreground data-[state=active]:bg-transparent h-9 text-xs"
-                >
-                  Files
-                </TabsTrigger>
-                <TabsTrigger
-                  value="documents"
-                  className="flex-1 rounded-none border-b-2 border-transparent data-[state=active]:border-foreground data-[state=active]:bg-transparent h-9 text-xs"
-                >
-                  Documents
-                </TabsTrigger>
-              </TabsList>
-              <TabsContent value="files" className="flex-1 m-0 overflow-hidden">
-                <FileTree tree={tree} onSelect={handleSelectFile} selectedPath={selectedFile?.path} />
-              </TabsContent>
-              <TabsContent value="documents" className="flex-1 m-0 overflow-hidden">
-                <DocumentList
-                  projectId={projectId}
-                  selectedFilePath={selectedFile?.path}
-                  onSelectDocument={handleSelectDocument}
-                />
-              </TabsContent>
-            </Tabs>
-          ) : (
-            <FileTree tree={tree} onSelect={handleSelectFile} selectedPath={selectedFile?.path} />
-          )}
-        </ResizablePanel>
+    <div className="h-full w-full border-t flex overflow-hidden">
+      {/* Left sidebar: file tree + document list tabs */}
+      <div className="w-64 shrink-0 border-r bg-muted/30 overflow-hidden flex flex-col">
+        {projectId ? (
+          <Tabs defaultValue="files" className="h-full flex flex-col">
+            <TabsList className="w-full shrink-0 rounded-none border-b h-9 bg-transparent p-0">
+              <TabsTrigger
+                value="files"
+                className="flex-1 rounded-none border-b-2 border-transparent data-[state=active]:border-foreground data-[state=active]:bg-transparent h-9 text-xs"
+              >
+                Files
+              </TabsTrigger>
+              <TabsTrigger
+                value="documents"
+                className="flex-1 rounded-none border-b-2 border-transparent data-[state=active]:border-foreground data-[state=active]:bg-transparent h-9 text-xs"
+              >
+                Documents
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="files" className="flex-1 m-0 overflow-hidden">
+              <FileTree tree={tree} onSelect={handleSelectFile} selectedPath={selectedFile?.path} titleMap={titleMap} />
+            </TabsContent>
+            <TabsContent value="documents" className="flex-1 m-0 overflow-hidden">
+              <DocumentList
+                projectId={projectId}
+                selectedFilePath={selectedFile?.path}
+                onSelectDocument={handleSelectDocument}
+              />
+            </TabsContent>
+          </Tabs>
+        ) : (
+          <FileTree tree={tree} onSelect={handleSelectFile} selectedPath={selectedFile?.path} titleMap={titleMap} />
+        )}
+      </div>
 
-        <ResizableHandle />
-
+      {/* Main content: editor + preview split */}
+      <div className="flex-1 min-w-0 flex">
         {/* Editor panel */}
-        <ResizablePanel defaultSize={40} minSize={30}>
+        <div className="flex-1 min-w-0 border-r overflow-hidden">
           {selectedFile ? (
             <Editor
               content={content}
               frontmatter={frontmatter}
               frontmatterSchema={frontmatterSchema}
+              fieldVariants={fieldVariants}
               onChangeContent={setContent}
               onChangeFrontmatter={(key, value) => setFrontmatter((prev) => ({ ...prev, [key]: value }))}
               onSaveDraft={handleSaveDraft}
@@ -288,19 +375,28 @@ export function StudioLayout({ tree, initialFile, owner, repo, branch, currentPa
                   {document && <StatusActions documentId={document._id} currentStatus={currentStatus as any} />}
                 </div>
               }
+              scrollContainerRef={editorScrollRef}
+              onScroll={handleEditorScroll}
             />
           ) : (
             <div className="h-full flex items-center justify-center text-muted-foreground">Select a file to edit</div>
           )}
-        </ResizablePanel>
-
-        <ResizableHandle />
+        </div>
 
         {/* Preview panel */}
-        <ResizablePanel defaultSize={40} minSize={30}>
-          <Preview content={content} frontmatter={frontmatter} />
-        </ResizablePanel>
-      </ResizablePanelGroup>
+        <div className="flex-1 min-w-0 overflow-hidden">
+          <Preview
+            content={content}
+            frontmatter={frontmatter}
+            fieldVariants={fieldVariants}
+            owner={owner}
+            repo={repo}
+            branch={branch}
+            scrollContainerRef={previewScrollRef}
+            onScroll={handlePreviewScroll}
+          />
+        </div>
+      </div>
     </div>
   )
 }

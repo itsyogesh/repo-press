@@ -54,7 +54,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
         </div>
 
         <Link
-          href={`/dashboard/${project.repoOwner}/${project.repoName}/studio?branch=${project.branch}`}
+          href={`/dashboard/${project.repoOwner}/${project.repoName}/studio?branch=${project.branch}&projectId=${project._id}`}
           className="w-full mt-2"
         >
           <Button className="w-full" variant="default">

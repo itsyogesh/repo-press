@@ -7,30 +7,15 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { Textarea } from "@/components/ui/textarea"
-
-type FrontmatterFieldDef = {
-  name: string
-  type: "string" | "string[]" | "number" | "boolean" | "date" | "image"
-  required: boolean
-  description: string
-  defaultValue?: any
-}
-
-const DEFAULT_SCHEMA: FrontmatterFieldDef[] = [
-  { name: "title", type: "string", required: true, description: "Page or post title" },
-  { name: "description", type: "string", required: false, description: "SEO meta description" },
-  { name: "date", type: "date", required: false, description: "Publication date" },
-  { name: "draft", type: "boolean", required: false, description: "Whether this is a draft" },
-  { name: "tags", type: "string[]", required: false, description: "Tags (comma separated)" },
-  { name: "coverImage", type: "image", required: false, description: "Cover image URL" },
-]
+import { UNIVERSAL_FIELDS, buildMergedFieldList, normalizeDate } from "@/lib/framework-adapters"
+import type { FieldVariantMap, FrontmatterFieldDef, MergedFieldDef } from "@/lib/framework-adapters"
 
 interface EditorProps {
   content: string
   frontmatter: Record<string, any>
   frontmatterSchema?: FrontmatterFieldDef[]
+  fieldVariants?: FieldVariantMap
   onChangeContent: (value: string) => void
   onChangeFrontmatter: (key: string, value: any) => void
   onSaveDraft: () => void
@@ -39,12 +24,15 @@ interface EditorProps {
   isPublishing: boolean
   canPublish: boolean
   statusBadge: React.ReactNode
+  scrollContainerRef?: React.RefObject<HTMLDivElement | null>
+  onScroll?: () => void
 }
 
 export function Editor({
   content,
   frontmatter,
   frontmatterSchema,
+  fieldVariants,
   onChangeContent,
   onChangeFrontmatter,
   onSaveDraft,
@@ -53,10 +41,20 @@ export function Editor({
   isPublishing,
   canPublish,
   statusBadge,
+  scrollContainerRef,
+  onScroll,
 }: EditorProps) {
   const [isFrontmatterOpen, setIsFrontmatterOpen] = React.useState(true)
+  const [showEmptySchema, setShowEmptySchema] = React.useState(false)
 
-  const schema = frontmatterSchema && frontmatterSchema.length > 0 ? frontmatterSchema : DEFAULT_SCHEMA
+  const schema = frontmatterSchema && frontmatterSchema.length > 0 ? frontmatterSchema : UNIVERSAL_FIELDS
+  const mergedFields = React.useMemo(
+    () => buildMergedFieldList(frontmatter, schema, fieldVariants),
+    [frontmatter, schema, fieldVariants],
+  )
+
+  const fieldsInFile = mergedFields.filter((f) => f.isInFile)
+  const emptySchemaFields = mergedFields.filter((f) => !f.isInFile)
 
   return (
     <div className="h-full flex flex-col">
@@ -82,7 +80,7 @@ export function Editor({
         </div>
       </div>
 
-      <ScrollArea className="flex-1">
+      <div ref={scrollContainerRef} onScroll={onScroll} className="flex-1 overflow-y-auto">
         <div className="p-4 space-y-6">
           <Collapsible
             open={isFrontmatterOpen}
@@ -99,14 +97,46 @@ export function Editor({
               </CollapsibleTrigger>
             </div>
             <CollapsibleContent className="p-4 space-y-4">
-              {schema.map((field) => (
-                <FrontmatterField
-                  key={field.name}
+              {fieldsInFile.map((field) => (
+                <MergedFrontmatterField
+                  key={field.actualFieldName}
                   field={field}
-                  value={frontmatter[field.name]}
-                  onChange={(value) => onChangeFrontmatter(field.name, value)}
+                  value={frontmatter[field.actualFieldName]}
+                  onChange={(value) => onChangeFrontmatter(field.actualFieldName, value)}
                 />
               ))}
+              {emptySchemaFields.length > 0 && (
+                <div className="border-t pt-3 mt-3">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs text-muted-foreground p-0 h-auto hover:text-foreground"
+                    onClick={() => setShowEmptySchema(!showEmptySchema)}
+                  >
+                    {showEmptySchema ? (
+                      <ChevronDown className="h-3 w-3 mr-1" />
+                    ) : (
+                      <ChevronRight className="h-3 w-3 mr-1" />
+                    )}
+                    Show {emptySchemaFields.length} available schema field{emptySchemaFields.length !== 1 ? "s" : ""}
+                    <span className="ml-1 text-muted-foreground/70">
+                      ({emptySchemaFields.map((f) => f.name).join(", ")} — not in this file)
+                    </span>
+                  </Button>
+                  {showEmptySchema && (
+                    <div className="mt-3 space-y-4">
+                      {emptySchemaFields.map((field) => (
+                        <MergedFrontmatterField
+                          key={field.actualFieldName}
+                          field={field}
+                          value={frontmatter[field.actualFieldName]}
+                          onChange={(value) => onChangeFrontmatter(field.actualFieldName, value)}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </CollapsibleContent>
           </Collapsible>
 
@@ -120,45 +150,66 @@ export function Editor({
             />
           </div>
         </div>
-      </ScrollArea>
+      </div>
     </div>
   )
 }
 
-function FrontmatterField({
+function MergedFrontmatterField({
   field,
   value,
   onChange,
 }: {
-  field: FrontmatterFieldDef
+  field: MergedFieldDef
   value: any
   onChange: (value: any) => void
 }) {
+  const id = field.actualFieldName
+  // Show schema description as helper text when the actual field name differs from schema name
+  const hasSchemaHint = field.actualFieldName !== field.name && field.description !== field.actualFieldName
+
+  const labelEl = (
+    <div>
+      <Label htmlFor={id} className="font-semibold">
+        {field.actualFieldName}
+      </Label>
+      {hasSchemaHint && <p className="text-xs text-muted-foreground mt-0.5">{field.description}</p>}
+    </div>
+  )
+
   switch (field.type) {
     case "boolean":
       return (
         <div className="flex items-center gap-2">
-          <Checkbox id={field.name} checked={!!value} onCheckedChange={(checked) => onChange(checked)} />
-          <Label htmlFor={field.name} className="text-sm font-normal">
-            {field.description}
-          </Label>
+          <Checkbox id={id} checked={!!value} onCheckedChange={(checked) => onChange(checked)} />
+          <div>
+            <Label htmlFor={id} className="text-sm font-semibold">
+              {field.actualFieldName}
+            </Label>
+            {hasSchemaHint && <p className="text-xs text-muted-foreground">{field.description}</p>}
+          </div>
         </div>
       )
 
     case "date":
       return (
-        <div className="grid gap-2">
-          <Label htmlFor={field.name}>{field.description}</Label>
-          <Input id={field.name} type="date" value={value || ""} onChange={(e) => onChange(e.target.value)} />
+        <div className="grid gap-1">
+          {labelEl}
+          <Input
+            id={id}
+            type="date"
+            value={normalizeDate(value)}
+            onChange={(e) => onChange(e.target.value)}
+          />
         </div>
       )
 
     case "number":
       return (
-        <div className="grid gap-2">
-          <Label htmlFor={field.name}>{field.description}</Label>
+        <div className="grid gap-1">
+          {labelEl}
           <Input
-            id={field.name}
+            id={id}
             type="number"
             value={value ?? ""}
             onChange={(e) => onChange(e.target.value ? Number(e.target.value) : undefined)}
@@ -168,10 +219,10 @@ function FrontmatterField({
 
     case "string[]":
       return (
-        <div className="grid gap-2">
-          <Label htmlFor={field.name}>{field.description}</Label>
+        <div className="grid gap-1">
+          {labelEl}
           <Input
-            id={field.name}
+            id={id}
             value={Array.isArray(value) ? value.join(", ") : value || ""}
             onChange={(e) => {
               const raw = e.target.value
@@ -191,29 +242,47 @@ function FrontmatterField({
 
     case "image":
       return (
-        <div className="grid gap-2">
-          <Label htmlFor={field.name}>{field.description}</Label>
+        <div className="grid gap-1">
+          {labelEl}
           <Input
-            id={field.name}
+            id={id}
             value={value || ""}
             onChange={(e) => onChange(e.target.value)}
             placeholder="/images/cover.jpg"
           />
         </div>
       )
-    default:
+
+    case "object":
+      return (
+        <div className="grid gap-1">
+          {labelEl}
+          <Textarea
+            id={id}
+            value={typeof value === "object" ? JSON.stringify(value, null, 2) : String(value ?? "")}
+            disabled
+            className="font-mono text-xs h-24 bg-muted"
+          />
+        </div>
+      )
+
+    default: {
       // Use textarea for description-like fields
-      if (
+      const isLongText =
+        field.actualFieldName === "description" ||
+        field.actualFieldName === "summary" ||
+        field.actualFieldName === "excerpt" ||
+        field.actualFieldName === "bio" ||
         field.name === "description" ||
         field.name === "summary" ||
-        field.name === "excerpt" ||
-        field.name === "bio"
-      ) {
+        field.name === "excerpt"
+
+      if (isLongText) {
         return (
-          <div className="grid gap-2">
-            <Label htmlFor={field.name}>{field.description}</Label>
+          <div className="grid gap-1">
+            {labelEl}
             <Textarea
-              id={field.name}
+              id={id}
               value={value || ""}
               onChange={(e) => onChange(e.target.value)}
               placeholder={field.description}
@@ -223,15 +292,16 @@ function FrontmatterField({
         )
       }
       return (
-        <div className="grid gap-2">
-          <Label htmlFor={field.name}>{field.description}</Label>
+        <div className="grid gap-1">
+          {labelEl}
           <Input
-            id={field.name}
+            id={id}
             value={value || ""}
             onChange={(e) => onChange(e.target.value)}
             placeholder={field.description}
           />
         </div>
       )
+    }
   }
 }

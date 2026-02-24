@@ -1,7 +1,9 @@
 import { ConvexHttpClient } from "convex/browser"
+import type { Id } from "@/convex/_generated/dataModel"
 import { AlertCircle } from "lucide-react"
 import Link from "next/link"
 import { redirect } from "next/navigation"
+import { ProjectSwitcher } from "@/components/studio/project-switcher"
 import { StudioLayout } from "@/components/studio/studio-layout"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
@@ -18,6 +20,7 @@ interface StudioPageProps {
   }>
   searchParams: Promise<{
     branch?: string
+    projectId?: string
   }>
 }
 
@@ -29,17 +32,23 @@ export default async function StudioPage({ params, searchParams }: StudioPagePro
   }
 
   const { owner, repo, path } = await params
-  const { branch } = await searchParams
+  const { branch, projectId: projectIdParam } = await searchParams
   const currentBranch = branch || "main"
   const currentPath = path ? path.join("/") : ""
 
-  // Look up the project server-side by repo owner/name + branch
+  // Look up the project: prefer explicit projectId, fall back to repo+branch lookup
   const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
-  const project = await convex.query(api.projects.findByRepo, {
-    repoOwner: owner,
-    repoName: repo,
-    branch: currentBranch,
-  })
+  let project = null
+  if (projectIdParam) {
+    project = await convex.query(api.projects.get, { id: projectIdParam as Id<"projects"> })
+  }
+  if (!project) {
+    project = await convex.query(api.projects.findByRepo, {
+      repoOwner: owner,
+      repoName: repo,
+      branch: currentBranch,
+    })
+  }
 
   // Use project's contentRoot to scope file listing (falls back to repo root)
   const contentRoot = project?.contentRoot || ""
@@ -62,14 +71,25 @@ export default async function StudioPage({ params, searchParams }: StudioPagePro
   }
 
   return (
-    <div className="flex flex-col h-screen">
-      <div className="border-b bg-background">
+    <div className="h-screen flex flex-col overflow-hidden">
+      <div className="shrink-0 border-b bg-background">
         <div className="container mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <h1 className="text-lg font-semibold">
               {owner}/{repo}
             </h1>
             <span className="text-sm text-muted-foreground">Studio</span>
+            {contentRoot && (
+              <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded">{contentRoot}</span>
+            )}
+            {project && (
+              <ProjectSwitcher
+                currentProjectId={project._id}
+                owner={owner}
+                repo={repo}
+                branch={currentBranch}
+              />
+            )}
           </div>
           <Button variant="outline" size="sm" asChild>
             <Link href="/dashboard">Back to Dashboard</Link>
@@ -86,15 +106,18 @@ export default async function StudioPage({ params, searchParams }: StudioPagePro
           </Alert>
         </div>
       ) : (
-        <StudioLayout
-          tree={tree}
-          initialFile={fileData}
-          owner={owner}
-          repo={repo}
-          branch={currentBranch}
-          currentPath={currentPath}
-          projectId={project?._id}
-        />
+        <div className="flex-1 min-h-0">
+          <StudioLayout
+            tree={tree}
+            initialFile={fileData}
+            owner={owner}
+            repo={repo}
+            branch={currentBranch}
+            currentPath={currentPath}
+            projectId={project?._id}
+            githubToken={token}
+          />
+        </div>
       )}
     </div>
   )

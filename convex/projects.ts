@@ -91,19 +91,7 @@ export const findByRepo = query({
   },
 })
 
-const frameworkValidator = v.optional(
-  v.union(
-    v.literal("fumadocs"),
-    v.literal("nextra"),
-    v.literal("astro"),
-    v.literal("hugo"),
-    v.literal("docusaurus"),
-    v.literal("jekyll"),
-    v.literal("contentlayer"),
-    v.literal("next-mdx"),
-    v.literal("custom"),
-  ),
-)
+const frameworkValidator = v.optional(v.string())
 
 const contentTypeValidator = v.union(
   v.literal("blog"),
@@ -155,7 +143,23 @@ export const getOrCreate = mutation({
       .filter((q) => q.and(q.eq(q.field("branch"), args.branch), q.eq(q.field("contentRoot"), args.contentRoot)))
       .first()
 
-    if (existing) return existing._id
+    if (existing) {
+      // Update framework/schema if re-detected values differ from stored ones
+      const updates: Record<string, unknown> = {}
+      if (args.detectedFramework && args.detectedFramework !== existing.detectedFramework) {
+        updates.detectedFramework = args.detectedFramework
+      }
+      if (args.frontmatterSchema && JSON.stringify(args.frontmatterSchema) !== JSON.stringify(existing.frontmatterSchema)) {
+        updates.frontmatterSchema = args.frontmatterSchema
+      }
+      if (args.contentType && args.contentType !== existing.contentType) {
+        updates.contentType = args.contentType
+      }
+      if (Object.keys(updates).length > 0) {
+        await ctx.db.patch(existing._id, { ...updates, updatedAt: Date.now() })
+      }
+      return existing._id
+    }
 
     const now = Date.now()
     return await ctx.db.insert("projects", {
@@ -181,6 +185,28 @@ export const update = mutation({
     const { id, ...updates } = args
     await ctx.db.patch(id, {
       ...updates,
+      updatedAt: Date.now(),
+    })
+  },
+})
+
+export const updateFramework = mutation({
+  args: {
+    id: v.id("projects"),
+    userId: v.string(),
+    detectedFramework: v.string(),
+    frontmatterSchema: v.optional(v.any()),
+  },
+  handler: async (ctx, args) => {
+    await verifyCallerIdentity(ctx, args.userId)
+
+    const project = await ctx.db.get(args.id)
+    if (!project) throw new Error("Project not found")
+    if (project.userId !== args.userId) throw new Error("Unauthorized")
+
+    await ctx.db.patch(args.id, {
+      detectedFramework: args.detectedFramework,
+      frontmatterSchema: args.frontmatterSchema,
       updatedAt: Date.now(),
     })
   },

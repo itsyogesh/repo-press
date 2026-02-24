@@ -64,19 +64,7 @@ export default defineSchema({
     repoName: v.string(),
     branch: v.string(),
     contentRoot: v.string(), // e.g. "" for root, "apps/docs/content/docs", "content/blog"
-    detectedFramework: v.optional(
-      v.union(
-        v.literal("fumadocs"),
-        v.literal("nextra"),
-        v.literal("astro"),
-        v.literal("hugo"),
-        v.literal("docusaurus"),
-        v.literal("jekyll"),
-        v.literal("contentlayer"),
-        v.literal("next-mdx"),
-        v.literal("custom"),
-      ),
-    ),
+    detectedFramework: v.optional(v.string()),
     contentType: v.union(
       v.literal("blog"),
       v.literal("docs"),

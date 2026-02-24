@@ -1,5 +1,6 @@
 import { v } from "convex/values"
-import { internalMutation, mutation, query } from "./_generated/server"
+import { api } from "./_generated/api"
+import { action, internalMutation, mutation, query } from "./_generated/server"
 
 export const listByProject = query({
   args: {
@@ -321,5 +322,90 @@ export const transitionStatus = mutation({
     }
 
     await ctx.db.patch(args.id, updates)
+  },
+})
+
+// ─── File Tree Titles (Studio V2) ──────────────────────────────
+
+/** Returns filePath → title pairs for all documents in a project. */
+export const listTitlesForProject = query({
+  args: { projectId: v.id("projects") },
+  handler: async (ctx, args) => {
+    const docs = await ctx.db
+      .query("documents")
+      .withIndex("by_projectId", (q) => q.eq("projectId", args.projectId))
+      .collect()
+    return docs.map((d) => ({ filePath: d.filePath, title: d.title }))
+  },
+})
+
+/**
+ * Background action: syncs file tree titles by creating document records
+ * for files that don't already have one. Fetches content from GitHub
+ * to extract the title from frontmatter.
+ */
+export const syncTreeTitles = action({
+  args: {
+    projectId: v.id("projects"),
+    owner: v.string(),
+    repo: v.string(),
+    branch: v.string(),
+    files: v.array(v.object({ path: v.string(), sha: v.string() })),
+    githubToken: v.string(),
+  },
+  handler: async (ctx, args) => {
+    // Check which files already have document records
+    const existingDocs = await ctx.runQuery(api.documents.listByProject, {
+      projectId: args.projectId,
+    })
+    const existingPaths = new Set(existingDocs.map((d) => d.filePath))
+
+    const missingFiles = args.files.filter((f) => !existingPaths.has(f.path))
+    if (missingFiles.length === 0) return
+
+    // Fetch and sync in batches of 5 to avoid rate limits
+    const BATCH_SIZE = 5
+    for (let i = 0; i < missingFiles.length; i += BATCH_SIZE) {
+      const batch = missingFiles.slice(i, i + BATCH_SIZE)
+      await Promise.all(
+        batch.map(async (file) => {
+          try {
+            const response = await fetch(
+              `https://api.github.com/repos/${args.owner}/${args.repo}/contents/${encodeURIComponent(file.path)}?ref=${args.branch}`,
+              {
+                headers: {
+                  Authorization: `token ${args.githubToken}`,
+                  Accept: "application/vnd.github.v3.raw",
+                },
+              },
+            )
+            if (!response.ok) return
+
+            const content = await response.text()
+
+            // Extract title from frontmatter (simple regex — no gray-matter in Convex)
+            let title =
+              file.path
+                .split("/")
+                .pop()
+                ?.replace(/\.(mdx?|markdown)$/i, "") || file.path
+            const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/)
+            if (fmMatch) {
+              const titleMatch = fmMatch[1].match(/^title:\s*["']?(.+?)["']?\s*$/m)
+              if (titleMatch) title = titleMatch[1].trim()
+            }
+
+            await ctx.runMutation(api.documents.getOrCreate, {
+              projectId: args.projectId,
+              filePath: file.path,
+              title,
+              githubSha: file.sha,
+            })
+          } catch {
+            // Skip files that fail to fetch
+          }
+        }),
+      )
+    }
   },
 })

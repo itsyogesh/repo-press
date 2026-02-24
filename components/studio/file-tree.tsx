@@ -11,9 +11,10 @@ interface FileTreeProps {
   tree: FileTreeNode[]
   onSelect: (node: FileTreeNode) => void
   selectedPath?: string
+  titleMap?: Record<string, string>
 }
 
-export function FileTree({ tree, onSelect, selectedPath }: FileTreeProps) {
+export function FileTree({ tree, onSelect, selectedPath, titleMap }: FileTreeProps) {
   return (
     <div className="h-full flex flex-col">
       <div className="p-2 border-b text-xs font-medium text-muted-foreground uppercase tracking-wider">Explorer</div>
@@ -23,7 +24,7 @@ export function FileTree({ tree, onSelect, selectedPath }: FileTreeProps) {
             <div className="text-xs text-muted-foreground p-3 text-center">No content files found</div>
           ) : (
             tree.map((node) => (
-              <TreeItem key={node.path} node={node} depth={0} onSelect={onSelect} selectedPath={selectedPath} />
+              <TreeItem key={node.path} node={node} depth={0} onSelect={onSelect} selectedPath={selectedPath} titleMap={titleMap} />
             ))
           )}
         </div>
@@ -37,9 +38,10 @@ interface TreeItemProps {
   depth: number
   onSelect: (node: FileTreeNode) => void
   selectedPath?: string
+  titleMap?: Record<string, string>
 }
 
-function TreeItem({ node, depth, onSelect, selectedPath }: TreeItemProps) {
+function TreeItem({ node, depth, onSelect, selectedPath, titleMap }: TreeItemProps) {
   const [isOpen, setIsOpen] = React.useState(depth < 2)
 
   if (node.type === "dir") {
@@ -67,7 +69,7 @@ function TreeItem({ node, depth, onSelect, selectedPath }: TreeItemProps) {
         {isOpen && node.children && (
           <div>
             {node.children.map((child) => (
-              <TreeItem key={child.path} node={child} depth={depth + 1} onSelect={onSelect} selectedPath={selectedPath} />
+              <TreeItem key={child.path} node={child} depth={depth + 1} onSelect={onSelect} selectedPath={selectedPath} titleMap={titleMap} />
             ))}
           </div>
         )}
@@ -75,19 +77,25 @@ function TreeItem({ node, depth, onSelect, selectedPath }: TreeItemProps) {
     )
   }
 
+  const displayTitle = titleMap?.[node.path]
+
   return (
     <Button
       variant="ghost"
       size="sm"
       className={cn(
-        "w-full justify-start gap-1 px-1 h-7 font-normal rounded-sm",
+        "w-full justify-start gap-1 px-1 font-normal rounded-sm",
+        displayTitle ? "h-auto py-1" : "h-7",
         selectedPath === node.path && "bg-accent text-accent-foreground",
       )}
       style={{ paddingLeft: `${depth * 12 + 22}px` }}
       onClick={() => onSelect(node)}
+      title={node.name}
     >
       <File className="h-4 w-4 shrink-0 text-muted-foreground" />
-      <span className="truncate text-sm">{node.name}</span>
+      <span className="truncate text-sm">
+        {displayTitle || node.name}
+      </span>
     </Button>
   )
 }

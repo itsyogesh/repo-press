@@ -29,11 +29,11 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
   })
 }
 
-// Query for getting the current authenticated user
+// Query for getting the current authenticated user (returns null when unauthenticated)
 export const getCurrentUser = query({
   args: {},
   handler: async (ctx) => {
-    return authComponent.getAuthUser(ctx)
+    return authComponent.safeGetAuthUser(ctx)
   },
 })
 
