@@ -3,8 +3,8 @@
 import { File, Folder } from "lucide-react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
-import { cn } from "@/lib/utils"
 import type { GitHubFile } from "@/lib/github"
+import { cn } from "@/lib/utils"
 
 interface FileBrowserProps {
   files: GitHubFile[]

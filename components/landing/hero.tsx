@@ -1,6 +1,6 @@
 import { ArrowRight } from "lucide-react"
-import { Button } from "@/components/ui/button"
 import Link from "next/link"
+import { Button } from "@/components/ui/button"
 
 export default function Hero() {
   return (
@@ -65,7 +65,9 @@ export default function Hero() {
               <div className="w-1/2 bg-white p-6 text-zinc-900 overflow-hidden">
                 <h1 className="text-3xl font-bold mb-4">The Future of Docs</h1>
                 <p className="mb-4 text-zinc-600">This is how we write now.</p>
-                <button className="bg-black text-white px-4 py-2 rounded-md text-xs">Click me</button>
+                <button type="button" className="bg-black text-white px-4 py-2 rounded-md text-xs">
+                  Click me
+                </button>
               </div>
             </div>
           </div>

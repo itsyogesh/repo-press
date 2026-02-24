@@ -1,9 +1,10 @@
+import { AlertCircle } from "lucide-react"
 import { redirect } from "next/navigation"
-import { getUserRepos } from "@/lib/github"
+import { ProjectList } from "@/components/project-list"
 import { RepoCard } from "@/components/repo-card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { AlertCircle } from "lucide-react"
 import { getGitHubToken } from "@/lib/auth-server"
+import { getUserRepos } from "@/lib/github"
 
 export default async function DashboardPage() {
   const token = await getGitHubToken()
@@ -12,7 +13,7 @@ export default async function DashboardPage() {
     redirect("/login")
   }
 
-  let repos = []
+  let repos: Awaited<ReturnType<typeof getUserRepos>> = []
   let error = null
   let shouldRedirect = false
 
@@ -21,11 +22,9 @@ export default async function DashboardPage() {
   } catch (e: any) {
     console.error("Error fetching repos:", e)
 
-    // Check for 401 Bad Credentials or the specific header error
     if (e.status === 401 || e.message?.includes("Bad credentials")) {
       shouldRedirect = true
     } else if (e.message?.includes("Failed to construct 'Headers'")) {
-      // This is also effectively an invalid token
       shouldRedirect = true
     } else {
       error = "Failed to fetch repositories. Please check your token or try again later."
@@ -40,7 +39,7 @@ export default async function DashboardPage() {
     <div className="container mx-auto py-8 px-4">
       <div className="flex flex-col gap-2 mb-8">
         <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-        <p className="text-muted-foreground">Select a repository to start managing your content.</p>
+        <p className="text-muted-foreground">Manage your content projects.</p>
       </div>
 
       {error && (
@@ -51,17 +50,30 @@ export default async function DashboardPage() {
         </Alert>
       )}
 
-      {!error && repos.length === 0 ? (
-        <div className="text-center py-12 border rounded-lg bg-muted/10">
-          <p className="text-muted-foreground">No repositories found.</p>
+      {/* Convex-backed project list (client component) */}
+      <div className="mb-10">
+        <ProjectList />
+      </div>
+
+      {/* GitHub repos for adding new projects */}
+      <div className="space-y-4">
+        <div className="flex flex-col gap-1">
+          <h2 className="text-xl font-semibold tracking-tight">Add a Repository</h2>
+          <p className="text-sm text-muted-foreground">Select a repository to create a new project.</p>
         </div>
-      ) : (
-        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {repos.map((repo) => (
-            <RepoCard key={repo.id} repo={repo} />
-          ))}
-        </div>
-      )}
+
+        {!error && repos.length === 0 ? (
+          <div className="text-center py-12 border rounded-lg bg-muted/10">
+            <p className="text-muted-foreground">No repositories found.</p>
+          </div>
+        ) : (
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {repos.map((repo) => (
+              <RepoCard key={repo.id} repo={repo} />
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

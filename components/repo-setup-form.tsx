@@ -1,46 +1,108 @@
 "use client"
 
-import type React from "react"
-
-import { useState } from "react"
+import { useMutation, useQuery } from "convex/react"
+import { Folder, GitBranch, Loader2 } from "lucide-react"
 import { useRouter } from "next/navigation"
+import type React from "react"
+import { useState } from "react"
+import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { GitBranch, Folder } from "lucide-react"
+import { api } from "@/convex/_generated/api"
+import { getFrameworkConfig, getRegisteredAdapters } from "@/lib/framework-adapters"
+import type { FrameworkConfig } from "@/lib/framework-adapters"
 
 interface RepoSetupFormProps {
   owner: string
   repo: string
   branches: any[]
   defaultBranch: string
+  frameworkConfig: {
+    framework: string
+    contentType: string
+    suggestedContentRoots: string[]
+    frontmatterFields: any[]
+    metaFilePattern: string | null
+    contentArchitecture?: { architectureNote?: string }
+  }
 }
 
-export function RepoSetupForm({ owner, repo, branches, defaultBranch }: RepoSetupFormProps) {
+export function RepoSetupForm({ owner, repo, branches, defaultBranch, frameworkConfig }: RepoSetupFormProps) {
   const router = useRouter()
+  const user = useQuery(api.auth.getCurrentUser)
+  const getOrCreateProject = useMutation(api.projects.getOrCreate)
+
   const [selectedBranch, setSelectedBranch] = useState(defaultBranch)
-  const [contentPath, setContentPath] = useState("")
+  const [selectedFramework, setSelectedFramework] = useState(frameworkConfig.framework)
+  const [contentPath, setContentPath] = useState(frameworkConfig.suggestedContentRoots[0] || "")
+  const [contentType, setContentType] = useState<string>(frameworkConfig.contentType)
+  const [currentFields, setCurrentFields] = useState(frameworkConfig.frontmatterFields)
+  const [architectureNote, setArchitectureNote] = useState(
+    frameworkConfig.contentArchitecture?.architectureNote || "",
+  )
   const [isLoading, setIsLoading] = useState(false)
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const registeredAdapters = getRegisteredAdapters()
+
+  const handleFrameworkChange = (newFramework: string) => {
+    setSelectedFramework(newFramework)
+    const config = getFrameworkConfig(newFramework)
+    setContentType(config.contentType)
+    setContentPath(config.suggestedContentRoots[0] || "")
+    setCurrentFields(config.frontmatterFields)
+    setArchitectureNote(config.contentArchitecture?.architectureNote || "")
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    if (!user?._id) {
+      toast.error("Not authenticated. Please sign in again.")
+      return
+    }
+
     setIsLoading(true)
 
-    // Construct the URL with query parameters
-    const params = new URLSearchParams()
-    if (selectedBranch) params.set("branch", selectedBranch)
-    if (contentPath) params.set("path", contentPath)
+    try {
+      const projectId = await getOrCreateProject({
+        userId: user._id as string,
+        name: `${owner}/${repo}`,
+        repoOwner: owner,
+        repoName: repo,
+        branch: selectedBranch,
+        contentRoot: contentPath,
+        detectedFramework: selectedFramework,
+        contentType: contentType as "blog" | "docs" | "pages" | "changelog" | "custom",
+        frontmatterSchema: currentFields,
+      })
 
-    router.push(`/dashboard/${owner}/${repo}?${params.toString()}`)
+      toast.success("Project created successfully!")
+      router.push(`/dashboard/${owner}/${repo}/studio?branch=${selectedBranch}&projectId=${projectId}`)
+    } catch (error) {
+      console.error("Error creating project:", error)
+      toast.error("Failed to create project. Please try again.")
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   return (
     <Card className="w-full max-w-md mx-auto">
       <CardHeader>
         <CardTitle>Configure Repository</CardTitle>
-        <CardDescription>Select the branch and folder you want to manage.</CardDescription>
+        <CardDescription>
+          {selectedFramework !== "custom" ? (
+            <>
+              Detected <span className="font-medium text-foreground">{selectedFramework}</span> framework. Configure
+              your content settings below.
+            </>
+          ) : (
+            "Select the branch and folder you want to manage."
+          )}
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-6">
@@ -64,7 +126,26 @@ export function RepoSetupForm({ owner, repo, branches, defaultBranch }: RepoSetu
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="path">Content Folder (Optional)</Label>
+            <Label htmlFor="framework">Framework</Label>
+            <Select value={selectedFramework} onValueChange={handleFrameworkChange}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {registeredAdapters.map((adapter) => (
+                  <SelectItem key={adapter.id} value={adapter.id}>
+                    {adapter.displayName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {architectureNote && (
+              <p className="text-xs text-muted-foreground">{architectureNote}</p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="path">Content Root</Label>
             <div className="relative">
               <Folder className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
               <Input
@@ -75,11 +156,53 @@ export function RepoSetupForm({ owner, repo, branches, defaultBranch }: RepoSetu
                 className="pl-9"
               />
             </div>
-            <p className="text-xs text-muted-foreground">Leave empty to manage the root directory.</p>
+            {(() => {
+              const config = getFrameworkConfig(selectedFramework)
+              const roots = config.suggestedContentRoots
+              return (
+                roots.length > 1 && (
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {roots.map((root) => (
+                      <button
+                        key={root}
+                        type="button"
+                        className="text-xs px-2 py-0.5 rounded-full bg-muted hover:bg-muted/80 text-muted-foreground"
+                        onClick={() => setContentPath(root)}
+                      >
+                        {root || "(root)"}
+                      </button>
+                    ))}
+                  </div>
+                )
+              )
+            })()}
           </div>
 
-          <Button type="submit" className="w-full" disabled={isLoading}>
-            {isLoading ? "Setting up..." : "Start Managing Content"}
+          <div className="space-y-2">
+            <Label htmlFor="contentType">Content Type</Label>
+            <Select value={contentType} onValueChange={setContentType}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="blog">Blog</SelectItem>
+                <SelectItem value="docs">Documentation</SelectItem>
+                <SelectItem value="pages">Pages</SelectItem>
+                <SelectItem value="changelog">Changelog</SelectItem>
+                <SelectItem value="custom">Custom</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <Button type="submit" className="w-full" disabled={isLoading || !user}>
+            {isLoading ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Creating project...
+              </>
+            ) : (
+              "Create Project"
+            )}
           </Button>
         </form>
       </CardContent>

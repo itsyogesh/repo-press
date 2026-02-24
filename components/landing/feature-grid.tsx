@@ -1,6 +1,6 @@
-import { FileText, Github, Layers, Zap, GitBranch, Code2, Globe, Lock } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { Code2, FileText, GitBranch, Github, Globe, Layers, Lock, Zap } from "lucide-react"
 import Link from "next/link"
+import { Button } from "@/components/ui/button"
 
 export default function FeatureGrid() {
   return (

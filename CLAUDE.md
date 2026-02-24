@@ -65,8 +65,8 @@ convex/                           # Convex backend (all database logic)
   auth.config.ts                  # Token config
   convex.config.ts                # App config (registers betterAuth component)
   http.ts                         # HTTP router
-  projects.ts                     # CRUD for projects
-  documents.ts                    # CRUD + saveDraft, publish, search
+  projects.ts                     # CRUD + getOrCreate, findByRepo
+  documents.ts                    # CRUD + getOrCreate, saveDraft, publish, transitionStatus, search
   documentHistory.ts              # Version history queries
   authors.ts                      # Author CRUD
   tags.ts                         # Tag CRUD
@@ -78,8 +78,15 @@ convex/                           # Convex backend (all database logic)
 
 components/
   providers.tsx                   # ConvexBetterAuthProvider wrapper
-  editor/                         # Old editor components
-  studio/                         # Studio components (file-tree, editor, preview, layout)
+  repo-setup-form.tsx             # Project setup form (uses getOrCreate)
+  project-card.tsx                # Project card for dashboard
+  studio/                         # Studio components
+    studio-layout.tsx             # Main layout (file tree + editor + preview)
+    editor.tsx                    # MDX editor with save/publish controls
+    preview.tsx                   # Live markdown preview
+    file-tree.tsx                 # GitHub file browser
+    document-list.tsx             # Convex document list sidebar
+    status-actions.tsx            # Status transition dropdown (state machine)
   landing/                        # Landing page sections
   ui/                             # shadcn/ui components
 
@@ -154,12 +161,49 @@ export const create = mutation({
 - Use `v.any()` for flexible JSON (frontmatter, fieldSchema)
 - Search indexes use `.withSearchIndex()` (see documents.ts `search_title`)
 
-### Document Workflow
+### Idempotent Creation (getOrCreate pattern)
 
-The document lifecycle is: `draft -> in_review -> approved -> published`
+For projects and documents, always use `getOrCreate` mutations from client code, not raw `create`. This prevents duplicates from race conditions and re-renders:
 
-- `saveDraft` -- Saves body + frontmatter to Convex, creates a history entry with previous content
-- `publish` -- Updates status to "published", records commitSha from GitHub, creates history entry
+```typescript
+// GOOD — idempotent, returns existing ID if duplicate
+const projectId = await getOrCreateProject({ userId, repoOwner, repoName, branch, contentRoot, ... })
+const docId = await getOrCreateDocument({ projectId, filePath, title, body, ... })
+
+// BAD — can create duplicates on retry/re-render
+const projectId = await createProject({ ... })
+```
+
+`documents.create` is reserved for internal/future use. All client paths go through `getOrCreate`.
+
+### Ownership Checks
+
+All mutations that modify a document (`saveDraft`, `publish`, `update`, `transitionStatus`) verify ownership:
+1. Look up the document's project via `doc.projectId`
+2. Verify `project.userId` matches the caller's `userId`/`editedBy` arg
+3. Throw `"Unauthorized"` if they don't match
+
+Do NOT skip this pattern when adding new mutations.
+
+### Document Workflow & State Machine
+
+The document lifecycle is:
+
+```
+draft -> in_review -> approved -\
+  ^         |           |        \
+  |         v           v         v (via `publish` mutation only)
+  +--- (back to draft)      published
+  |                              |
+  v                              v
+archived <----- (any state) ----+
+```
+
+**Key rules:**
+- `saveDraft` -- Saves body + frontmatter to Convex, creates a history entry with previous content. Requires ownership.
+- `publish` -- The ONLY path to "published" status. Requires a GitHub `commitSha`. Enforces source state is "draft" or "approved".
+- `transitionStatus` -- Handles all other transitions (submit for review, approve, archive, restore). Does NOT accept "published" as a target.
+- `documents.update` -- Generic metadata update. Does NOT accept `status` field — status changes must go through `publish` or `transitionStatus`.
 - History is append-only -- every save creates a snapshot before overwriting
 
 ## Auth Patterns
@@ -265,9 +309,17 @@ Each framework has specific frontmatter field definitions. Universal fields (tit
 
 4. **Async params in Next.js 16** -- `params`, `searchParams`, `headers`, and `cookies` are all async. Always `await` them.
 
-5. **Content root flexibility** -- A project's `contentRoot` can be `""` (repo root) or any nested path like `apps/docs/content`. All file paths in the `documents` table are relative to this root.
+5. **Content root flexibility** -- A project's `contentRoot` can be `""` (repo root) or any nested path like `apps/docs/content`. All file paths in the `documents` table are relative to this root. The Studio page uses `contentRoot` to scope the initial file tree.
 
 6. **One repo, many projects** -- Users can create multiple projects from the same repo with different content roots. The `by_userId_repo` index returns all projects for a repo.
+
+7. **Never bypass the state machine** -- Do not set `status` via `documents.update`. Use `documents.publish` (for publishing with a GitHub commit) or `documents.transitionStatus` (for all other transitions). The `update` mutation intentionally excludes the `status` field.
+
+8. **Use getOrCreate, not create** -- Client code must use `projects.getOrCreate` and `documents.getOrCreate` to avoid duplicates. Raw `create` mutations are for internal use only.
+
+9. **Studio projectId is server-resolved** -- The Studio page looks up the project via `projects.findByRepo` server-side using URL params (owner/repo). It does NOT read `projectId` from the query string. This prevents spoofing.
+
+10. **Mutations require ownership** -- All document-modifying mutations (`saveDraft`, `publish`, `update`, `transitionStatus`) verify `project.userId` matches the caller. New mutations that modify documents must follow this pattern.
 
 ## Commands
 

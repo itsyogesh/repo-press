@@ -1,5 +1,6 @@
 import { v } from "convex/values"
-import { mutation, query } from "./_generated/server"
+import { api } from "./_generated/api"
+import { action, internalMutation, mutation, query } from "./_generated/server"
 
 export const listByProject = query({
   args: {
@@ -19,9 +20,7 @@ export const listByProject = query({
     if (args.status) {
       return await ctx.db
         .query("documents")
-        .withIndex("by_projectId_status", (q) =>
-          q.eq("projectId", args.projectId).eq("status", args.status!),
-        )
+        .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", args.status!))
         .order("desc")
         .collect()
     }
@@ -41,9 +40,7 @@ export const getByFilePath = query({
   handler: async (ctx, args) => {
     return await ctx.db
       .query("documents")
-      .withIndex("by_projectId_filePath", (q) =>
-        q.eq("projectId", args.projectId).eq("filePath", args.filePath),
-      )
+      .withIndex("by_projectId_filePath", (q) => q.eq("projectId", args.projectId).eq("filePath", args.filePath))
       .first()
   },
 })
@@ -55,7 +52,8 @@ export const get = query({
   },
 })
 
-export const create = mutation({
+// Internal only — not callable from the client. Use getOrCreate for client-facing usage.
+export const create = internalMutation({
   args: {
     projectId: v.id("projects"),
     collectionId: v.optional(v.id("collections")),
@@ -92,30 +90,55 @@ export const create = mutation({
   },
 })
 
+// Atomically returns existing document or creates a new one.
+// Prevents duplicate documents for the same projectId + filePath.
+export const getOrCreate = mutation({
+  args: {
+    projectId: v.id("projects"),
+    filePath: v.string(),
+    title: v.string(),
+    body: v.optional(v.string()),
+    frontmatter: v.optional(v.any()),
+    githubSha: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("documents")
+      .withIndex("by_projectId_filePath", (q) => q.eq("projectId", args.projectId).eq("filePath", args.filePath))
+      .first()
+
+    if (existing) return existing._id
+
+    const now = Date.now()
+    return await ctx.db.insert("documents", {
+      projectId: args.projectId,
+      filePath: args.filePath,
+      title: args.title,
+      status: "draft",
+      body: args.body,
+      frontmatter: args.frontmatter,
+      githubSha: args.githubSha,
+      createdAt: now,
+      updatedAt: now,
+    })
+  },
+})
+
+// Generic update for document metadata. Status changes are NOT allowed here —
+// use `publish` or `transitionStatus` instead.
 export const update = mutation({
   args: {
     id: v.id("documents"),
+    userId: v.string(),
     title: v.optional(v.string()),
     description: v.optional(v.string()),
     slug: v.optional(v.string()),
-    status: v.optional(
-      v.union(
-        v.literal("draft"),
-        v.literal("in_review"),
-        v.literal("approved"),
-        v.literal("published"),
-        v.literal("scheduled"),
-        v.literal("archived"),
-      ),
-    ),
     body: v.optional(v.string()),
     frontmatter: v.optional(v.any()),
     coverImage: v.optional(v.string()),
     authorIds: v.optional(v.array(v.id("authors"))),
     tagIds: v.optional(v.array(v.id("tags"))),
     categoryIds: v.optional(v.array(v.id("categories"))),
-    reviewerId: v.optional(v.id("users")),
-    reviewNote: v.optional(v.string()),
     order: v.optional(v.number()),
     githubSha: v.optional(v.string()),
     lastSyncedAt: v.optional(v.number()),
@@ -124,7 +147,16 @@ export const update = mutation({
     expiresAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const { id, ...updates } = args
+    const { id, userId, ...updates } = args
+
+    // Verify ownership
+    const doc = await ctx.db.get(id)
+    if (!doc) throw new Error("Document not found")
+    const project = await ctx.db.get(doc.projectId)
+    if (!project || project.userId !== userId) {
+      throw new Error("Unauthorized")
+    }
+
     await ctx.db.patch(id, {
       ...updates,
       updatedAt: Date.now(),
@@ -147,9 +179,7 @@ export const search = query({
   handler: async (ctx, args) => {
     return await ctx.db
       .query("documents")
-      .withSearchIndex("search_title", (q) =>
-        q.search("title", args.searchTerm).eq("projectId", args.projectId),
-      )
+      .withSearchIndex("search_title", (q) => q.search("title", args.searchTerm).eq("projectId", args.projectId))
       .collect()
   },
 })
@@ -160,12 +190,18 @@ export const saveDraft = mutation({
     id: v.id("documents"),
     body: v.string(),
     frontmatter: v.optional(v.any()),
-    editedBy: v.id("users"),
+    editedBy: v.string(),
     message: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const doc = await ctx.db.get(args.id)
     if (!doc) throw new Error("Document not found")
+
+    // Verify ownership: editedBy must own the project
+    const project = await ctx.db.get(doc.projectId)
+    if (!project || project.userId !== args.editedBy) {
+      throw new Error("Unauthorized")
+    }
 
     // Create history entry with current content before overwriting
     if (doc.body) {
@@ -188,28 +224,29 @@ export const saveDraft = mutation({
   },
 })
 
-// Publish - update status and record the commit SHA
+// Publish - checks state transition, updates status, and records the commit SHA.
+// Only callable from "draft" or "approved" states. This is the only path to "published"
+// since publishing requires a GitHub commit.
 export const publish = mutation({
   args: {
     id: v.id("documents"),
     commitSha: v.string(),
-    editedBy: v.id("users"),
+    editedBy: v.string(),
   },
   handler: async (ctx, args) => {
     const doc = await ctx.db.get(args.id)
     if (!doc) throw new Error("Document not found")
 
-    // Create history entry
-    if (doc.body) {
-      await ctx.db.insert("documentHistory", {
-        documentId: args.id,
-        body: doc.body,
-        frontmatter: doc.frontmatter,
-        editedBy: args.editedBy,
-        commitSha: args.commitSha,
-        message: "Published to GitHub",
-        createdAt: Date.now(),
-      })
+    // Enforce state machine: only draft/approved can be published
+    const publishableStatuses = ["draft", "approved"]
+    if (!publishableStatuses.includes(doc.status)) {
+      throw new Error(`Cannot publish from "${doc.status}" status. Document must be in draft or approved state.`)
+    }
+
+    // Verify ownership: editedBy must own the project
+    const project = await ctx.db.get(doc.projectId)
+    if (!project || project.userId !== args.editedBy) {
+      throw new Error("Unauthorized")
     }
 
     await ctx.db.patch(args.id, {
@@ -219,5 +256,156 @@ export const publish = mutation({
       publishedAt: Date.now(),
       updatedAt: Date.now(),
     })
+  },
+})
+
+// Status transition state machine.
+// "published" is NOT a valid target here — publishing requires a GitHub commit
+// and must go through the `publish` mutation instead.
+const ALLOWED_TRANSITIONS: Record<string, string[]> = {
+  draft: ["in_review", "scheduled", "archived"],
+  in_review: ["approved", "draft", "archived"],
+  approved: ["draft", "archived"],
+  published: ["draft", "archived"],
+  scheduled: ["draft", "archived"],
+  archived: ["draft"],
+}
+
+export const transitionStatus = mutation({
+  args: {
+    id: v.id("documents"),
+    newStatus: v.union(
+      v.literal("draft"),
+      v.literal("in_review"),
+      v.literal("approved"),
+      v.literal("scheduled"),
+      v.literal("archived"),
+    ),
+    reviewerId: v.optional(v.string()),
+    reviewNote: v.optional(v.string()),
+    scheduledAt: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const doc = await ctx.db.get(args.id)
+    if (!doc) throw new Error("Document not found")
+
+    // Verify ownership
+    if (args.reviewerId) {
+      const project = await ctx.db.get(doc.projectId)
+      if (!project || project.userId !== args.reviewerId) {
+        throw new Error("Unauthorized")
+      }
+    }
+
+    const allowed = ALLOWED_TRANSITIONS[doc.status] || []
+    if (!allowed.includes(args.newStatus)) {
+      throw new Error(`Cannot transition from "${doc.status}" to "${args.newStatus}". Allowed: ${allowed.join(", ")}`)
+    }
+
+    const updates: Record<string, any> = {
+      status: args.newStatus,
+      updatedAt: Date.now(),
+    }
+
+    // Set review fields when submitting for review or approving/rejecting
+    if (args.reviewerId) updates.reviewerId = args.reviewerId
+    if (args.reviewNote !== undefined) updates.reviewNote = args.reviewNote
+
+    // Set scheduled date
+    if (args.newStatus === "scheduled" && args.scheduledAt) {
+      updates.scheduledAt = args.scheduledAt
+    }
+
+    // Clear scheduled date if moving away from scheduled
+    if (doc.status === "scheduled" && args.newStatus !== "scheduled") {
+      updates.scheduledAt = undefined
+    }
+
+    await ctx.db.patch(args.id, updates)
+  },
+})
+
+// ─── File Tree Titles (Studio V2) ──────────────────────────────
+
+/** Returns filePath → title pairs for all documents in a project. */
+export const listTitlesForProject = query({
+  args: { projectId: v.id("projects") },
+  handler: async (ctx, args) => {
+    const docs = await ctx.db
+      .query("documents")
+      .withIndex("by_projectId", (q) => q.eq("projectId", args.projectId))
+      .collect()
+    return docs.map((d) => ({ filePath: d.filePath, title: d.title }))
+  },
+})
+
+/**
+ * Background action: syncs file tree titles by creating document records
+ * for files that don't already have one. Fetches content from GitHub
+ * to extract the title from frontmatter.
+ */
+export const syncTreeTitles = action({
+  args: {
+    projectId: v.id("projects"),
+    owner: v.string(),
+    repo: v.string(),
+    branch: v.string(),
+    files: v.array(v.object({ path: v.string(), sha: v.string() })),
+    githubToken: v.string(),
+  },
+  handler: async (ctx, args) => {
+    // Check which files already have document records
+    const existingDocs = await ctx.runQuery(api.documents.listByProject, {
+      projectId: args.projectId,
+    })
+    const existingPaths = new Set(existingDocs.map((d) => d.filePath))
+
+    const missingFiles = args.files.filter((f) => !existingPaths.has(f.path))
+    if (missingFiles.length === 0) return
+
+    // Fetch and sync in batches of 5 to avoid rate limits
+    const BATCH_SIZE = 5
+    for (let i = 0; i < missingFiles.length; i += BATCH_SIZE) {
+      const batch = missingFiles.slice(i, i + BATCH_SIZE)
+      await Promise.all(
+        batch.map(async (file) => {
+          try {
+            const response = await fetch(
+              `https://api.github.com/repos/${args.owner}/${args.repo}/contents/${encodeURIComponent(file.path)}?ref=${args.branch}`,
+              {
+                headers: {
+                  Authorization: `token ${args.githubToken}`,
+                  Accept: "application/vnd.github.v3.raw",
+                },
+              },
+            )
+            if (!response.ok) return
+
+            const content = await response.text()
+
+            // Extract title from frontmatter (simple regex — no gray-matter in Convex)
+            let title =
+              file.path
+                .split("/")
+                .pop()
+                ?.replace(/\.(mdx?|markdown)$/i, "") || file.path
+            const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/)
+            if (fmMatch) {
+              const titleMatch = fmMatch[1].match(/^title:\s*["']?(.+?)["']?\s*$/m)
+              if (titleMatch) title = titleMatch[1].trim()
+            }
+
+            await ctx.runMutation(api.documents.getOrCreate, {
+              projectId: args.projectId,
+              filePath: file.path,
+              title,
+              githubSha: file.sha,
+            })
+          } catch {
+            // Skip files that fail to fetch
+          }
+        }),
+      )
+    }
   },
 })

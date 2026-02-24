@@ -1,8 +1,8 @@
-import type { GitHubRepo } from "@/lib/github"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { GitFork, Star, Eye, Calendar } from "lucide-react"
+import { Calendar, Eye, GitFork, Star } from "lucide-react"
 import Link from "next/link"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import type { GitHubRepo } from "@/lib/github"
 
 interface RepoCardProps {
   repo: GitHubRepo
@@ -42,7 +42,7 @@ export function RepoCard({ repo }: RepoCardProps) {
           </div>
           <div className="flex items-center gap-1">
             <Calendar className="h-3 w-3" />
-            <span>{new Date(repo.updated_at).toLocaleDateString()}</span>
+            <span>{repo.updated_at ? new Date(repo.updated_at).toLocaleDateString() : "N/A"}</span>
           </div>
         </div>
 
