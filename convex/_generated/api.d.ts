@@ -14,10 +14,13 @@ import type * as categories from "../categories.js";
 import type * as collections from "../collections.js";
 import type * as documentHistory from "../documentHistory.js";
 import type * as documents from "../documents.js";
+import type * as explorerOps from "../explorerOps.js";
 import type * as folderMeta from "../folderMeta.js";
+import type * as githubWebhook from "../githubWebhook.js";
 import type * as http from "../http.js";
 import type * as mediaAssets from "../mediaAssets.js";
 import type * as projects from "../projects.js";
+import type * as publishBranches from "../publishBranches.js";
 import type * as tags from "../tags.js";
 import type * as webhooks from "../webhooks.js";
 
@@ -34,10 +37,13 @@ declare const fullApi: ApiFromModules<{
   collections: typeof collections;
   documentHistory: typeof documentHistory;
   documents: typeof documents;
+  explorerOps: typeof explorerOps;
   folderMeta: typeof folderMeta;
+  githubWebhook: typeof githubWebhook;
   http: typeof http;
   mediaAssets: typeof mediaAssets;
   projects: typeof projects;
+  publishBranches: typeof publishBranches;
   tags: typeof tags;
   webhooks: typeof webhooks;
 }>;

@@ -115,7 +115,7 @@ export default async function StudioPage({ params, searchParams }: StudioPagePro
             branch={currentBranch}
             currentPath={currentPath}
             projectId={project?._id}
-            githubToken={token}
+            contentRoot={contentRoot}
           />
         </div>
       )}

@@ -295,3 +295,166 @@ export async function saveFileContent(
     throw error
   }
 }
+
+export async function deleteFileContent(
+  accessToken: string,
+  owner: string,
+  repo: string,
+  path: string,
+  sha: string,
+  message = "Delete file via RepoPress",
+  branch?: string,
+) {
+  const octokit = createGitHubClient(accessToken)
+  const { data } = await octokit.repos.deleteFile({
+    owner,
+    repo,
+    path,
+    message,
+    sha,
+    branch,
+  })
+  return data
+}
+
+export async function createBranch(
+  accessToken: string,
+  owner: string,
+  repo: string,
+  baseBranch: string,
+  newBranch: string,
+) {
+  const octokit = createGitHubClient(accessToken)
+  // Get the SHA of the base branch
+  const { data: ref } = await octokit.git.getRef({
+    owner,
+    repo,
+    ref: `heads/${baseBranch}`,
+  })
+  // Create the new branch
+  const { data } = await octokit.git.createRef({
+    owner,
+    repo,
+    ref: `refs/heads/${newBranch}`,
+    sha: ref.object.sha,
+  })
+  return data
+}
+
+export type BatchOperation = {
+  path: string
+  content?: string
+  action: "create" | "update" | "delete"
+}
+
+export async function batchCommit(
+  accessToken: string,
+  owner: string,
+  repo: string,
+  branch: string,
+  operations: BatchOperation[],
+  message: string,
+): Promise<{ commitSha: string; treeSha: string }> {
+  const octokit = createGitHubClient(accessToken)
+
+  // 1. Get the current commit SHA for the branch
+  const { data: refData } = await octokit.git.getRef({
+    owner,
+    repo,
+    ref: `heads/${branch}`,
+  })
+  const baseSha = refData.object.sha
+
+  // 2. Get the base tree
+  const { data: baseCommit } = await octokit.git.getCommit({
+    owner,
+    repo,
+    commit_sha: baseSha,
+  })
+
+  // 3. Build tree entries
+  const treeEntries = operations.map((op) => {
+    if (op.action === "delete") {
+      return {
+        path: op.path,
+        mode: "100644" as const,
+        type: "blob" as const,
+        sha: null,
+      }
+    }
+    return {
+      path: op.path,
+      mode: "100644" as const,
+      type: "blob" as const,
+      content: op.content || "",
+    }
+  })
+
+  // 4. Create a new tree
+  const { data: newTree } = await octokit.git.createTree({
+    owner,
+    repo,
+    base_tree: baseCommit.tree.sha,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    tree: treeEntries as any,
+  })
+
+  // 5. Create a new commit
+  const { data: newCommit } = await octokit.git.createCommit({
+    owner,
+    repo,
+    message,
+    tree: newTree.sha,
+    parents: [baseSha],
+  })
+
+  // 6. Update the branch reference
+  await octokit.git.updateRef({
+    owner,
+    repo,
+    ref: `heads/${branch}`,
+    sha: newCommit.sha,
+  })
+
+  return { commitSha: newCommit.sha, treeSha: newTree.sha }
+}
+
+export async function createPullRequest(
+  accessToken: string,
+  owner: string,
+  repo: string,
+  head: string,
+  base: string,
+  title: string,
+  body?: string,
+): Promise<{ number: number; url: string; htmlUrl: string }> {
+  const octokit = createGitHubClient(accessToken)
+  const { data } = await octokit.pulls.create({
+    owner,
+    repo,
+    head,
+    base,
+    title,
+    body,
+  })
+  return { number: data.number, url: data.url, htmlUrl: data.html_url }
+}
+
+export async function getPullRequest(
+  accessToken: string,
+  owner: string,
+  repo: string,
+  pullNumber: number,
+): Promise<{ state: string; merged: boolean; mergeCommitSha: string | null }> {
+  const octokit = createGitHubClient(accessToken)
+  const { data } = await octokit.pulls.get({
+    owner,
+    repo,
+    pull_number: pullNumber,
+  })
+  return {
+    state: data.state,
+    merged: data.merged,
+    mergeCommitSha: data.merge_commit_sha,
+  }
+}
