@@ -85,7 +85,7 @@ export function StudioLayout({ tree, initialFile, owner, repo, branch, currentPa
   const saveDraft = useMutation(api.documents.saveDraft)
   const publishDoc = useMutation(api.documents.publish)
 
-  // Initialize state from initialFile
+  // Initialize state from initialFile (GitHub content)
   React.useEffect(() => {
     if (initialFile) {
       try {
@@ -108,6 +108,29 @@ export function StudioLayout({ tree, initialFile, owner, repo, branch, currentPa
       }
     }
   }, [initialFile, tree])
+
+  // After Convex document loads, hydrate editor from the latest saved draft (if any)
+  const hasHydratedFromDocument = React.useRef(false)
+  React.useEffect(() => {
+    if (!document || hasHydratedFromDocument.current) return
+
+    try {
+      const draftBody = (document as any).body
+      const draftFrontmatter = (document as any).frontmatter
+
+      // Only override if Convex has content; this ensures that Save Draft persists across reloads.
+      if (typeof draftBody === "string" && draftBody.length > 0) {
+        setContent(draftBody)
+      }
+      if (draftFrontmatter && typeof draftFrontmatter === "object") {
+        setFrontmatter(normalizeFrontmatterDates(draftFrontmatter))
+      }
+
+      hasHydratedFromDocument.current = true
+    } catch (e) {
+      console.error("Error hydrating from Convex document draft:", e)
+    }
+  }, [document])
 
   // Build title map for the file tree sidebar
   const titleMap = React.useMemo(() => {
@@ -175,7 +198,9 @@ export function StudioLayout({ tree, initialFile, owner, repo, branch, currentPa
 
   // Ensure document record exists in Convex (atomic getOrCreate prevents duplicates)
   const ensureDocumentRecord = React.useCallback(async (): Promise<Id<"documents"> | null> => {
-    if (!projectId || !selectedFile || selectedFile.type !== "file" || !userId) return null
+    if (!projectId || !selectedFile || selectedFile.type !== "file" || !userId) {
+      return null
+    }
 
     if (document) return document._id
 
@@ -197,7 +222,10 @@ export function StudioLayout({ tree, initialFile, owner, repo, branch, currentPa
 
   // Save Draft — Convex only, no GitHub commit
   const handleSaveDraft = async () => {
-    if (!selectedFile || !userId) return
+    if (!selectedFile || !userId) {
+      return
+    }
+
     setIsSaving(true)
 
     try {
