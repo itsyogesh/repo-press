@@ -109,28 +109,32 @@ export function StudioLayout({ tree, initialFile, owner, repo, branch, currentPa
     }
   }, [initialFile, tree])
 
-  // After Convex document loads, hydrate editor from the latest saved draft (if any)
-  const hasHydratedFromDocument = React.useRef(false)
+  // After Convex document loads, hydrate editor from the latest saved draft (if any).
+  // Track the file path we last hydrated for so we re-hydrate when the user switches files.
+  const hydratedForPath = React.useRef<string | null>(null)
   React.useEffect(() => {
-    if (!document || hasHydratedFromDocument.current) return
+    if (!document || hydratedForPath.current === selectedFile?.path) return
+
+    // Only hydrate from Convex for draft-like statuses; published content is authoritative from GitHub
+    const draftStatuses = ["draft", "in_review", "approved"]
+    if (!draftStatuses.includes(document.status)) {
+      hydratedForPath.current = selectedFile?.path ?? null
+      return
+    }
 
     try {
-      const draftBody = (document as any).body
-      const draftFrontmatter = (document as any).frontmatter
-
-      // Only override if Convex has content; this ensures that Save Draft persists across reloads.
-      if (typeof draftBody === "string" && draftBody.length > 0) {
-        setContent(draftBody)
+      if (typeof document.body === "string" && document.body.length > 0) {
+        setContent(document.body)
       }
-      if (draftFrontmatter && typeof draftFrontmatter === "object") {
-        setFrontmatter(normalizeFrontmatterDates(draftFrontmatter))
+      if (document.frontmatter && typeof document.frontmatter === "object") {
+        setFrontmatter(normalizeFrontmatterDates(document.frontmatter))
       }
 
-      hasHydratedFromDocument.current = true
+      hydratedForPath.current = selectedFile?.path ?? null
     } catch (e) {
       console.error("Error hydrating from Convex document draft:", e)
     }
-  }, [document])
+  }, [document, selectedFile?.path])
 
   // Build title map for the file tree sidebar
   const titleMap = React.useMemo(() => {
