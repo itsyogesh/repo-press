@@ -15,12 +15,12 @@ interface FrontmatterFieldProps {
   field: MergedFieldDef
   value: any
   onChange: (value: any) => void
+  imagePaths?: string[]
 }
 
-export function FrontmatterField({ field, value, onChange }: FrontmatterFieldProps) {
+export function FrontmatterField({ field, value, onChange, imagePaths = [] }: FrontmatterFieldProps) {
   const id = field.actualFieldName
-  const hasSchemaHint =
-    field.actualFieldName !== field.name && field.description !== field.actualFieldName
+  const hasSchemaHint = field.actualFieldName !== field.name && field.description !== field.actualFieldName
 
   const labelEl = (
     <div className="flex items-center gap-1.5">
@@ -28,16 +28,17 @@ export function FrontmatterField({ field, value, onChange }: FrontmatterFieldPro
         {field.actualFieldName}
       </Label>
       {field.required && (
-        <span className="text-studio-attention text-sm" title="Required">●</span>
+        <span className="text-studio-attention text-sm" title="Required">
+          ●
+        </span>
       )}
     </div>
   )
 
-  const helperEl = (hasSchemaHint || field.description) ? (
-    <p className="text-[11px] text-studio-fg-muted mt-0.5 leading-tight">
-      {field.description || `↳ ${field.name}`}
-    </p>
-  ) : null
+  const helperEl =
+    hasSchemaHint || field.description ? (
+      <p className="text-[11px] text-studio-fg-muted mt-0.5 leading-tight">{field.description || `↳ ${field.name}`}</p>
+    ) : null
 
   switch (field.type) {
     case "boolean":
@@ -47,11 +48,7 @@ export function FrontmatterField({ field, value, onChange }: FrontmatterFieldPro
             {labelEl}
             {helperEl}
           </div>
-          <Switch
-            id={id}
-            checked={!!value}
-            onCheckedChange={(checked) => onChange(checked)}
-          />
+          <Switch id={id} checked={!!value} onCheckedChange={(checked) => onChange(checked)} />
         </div>
       )
 
@@ -90,11 +87,7 @@ export function FrontmatterField({ field, value, onChange }: FrontmatterFieldPro
         <div className="grid gap-1">
           {labelEl}
           {helperEl}
-          <TagInput
-            value={Array.isArray(value) ? value : []}
-            onChange={onChange}
-            placeholder="Add tag..."
-          />
+          <TagInput value={Array.isArray(value) ? value : []} onChange={onChange} placeholder="Add tag..." />
         </div>
       )
 
@@ -103,7 +96,7 @@ export function FrontmatterField({ field, value, onChange }: FrontmatterFieldPro
         <div className="grid gap-1">
           {labelEl}
           {helperEl}
-          <ImageField value={value || ""} onChange={onChange} />
+          <ImageField value={value || ""} onChange={onChange} imagePaths={imagePaths} />
         </div>
       )
 

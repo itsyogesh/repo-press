@@ -20,16 +20,25 @@ import {
   toolbarPlugin,
   AdmonitionDirectiveDescriptor,
   type MDXEditorMethods,
-} from '@mdxeditor/editor'
+} from "@mdxeditor/editor"
 
-import '@mdxeditor/editor/style.css'
-import './mdxeditor-theme.css'
+import "@mdxeditor/editor/style.css"
+import "./mdxeditor-theme.css"
 
 import type { FieldVariantMap, FrontmatterFieldDef } from "@/lib/framework-adapters"
 import { ForwardRefEditor } from "./forward-ref-editor"
 import { StudioToolbar } from "./studio-toolbar"
 import { getJsxComponentDescriptors } from "./jsx-component-descriptors"
 import { FrontmatterPanel } from "./frontmatter-panel"
+
+const YouTubeDirectiveDescriptor = {
+  name: "youtube",
+  type: "leafDirective" as const,
+  testNode: (node: { name?: string }) => node.name === "youtube",
+  attributes: [],
+  hasChildren: false,
+  Editor: () => null,
+}
 
 interface EditorProps {
   content: string
@@ -46,6 +55,11 @@ interface EditorProps {
   statusBadge: React.ReactNode
   scrollContainerRef?: React.RefObject<HTMLDivElement | null>
   onScroll?: () => void
+  owner: string
+  repo: string
+  branch: string
+  contentRoot?: string
+  tree?: { path: string; type: string }[]
 }
 
 export function Editor({
@@ -63,69 +77,139 @@ export function Editor({
   statusBadge,
   scrollContainerRef,
   onScroll,
+  owner,
+  repo,
+  branch,
+  contentRoot = "",
+  tree = [],
 }: EditorProps) {
   const editorRef = React.useRef<MDXEditorMethods>(null)
 
-  // No-op image upload handler (Phase 10 will implement actual upload)
-  const handleImageUpload = React.useCallback(async (file: File): Promise<string> => {
-    return URL.createObjectURL(file)
-  }, [])
+  // Determine image upload path based on project structure
+  const getImageUploadPath = React.useCallback(
+    (fileName: string): string => {
+      const possibleDirs = ["public/images", "static/images", "images", "assets/images", "src/assets/images"]
+
+      const existingDirs = possibleDirs.filter((dir) =>
+        tree.some((node) => node.type === "dir" && (node.path === dir || node.path.startsWith(dir + "/"))),
+      )
+
+      const baseDir = existingDirs[0] || "public/images"
+      return `${baseDir}/${fileName}`
+    },
+    [tree],
+  )
+
+  // Image upload handler - uploads to GitHub via API
+  const handleImageUpload = React.useCallback(
+    async (file: File): Promise<string> => {
+      try {
+        const arrayBuffer = await file.arrayBuffer()
+        const base64 = btoa(new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), ""))
+
+        const fileName = file.name || `image-${Date.now()}.png`
+        const imagePath = getImageUploadPath(fileName)
+
+        const response = await fetch("/api/github/upload-image", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            owner,
+            repo,
+            path: imagePath,
+            content: base64,
+            message: `Upload image: ${fileName} via RepoPress`,
+            branch,
+          }),
+        })
+
+        if (!response.ok) {
+          const error = await response.json()
+          console.error("Image upload failed:", error)
+          throw new Error(error.error || "Failed to upload image")
+        }
+
+        const result = await response.json()
+        return result.path || imagePath
+      } catch (error) {
+        console.error("Error uploading image:", error)
+        return URL.createObjectURL(file)
+      }
+    },
+    [owner, repo, branch, getImageUploadPath],
+  )
+
+  // Extract image paths from tree for autocomplete
+  const imageExtensions = [".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".bmp", ".ico"]
+  const imageAutocompleteSuggestions = React.useMemo(() => {
+    return tree
+      .filter((node) => node.type === "file" && imageExtensions.some((ext) => node.path.toLowerCase().endsWith(ext)))
+      .map((node) => node.path)
+  }, [tree])
 
   // Build MDXEditor plugins — memoized to avoid re-creating on every render
-  const plugins = React.useMemo(() => [
-    headingsPlugin(),
-    quotePlugin(),
-    listsPlugin(),
-    linkPlugin(),
-    linkDialogPlugin({
-      linkAutocompleteSuggestions: [],
-    }),
-    tablePlugin(),
-    thematicBreakPlugin(),
-    markdownShortcutPlugin(),
-    codeBlockPlugin({ defaultCodeBlockLanguage: 'typescript' }),
-    codeMirrorPlugin({
-      codeBlockLanguages: {
-        js: 'JavaScript',
-        ts: 'TypeScript',
-        tsx: 'TypeScript (JSX)',
-        jsx: 'JSX',
-        css: 'CSS',
-        html: 'HTML',
-        json: 'JSON',
-        python: 'Python',
-        bash: 'Bash',
-        yaml: 'YAML',
-        md: 'Markdown',
-        sql: 'SQL',
-        go: 'Go',
-        rust: 'Rust',
-        txt: 'Plain Text',
-      },
-    }),
-    imagePlugin({
-      imageUploadHandler: handleImageUpload,
-      imageAutocompleteSuggestions: [],
-    }),
-    directivesPlugin({
-      directiveDescriptors: [AdmonitionDirectiveDescriptor],
-    }),
-    jsxPlugin({
-      jsxComponentDescriptors: getJsxComponentDescriptors(),
-    }),
-    diffSourcePlugin({
-      diffMarkdown: '',
-      viewMode: 'rich-text',
-    }),
-    toolbarPlugin({
-      toolbarContents: () => <StudioToolbar />,
-    }),
-  ], [handleImageUpload])
+  const plugins = React.useMemo(
+    () => [
+      headingsPlugin(),
+      quotePlugin(),
+      listsPlugin(),
+      linkPlugin(),
+      linkDialogPlugin({
+        linkAutocompleteSuggestions: [],
+      }),
+      tablePlugin(),
+      thematicBreakPlugin(),
+      markdownShortcutPlugin(),
+      codeBlockPlugin({ defaultCodeBlockLanguage: "typescript" }),
+      codeMirrorPlugin({
+        codeBlockLanguages: {
+          js: "JavaScript",
+          ts: "TypeScript",
+          tsx: "TypeScript (JSX)",
+          jsx: "JSX",
+          css: "CSS",
+          html: "HTML",
+          json: "JSON",
+          python: "Python",
+          bash: "Bash",
+          yaml: "YAML",
+          md: "Markdown",
+          sql: "SQL",
+          go: "Go",
+          rust: "Rust",
+          txt: "Plain Text",
+        },
+      }),
+      imagePlugin({
+        imageUploadHandler: handleImageUpload,
+        imageAutocompleteSuggestions,
+      }),
+      directivesPlugin({
+        directiveDescriptors: [AdmonitionDirectiveDescriptor, YouTubeDirectiveDescriptor],
+      }),
+      jsxPlugin({
+        jsxComponentDescriptors: getJsxComponentDescriptors(),
+      }),
+      diffSourcePlugin({
+        diffMarkdown: "",
+        viewMode: "rich-text",
+      }),
+      toolbarPlugin({
+        toolbarContents: () => <StudioToolbar />,
+      }),
+    ],
+    [handleImageUpload, imageAutocompleteSuggestions],
+  )
 
   // Handle content change from editor
-  const handleContentChange = React.useCallback((markdown: string) => {
-    onChangeContent(markdown)
-  }, [onChangeContent])
+  const handleContentChange = React.useCallback(
+    (markdown: string) => {
+      onChangeContent(markdown)
+    },
+    [onChangeContent],
+  )
 
   // Sync content to MDXEditor when content changes externally (file switch)
   const lastSyncedContent = React.useRef<string | null>(null)
@@ -146,6 +230,7 @@ export function Editor({
             frontmatterSchema={frontmatterSchema}
             fieldVariants={fieldVariants}
             onChangeFrontmatter={onChangeFrontmatter}
+            tree={tree}
           />
 
           {/* MDXEditor */}

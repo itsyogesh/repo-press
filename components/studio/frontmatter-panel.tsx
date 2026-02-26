@@ -13,6 +13,7 @@ interface FrontmatterPanelProps {
   frontmatterSchema?: FrontmatterFieldDef[]
   fieldVariants?: FieldVariantMap
   onChangeFrontmatter: (key: string, value: any) => void
+  tree?: { path: string; type: string }[]
 }
 
 export function FrontmatterPanel({
@@ -20,12 +21,12 @@ export function FrontmatterPanel({
   frontmatterSchema,
   fieldVariants,
   onChangeFrontmatter,
+  tree = [],
 }: FrontmatterPanelProps) {
   const [isOpen, setIsOpen] = React.useState(true)
   const [showEmptySchema, setShowEmptySchema] = React.useState(false)
 
-  const schema =
-    frontmatterSchema && frontmatterSchema.length > 0 ? frontmatterSchema : UNIVERSAL_FIELDS
+  const schema = frontmatterSchema && frontmatterSchema.length > 0 ? frontmatterSchema : UNIVERSAL_FIELDS
   const mergedFields = React.useMemo(
     () => buildMergedFieldList(frontmatter, schema, fieldVariants),
     [frontmatter, schema, fieldVariants],
@@ -34,12 +35,16 @@ export function FrontmatterPanel({
   const fieldsInFile = mergedFields.filter((f) => f.isInFile)
   const emptySchemaFields = mergedFields.filter((f) => !f.isInFile)
 
+  // Extract image paths from tree for the image field
+  const imageExtensions = [".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".bmp", ".ico"]
+  const imagePaths = React.useMemo(() => {
+    return tree
+      .filter((node) => node.type === "file" && imageExtensions.some((ext) => node.path.toLowerCase().endsWith(ext)))
+      .map((node) => node.path)
+  }, [tree])
+
   return (
-    <Collapsible
-      open={isOpen}
-      onOpenChange={setIsOpen}
-      className="border-b border-studio-border bg-studio-canvas"
-    >
+    <Collapsible open={isOpen} onOpenChange={setIsOpen} className="border-b border-studio-border bg-studio-canvas">
       <div className="flex items-center justify-between px-4 py-2 border-b border-studio-border">
         <h3 className="text-xs font-semibold text-studio-fg uppercase tracking-wider flex items-center gap-2">
           Properties
@@ -58,9 +63,7 @@ export function FrontmatterPanel({
       </div>
       <CollapsibleContent className="px-4 py-3 space-y-4">
         {fieldsInFile.length === 0 ? (
-          <p className="text-xs text-studio-fg-muted text-center py-2">
-            No frontmatter fields in this file.
-          </p>
+          <p className="text-xs text-studio-fg-muted text-center py-2">No frontmatter fields in this file.</p>
         ) : (
           fieldsInFile.map((field) => (
             <FrontmatterField
@@ -68,6 +71,7 @@ export function FrontmatterPanel({
               field={field}
               value={frontmatter[field.actualFieldName]}
               onChange={(value) => onChangeFrontmatter(field.actualFieldName, value)}
+              imagePaths={imagePaths}
             />
           ))
         )}
@@ -80,12 +84,9 @@ export function FrontmatterPanel({
               className="text-xs text-studio-fg-muted p-0 h-auto hover:text-studio-fg"
               onClick={() => setShowEmptySchema(!showEmptySchema)}
             >
-              {showEmptySchema ? (
-                <ChevronDown className="h-3 w-3 mr-1" />
-              ) : (
-                <ChevronRight className="h-3 w-3 mr-1" />
-              )}
-              Show {emptySchemaFields.length} more field{emptySchemaFields.length !== 1 ? "s" : ""}
+              {showEmptySchema ? <ChevronDown className="h-3 w-3 mr-1" /> : <ChevronRight className="h-3 w-3 mr-1" />}
+              Show {emptySchemaFields.length} more field
+              {emptySchemaFields.length !== 1 ? "s" : ""}
               <span className="ml-1 text-studio-fg-muted/70 font-normal">
                 ({emptySchemaFields.map((f) => f.name).join(", ")})
               </span>
@@ -98,6 +99,7 @@ export function FrontmatterPanel({
                     field={field}
                     value={frontmatter[field.actualFieldName]}
                     onChange={(value) => onChangeFrontmatter(field.actualFieldName, value)}
+                    imagePaths={imagePaths}
                   />
                 ))}
               </div>

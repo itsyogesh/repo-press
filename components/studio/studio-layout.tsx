@@ -129,13 +129,7 @@ function StudioLayoutInner({
   })
 
   // 4. Publish
-  const {
-    isPublishing,
-    publishDialogOpen,
-    publishConflicts,
-    setPublishDialogOpen,
-    handlePublish,
-  } = useStudioPublish({
+  const { isPublishing, publishDialogOpen, publishConflicts, setPublishDialogOpen, handlePublish } = useStudioPublish({
     userId,
     ensureDocumentRecord,
     selectedFile,
@@ -220,7 +214,7 @@ function StudioLayoutInner({
           title: fileName.replace(/\.(mdx?|markdown)$/i, ""),
           initialBody: "",
           initialFrontmatter: {
-             title: fileName.replace(/\.(mdx?|markdown)$/i, ""),
+            title: fileName.replace(/\.(mdx?|markdown)$/i, ""),
           },
         })
         toast.success(`Created ${fileName}`)
@@ -294,21 +288,15 @@ function StudioLayoutInner({
     }
   }, [pendingOps, userId, undoOp])
 
-  const handleRenameFile = React.useCallback(
-    async (oldPath: string, newPath: string) => {
-      // In a complete implementation, this would fetch the old file content from GitHub/Convex
-      // and then call stageDelete(oldPath) + stageCreate(newPath, currentContent)
-      toast.error("Rename requires fetching content from GitHub (Not implemented)")
-    },
-    []
-  )
+  const handleRenameFile = React.useCallback(async (oldPath: string, newPath: string) => {
+    // In a complete implementation, this would fetch the old file content from GitHub/Convex
+    // and then call stageDelete(oldPath) + stageCreate(newPath, currentContent)
+    toast.error("Rename requires fetching content from GitHub (Not implemented)")
+  }, [])
 
-  const handleMoveFile = React.useCallback(
-    async (oldPath: string, newParentPath: string) => {
-      toast.error("Move requires fetching content from GitHub (Not implemented)")
-    },
-    []
-  )
+  const handleMoveFile = React.useCallback(async (oldPath: string, newParentPath: string) => {
+    toast.error("Move requires fetching content from GitHub (Not implemented)")
+  }, [])
 
   const currentStatus = document?.status || "draft"
   const statusInfo = STATUS_LABELS[currentStatus] || STATUS_LABELS.draft
@@ -468,6 +456,11 @@ function StudioLayoutInner({
                 }
                 scrollContainerRef={editorScrollRef}
                 onScroll={handleEditorScroll}
+                owner={owner}
+                repo={repo}
+                branch={branch}
+                contentRoot={contentRoot}
+                tree={overlayTree}
               />
             ) : (
               <div className="h-full flex items-center justify-center text-studio-fg-muted">Select a file to edit</div>
@@ -506,7 +499,9 @@ function StudioLayoutInner({
           <StudioFooter
             isSaving={isSaving}
             lastSavedAt={document?.updatedAt}
-            fileType={selectedFile?.path.endsWith(".mdx") ? "MDX" : selectedFile?.path.endsWith(".md") ? "Markdown" : "Text"}
+            fileType={
+              selectedFile?.path.endsWith(".mdx") ? "MDX" : selectedFile?.path.endsWith(".md") ? "Markdown" : "Text"
+            }
           />
         </div>
       )}
@@ -555,7 +550,7 @@ export function StudioLayout(props: StudioLayoutProps) {
       contentRoot,
       tree,
     }),
-    [owner, repo, branch, projectId, contentRoot, tree]
+    [owner, repo, branch, projectId, contentRoot, tree],
   )
 
   return (
