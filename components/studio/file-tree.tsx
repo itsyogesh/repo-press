@@ -1,21 +1,11 @@
 "use client"
 
-import {
-  ChevronDown,
-  ChevronRight,
-  File,
-  Folder,
-  FolderOpen,
-  Plus,
-  Search,
-  Trash2,
-  Undo2,
-} from "lucide-react"
+import { ChevronDown, ChevronRight, File, Folder, FolderOpen, Plus, Search, Trash2, Undo2 } from "lucide-react"
 import * as React from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { ScrollArea } from "@/components/ui/scroll-area"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { filterTree } from "@/lib/explorer-tree-overlay"
 import type { OverlayTreeNode } from "@/lib/explorer-tree-overlay"
 import type { FileTreeNode } from "@/lib/github"
@@ -29,6 +19,7 @@ interface FileTreeProps {
   onCreateFile?: (parentPath: string) => void
   onDeleteFile?: (filePath: string, sha: string) => void
   onUndoDelete?: (filePath: string) => void
+  contentRoot?: string
 }
 
 export function FileTree({
@@ -39,22 +30,58 @@ export function FileTree({
   onCreateFile,
   onDeleteFile,
   onUndoDelete,
+  contentRoot = "",
 }: FileTreeProps) {
   const [searchQuery, setSearchQuery] = React.useState("")
 
   const displayTree = React.useMemo(
-    () =>
-      searchQuery
-        ? filterTree(tree as OverlayTreeNode[], searchQuery, titleMap)
-        : tree,
+    () => (searchQuery ? filterTree(tree as OverlayTreeNode[], searchQuery, titleMap) : tree),
     [tree, searchQuery, titleMap],
   )
+
+  const topLevelFolders = React.useMemo(() => {
+    return displayTree
+      .filter((node) => node.type === "dir" && node.name !== contentRoot)
+      .map((node) => ({ name: node.name, path: node.path }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [displayTree, contentRoot])
+
+  const handleCreateClick = (path: string) => {
+    if (onCreateFile) {
+      onCreateFile(path)
+    }
+  }
 
   return (
     <div className="h-full flex flex-col">
       <div className="p-2 border-b text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center justify-between">
         <span>Explorer</span>
-        {onCreateFile && (
+        {onCreateFile && topLevelFolders.length > 0 ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-5 w-5 p-0 text-muted-foreground hover:text-foreground"
+                title="New file"
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-40">
+              <DropdownMenuItem onClick={() => handleCreateClick("")}>
+                <Folder className="mr-2 h-4 w-4" />
+                Root
+              </DropdownMenuItem>
+              {topLevelFolders.map((folder) => (
+                <DropdownMenuItem key={folder.path} onClick={() => handleCreateClick(folder.path)}>
+                  <Folder className="mr-2 h-4 w-4" />
+                  {folder.name}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : onCreateFile ? (
           <Button
             variant="ghost"
             size="sm"
@@ -64,7 +91,7 @@ export function FileTree({
           >
             <Plus className="h-3.5 w-3.5" />
           </Button>
-        )}
+        ) : null}
       </div>
       <div className="p-2 border-b">
         <div className="relative">
@@ -77,7 +104,7 @@ export function FileTree({
           />
         </div>
       </div>
-      <ScrollArea className="flex-1">
+      <div className="flex-1 overflow-y-auto">
         <div className="p-1">
           {displayTree.length === 0 ? (
             <div className="text-xs text-muted-foreground p-3 text-center">
@@ -99,7 +126,7 @@ export function FileTree({
             ))
           )}
         </div>
-      </ScrollArea>
+      </div>
     </div>
   )
 }
@@ -155,14 +182,7 @@ function TreeItem({
             ) : (
               <Folder className="h-4 w-4 shrink-0 text-blue-500" />
             )}
-            <span
-              className={cn(
-                "truncate text-sm",
-                isDeleted && "line-through",
-              )}
-            >
-              {node.name}
-            </span>
+            <span className={cn("truncate text-sm", isDeleted && "line-through")}>{node.name}</span>
             {isNew && (
               <Badge
                 variant="secondary"
@@ -229,19 +249,10 @@ function TreeItem({
         <File
           className={cn(
             "h-4 w-4 shrink-0",
-            isNew
-              ? "text-emerald-600"
-              : isDeleted
-                ? "text-destructive"
-                : "text-muted-foreground",
+            isNew ? "text-emerald-600" : isDeleted ? "text-destructive" : "text-muted-foreground",
           )}
         />
-        <span
-          className={cn(
-            "truncate text-sm",
-            isDeleted && "line-through text-muted-foreground",
-          )}
-        >
+        <span className={cn("truncate text-sm", isDeleted && "line-through text-muted-foreground")}>
           {displayTitle || node.name}
         </span>
         {isNew && (

@@ -389,23 +389,20 @@ export const listTitlesForProject = query({
   },
 })
 
-/** Returns documents in draft/approved status that have body content (potentially dirty). */
+/** Returns documents in draft/approved status that have body content not yet committed.
+ * A document is considered dirty if it's in draft/approved status with body content. */
 export const listDirtyForProject = query({
   args: { projectId: v.id("projects") },
   handler: async (ctx, args) => {
     const drafts = await ctx.db
       .query("documents")
-      .withIndex("by_projectId_status", (q) =>
-        q.eq("projectId", args.projectId).eq("status", "draft"),
-      )
+      .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", "draft"))
       .collect()
     const approved = await ctx.db
       .query("documents")
-      .withIndex("by_projectId_status", (q) =>
-        q.eq("projectId", args.projectId).eq("status", "approved"),
-      )
+      .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", "approved"))
       .collect()
-    return [...drafts, ...approved].filter((d) => d.body != null)
+    return [...drafts, ...approved].filter((d) => d.body != null && d.body.length > 0)
   },
 })
 
