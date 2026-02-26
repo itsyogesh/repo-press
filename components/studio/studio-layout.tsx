@@ -27,6 +27,7 @@ import { useStudioQueries } from "./hooks/use-studio-queries"
 import { useStudioFile } from "./hooks/use-studio-file"
 import { useStudioSave } from "./hooks/use-studio-save"
 import { useStudioPublish } from "./hooks/use-studio-publish"
+import { CommandPalette } from "./command-palette"
 
 export interface StudioLayoutProps {
   tree: FileTreeNode[]
@@ -530,6 +531,13 @@ function StudioLayoutInner({
         isPublishing={isPublishing}
         onConfirm={handlePublish}
         conflicts={publishConflicts}
+      />
+
+      <CommandPalette
+        tree={overlayTree}
+        titleMap={titleMap}
+        onNavigateToFile={navigateToFile}
+        onSaveDraft={saveDraft}
       />
     </div>
   )
