@@ -128,6 +128,19 @@ export function StudioLayout({
   const stageDelete = useMutation(api.explorerOps.stageDelete)
   const undoOp = useMutation(api.explorerOps.undoOp)
 
+  // Handle new files that exist in Convex but not yet on GitHub
+  React.useEffect(() => {
+    if (!initialFile && currentPath) {
+      const name = currentPath.split("/").pop() || currentPath
+      setSelectedFile({
+        name,
+        path: currentPath,
+        sha: "",
+        type: "file",
+      })
+    }
+  }, [initialFile, currentPath])
+
   // Initialize state from initialFile (GitHub content)
   React.useEffect(() => {
     if (initialFile) {
