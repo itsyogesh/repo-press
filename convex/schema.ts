@@ -253,4 +253,44 @@ export default defineSchema({
   })
     .index("by_projectId", ["projectId"])
     .index("by_projectId_isActive", ["projectId", "isActive"]),
+
+  // ─── Explorer Ops (staged file create/delete for PR-based publish) ─
+  explorerOps: defineTable({
+    projectId: v.id("projects"),
+    userId: v.string(),
+    opType: v.union(v.literal("create"), v.literal("delete")),
+    filePath: v.string(),
+    initialBody: v.optional(v.string()),
+    initialFrontmatter: v.optional(v.any()),
+    previousSha: v.optional(v.string()),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("committed"),
+      v.literal("undone"),
+    ),
+    commitSha: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_projectId_status", ["projectId", "status"])
+    .index("by_projectId_filePath", ["projectId", "filePath"]),
+
+  // ─── Publish Branches (PR-based publish workflow) ─────────────────
+  publishBranches: defineTable({
+    projectId: v.id("projects"),
+    branchName: v.string(),
+    baseBranch: v.string(),
+    prNumber: v.optional(v.number()),
+    prUrl: v.optional(v.string()),
+    status: v.union(
+      v.literal("active"),
+      v.literal("merged"),
+      v.literal("closed"),
+    ),
+    lastCommitSha: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_projectId_status", ["projectId", "status"])
+    .index("by_prNumber", ["prNumber"]),
 })

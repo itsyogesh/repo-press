@@ -203,6 +203,11 @@ export const saveDraft = mutation({
       throw new Error("Unauthorized")
     }
 
+    // Auto-transition published->draft when editing (edge case #6)
+    if (doc.status === "published") {
+      await ctx.db.patch(args.id, { status: "draft" })
+    }
+
     // Create history entry with current content before overwriting
     if (doc.body) {
       await ctx.db.insert("documentHistory", {
@@ -325,9 +330,54 @@ export const transitionStatus = mutation({
   },
 })
 
+/**
+ * Publish a document from a GitHub webhook (PR merge).
+ * Verifies ownership via publishBranches -> project chain.
+ * Handles documents in any status by transitioning through draft first.
+ * Idempotent: skips already-published documents.
+ */
+export const publishFromWebhook = internalMutation({
+  args: {
+    documentId: v.id("documents"),
+    projectId: v.id("projects"),
+    commitSha: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const doc = await ctx.db.get(args.documentId)
+    if (!doc) return // Document may have been deleted
+
+    // Idempotent: skip if already published (edge case #8)
+    if (doc.status === "published") return
+
+    // Verify the document belongs to this project
+    if (doc.projectId !== args.projectId) {
+      throw new Error("Document does not belong to the specified project")
+    }
+
+    // Handle non-publishable states by transitioning to draft first (edge case #2)
+    const publishableStatuses = ["draft", "approved"]
+    if (!publishableStatuses.includes(doc.status)) {
+      // Transition to draft first (all statuses can go to draft per ALLOWED_TRANSITIONS)
+      await ctx.db.patch(args.documentId, {
+        status: "draft",
+        updatedAt: Date.now(),
+      })
+    }
+
+    // Now publish
+    await ctx.db.patch(args.documentId, {
+      status: "published",
+      githubSha: args.commitSha,
+      lastSyncedAt: Date.now(),
+      publishedAt: Date.now(),
+      updatedAt: Date.now(),
+    })
+  },
+})
+
 // ─── File Tree Titles (Studio V2) ──────────────────────────────
 
-/** Returns filePath → title pairs for all documents in a project. */
+/** Returns filePath -> title pairs for all documents in a project. */
 export const listTitlesForProject = query({
   args: { projectId: v.id("projects") },
   handler: async (ctx, args) => {
@@ -336,6 +386,23 @@ export const listTitlesForProject = query({
       .withIndex("by_projectId", (q) => q.eq("projectId", args.projectId))
       .collect()
     return docs.map((d) => ({ filePath: d.filePath, title: d.title }))
+  },
+})
+
+/** Returns documents in draft/approved status that have body content not yet committed.
+ * A document is considered dirty if it's in draft/approved status with body content. */
+export const listDirtyForProject = query({
+  args: { projectId: v.id("projects") },
+  handler: async (ctx, args) => {
+    const drafts = await ctx.db
+      .query("documents")
+      .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", "draft"))
+      .collect()
+    const approved = await ctx.db
+      .query("documents")
+      .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", "approved"))
+      .collect()
+    return [...drafts, ...approved].filter((d) => d.body != null)
   },
 })
 
