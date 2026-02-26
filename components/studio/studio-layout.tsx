@@ -38,7 +38,13 @@ interface StudioLayoutProps {
   contentRoot?: string
 }
 
-const STATUS_LABELS: Record<string, { label: string; variant: "default" | "secondary" | "outline" | "destructive" }> = {
+const STATUS_LABELS: Record<
+  string,
+  {
+    label: string
+    variant: "default" | "secondary" | "outline" | "destructive"
+  }
+> = {
   draft: { label: "Draft", variant: "secondary" },
   in_review: { label: "In Review", variant: "outline" },
   approved: { label: "Approved", variant: "outline" },
@@ -59,7 +65,16 @@ function findNode(nodes: FileTreeNode[], path: string): FileTreeNode | null {
   return null
 }
 
-export function StudioLayout({ tree, initialFile, owner, repo, branch, currentPath, projectId, contentRoot = "" }: StudioLayoutProps) {
+export function StudioLayout({
+  tree,
+  initialFile,
+  owner,
+  repo,
+  branch,
+  currentPath,
+  projectId,
+  contentRoot = "",
+}: StudioLayoutProps) {
   const router = useRouter()
   const [selectedFile, setSelectedFile] = React.useState<FileTreeNode | null>(null)
   const [content, setContent] = React.useState("")
@@ -351,18 +366,29 @@ export function StudioLayout({ tree, initialFile, owner, repo, branch, currentPa
   }
 
   // Explorer handlers
-  const handleCreateFile = React.useCallback(
-    (parentPath: string) => {
-      setCreateDialogParent(parentPath)
-      setCreateDialogOpen(true)
-    },
-    [],
-  )
+  const handleCreateFile = React.useCallback((parentPath: string) => {
+    setCreateDialogParent(parentPath)
+    setCreateDialogOpen(true)
+  }, [])
 
   const handleConfirmCreate = React.useCallback(
     async (fileName: string, parentPath: string) => {
       if (!projectId || !userId) return
-      const filePath = parentPath ? `${parentPath}/${fileName}` : fileName
+      // Check if parentPath is already prefixed with contentRoot
+      // (tree nodes already include contentRoot in their paths)
+      const isAlreadyPrefixed = contentRoot && (parentPath === contentRoot || parentPath.startsWith(contentRoot + "/"))
+      // Build the file path - only add contentRoot prefix if not already present
+      let filePath: string
+      if (isAlreadyPrefixed) {
+        // Path already has contentRoot, just append filename
+        filePath = parentPath ? `${parentPath}/${fileName}` : fileName
+      } else if (contentRoot) {
+        // Path doesn't have contentRoot, add it
+        filePath = parentPath ? `${contentRoot}/${parentPath}/${fileName}` : `${contentRoot}/${fileName}`
+      } else {
+        // No contentRoot
+        filePath = parentPath ? `${parentPath}/${fileName}` : fileName
+      }
       try {
         await stageCreate({
           projectId: projectId as Id<"projects">,
@@ -370,7 +396,9 @@ export function StudioLayout({ tree, initialFile, owner, repo, branch, currentPa
           filePath,
           title: fileName.replace(/\.(mdx?|markdown)$/i, ""),
           initialBody: "",
-          initialFrontmatter: { title: fileName.replace(/\.(mdx?|markdown)$/i, "") },
+          initialFrontmatter: {
+            title: fileName.replace(/\.(mdx?|markdown)$/i, ""),
+          },
         })
         toast.success(`Created ${fileName}`)
         // Navigate to the new file
@@ -380,7 +408,7 @@ export function StudioLayout({ tree, initialFile, owner, repo, branch, currentPa
         toast.error(error.message || "Failed to create file")
       }
     },
-    [projectId, userId, stageCreate, navigateToFile],
+    [projectId, userId, contentRoot, stageCreate, navigateToFile],
   )
 
   const handleDeleteFile = React.useCallback(
@@ -487,7 +515,7 @@ export function StudioLayout({ tree, initialFile, owner, repo, branch, currentPa
   return (
     <div className="h-full w-full border-t flex overflow-hidden">
       {/* Left sidebar: file tree + document list tabs */}
-      <div className="w-64 shrink-0 border-r bg-muted/30 overflow-hidden flex flex-col">
+      <div className="w-64 shrink-0 border-r bg-muted/30 flex flex-col h-full min-h-0 overflow-hidden">
         {projectId ? (
           <>
             <Tabs defaultValue="files" className="flex-1 min-h-0 flex flex-col">
@@ -514,6 +542,7 @@ export function StudioLayout({ tree, initialFile, owner, repo, branch, currentPa
                   onCreateFile={handleCreateFile}
                   onDeleteFile={handleDeleteFile}
                   onUndoDelete={handleUndoDelete}
+                  contentRoot={contentRoot}
                 />
               </TabsContent>
               <TabsContent value="documents" className="flex-1 m-0 overflow-hidden">
@@ -537,7 +566,13 @@ export function StudioLayout({ tree, initialFile, owner, repo, branch, currentPa
             />
           </>
         ) : (
-          <FileTree tree={overlayTree} onSelect={handleSelectFile} selectedPath={selectedFile?.path} titleMap={titleMap} />
+          <FileTree
+            tree={overlayTree}
+            onSelect={handleSelectFile}
+            selectedPath={selectedFile?.path}
+            titleMap={titleMap}
+            contentRoot={contentRoot}
+          />
         )}
       </div>
 
@@ -595,6 +630,8 @@ export function StudioLayout({ tree, initialFile, owner, repo, branch, currentPa
         open={createDialogOpen}
         onOpenChange={setCreateDialogOpen}
         parentPath={createDialogParent}
+        contentRoot={contentRoot}
+        framework={project?.detectedFramework}
         onConfirm={handleConfirmCreate}
       />
 
@@ -602,7 +639,11 @@ export function StudioLayout({ tree, initialFile, owner, repo, branch, currentPa
       <PublishDialog
         open={publishDialogOpen}
         onOpenChange={setPublishDialogOpen}
-        pendingCounts={{ creates: opCounts.creates, deletes: opCounts.deletes, edits: editCount }}
+        pendingCounts={{
+          creates: opCounts.creates,
+          deletes: opCounts.deletes,
+          edits: editCount,
+        }}
         existingPrUrl={activeBranch?.prUrl}
         isPublishing={isPublishing}
         onConfirm={handlePublish}

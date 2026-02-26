@@ -14,9 +14,14 @@ export type ExplorerOp = {
 /**
  * Build full repo path from contentRoot-relative path.
  * If contentRoot is empty, returns filePath as-is.
+ * If filePath already starts with contentRoot, returns as-is (no double-prefixing).
  */
 export function prefixContentRoot(filePath: string, contentRoot: string): string {
   if (!contentRoot) return filePath
+  // Don't double-prefix if already prefixed
+  if (filePath.startsWith(contentRoot + "/") || filePath === contentRoot) {
+    return filePath
+  }
   return `${contentRoot}/${filePath}`
 }
 
@@ -76,7 +81,6 @@ function ensureDir(tree: OverlayTreeNode[], dirPath: string, contentRoot: string
     sha: "",
     type: "dir",
     children: [],
-    isNew: true,
   }
 
   if (parts.length <= 1 || dirPath === contentRoot) {
@@ -105,11 +109,7 @@ function ensureDir(tree: OverlayTreeNode[], dirPath: string, contentRoot: string
  * - Delete ops mark existing nodes with isDeleted: true
  * Returns a new tree (does not mutate the input).
  */
-export function overlayOpsOnTree(
-  tree: FileTreeNode[],
-  ops: ExplorerOp[],
-  contentRoot: string,
-): OverlayTreeNode[] {
+export function overlayOpsOnTree(tree: FileTreeNode[], ops: ExplorerOp[], contentRoot: string): OverlayTreeNode[] {
   const result = cloneTree(tree)
 
   // Process delete ops
@@ -214,7 +214,10 @@ export function filterTree(
 /**
  * Count pending create and delete operations.
  */
-export function countPendingOps(ops: ExplorerOp[]): { creates: number; deletes: number } {
+export function countPendingOps(ops: ExplorerOp[]): {
+  creates: number
+  deletes: number
+} {
   let creates = 0
   let deletes = 0
 

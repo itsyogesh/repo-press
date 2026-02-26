@@ -17,6 +17,8 @@ interface CreateFileDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   parentPath: string
+  contentRoot?: string
+  framework?: string
   onConfirm: (fileName: string, parentPath: string) => void
 }
 
@@ -24,17 +26,22 @@ export function CreateFileDialog({
   open,
   onOpenChange,
   parentPath,
+  contentRoot = "",
+  framework,
   onConfirm,
 }: CreateFileDialogProps) {
   const [fileName, setFileName] = React.useState("")
+
+  // Strip contentRoot from display path
+  const displayPath = contentRoot ? parentPath.replace(new RegExp(`^${contentRoot}/?`), "") : parentPath
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!fileName.trim()) return
 
-    // Auto-append .mdx if no extension
+    // Auto-append .mdx if no extension provided
     let finalName = fileName.trim()
-    if (!finalName.match(/\.(mdx?|markdown)$/i)) {
+    if (!finalName.match(/\.(mdx?|markdown|json)$/i)) {
       finalName += ".mdx"
     }
 
@@ -50,9 +57,7 @@ export function CreateFileDialog({
           <DialogHeader>
             <DialogTitle>Create New File</DialogTitle>
             <DialogDescription>
-              {parentPath
-                ? `Create a new file in ${parentPath}`
-                : "Create a new file in the content root"}
+              {displayPath ? `Create a new file in ${displayPath}` : "Create a new file in the content root"}
             </DialogDescription>
           </DialogHeader>
           <div className="py-4">
@@ -61,20 +66,16 @@ export function CreateFileDialog({
               id="fileName"
               value={fileName}
               onChange={(e) => setFileName(e.target.value)}
-              placeholder="my-new-post.mdx"
+              placeholder="my-new-file.mdx"
               className="mt-2"
               autoFocus
             />
             <p className="text-xs text-muted-foreground mt-1">
-              .mdx extension will be added automatically if not specified
+              .mdx extension will be added automatically if not specified (or use .json, .md)
             </p>
           </div>
           <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-            >
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
             <Button type="submit" disabled={!fileName.trim()}>

@@ -6,12 +6,7 @@ import type { Id } from "@/convex/_generated/dataModel"
 import { getGitHubToken } from "@/lib/auth-server"
 import { prefixContentRoot } from "@/lib/explorer-tree-overlay"
 import type { BatchOperation } from "@/lib/github"
-import {
-  batchCommit,
-  createBranch,
-  createPullRequest,
-  getFile,
-} from "@/lib/github"
+import { batchCommit, createBranch, createPullRequest, getFile } from "@/lib/github"
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
 
@@ -30,10 +25,7 @@ export async function POST(request: Request) {
     }
 
     if (!projectId) {
-      return NextResponse.json(
-        { error: "Missing projectId" },
-        { status: 400 },
-      )
+      return NextResponse.json({ error: "Missing projectId" }, { status: 400 })
     }
 
     // ── Fetch project details ──────────────────────────────────────────
@@ -41,18 +33,10 @@ export async function POST(request: Request) {
       id: projectId as Id<"projects">,
     })
     if (!project) {
-      return NextResponse.json(
-        { error: "Project not found" },
-        { status: 404 },
-      )
+      return NextResponse.json({ error: "Project not found" }, { status: 404 })
     }
 
-    const {
-      repoOwner: owner,
-      repoName: repo,
-      branch: baseBranch,
-      contentRoot,
-    } = project
+    const { repoOwner: owner, repoName: repo, branch: baseBranch, contentRoot } = project
 
     // ── Gather pending explorer ops + dirty documents ──────────────────
     const [pendingOps, dirtyDocs] = await Promise.all([
@@ -65,10 +49,7 @@ export async function POST(request: Request) {
     ])
 
     if (pendingOps.length === 0 && dirtyDocs.length === 0) {
-      return NextResponse.json(
-        { error: "No pending changes to publish" },
-        { status: 400 },
-      )
+      return NextResponse.json({ error: "No pending changes to publish" }, { status: 400 })
     }
 
     // ── Build batch operations with conflict detection ─────────────────
@@ -94,22 +75,17 @@ export async function POST(request: Request) {
         const doc = dirtyDocs.find((d) => d.filePath === op.filePath)
         const fileContent = doc
           ? matter.stringify(doc.body || "", doc.frontmatter || {})
-          : matter.stringify(
-              op.initialBody || "",
-              op.initialFrontmatter || {},
-            )
+          : matter.stringify(op.initialBody || "", op.initialFrontmatter || {})
 
-        operations.push({ path: fullPath, content: fileContent, action: "create" })
+        operations.push({
+          path: fullPath,
+          content: fileContent,
+          action: "create",
+        })
       } else if (op.opType === "delete") {
         // Conflict: SHA mismatch means the file was modified since staging
         if (op.previousSha) {
-          const existing = await getFile(
-            token,
-            owner,
-            repo,
-            fullPath,
-            baseBranch,
-          )
+          const existing = await getFile(token, owner, repo, fullPath, baseBranch)
           if (existing && existing.sha !== op.previousSha) {
             conflicts.push({
               path: op.filePath,
@@ -124,11 +100,7 @@ export async function POST(request: Request) {
 
     // Process dirty documents (content edits), excluding files already
     // handled by a create op above to avoid duplicate operations.
-    const createOpPaths = new Set(
-      pendingOps
-        .filter((op) => op.opType === "create")
-        .map((op) => op.filePath),
-    )
+    const createOpPaths = new Set(pendingOps.filter((op) => op.opType === "create").map((op) => op.filePath))
 
     for (const doc of dirtyDocs) {
       if (createOpPaths.has(doc.filePath)) continue
@@ -137,13 +109,7 @@ export async function POST(request: Request) {
 
       // Conflict: SHA mismatch means the file was modified on GitHub
       if (doc.githubSha) {
-        const existing = await getFile(
-          token,
-          owner,
-          repo,
-          fullPath,
-          baseBranch,
-        )
+        const existing = await getFile(token, owner, repo, fullPath, baseBranch)
         if (existing && existing.sha !== doc.githubSha) {
           conflicts.push({
             path: doc.filePath,
@@ -154,7 +120,11 @@ export async function POST(request: Request) {
       }
 
       const fileContent = matter.stringify(doc.body || "", doc.frontmatter || {})
-      operations.push({ path: fullPath, content: fileContent, action: "update" })
+      operations.push({
+        path: fullPath,
+        content: fileContent,
+        action: "update",
+      })
     }
 
     // ── Abort if any conflicts were detected ───────────────────────────
@@ -163,21 +133,15 @@ export async function POST(request: Request) {
     }
 
     if (operations.length === 0) {
-      return NextResponse.json(
-        { error: "No valid operations to publish" },
-        { status: 400 },
-      )
+      return NextResponse.json({ error: "No valid operations to publish" }, { status: 400 })
     }
 
     // ── Get or create the PR branch ────────────────────────────────────
-    let publishBranch = await convex.query(
-      api.publishBranches.getActiveForProject,
-      { projectId: projectId as Id<"projects"> },
-    )
+    let publishBranch = await convex.query(api.publishBranches.getActiveForProject, {
+      projectId: projectId as Id<"projects">,
+    })
 
-    const branchName =
-      publishBranch?.branchName ||
-      `repopress/${baseBranch}/${Date.now()}`
+    const branchName = publishBranch?.branchName || `repopress/${baseBranch}/${Date.now()}`
 
     if (!publishBranch) {
       // Create branch on GitHub first, then record in Convex
@@ -189,15 +153,11 @@ export async function POST(request: Request) {
         baseBranch,
       })
 
-      publishBranch = await convex.query(
-        api.publishBranches.getActiveForProject,
-        { projectId: projectId as Id<"projects"> },
-      )
+      publishBranch = await convex.query(api.publishBranches.getActiveForProject, {
+        projectId: projectId as Id<"projects">,
+      })
       if (!publishBranch) {
-        return NextResponse.json(
-          { error: "Failed to create publish branch record" },
-          { status: 500 },
-        )
+        return NextResponse.json({ error: "Failed to create publish branch record" }, { status: 500 })
       }
     }
 
@@ -212,35 +172,18 @@ export async function POST(request: Request) {
     const commitMessage = `chore(content): ${parts.join(", ")} via RepoPress`
 
     // ── Push batch commit to PR branch ─────────────────────────────────
-    const { commitSha } = await batchCommit(
-      token,
-      owner,
-      repo,
-      branchName,
-      operations,
-      commitMessage,
-    )
+    const { commitSha } = await batchCommit(token, owner, repo, branchName, operations, commitMessage)
 
     // ── Create PR if this is the first push ────────────────────────────
     let prUrl = publishBranch.prUrl
     let prNumber = publishBranch.prNumber
 
     if (!prNumber) {
-      const prTitle =
-        title || `Content update via RepoPress (${parts.join(", ")})`
+      const prTitle = title || `Content update via RepoPress (${parts.join(", ")})`
       const prBody =
-        description ||
-        `Automated content update from RepoPress.\n\n${parts.map((p) => `- ${p}`).join("\n")}`
+        description || `Automated content update from RepoPress.\n\n${parts.map((p) => `- ${p}`).join("\n")}`
 
-      const pr = await createPullRequest(
-        token,
-        owner,
-        repo,
-        branchName,
-        baseBranch,
-        prTitle,
-        prBody,
-      )
+      const pr = await createPullRequest(token, owner, repo, branchName, baseBranch, prTitle, prBody)
       prNumber = pr.number
       prUrl = pr.htmlUrl
     }
@@ -260,6 +203,17 @@ export async function POST(request: Request) {
       })
     }
 
+    // Clear dirty status for published documents by updating their githubSha
+    if (dirtyDocs.length > 0) {
+      for (const doc of dirtyDocs) {
+        await convex.mutation(api.documents.update, {
+          id: doc._id,
+          userId: project.userId,
+          githubSha: commitSha,
+        })
+      }
+    }
+
     return NextResponse.json({
       ok: true,
       prUrl,
@@ -268,8 +222,7 @@ export async function POST(request: Request) {
       summary: parts.join(", "),
     })
   } catch (error: unknown) {
-    const message =
-      error instanceof Error ? error.message : "Failed to publish"
+    const message = error instanceof Error ? error.message : "Failed to publish"
     console.error("Error in publish-ops:", error)
     return NextResponse.json({ error: message }, { status: 500 })
   }
