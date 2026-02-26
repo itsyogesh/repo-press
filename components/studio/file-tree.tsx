@@ -1,6 +1,6 @@
 "use client"
 
-import { ChevronDown, ChevronRight, File, Folder, FolderOpen, Plus, Search, Trash2, Undo2 } from "lucide-react"
+import { ChevronDown, ChevronRight, File, Folder, FolderOpen, Plus, Search, Trash2, Undo2, X } from "lucide-react"
 import * as React from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -100,8 +100,17 @@ export function FileTree({
             placeholder="Search files..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="h-8 pl-7 text-xs"
+            className="h-8 pl-7 pr-7 text-xs"
           />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery("")}
+              className="absolute right-2 top-2.5 text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
       </div>
       <div className="flex-1 overflow-y-auto">
@@ -111,19 +120,21 @@ export function FileTree({
               {searchQuery ? "No matching files" : "No content files found"}
             </div>
           ) : (
-            displayTree.map((node) => (
-              <TreeItem
-                key={node.path}
-                node={node}
-                depth={0}
-                onSelect={onSelect}
-                selectedPath={selectedPath}
-                titleMap={titleMap}
-                onCreateFile={onCreateFile}
-                onDeleteFile={onDeleteFile}
-                onUndoDelete={onUndoDelete}
-              />
-            ))
+            <div key={searchQuery}>
+              {displayTree.map((node) => (
+                <TreeItem
+                  key={node.path}
+                  node={node}
+                  depth={0}
+                  onSelect={onSelect}
+                  selectedPath={selectedPath}
+                  titleMap={titleMap}
+                  onCreateFile={onCreateFile}
+                  onDeleteFile={onDeleteFile}
+                  onUndoDelete={onUndoDelete}
+                />
+              ))}
+            </div>
           )}
         </div>
       </div>
