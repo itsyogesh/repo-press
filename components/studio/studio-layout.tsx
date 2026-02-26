@@ -542,7 +542,6 @@ export function StudioLayout({
                   onCreateFile={handleCreateFile}
                   onDeleteFile={handleDeleteFile}
                   onUndoDelete={handleUndoDelete}
-                  contentRoot={contentRoot}
                 />
               </TabsContent>
               <TabsContent value="documents" className="flex-1 m-0 overflow-hidden">
@@ -571,7 +570,6 @@ export function StudioLayout({
             onSelect={handleSelectFile}
             selectedPath={selectedFile?.path}
             titleMap={titleMap}
-            contentRoot={contentRoot}
           />
         )}
       </div>
@@ -631,7 +629,6 @@ export function StudioLayout({
         onOpenChange={setCreateDialogOpen}
         parentPath={createDialogParent}
         contentRoot={contentRoot}
-        framework={project?.detectedFramework}
         onConfirm={handleConfirmCreate}
       />
 

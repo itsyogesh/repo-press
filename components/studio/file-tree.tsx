@@ -19,7 +19,6 @@ interface FileTreeProps {
   onCreateFile?: (parentPath: string) => void
   onDeleteFile?: (filePath: string, sha: string) => void
   onUndoDelete?: (filePath: string) => void
-  contentRoot?: string
 }
 
 export function FileTree({
@@ -30,7 +29,6 @@ export function FileTree({
   onCreateFile,
   onDeleteFile,
   onUndoDelete,
-  contentRoot = "",
 }: FileTreeProps) {
   const [searchQuery, setSearchQuery] = React.useState("")
 
@@ -41,10 +39,10 @@ export function FileTree({
 
   const topLevelFolders = React.useMemo(() => {
     return displayTree
-      .filter((node) => node.type === "dir" && node.name !== contentRoot)
+      .filter((node) => node.type === "dir")
       .map((node) => ({ name: node.name, path: node.path }))
       .sort((a, b) => a.name.localeCompare(b.name))
-  }, [displayTree, contentRoot])
+  }, [displayTree])
 
   const handleCreateClick = (path: string) => {
     if (onCreateFile) {
@@ -120,7 +118,7 @@ export function FileTree({
               {searchQuery ? "No matching files" : "No content files found"}
             </div>
           ) : (
-            <div key={searchQuery}>
+            <div>
               {displayTree.map((node) => (
                 <TreeItem
                   key={node.path}

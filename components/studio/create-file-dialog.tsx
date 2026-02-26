@@ -18,7 +18,6 @@ interface CreateFileDialogProps {
   onOpenChange: (open: boolean) => void
   parentPath: string
   contentRoot?: string
-  framework?: string
   onConfirm: (fileName: string, parentPath: string) => void
 }
 
@@ -27,7 +26,6 @@ export function CreateFileDialog({
   onOpenChange,
   parentPath,
   contentRoot = "",
-  framework,
   onConfirm,
 }: CreateFileDialogProps) {
   const [fileName, setFileName] = React.useState("")

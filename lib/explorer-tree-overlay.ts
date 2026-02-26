@@ -81,6 +81,7 @@ function ensureDir(tree: OverlayTreeNode[], dirPath: string, contentRoot: string
     sha: "",
     type: "dir",
     children: [],
+    isNew: true,
   }
 
   if (parts.length <= 1 || dirPath === contentRoot) {

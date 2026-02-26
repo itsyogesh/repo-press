@@ -203,14 +203,23 @@ export async function POST(request: Request) {
       })
     }
 
-    // Clear dirty status for published documents by updating their githubSha
-    if (dirtyDocs.length > 0) {
-      for (const doc of dirtyDocs) {
-        await convex.mutation(api.documents.update, {
-          id: doc._id,
-          userId: project.userId,
-          githubSha: commitSha,
-        })
+    // Update githubSha with actual blob SHAs from the PR branch (not the commit SHA).
+    // Blob SHAs are content-addressed and match across branches, so conflict detection
+    // against the base branch will still work correctly after the PR is merged.
+    for (const doc of dirtyDocs) {
+      if (createOpPaths.has(doc.filePath)) continue
+      const fullPath = prefixContentRoot(doc.filePath, contentRoot)
+      try {
+        const fileOnBranch = await getFile(token, owner, repo, fullPath, branchName)
+        if (fileOnBranch) {
+          await convex.mutation(api.documents.update, {
+            id: doc._id,
+            userId: project.userId,
+            githubSha: fileOnBranch.sha,
+          })
+        }
+      } catch {
+        // Non-critical: conflict detection may be stale for this file on next publish
       }
     }
 

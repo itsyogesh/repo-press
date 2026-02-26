@@ -234,11 +234,15 @@ export const markCommitted = mutation({
   handler: async (ctx, args) => {
     const now = Date.now()
     for (const id of args.ids) {
-      await ctx.db.patch(id, {
-        status: "committed",
-        commitSha: args.commitSha,
-        updatedAt: now,
-      })
+      const op = await ctx.db.get(id)
+      // Only mark ops that are still pending (avoid overwriting concurrent undos)
+      if (op && op.status === "pending") {
+        await ctx.db.patch(id, {
+          status: "committed",
+          commitSha: args.commitSha,
+          updatedAt: now,
+        })
+      }
     }
   },
 })

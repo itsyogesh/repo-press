@@ -402,7 +402,7 @@ export const listDirtyForProject = query({
       .query("documents")
       .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", "approved"))
       .collect()
-    return [...drafts, ...approved].filter((d) => d.body != null && d.body.length > 0)
+    return [...drafts, ...approved].filter((d) => d.body != null)
   },
 })
 
