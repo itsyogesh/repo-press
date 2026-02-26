@@ -21,6 +21,8 @@ import { StatusActions } from "./status-actions"
 
 import { StudioProvider, useStudio } from "./studio-context"
 import { ViewModeProvider, useViewMode } from "./view-mode-context"
+import { StudioHeader } from "./studio-header"
+import { StudioFooter } from "./studio-footer"
 import { useStudioQueries } from "./hooks/use-studio-queries"
 import { useStudioFile } from "./hooks/use-studio-file"
 import { useStudioSave } from "./hooks/use-studio-save"
@@ -330,8 +332,15 @@ function StudioLayoutInner({
     <div className="h-full w-full flex flex-col overflow-hidden bg-studio-canvas text-studio-fg">
       {showHeaderFooter && (
         <div className="h-[--spacing-studio-header-h] shrink-0 border-b border-studio-border flex items-center px-4 z-10 bg-studio-canvas">
-          {/* Header Placeholder */}
-          <div className="text-sm text-studio-fg-muted">Header placeholder (Phase 3)</div>
+          <StudioHeader
+            selectedFile={selectedFile}
+            documentId={document?._id}
+            currentStatus={currentStatus}
+            statusInfo={statusInfo as any}
+            onSave={saveDraft}
+            isSaving={isSaving}
+            lastSavedAt={document?.updatedAt}
+          />
         </div>
       )}
 
@@ -470,9 +479,12 @@ function StudioLayoutInner({
       </ResizablePanelGroup>
 
       {showHeaderFooter && (
-        <div className="h-[--spacing-studio-footer-h] shrink-0 border-t border-studio-border flex items-center px-4 bg-studio-canvas">
-          {/* Footer Placeholder */}
-          <div className="text-xs text-studio-fg-muted">Footer placeholder (Phase 3)</div>
+        <div className="h-[--spacing-studio-footer-h] shrink-0 border-t border-studio-border flex items-center bg-studio-canvas">
+          <StudioFooter
+            isSaving={isSaving}
+            lastSavedAt={document?.updatedAt}
+            fileType={selectedFile?.path.endsWith(".mdx") ? "MDX" : selectedFile?.path.endsWith(".md") ? "Markdown" : "Text"}
+          />
         </div>
       )}
 
