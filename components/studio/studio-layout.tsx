@@ -7,6 +7,7 @@ import type { Id } from "@/convex/_generated/dataModel"
 import { api } from "@/convex/_generated/api"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable"
 import type { FileTreeNode } from "@/lib/github"
 
 import { CreateFileDialog } from "./create-file-dialog"
@@ -19,6 +20,7 @@ import { PublishOpsBar } from "./publish-ops-bar"
 import { StatusActions } from "./status-actions"
 
 import { StudioProvider, useStudio } from "./studio-context"
+import { ViewModeProvider, useViewMode } from "./view-mode-context"
 import { useStudioQueries } from "./hooks/use-studio-queries"
 import { useStudioFile } from "./hooks/use-studio-file"
 import { useStudioSave } from "./hooks/use-studio-save"
@@ -62,6 +64,16 @@ function StudioLayoutInner({
   currentPath: string
 }) {
   const { projectId, contentRoot, owner, repo, branch } = useStudio()
+  const {
+    viewMode,
+    setViewMode,
+    sidebarState,
+    setSidebarState,
+    editorPanelSize,
+    setEditorPanelSize,
+    previewPanelSize,
+    setPreviewPanelSize,
+  } = useViewMode()
 
   // 1. File state
   const {
@@ -136,6 +148,48 @@ function StudioLayoutInner({
   const stageCreate = useMutation(api.explorerOps.stageCreate)
   const stageDelete = useMutation(api.explorerOps.stageDelete)
   const undoOp = useMutation(api.explorerOps.undoOp)
+
+  // Keyboard shortcuts
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't intercept if user is typing in an input or textarea
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        (e.target as HTMLElement).isContentEditable
+      ) {
+        // Only intercept Cmd/Ctrl + S for saving, let other shortcuts pass through to the element
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
+          e.preventDefault()
+          saveDraft()
+        }
+        return
+      }
+
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "b") {
+        e.preventDefault()
+        setSidebarState(sidebarState === "hidden" ? "expanded" : "hidden")
+      } else if ((e.metaKey || e.ctrlKey) && e.key === "\\") {
+        e.preventDefault()
+        setViewMode(viewMode === "zen" ? "wysiwyg" : "zen")
+      } else if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "p") {
+        e.preventDefault()
+        setViewMode(viewMode === "split" ? "wysiwyg" : "split")
+      } else if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "s") {
+        e.preventDefault()
+        setViewMode(viewMode === "source" ? "wysiwyg" : "source")
+      } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault()
+        saveDraft()
+      } else if (e.key === "Escape" && viewMode === "zen") {
+        e.preventDefault()
+        setViewMode("wysiwyg")
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [sidebarState, viewMode, setSidebarState, setViewMode, saveDraft])
 
   // Explorer handlers
   const handleCreateFile = React.useCallback((parentPath: string) => {
@@ -268,27 +322,78 @@ function StudioLayoutInner({
   const handleEditorScroll = React.useCallback(() => syncScroll("editor"), [syncScroll])
   const handlePreviewScroll = React.useCallback(() => syncScroll("preview"), [syncScroll])
 
+  const showSidebar = sidebarState !== "hidden" && viewMode !== "zen"
+  const showPreview = viewMode === "split" || viewMode === "source"
+  const showHeaderFooter = viewMode !== "zen"
+
   return (
-    <div className="h-full w-full border-t flex overflow-hidden">
-      <div className="w-64 shrink-0 border-r bg-muted/30 flex flex-col h-full min-h-0 overflow-hidden">
-        {projectId ? (
+    <div className="h-full w-full flex flex-col overflow-hidden bg-studio-canvas text-studio-fg">
+      {showHeaderFooter && (
+        <div className="h-[--spacing-studio-header-h] shrink-0 border-b border-studio-border flex items-center px-4 z-10 bg-studio-canvas">
+          {/* Header Placeholder */}
+          <div className="text-sm text-studio-fg-muted">Header placeholder (Phase 3)</div>
+        </div>
+      )}
+
+      <ResizablePanelGroup orientation="horizontal" className="flex-1 min-h-0 border-t border-studio-border">
+        {showSidebar && (
           <>
-            <Tabs defaultValue="files" className="flex-1 min-h-0 flex flex-col">
-              <TabsList className="w-full shrink-0 rounded-none border-b h-9 bg-transparent p-0">
-                <TabsTrigger
-                  value="files"
-                  className="flex-1 rounded-none border-b-2 border-transparent data-[state=active]:border-foreground data-[state=active]:bg-transparent h-9 text-xs"
-                >
-                  Files
-                </TabsTrigger>
-                <TabsTrigger
-                  value="documents"
-                  className="flex-1 rounded-none border-b-2 border-transparent data-[state=active]:border-foreground data-[state=active]:bg-transparent h-9 text-xs"
-                >
-                  Documents
-                </TabsTrigger>
-              </TabsList>
-              <TabsContent value="files" className="flex-1 m-0 overflow-hidden">
+            <ResizablePanel
+              defaultSize={20}
+              minSize={15}
+              maxSize={40}
+              className="bg-studio-canvas-inset border-r border-studio-border shrink-0 flex flex-col h-full overflow-hidden"
+            >
+              {projectId ? (
+                <>
+                  <Tabs defaultValue="files" className="flex-1 min-h-0 flex flex-col">
+                    <TabsList className="w-full shrink-0 rounded-none border-b border-studio-border h-9 bg-transparent p-0">
+                      <TabsTrigger
+                        value="files"
+                        className="flex-1 rounded-none border-b-2 border-transparent data-[state=active]:border-studio-fg data-[state=active]:bg-transparent h-9 text-xs"
+                      >
+                        Files
+                      </TabsTrigger>
+                      <TabsTrigger
+                        value="documents"
+                        className="flex-1 rounded-none border-b-2 border-transparent data-[state=active]:border-studio-fg data-[state=active]:bg-transparent h-9 text-xs"
+                      >
+                        Documents
+                      </TabsTrigger>
+                    </TabsList>
+                    <TabsContent value="files" className="flex-1 m-0 overflow-hidden">
+                      <FileTree
+                        tree={overlayTree}
+                        onSelect={(node) => {
+                          if (node.type === "file") navigateToFile(node.path)
+                        }}
+                        selectedPath={selectedFile?.path}
+                        titleMap={titleMap}
+                        onCreateFile={handleCreateFile}
+                        onDeleteFile={handleDeleteFile}
+                        onUndoDelete={handleUndoDelete}
+                      />
+                    </TabsContent>
+                    <TabsContent value="documents" className="flex-1 m-0 overflow-hidden">
+                      <DocumentList
+                        projectId={projectId}
+                        selectedFilePath={selectedFile?.path}
+                        onSelectDocument={navigateToFile}
+                      />
+                    </TabsContent>
+                  </Tabs>
+                  <PublishOpsBar
+                    creates={opCounts.creates}
+                    deletes={opCounts.deletes}
+                    edits={editCount}
+                    prUrl={activeBranch?.prUrl}
+                    onPublish={() => {
+                      setPublishDialogOpen(true)
+                    }}
+                    onDiscard={handleDiscardAll}
+                  />
+                </>
+              ) : (
                 <FileTree
                   tree={overlayTree}
                   onSelect={(node) => {
@@ -296,84 +401,80 @@ function StudioLayoutInner({
                   }}
                   selectedPath={selectedFile?.path}
                   titleMap={titleMap}
-                  onCreateFile={handleCreateFile}
-                  onDeleteFile={handleDeleteFile}
-                  onUndoDelete={handleUndoDelete}
                 />
-              </TabsContent>
-              <TabsContent value="documents" className="flex-1 m-0 overflow-hidden">
-                <DocumentList
-                  projectId={projectId}
-                  selectedFilePath={selectedFile?.path}
-                  onSelectDocument={navigateToFile}
-                />
-              </TabsContent>
-            </Tabs>
-            <PublishOpsBar
-              creates={opCounts.creates}
-              deletes={opCounts.deletes}
-              edits={editCount}
-              prUrl={activeBranch?.prUrl}
-              onPublish={() => {
-                setPublishDialogOpen(true)
-              }}
-              onDiscard={handleDiscardAll}
-            />
+              )}
+            </ResizablePanel>
+            <ResizableHandle className="bg-transparent hover:bg-studio-accent transition-colors w-1" />
           </>
-        ) : (
-          <FileTree
-            tree={overlayTree}
-            onSelect={(node) => {
-              if (node.type === "file") navigateToFile(node.path)
-            }}
-            selectedPath={selectedFile?.path}
-            titleMap={titleMap}
-          />
         )}
-      </div>
 
-      <div className="flex-1 min-w-0 flex">
-        <div className="flex-1 min-w-0 border-r overflow-hidden">
-          {selectedFile ? (
-            <Editor
-              content={content}
-              frontmatter={frontmatter}
-              frontmatterSchema={frontmatterSchema}
-              fieldVariants={fieldVariants}
-              onChangeContent={setContent}
-              onChangeFrontmatter={setFrontmatterKey}
-              onSaveDraft={saveDraft}
-              onPublish={() => setPublishDialogOpen(true)}
-              isSaving={isSaving}
-              isPublishing={isPublishing}
-              canPublish={canPublish}
-              statusBadge={
-                <div className="flex items-center gap-1">
-                  <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
-                  {document && <StatusActions documentId={document._id} currentStatus={currentStatus as any} />}
-                </div>
-              }
-              scrollContainerRef={editorScrollRef}
-              onScroll={handleEditorScroll}
-            />
-          ) : (
-            <div className="h-full flex items-center justify-center text-muted-foreground">Select a file to edit</div>
-          )}
-        </div>
+        <ResizablePanel
+          defaultSize={editorPanelSize}
+          onResize={(size) => setEditorPanelSize(Math.round(size.asPercentage))}
+          minSize={30}
+          className="flex-1 min-w-0"
+        >
+          <div className="h-full overflow-hidden">
+            {selectedFile ? (
+              <Editor
+                content={content}
+                frontmatter={frontmatter}
+                frontmatterSchema={frontmatterSchema}
+                fieldVariants={fieldVariants}
+                onChangeContent={setContent}
+                onChangeFrontmatter={setFrontmatterKey}
+                onSaveDraft={saveDraft}
+                onPublish={() => setPublishDialogOpen(true)}
+                isSaving={isSaving}
+                isPublishing={isPublishing}
+                canPublish={canPublish}
+                statusBadge={
+                  <div className="flex items-center gap-1">
+                    <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
+                    {document && <StatusActions documentId={document._id} currentStatus={currentStatus as any} />}
+                  </div>
+                }
+                scrollContainerRef={editorScrollRef}
+                onScroll={handleEditorScroll}
+              />
+            ) : (
+              <div className="h-full flex items-center justify-center text-studio-fg-muted">Select a file to edit</div>
+            )}
+          </div>
+        </ResizablePanel>
 
-        <div className="flex-1 min-w-0 overflow-hidden">
-          <Preview
-            content={content}
-            frontmatter={frontmatter}
-            fieldVariants={fieldVariants}
-            owner={owner}
-            repo={repo}
-            branch={branch}
-            scrollContainerRef={previewScrollRef}
-            onScroll={handlePreviewScroll}
-          />
+        {showPreview && (
+          <>
+            <ResizableHandle className="bg-transparent border-l border-studio-border hover:bg-studio-accent transition-colors w-1" />
+            <ResizablePanel
+              defaultSize={previewPanelSize}
+              onResize={(size) => setPreviewPanelSize(Math.round(size.asPercentage))}
+              minSize={30}
+              className="flex-1 min-w-0 bg-studio-canvas"
+            >
+              <div className="h-full overflow-hidden">
+                <Preview
+                  content={content}
+                  frontmatter={frontmatter}
+                  fieldVariants={fieldVariants}
+                  owner={owner}
+                  repo={repo}
+                  branch={branch}
+                  scrollContainerRef={previewScrollRef}
+                  onScroll={handlePreviewScroll}
+                />
+              </div>
+            </ResizablePanel>
+          </>
+        )}
+      </ResizablePanelGroup>
+
+      {showHeaderFooter && (
+        <div className="h-[--spacing-studio-footer-h] shrink-0 border-t border-studio-border flex items-center px-4 bg-studio-canvas">
+          {/* Footer Placeholder */}
+          <div className="text-xs text-studio-fg-muted">Footer placeholder (Phase 3)</div>
         </div>
-      </div>
+      )}
 
       <CreateFileDialog
         open={createDialogOpen}
@@ -417,7 +518,9 @@ export function StudioLayout(props: StudioLayoutProps) {
 
   return (
     <StudioProvider value={contextValue}>
-      <StudioLayoutInner initialFile={initialFile} currentPath={currentPath} />
+      <ViewModeProvider>
+        <StudioLayoutInner initialFile={initialFile} currentPath={currentPath} />
+      </ViewModeProvider>
     </StudioProvider>
   )
 }
