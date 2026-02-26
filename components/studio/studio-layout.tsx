@@ -334,7 +334,20 @@ function StudioLayoutInner({
   const showHeaderFooter = viewMode !== "zen"
 
   return (
-    <div className="h-full w-full flex flex-col overflow-hidden bg-studio-canvas text-studio-fg">
+    <div
+      className="h-full w-full flex flex-col overflow-hidden bg-studio-canvas text-studio-fg"
+      role="application"
+      aria-label="RepoPress Studio"
+    >
+      {/* Skip to content link for keyboard accessibility */}
+      <a href="#studio-editor" className="skip-to-content">
+        Skip to editor
+      </a>
+
+      {/* Live region for status announcements */}
+      <div aria-live="polite" aria-atomic="true" className="sr-only">
+        {document ? `Editing ${selectedFile?.name || "file"}, status: ${currentStatus}` : "No file selected"}
+      </div>
       {showHeaderFooter && (
         <div className="h-[--spacing-studio-header-h] shrink-0 border-b border-studio-border flex items-center px-4 z-10 bg-studio-canvas">
           <StudioHeader
@@ -477,7 +490,7 @@ function StudioLayoutInner({
               minSize={30}
               className="flex-1 min-w-0 bg-studio-canvas"
             >
-              <div className="h-full overflow-hidden">
+              <div id="studio-editor" className="h-full overflow-hidden tab-index-0" tabIndex={-1}>
                 <Preview
                   content={content}
                   frontmatter={frontmatter}

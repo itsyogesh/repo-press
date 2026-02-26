@@ -26,7 +26,11 @@ interface PreviewProps {
 }
 
 /** Styled placeholder for unresolved MDX components */
-function MdxComponentPlaceholder({ name, children, ...props }: { name: string; children?: React.ReactNode } & Record<string, any>) {
+function MdxComponentPlaceholder({
+  name,
+  children,
+  ...props
+}: { name: string; children?: React.ReactNode } & Record<string, any>) {
   const propsDisplay = Object.entries(props)
     .filter(([k]) => k !== "node")
     .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
@@ -36,7 +40,10 @@ function MdxComponentPlaceholder({ name, children, ...props }: { name: string; c
     <div className="my-4 rounded-lg border border-dashed border-studio-accent/30 bg-studio-accent-muted/50 p-4">
       <div className="mb-1 flex items-center gap-2">
         <span className="rounded bg-studio-accent/10 px-1.5 py-0.5 font-mono text-xs text-studio-accent">
-          {"<"}{name}{propsDisplay ? ` ${propsDisplay}` : ""}{children ? ">" : " />"}
+          {"<"}
+          {name}
+          {propsDisplay ? ` ${propsDisplay}` : ""}
+          {children ? ">" : " />"}
         </span>
       </div>
       {children && <div className="mt-2 text-sm">{children}</div>}
@@ -72,9 +79,28 @@ const MDX_COMPONENTS: Record<string, ReturnType<typeof mdxPlaceholder>> = {
   CodeBlock: mdxPlaceholder("CodeBlock"),
 }
 
-export function Preview({ content, frontmatter, fieldVariants, owner, repo, branch, scrollContainerRef, onScroll }: PreviewProps) {
+export function Preview({
+  content,
+  frontmatter,
+  fieldVariants,
+  owner,
+  repo,
+  branch,
+  scrollContainerRef,
+  onScroll,
+}: PreviewProps) {
   const [viewport, setViewport] = React.useState<Viewport>("desktop")
   const [isFullScreen, setIsFullScreen] = React.useState(false)
+
+  // Debounced content for preview (300ms delay)
+  const [debouncedContent, setDebouncedContent] = React.useState(content)
+
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedContent(content)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [content])
 
   const title = resolveFieldValue(frontmatter, "title", fieldVariants) as string | undefined
   const date = resolveFieldValue(frontmatter, "date", fieldVariants) as string | undefined
@@ -113,12 +139,14 @@ export function Preview({ content, frontmatter, fieldVariants, owner, repo, bran
           <div className="flex items-center gap-3 flex-wrap mt-2">
             {date && (
               <span className="text-studio-fg-muted text-sm">
-                {new Date(date).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}
+                {new Date(date).toLocaleDateString("en-US", {
+                  year: "numeric",
+                  month: "long",
+                  day: "numeric",
+                })}
               </span>
             )}
-            {author && (
-              <span className="text-studio-fg-muted text-sm">by {author}</span>
-            )}
+            {author && <span className="text-studio-fg-muted text-sm">by {author}</span>}
           </div>
           {tags && tags.length > 0 && (
             <div className="flex items-center gap-1.5 mt-2">
@@ -132,27 +160,20 @@ export function Preview({ content, frontmatter, fieldVariants, owner, repo, bran
         </div>
       )}
 
-      {description && (
-        <p className="text-studio-fg-muted text-sm not-prose italic mt-1 mb-4">
-          {description}
-        </p>
-      )}
+      {description && <p className="text-studio-fg-muted text-sm not-prose italic mt-1 mb-4">{description}</p>}
 
       {image && !imageError && (
         <img
           src={image}
           alt={title}
           className="rounded-lg w-full object-cover aspect-video mb-8"
+          loading="lazy"
           onError={() => setImageError(true)}
         />
       )}
 
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeRaw]}
-        components={MDX_COMPONENTS}
-      >
-        {content}
+      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={MDX_COMPONENTS}>
+        {debouncedContent}
       </ReactMarkdown>
     </article>
   )
@@ -176,9 +197,7 @@ export function Preview({ content, frontmatter, fieldVariants, owner, repo, bran
           </div>
         </div>
         <div className="flex-1 overflow-y-auto">
-          <DeviceFrame viewport={viewport}>
-            {previewContent}
-          </DeviceFrame>
+          <DeviceFrame viewport={viewport}>{previewContent}</DeviceFrame>
         </div>
       </div>
     )
@@ -201,14 +220,8 @@ export function Preview({ content, frontmatter, fieldVariants, owner, repo, bran
           </Button>
         </div>
       </div>
-      <div
-        ref={scrollContainerRef}
-        onScroll={onScroll}
-        className="flex-1 overflow-y-auto"
-      >
-        <DeviceFrame viewport={viewport}>
-          {previewContent}
-        </DeviceFrame>
+      <div ref={scrollContainerRef} onScroll={onScroll} className="flex-1 overflow-y-auto">
+        <DeviceFrame viewport={viewport}>{previewContent}</DeviceFrame>
       </div>
     </div>
   )

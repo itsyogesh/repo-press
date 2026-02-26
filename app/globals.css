@@ -133,13 +133,25 @@
   --color-studio-border-muted: var(--studio-border-muted, oklch(0.922 0 0));
   --color-studio-accent: var(--primary);
   --color-studio-accent-fg: var(--primary-foreground);
-  --color-studio-accent-muted: var(--studio-accent-muted, oklch(0.932 0.032 255.585));
+  --color-studio-accent-muted: var(
+    --studio-accent-muted,
+    oklch(0.932 0.032 255.585)
+  );
   --color-studio-success: var(--studio-success, oklch(0.527 0.154 150.069));
-  --color-studio-success-muted: var(--studio-success-muted, oklch(0.925 0.048 155.995));
+  --color-studio-success-muted: var(
+    --studio-success-muted,
+    oklch(0.925 0.048 155.995)
+  );
   --color-studio-attention: var(--studio-attention, oklch(0.681 0.162 75.834));
-  --color-studio-attention-muted: var(--studio-attention-muted, oklch(0.947 0.044 90.0));
+  --color-studio-attention-muted: var(
+    --studio-attention-muted,
+    oklch(0.947 0.044 90)
+  );
   --color-studio-danger: var(--destructive);
-  --color-studio-danger-muted: var(--studio-danger-muted, oklch(0.936 0.032 17.717));
+  --color-studio-danger-muted: var(
+    --studio-danger-muted,
+    oklch(0.936 0.032 17.717)
+  );
 
   /* Studio layout dimensions */
   --spacing-studio-header-h: 52px;
@@ -170,4 +182,80 @@
   background-image:
     linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
     linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+}
+
+/* Studio transitions - Phase 11 */
+.studio-transition {
+  transition-property: all;
+  transition-timing-function: ease;
+  transition-duration: 150ms;
+}
+
+.studio-transition-fast {
+  transition-property: all;
+  transition-timing-function: ease;
+  transition-duration: 100ms;
+}
+
+.studio-transition-slow {
+  transition-property: all;
+  transition-timing-function: ease;
+  transition-duration: 200ms;
+}
+
+/* Sidebar collapse transition */
+.studio-sidebar {
+  transition: width 200ms ease;
+}
+
+/* View mode transitions */
+.studio-view-mode {
+  transition: opacity 150ms ease;
+}
+
+/* File tree hover/select */
+.studio-file-item {
+  transition: background-color 100ms ease;
+}
+
+/* Status badge color */
+.studio-status-badge {
+  transition: background-color 200ms ease;
+}
+
+/* Focus styles for accessibility */
+.studio-focus:focus-visible {
+  outline: 2px solid var(--color-studio-accent);
+  outline-offset: 2px;
+}
+
+/* Skip to content link */
+.skip-to-content {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  background: var(--color-studio-accent);
+  color: var(--color-studio-accent-fg);
+  padding: 8px 16px;
+  z-index: 100;
+  transition: top 150ms ease;
+}
+
+.skip-to-content:focus {
+  top: 0;
+}
+
+/* Loading skeleton pulse */
+@keyframes skeleton-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.skeleton {
+  animation: skeleton-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
