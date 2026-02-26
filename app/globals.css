@@ -74,6 +74,13 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(0.269 0 0);
   --sidebar-ring: oklch(0.439 0 0);
+
+  /* Studio dark mode overrides manually defined here */
+  --studio-border-muted: oklch(0.3 0 0);
+  --studio-accent-muted: oklch(0.25 0.05 255);
+  --studio-success-muted: oklch(0.25 0.05 150);
+  --studio-attention-muted: oklch(0.3 0.05 75);
+  --studio-danger-muted: oklch(0.25 0.04 17);
 }
 
 @theme inline {
@@ -115,6 +122,30 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+
+  /* Studio semantic tokens — extend existing OKLCH system */
+  --color-studio-canvas: var(--background);
+  --color-studio-canvas-inset: var(--sidebar);
+  --color-studio-canvas-overlay: var(--popover);
+  --color-studio-fg: var(--foreground);
+  --color-studio-fg-muted: var(--muted-foreground);
+  --color-studio-border: var(--border);
+  --color-studio-border-muted: var(--studio-border-muted, oklch(0.922 0 0));
+  --color-studio-accent: var(--primary);
+  --color-studio-accent-fg: var(--primary-foreground);
+  --color-studio-accent-muted: var(--studio-accent-muted, oklch(0.932 0.032 255.585));
+  --color-studio-success: var(--studio-success, oklch(0.527 0.154 150.069));
+  --color-studio-success-muted: var(--studio-success-muted, oklch(0.925 0.048 155.995));
+  --color-studio-attention: var(--studio-attention, oklch(0.681 0.162 75.834));
+  --color-studio-attention-muted: var(--studio-attention-muted, oklch(0.947 0.044 90.0));
+  --color-studio-danger: var(--destructive);
+  --color-studio-danger-muted: var(--studio-danger-muted, oklch(0.936 0.032 17.717));
+
+  /* Studio layout dimensions */
+  --spacing-studio-header-h: 52px;
+  --spacing-studio-footer-h: 28px;
+  --spacing-studio-sidebar-w: 280px;
+  --spacing-studio-sidebar-w-collapsed: 48px;
 }
 
 @layer base {
