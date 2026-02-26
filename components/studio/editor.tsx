@@ -1,7 +1,7 @@
 "use client"
 
-import { ChevronDown, ChevronRight, Save, Upload } from "lucide-react"
 import * as React from "react"
+import { ChevronDown, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
@@ -10,6 +10,33 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { UNIVERSAL_FIELDS, buildMergedFieldList, normalizeDate } from "@/lib/framework-adapters"
 import type { FieldVariantMap, FrontmatterFieldDef, MergedFieldDef } from "@/lib/framework-adapters"
+
+import {
+  headingsPlugin,
+  quotePlugin,
+  listsPlugin,
+  linkPlugin,
+  linkDialogPlugin,
+  imagePlugin,
+  tablePlugin,
+  thematicBreakPlugin,
+  codeBlockPlugin,
+  codeMirrorPlugin,
+  diffSourcePlugin,
+  directivesPlugin,
+  jsxPlugin,
+  markdownShortcutPlugin,
+  toolbarPlugin,
+  AdmonitionDirectiveDescriptor,
+  type MDXEditorMethods,
+} from '@mdxeditor/editor'
+
+import '@mdxeditor/editor/style.css'
+import './mdxeditor-theme.css'
+
+import { ForwardRefEditor } from "./forward-ref-editor"
+import { StudioToolbar } from "./studio-toolbar"
+import { getJsxComponentDescriptors } from "./jsx-component-descriptors"
 
 interface EditorProps {
   content: string
@@ -46,6 +73,7 @@ export function Editor({
 }: EditorProps) {
   const [isFrontmatterOpen, setIsFrontmatterOpen] = React.useState(true)
   const [showEmptySchema, setShowEmptySchema] = React.useState(false)
+  const editorRef = React.useRef<MDXEditorMethods>(null)
 
   const schema = frontmatterSchema && frontmatterSchema.length > 0 ? frontmatterSchema : UNIVERSAL_FIELDS
   const mergedFields = React.useMemo(
@@ -56,41 +84,90 @@ export function Editor({
   const fieldsInFile = mergedFields.filter((f) => f.isInFile)
   const emptySchemaFields = mergedFields.filter((f) => !f.isInFile)
 
+  // No-op image upload handler (Phase 10 will implement actual upload)
+  const handleImageUpload = React.useCallback(async (file: File): Promise<string> => {
+    return URL.createObjectURL(file)
+  }, [])
+
+  // Build MDXEditor plugins — memoized to avoid re-creating on every render
+  const plugins = React.useMemo(() => [
+    headingsPlugin(),
+    quotePlugin(),
+    listsPlugin(),
+    linkPlugin(),
+    linkDialogPlugin({
+      linkAutocompleteSuggestions: [],
+    }),
+    tablePlugin(),
+    thematicBreakPlugin(),
+    markdownShortcutPlugin(),
+    codeBlockPlugin({ defaultCodeBlockLanguage: 'typescript' }),
+    codeMirrorPlugin({
+      codeBlockLanguages: {
+        js: 'JavaScript',
+        ts: 'TypeScript',
+        tsx: 'TypeScript (JSX)',
+        jsx: 'JSX',
+        css: 'CSS',
+        html: 'HTML',
+        json: 'JSON',
+        python: 'Python',
+        bash: 'Bash',
+        yaml: 'YAML',
+        md: 'Markdown',
+        sql: 'SQL',
+        go: 'Go',
+        rust: 'Rust',
+        txt: 'Plain Text',
+      },
+    }),
+    imagePlugin({
+      imageUploadHandler: handleImageUpload,
+      imageAutocompleteSuggestions: [],
+    }),
+    directivesPlugin({
+      directiveDescriptors: [AdmonitionDirectiveDescriptor],
+    }),
+    jsxPlugin({
+      jsxComponentDescriptors: getJsxComponentDescriptors(),
+    }),
+    diffSourcePlugin({
+      diffMarkdown: '',
+      viewMode: 'rich-text',
+    }),
+    toolbarPlugin({
+      toolbarContents: () => <StudioToolbar />,
+    }),
+  ], [handleImageUpload])
+
+  // Handle content change from editor
+  const handleContentChange = React.useCallback((markdown: string) => {
+    onChangeContent(markdown)
+  }, [onChangeContent])
+
+  // Sync content to MDXEditor when content changes externally (file switch)
+  const lastSyncedContent = React.useRef<string | null>(null)
+  React.useEffect(() => {
+    if (editorRef.current && content !== lastSyncedContent.current) {
+      editorRef.current.setMarkdown(content)
+      lastSyncedContent.current = content
+    }
+  }, [content])
+
   return (
     <div className="h-full flex flex-col">
-      <div className="flex items-center justify-between p-2 border-b bg-muted/30">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium">Editor</span>
-          {statusBadge}
-        </div>
-        <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" onClick={onSaveDraft} disabled={isSaving || isPublishing}>
-            <Save className="h-4 w-4 mr-1" />
-            {isSaving ? "Saving..." : "Save Draft"}
-          </Button>
-          <Button
-            size="sm"
-            onClick={onPublish}
-            disabled={isSaving || isPublishing || !canPublish}
-            title={canPublish ? "Publish to GitHub" : "Only draft or approved documents can be published"}
-          >
-            <Upload className="h-4 w-4 mr-1" />
-            {isPublishing ? "Publishing..." : "Publish"}
-          </Button>
-        </div>
-      </div>
-
       <div ref={scrollContainerRef} onScroll={onScroll} className="flex-1 overflow-y-auto">
-        <div className="p-4 space-y-6">
+        <div className="space-y-0">
+          {/* Frontmatter Panel */}
           <Collapsible
             open={isFrontmatterOpen}
             onOpenChange={setIsFrontmatterOpen}
-            className="border rounded-md bg-card"
+            className="border-b border-studio-border bg-studio-canvas"
           >
-            <div className="flex items-center justify-between px-4 py-2 border-b">
-              <h3 className="text-sm font-semibold">Frontmatter</h3>
+            <div className="flex items-center justify-between px-4 py-2 border-b border-studio-border">
+              <h3 className="text-xs font-semibold text-studio-fg uppercase tracking-wider">Properties</h3>
               <CollapsibleTrigger asChild>
-                <Button variant="ghost" size="sm" className="w-9 p-0">
+                <Button variant="ghost" size="sm" className="w-9 p-0 h-6">
                   {isFrontmatterOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                   <span className="sr-only">Toggle Frontmatter</span>
                 </Button>
@@ -106,11 +183,11 @@ export function Editor({
                 />
               ))}
               {emptySchemaFields.length > 0 && (
-                <div className="border-t pt-3 mt-3">
+                <div className="border-t border-studio-border pt-3 mt-3">
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="text-xs text-muted-foreground p-0 h-auto hover:text-foreground"
+                    className="text-xs text-studio-fg-muted p-0 h-auto hover:text-studio-fg"
                     onClick={() => setShowEmptySchema(!showEmptySchema)}
                   >
                     {showEmptySchema ? (
@@ -119,9 +196,6 @@ export function Editor({
                       <ChevronRight className="h-3 w-3 mr-1" />
                     )}
                     Show {emptySchemaFields.length} available schema field{emptySchemaFields.length !== 1 ? "s" : ""}
-                    <span className="ml-1 text-muted-foreground/70">
-                      ({emptySchemaFields.map((f) => f.name).join(", ")} — not in this file)
-                    </span>
                   </Button>
                   {showEmptySchema && (
                     <div className="mt-3 space-y-4">
@@ -140,13 +214,15 @@ export function Editor({
             </CollapsibleContent>
           </Collapsible>
 
-          <div className="space-y-2">
-            <Label>Content (MDX)</Label>
-            <Textarea
-              value={content}
-              onChange={(e) => onChangeContent(e.target.value)}
-              className="min-h-[500px] font-mono text-sm"
-              placeholder="Write your content here..."
+          {/* MDXEditor */}
+          <div className="min-h-[500px]">
+            <ForwardRefEditor
+              ref={editorRef}
+              markdown={content}
+              contentEditableClassName="prose prose-neutral dark:prose-invert max-w-none font-sans px-6 py-4 min-h-[500px] focus:outline-none"
+              onChange={handleContentChange}
+              plugins={plugins}
+              className="mdxeditor-studio"
             />
           </div>
         </div>
@@ -165,15 +241,14 @@ function MergedFrontmatterField({
   onChange: (value: any) => void
 }) {
   const id = field.actualFieldName
-  // Show schema description as helper text when the actual field name differs from schema name
   const hasSchemaHint = field.actualFieldName !== field.name && field.description !== field.actualFieldName
 
   const labelEl = (
     <div>
-      <Label htmlFor={id} className="font-semibold">
+      <Label htmlFor={id} className="font-semibold text-sm text-studio-fg">
         {field.actualFieldName}
       </Label>
-      {hasSchemaHint && <p className="text-xs text-muted-foreground mt-0.5">{field.description}</p>}
+      {hasSchemaHint && <p className="text-xs text-studio-fg-muted mt-0.5">{field.description}</p>}
     </div>
   )
 
@@ -183,10 +258,10 @@ function MergedFrontmatterField({
         <div className="flex items-center gap-2">
           <Checkbox id={id} checked={!!value} onCheckedChange={(checked) => onChange(checked)} />
           <div>
-            <Label htmlFor={id} className="text-sm font-semibold">
+            <Label htmlFor={id} className="text-sm font-semibold text-studio-fg">
               {field.actualFieldName}
             </Label>
-            {hasSchemaHint && <p className="text-xs text-muted-foreground">{field.description}</p>}
+            {hasSchemaHint && <p className="text-xs text-studio-fg-muted">{field.description}</p>}
           </div>
         </div>
       )
@@ -200,6 +275,7 @@ function MergedFrontmatterField({
             type="date"
             value={normalizeDate(value)}
             onChange={(e) => onChange(e.target.value)}
+            className="border-studio-border"
           />
         </div>
       )
@@ -213,6 +289,7 @@ function MergedFrontmatterField({
             type="number"
             value={value ?? ""}
             onChange={(e) => onChange(e.target.value ? Number(e.target.value) : undefined)}
+            className="border-studio-border"
           />
         </div>
       )
@@ -236,6 +313,7 @@ function MergedFrontmatterField({
               )
             }}
             placeholder={`e.g. item1, item2, item3`}
+            className="border-studio-border"
           />
         </div>
       )
@@ -249,6 +327,7 @@ function MergedFrontmatterField({
             value={value || ""}
             onChange={(e) => onChange(e.target.value)}
             placeholder="/images/cover.jpg"
+            className="border-studio-border"
           />
         </div>
       )
@@ -261,13 +340,12 @@ function MergedFrontmatterField({
             id={id}
             value={typeof value === "object" ? JSON.stringify(value, null, 2) : String(value ?? "")}
             disabled
-            className="font-mono text-xs h-24 bg-muted"
+            className="font-mono text-xs h-24 bg-studio-canvas-inset border-studio-border"
           />
         </div>
       )
 
     default: {
-      // Use textarea for description-like fields
       const isLongText =
         field.actualFieldName === "description" ||
         field.actualFieldName === "summary" ||
@@ -286,7 +364,7 @@ function MergedFrontmatterField({
               value={value || ""}
               onChange={(e) => onChange(e.target.value)}
               placeholder={field.description}
-              className="h-20"
+              className="h-20 border-studio-border"
             />
           </div>
         )
@@ -299,6 +377,7 @@ function MergedFrontmatterField({
             value={value || ""}
             onChange={(e) => onChange(e.target.value)}
             placeholder={field.description}
+            className="border-studio-border"
           />
         </div>
       )
