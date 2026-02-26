@@ -1,15 +1,20 @@
 "use client"
 
-import { ChevronDown, ChevronRight, File, Folder, FolderOpen, Plus, Search, Trash2, Undo2, X } from "lucide-react"
 import * as React from "react"
+import { Plus, RefreshCw, Search, X } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { DndContext, DragOverlay, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragStartEvent, DragEndEvent } from "@dnd-kit/core"
+import { sortableKeyboardCoordinates } from "@dnd-kit/sortable"
+
 import { filterTree } from "@/lib/explorer-tree-overlay"
 import type { OverlayTreeNode } from "@/lib/explorer-tree-overlay"
 import type { FileTreeNode } from "@/lib/github"
 import { cn } from "@/lib/utils"
+
+import { TreeItem } from "./file-tree-item"
+import { FileContextMenu } from "./file-context-menu"
 
 interface FileTreeProps {
   tree: FileTreeNode[]
@@ -19,6 +24,10 @@ interface FileTreeProps {
   onCreateFile?: (parentPath: string) => void
   onDeleteFile?: (filePath: string, sha: string) => void
   onUndoDelete?: (filePath: string) => void
+  onRenameFile?: (oldPath: string, newPath: string) => void
+  onMoveFile?: (oldPath: string, newParentPath: string) => void
+  owner?: string
+  repo?: string
 }
 
 export function FileTree({
@@ -29,82 +38,140 @@ export function FileTree({
   onCreateFile,
   onDeleteFile,
   onUndoDelete,
+  onRenameFile,
+  onMoveFile,
+  owner,
+  repo,
 }: FileTreeProps) {
   const [searchQuery, setSearchQuery] = React.useState("")
+  const [activeId, setActiveId] = React.useState<string | null>(null)
+  const searchInputRef = React.useRef<HTMLInputElement>(null)
 
   const displayTree = React.useMemo(
     () => (searchQuery ? filterTree(tree as OverlayTreeNode[], searchQuery, titleMap) : tree),
     [tree, searchQuery, titleMap],
   )
 
-  const topLevelFolders = React.useMemo(() => {
-    return displayTree
-      .filter((node) => node.type === "dir")
-      .map((node) => ({ name: node.name, path: node.path }))
-      .sort((a, b) => a.name.localeCompare(b.name))
-  }, [displayTree])
+  // Keyboard navigation
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't intercept if user is typing in an input
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        (e.target as HTMLElement).isContentEditable
+      ) {
+        if (e.key === "Escape" && e.target === searchInputRef.current) {
+          e.preventDefault()
+          setSearchQuery("")
+          ;(e.target as HTMLInputElement).blur()
+        }
+        return
+      }
 
-  const handleCreateClick = (path: string) => {
-    if (onCreateFile) {
-      onCreateFile(path)
+      if (e.key === "/") {
+        e.preventDefault()
+        searchInputRef.current?.focus()
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [])
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 5,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  )
+
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveId(event.active.id as string)
+  }
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    setActiveId(null)
+    const { active, over } = event
+
+    if (over && active.id !== over.id) {
+      if (onMoveFile) {
+        const activeNode = active.data.current?.node as FileTreeNode
+        const overNode = over.data.current?.node as FileTreeNode
+
+        if (activeNode && overNode && overNode.type === "dir") {
+          onMoveFile(activeNode.path, overNode.path)
+        }
+      }
     }
   }
 
+  const handleCreateRootFile = () => {
+    if (onCreateFile) {
+      onCreateFile("")
+    }
+  }
+
+  // Count files recursively
+  const getFileCount = (nodes: FileTreeNode[]): number => {
+    return nodes.reduce((acc, node) => {
+      if (node.type === "file") return acc + 1
+      if (node.children) return acc + getFileCount(node.children)
+      return acc
+    }, 0)
+  }
+
+  const totalFiles = React.useMemo(() => getFileCount(tree), [tree])
+
   return (
-    <div className="h-full flex flex-col">
-      <div className="p-2 border-b text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center justify-between">
-        <span>Explorer</span>
-        {onCreateFile && topLevelFolders.length > 0 ? (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-5 w-5 p-0 text-muted-foreground hover:text-foreground"
-                title="New file"
-              >
-                <Plus className="h-3.5 w-3.5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-40">
-              <DropdownMenuItem onClick={() => handleCreateClick("")}>
-                <Folder className="mr-2 h-4 w-4" />
-                Root
-              </DropdownMenuItem>
-              {topLevelFolders.map((folder) => (
-                <DropdownMenuItem key={folder.path} onClick={() => handleCreateClick(folder.path)}>
-                  <Folder className="mr-2 h-4 w-4" />
-                  {folder.name}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        ) : onCreateFile ? (
+    <div className="h-full flex flex-col bg-studio-canvas text-studio-fg text-sm">
+      <div className="p-2 border-b border-studio-border text-xs font-semibold text-studio-fg uppercase tracking-wider flex items-center justify-between sticky top-0 bg-studio-canvas z-10">
+        <span>Explorer ({totalFiles})</span>
+        <div className="flex items-center gap-1">
+          {onCreateFile && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 rounded-md hover:bg-studio-canvas-inset"
+              onClick={handleCreateRootFile}
+              title="New file"
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+          )}
           <Button
             variant="ghost"
-            size="sm"
-            className="h-5 w-5 p-0 text-muted-foreground hover:text-foreground"
-            onClick={() => onCreateFile("")}
-            title="New file in root"
+            size="icon"
+            className="h-6 w-6 rounded-md hover:bg-studio-canvas-inset"
+            title="Refresh"
+            onClick={() => {
+              // Refresh is handled by mutating the tree upstream, but we can clear search
+              setSearchQuery("")
+            }}
           >
-            <Plus className="h-3.5 w-3.5" />
+            <RefreshCw className="h-3.5 w-3.5" />
           </Button>
-        ) : null}
+        </div>
       </div>
-      <div className="p-2 border-b">
+      <div className="p-2 border-b border-studio-border bg-studio-canvas z-10 sticky top-10">
         <div className="relative">
-          <Search className="absolute left-2 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+          <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-studio-fg-muted" />
           <Input
-            placeholder="Search files..."
+            ref={searchInputRef}
+            placeholder="Search files... [/]"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="h-8 pl-7 pr-7 text-xs"
+            className="h-7 w-full pl-8 pr-7 text-xs bg-studio-canvas border-studio-border focus-visible:ring-1 focus-visible:ring-studio-accent rounded-md shadow-sm"
           />
           {searchQuery && (
             <button
               type="button"
               onClick={() => setSearchQuery("")}
-              className="absolute right-2 top-2.5 text-muted-foreground hover:text-foreground"
+              className="absolute right-2 top-2 text-studio-fg-muted hover:text-studio-fg"
             >
               <X className="h-3.5 w-3.5" />
             </button>
@@ -112,196 +179,56 @@ export function FileTree({
         </div>
       </div>
       <div className="flex-1 overflow-y-auto">
-        <div className="p-1">
+        <div className="p-2">
           {displayTree.length === 0 ? (
-            <div className="text-xs text-muted-foreground p-3 text-center">
-              {searchQuery ? "No matching files" : "No content files found"}
+            <div className="text-xs text-studio-fg-muted p-4 text-center">
+              {searchQuery ? "No matching files" : "No folders or files"}
             </div>
           ) : (
-            <div>
-              {displayTree.map((node) => (
-                <TreeItem
-                  key={node.path}
-                  node={node}
-                  depth={0}
-                  onSelect={onSelect}
-                  selectedPath={selectedPath}
-                  titleMap={titleMap}
-                  onCreateFile={onCreateFile}
-                  onDeleteFile={onDeleteFile}
-                  onUndoDelete={onUndoDelete}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-interface TreeItemProps {
-  node: FileTreeNode
-  depth: number
-  onSelect: (node: FileTreeNode) => void
-  selectedPath?: string
-  titleMap?: Record<string, string>
-  onCreateFile?: (parentPath: string) => void
-  onDeleteFile?: (filePath: string, sha: string) => void
-  onUndoDelete?: (filePath: string) => void
-}
-
-function TreeItem({
-  node,
-  depth,
-  onSelect,
-  selectedPath,
-  titleMap,
-  onCreateFile,
-  onDeleteFile,
-  onUndoDelete,
-}: TreeItemProps) {
-  const [isOpen, setIsOpen] = React.useState(depth < 2)
-
-  const overlay = node as OverlayTreeNode
-  const isNew = overlay.isNew
-  const isDeleted = overlay.isDeleted
-
-  if (node.type === "dir") {
-    return (
-      <div>
-        <div className="group relative flex items-center">
-          <Button
-            variant="ghost"
-            size="sm"
-            className={cn(
-              "w-full justify-start gap-1 px-1 h-7 font-normal rounded-sm hover:bg-accent",
-              isDeleted && "opacity-50",
-            )}
-            style={{ paddingLeft: `${depth * 12 + 4}px` }}
-            onClick={() => setIsOpen(!isOpen)}
-          >
-            {isOpen ? (
-              <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-            ) : (
-              <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-            )}
-            {isOpen ? (
-              <FolderOpen className="h-4 w-4 shrink-0 text-blue-500" />
-            ) : (
-              <Folder className="h-4 w-4 shrink-0 text-blue-500" />
-            )}
-            <span className={cn("truncate text-sm", isDeleted && "line-through")}>{node.name}</span>
-            {isNew && (
-              <Badge
-                variant="secondary"
-                className="ml-1 h-4 px-1 text-[10px] bg-emerald-500/15 text-emerald-600 border-0"
-              >
-                NEW
-              </Badge>
-            )}
-          </Button>
-          {onCreateFile && !isDeleted && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="absolute right-0 h-5 w-5 p-0 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground"
-              onClick={(e) => {
-                e.stopPropagation()
-                onCreateFile(node.path)
-              }}
-              title={`New file in ${node.name}`}
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
             >
-              <Plus className="h-3 w-3" />
-            </Button>
+              <FileContextMenu
+                type="background"
+                onNewFile={handleCreateRootFile}
+                onRefresh={() => setSearchQuery("")}
+                onCollapseAll={() => {
+                  // Handled upstream or by generic collapse
+                }}
+              >
+                <div className="min-h-[200px]">
+                  {displayTree.map((node) => (
+                    <TreeItem
+                      key={node.path}
+                      node={node}
+                      depth={0}
+                      onSelect={onSelect}
+                      selectedPath={selectedPath}
+                      titleMap={titleMap}
+                      onCreateFile={onCreateFile}
+                      onDeleteFile={onDeleteFile}
+                      onRenameFile={onRenameFile}
+                      owner={owner}
+                      repo={repo}
+                    />
+                  ))}
+                </div>
+              </FileContextMenu>
+
+              <DragOverlay>
+                {activeId ? (
+                  <div className="opacity-80 scale-105 pointer-events-none p-2 bg-studio-canvas border border-studio-border rounded-md shadow-lg text-sm flex items-center">
+                    Dragging {activeId.replace("file:", "")}
+                  </div>
+                ) : null}
+              </DragOverlay>
+            </DndContext>
           )}
         </div>
-        {isOpen && node.children && (
-          <div>
-            {node.children.map((child) => (
-              <TreeItem
-                key={child.path}
-                node={child}
-                depth={depth + 1}
-                onSelect={onSelect}
-                selectedPath={selectedPath}
-                titleMap={titleMap}
-                onCreateFile={onCreateFile}
-                onDeleteFile={onDeleteFile}
-                onUndoDelete={onUndoDelete}
-              />
-            ))}
-          </div>
-        )}
       </div>
-    )
-  }
-
-  const displayTitle = titleMap?.[node.path]
-
-  return (
-    <div className="group relative flex items-center">
-      <Button
-        variant="ghost"
-        size="sm"
-        className={cn(
-          "w-full justify-start gap-1 px-1 font-normal rounded-sm",
-          displayTitle ? "h-auto py-1" : "h-7",
-          selectedPath === node.path && "bg-accent text-accent-foreground",
-          isDeleted && "opacity-50",
-        )}
-        style={{ paddingLeft: `${depth * 12 + 22}px` }}
-        onClick={() => !isDeleted && onSelect(node)}
-        title={node.name}
-        disabled={isDeleted}
-      >
-        <File
-          className={cn(
-            "h-4 w-4 shrink-0",
-            isNew ? "text-emerald-600" : isDeleted ? "text-destructive" : "text-muted-foreground",
-          )}
-        />
-        <span className={cn("truncate text-sm", isDeleted && "line-through text-muted-foreground")}>
-          {displayTitle || node.name}
-        </span>
-        {isNew && (
-          <Badge
-            variant="secondary"
-            className="ml-1 h-4 px-1 text-[10px] bg-emerald-500/15 text-emerald-600 border-0 shrink-0"
-          >
-            NEW
-          </Badge>
-        )}
-      </Button>
-      {isDeleted && onUndoDelete && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="absolute right-0 h-5 w-auto px-1.5 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground text-[10px] gap-0.5"
-          onClick={(e) => {
-            e.stopPropagation()
-            onUndoDelete(node.path)
-          }}
-          title="Undo delete"
-        >
-          <Undo2 className="h-3 w-3" />
-          Undo
-        </Button>
-      )}
-      {!isDeleted && !isNew && onDeleteFile && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="absolute right-0 h-5 w-5 p-0 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive"
-          onClick={(e) => {
-            e.stopPropagation()
-            onDeleteFile(node.path, node.sha)
-          }}
-          title="Delete file"
-        >
-          <Trash2 className="h-3 w-3" />
-        </Button>
-      )}
     </div>
   )
 }

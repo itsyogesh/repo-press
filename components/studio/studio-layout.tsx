@@ -293,6 +293,22 @@ function StudioLayoutInner({
     }
   }, [pendingOps, userId, undoOp])
 
+  const handleRenameFile = React.useCallback(
+    async (oldPath: string, newPath: string) => {
+      // In a complete implementation, this would fetch the old file content from GitHub/Convex
+      // and then call stageDelete(oldPath) + stageCreate(newPath, currentContent)
+      toast.error("Rename requires fetching content from GitHub (Not implemented)")
+    },
+    []
+  )
+
+  const handleMoveFile = React.useCallback(
+    async (oldPath: string, newParentPath: string) => {
+      toast.error("Move requires fetching content from GitHub (Not implemented)")
+    },
+    []
+  )
+
   const currentStatus = document?.status || "draft"
   const statusInfo = STATUS_LABELS[currentStatus] || STATUS_LABELS.draft
   const canPublish = ["draft", "approved"].includes(currentStatus)
@@ -381,6 +397,10 @@ function StudioLayoutInner({
                         onCreateFile={handleCreateFile}
                         onDeleteFile={handleDeleteFile}
                         onUndoDelete={handleUndoDelete}
+                        onRenameFile={handleRenameFile}
+                        onMoveFile={handleMoveFile}
+                        owner={owner}
+                        repo={repo}
                       />
                     </TabsContent>
                     <TabsContent value="documents" className="flex-1 m-0 overflow-hidden">
@@ -410,6 +430,8 @@ function StudioLayoutInner({
                   }}
                   selectedPath={selectedFile?.path}
                   titleMap={titleMap}
+                  owner={owner}
+                  repo={repo}
                 />
               )}
             </ResizablePanel>
