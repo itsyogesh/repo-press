@@ -38,11 +38,11 @@ export function FileTree({
   )
 
   const topLevelFolders = React.useMemo(() => {
-    return displayTree
+    return tree
       .filter((node) => node.type === "dir")
       .map((node) => ({ name: node.name, path: node.path }))
       .sort((a, b) => a.name.localeCompare(b.name))
-  }, [displayTree])
+  }, [tree])
 
   const handleCreateClick = (path: string) => {
     if (onCreateFile) {
