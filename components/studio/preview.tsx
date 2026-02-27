@@ -77,6 +77,8 @@ const MDX_COMPONENTS: Record<string, ReturnType<typeof mdxPlaceholder>> = {
   AccordionGroup: mdxPlaceholder("AccordionGroup"),
   CodeGroup: mdxPlaceholder("CodeGroup"),
   CodeBlock: mdxPlaceholder("CodeBlock"),
+  DocsImage: mdxPlaceholder("DocsImage"),
+  DocsVideo: mdxPlaceholder("DocsVideo"),
 }
 
 export function Preview({

@@ -1,4 +1,4 @@
-import type { JsxComponentDescriptor } from '@mdxeditor/editor'
+import type { JsxComponentDescriptor } from "@mdxeditor/editor"
 
 /**
  * JSX component descriptors for common MDX components.
@@ -8,66 +8,148 @@ import type { JsxComponentDescriptor } from '@mdxeditor/editor'
 export function getJsxComponentDescriptors(): JsxComponentDescriptor[] {
   return [
     {
-      name: 'Callout',
-      kind: 'flow',
+      name: "DocsImage",
+      kind: "flow",
       props: [
-        { name: 'type', type: 'string' },
-        { name: 'title', type: 'string' },
+        { name: "src", type: "expression" },
+        { name: "alt", type: "string" },
       ],
-      hasChildren: true,
+      hasChildren: false,
       Editor: ({ descriptor }) => (
         <div
           style={{
-            padding: '12px 16px',
-            border: '1px solid var(--studio-border)',
-            borderRadius: '8px',
-            background: 'var(--studio-canvas-inset)',
-            margin: '8px 0',
+            padding: "12px 16px",
+            border: "1px dashed var(--studio-border)",
+            borderRadius: "8px",
+            background: "var(--studio-canvas-inset)",
+            margin: "8px 0",
           }}
         >
           <div
             style={{
-              fontSize: '11px',
+              fontSize: "11px",
               fontWeight: 600,
-              color: 'var(--studio-fg-muted)',
-              marginBottom: '4px',
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
+              color: "var(--studio-fg-muted)",
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
             }}
           >
-            📌 {descriptor.name}
+            🖼️ DocsImage
           </div>
-          <div>{descriptor.props.find(p => p.name === 'title')?.type || 'Callout'}</div>
+          <div
+            style={{
+              fontSize: "12px",
+              marginTop: "4px",
+              color: "var(--studio-fg)",
+            }}
+          >
+            {descriptor.props.find((p) => p.name === "alt")?.name || "Image"}
+          </div>
         </div>
       ),
     },
     {
-      name: 'Card',
-      kind: 'flow',
+      name: "DocsVideo",
+      kind: "flow",
       props: [
-        { name: 'title', type: 'string' },
-        { name: 'href', type: 'string' },
-        { name: 'icon', type: 'string' },
+        { name: "src", type: "expression" },
+        { name: "alt", type: "string" },
+      ],
+      hasChildren: false,
+      Editor: ({ descriptor }) => (
+        <div
+          style={{
+            padding: "12px 16px",
+            border: "1px dashed var(--studio-border)",
+            borderRadius: "8px",
+            background: "var(--studio-canvas-inset)",
+            margin: "8px 0",
+          }}
+        >
+          <div
+            style={{
+              fontSize: "11px",
+              fontWeight: 600,
+              color: "var(--studio-fg-muted)",
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+            }}
+          >
+            🎬 DocsVideo
+          </div>
+          <div
+            style={{
+              fontSize: "12px",
+              marginTop: "4px",
+              color: "var(--studio-fg)",
+            }}
+          >
+            {descriptor.props.find((p) => p.name === "alt")?.name || "Video"}
+          </div>
+        </div>
+      ),
+    },
+    {
+      name: "Callout",
+      kind: "flow",
+      props: [
+        { name: "type", type: "string" },
+        { name: "title", type: "string" },
       ],
       hasChildren: true,
       Editor: ({ descriptor }) => (
         <div
           style={{
-            padding: '12px 16px',
-            border: '1px solid var(--studio-border)',
-            borderRadius: '8px',
-            background: 'var(--studio-canvas-inset)',
-            margin: '8px 0',
+            padding: "12px 16px",
+            border: "1px solid var(--studio-border)",
+            borderRadius: "8px",
+            background: "var(--studio-canvas-inset)",
+            margin: "8px 0",
           }}
         >
           <div
             style={{
-              fontSize: '11px',
+              fontSize: "11px",
               fontWeight: 600,
-              color: 'var(--studio-fg-muted)',
-              marginBottom: '4px',
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
+              color: "var(--studio-fg-muted)",
+              marginBottom: "4px",
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+            }}
+          >
+            📌 {descriptor.name}
+          </div>
+          <div>{descriptor.props.find((p) => p.name === "title")?.type || "Callout"}</div>
+        </div>
+      ),
+    },
+    {
+      name: "Card",
+      kind: "flow",
+      props: [
+        { name: "title", type: "string" },
+        { name: "href", type: "string" },
+        { name: "icon", type: "string" },
+      ],
+      hasChildren: true,
+      Editor: ({ descriptor }) => (
+        <div
+          style={{
+            padding: "12px 16px",
+            border: "1px solid var(--studio-border)",
+            borderRadius: "8px",
+            background: "var(--studio-canvas-inset)",
+            margin: "8px 0",
+          }}
+        >
+          <div
+            style={{
+              fontSize: "11px",
+              fontWeight: 600,
+              color: "var(--studio-fg-muted)",
+              marginBottom: "4px",
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
             }}
           >
             🃏 {descriptor.name}
@@ -76,31 +158,31 @@ export function getJsxComponentDescriptors(): JsxComponentDescriptor[] {
       ),
     },
     {
-      name: 'Tabs',
-      kind: 'flow',
+      name: "Tabs",
+      kind: "flow",
       props: [
-        { name: 'items', type: 'expression' },
-        { name: 'defaultValue', type: 'string' },
+        { name: "items", type: "expression" },
+        { name: "defaultValue", type: "string" },
       ],
       hasChildren: true,
       Editor: ({ descriptor }) => (
         <div
           style={{
-            padding: '12px 16px',
-            border: '1px solid var(--studio-border)',
-            borderRadius: '8px',
-            background: 'var(--studio-canvas-inset)',
-            margin: '8px 0',
+            padding: "12px 16px",
+            border: "1px solid var(--studio-border)",
+            borderRadius: "8px",
+            background: "var(--studio-canvas-inset)",
+            margin: "8px 0",
           }}
         >
           <div
             style={{
-              fontSize: '11px',
+              fontSize: "11px",
               fontWeight: 600,
-              color: 'var(--studio-fg-muted)',
-              marginBottom: '4px',
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
+              color: "var(--studio-fg-muted)",
+              marginBottom: "4px",
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
             }}
           >
             📑 {descriptor.name}
@@ -109,27 +191,27 @@ export function getJsxComponentDescriptors(): JsxComponentDescriptor[] {
       ),
     },
     {
-      name: 'Steps',
-      kind: 'flow',
+      name: "Steps",
+      kind: "flow",
       props: [],
       hasChildren: true,
       Editor: ({ descriptor }) => (
         <div
           style={{
-            padding: '12px 16px',
-            border: '1px dashed var(--studio-border)',
-            borderRadius: '8px',
-            background: 'var(--studio-canvas-inset)',
-            margin: '8px 0',
+            padding: "12px 16px",
+            border: "1px dashed var(--studio-border)",
+            borderRadius: "8px",
+            background: "var(--studio-canvas-inset)",
+            margin: "8px 0",
           }}
         >
           <div
             style={{
-              fontSize: '11px',
+              fontSize: "11px",
               fontWeight: 600,
-              color: 'var(--studio-fg-muted)',
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
+              color: "var(--studio-fg-muted)",
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
             }}
           >
             🔢 {descriptor.name}
@@ -138,27 +220,27 @@ export function getJsxComponentDescriptors(): JsxComponentDescriptor[] {
       ),
     },
     {
-      name: 'Accordion',
-      kind: 'flow',
-      props: [{ name: 'title', type: 'string' }],
+      name: "Accordion",
+      kind: "flow",
+      props: [{ name: "title", type: "string" }],
       hasChildren: true,
       Editor: ({ descriptor }) => (
         <div
           style={{
-            padding: '12px 16px',
-            border: '1px solid var(--studio-border)',
-            borderRadius: '8px',
-            background: 'var(--studio-canvas-inset)',
-            margin: '8px 0',
+            padding: "12px 16px",
+            border: "1px solid var(--studio-border)",
+            borderRadius: "8px",
+            background: "var(--studio-canvas-inset)",
+            margin: "8px 0",
           }}
         >
           <div
             style={{
-              fontSize: '11px',
+              fontSize: "11px",
               fontWeight: 600,
-              color: 'var(--studio-fg-muted)',
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
+              color: "var(--studio-fg-muted)",
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
             }}
           >
             🎵 {descriptor.name}

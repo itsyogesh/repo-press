@@ -29,9 +29,7 @@ export default async function FilePage({ params, searchParams }: FilePageProps) 
   const { owner, repo, path } = await params
   const { branch } = await searchParams
   const currentBranch = branch || "main"
-
   const filePath = path.join("/")
-  console.log(`[v0] Fetching file: ${owner}/${repo}/${filePath} on branch: ${currentBranch}`)
 
   const fileName = path[path.length - 1]
   const fileExtension = fileName.split(".").pop()
@@ -41,9 +39,7 @@ export default async function FilePage({ params, searchParams }: FilePageProps) 
 
   if (token) {
     try {
-      console.log(`[v0] Token present, calling getFileContent`)
       content = await getFileContent(token, owner, repo, filePath, currentBranch)
-      console.log(`[v0] getFileContent result:`, content ? "Found content" : "Null content")
       if (content === null) {
         error = "File not found or unable to read content."
       }

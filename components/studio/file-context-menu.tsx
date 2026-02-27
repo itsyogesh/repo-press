@@ -18,7 +18,6 @@ interface FileContextMenuProps {
   onRename?: () => void
   onDelete?: () => void
   onNewFile?: () => void
-  onRefresh?: () => void
   onCollapseAll?: () => void
   disabled?: boolean
 }
@@ -32,7 +31,6 @@ export function FileContextMenu({
   onRename,
   onDelete,
   onNewFile,
-  onRefresh,
   onCollapseAll,
   disabled
 }: FileContextMenuProps) {
@@ -81,7 +79,6 @@ export function FileContextMenu({
         {type === "background" && (
           <>
             <ContextMenuItem onClick={onNewFile}>New file...</ContextMenuItem>
-            <ContextMenuItem onClick={onRefresh}>Refresh tree</ContextMenuItem>
             <ContextMenuItem onClick={onCollapseAll}>Collapse all</ContextMenuItem>
           </>
         )}

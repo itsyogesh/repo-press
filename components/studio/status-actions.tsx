@@ -19,6 +19,7 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu"
 import { Textarea } from "@/components/ui/textarea"
 import { api } from "@/convex/_generated/api"
@@ -28,6 +29,15 @@ type DocumentStatus = "draft" | "in_review" | "approved" | "published" | "schedu
 
 // Statuses reachable via transitionStatus (excludes "published" which requires GitHub commit)
 type TransitionableStatus = "draft" | "in_review" | "approved" | "scheduled" | "archived"
+
+const STATUS_LABELS: Record<DocumentStatus, string> = {
+  draft: "Draft",
+  in_review: "In Review",
+  approved: "Approved",
+  published: "Published",
+  scheduled: "Scheduled",
+  archived: "Archived",
+}
 
 const STATUS_ACTIONS: Record<
   DocumentStatus,
@@ -114,15 +124,22 @@ export function StatusActions({ documentId, currentStatus }: StatusActionsProps)
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="sm" disabled={isLoading}>
-            <ChevronDown className="h-4 w-4" />
+          <Button variant="ghost" size="sm" disabled={isLoading} className="h-7 px-2 gap-1 text-studio-fg-muted hover:text-studio-fg">
+            <ChevronDown className="h-3.5 w-3.5" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
+        <DropdownMenuContent align="end" className="w-56">
+          <DropdownMenuLabel className="text-xs text-studio-fg-muted">
+            Current: {STATUS_LABELS[currentStatus]}
+          </DropdownMenuLabel>
+          <DropdownMenuSeparator />
           {actions.map((action, i) => (
             <React.Fragment key={action.targetStatus}>
               {action.targetStatus === "archived" && i > 0 && <DropdownMenuSeparator />}
-              <DropdownMenuItem onClick={() => handleAction(action.targetStatus)}>
+              <DropdownMenuItem
+                onClick={() => handleAction(action.targetStatus)}
+                className={action.targetStatus === "archived" ? "text-studio-fg-muted" : ""}
+              >
                 <action.icon className="h-4 w-4 mr-2" />
                 {action.label}
               </DropdownMenuItem>
@@ -149,7 +166,7 @@ export function StatusActions({ documentId, currentStatus }: StatusActionsProps)
             }
             value={reviewNote}
             onChange={(e) => setReviewNote(e.target.value)}
-            className="min-h-[100px]"
+            className="min-h-[100px] border-studio-border"
           />
           <DialogFooter>
             <Button variant="outline" onClick={() => setReviewDialogOpen(false)}>
@@ -158,6 +175,7 @@ export function StatusActions({ documentId, currentStatus }: StatusActionsProps)
             <Button
               onClick={() => pendingAction && executeTransition(pendingAction, reviewNote || undefined)}
               disabled={isLoading}
+              className="bg-studio-accent hover:bg-studio-accent/90"
             >
               {isLoading ? "Updating..." : "Confirm"}
             </Button>

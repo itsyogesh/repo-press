@@ -1,33 +1,36 @@
 "use client"
 
-import * as React from "react"
 import { useMutation } from "convex/react"
+import matter from "gray-matter"
+import { FileText, FolderOpen, History, Search, X } from "lucide-react"
+import Link from "next/link"
+import * as React from "react"
 import { toast } from "sonner"
-import type { Id } from "@/convex/_generated/dataModel"
-import { api } from "@/convex/_generated/api"
 import { Badge } from "@/components/ui/badge"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
+import { Skeleton } from "@/components/ui/skeleton"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { api } from "@/convex/_generated/api"
+import type { Id } from "@/convex/_generated/dataModel"
 import type { FileTreeNode } from "@/lib/github"
-
+import { CommandPalette } from "./command-palette"
 import { CreateFileDialog } from "./create-file-dialog"
-import { DocumentList } from "./document-list"
 import { Editor } from "./editor"
 import { FileTree } from "./file-tree"
+import { useStudioFile } from "./hooks/use-studio-file"
+import { useStudioPublish } from "./hooks/use-studio-publish"
+import { useStudioQueries } from "./hooks/use-studio-queries"
+import { useStudioSave } from "./hooks/use-studio-save"
 import { Preview } from "./preview"
 import { PublishDialog } from "./publish-dialog"
 import { PublishOpsBar } from "./publish-ops-bar"
 import { StatusActions } from "./status-actions"
-
 import { StudioProvider, useStudio } from "./studio-context"
-import { ViewModeProvider, useViewMode } from "./view-mode-context"
-import { StudioHeader } from "./studio-header"
 import { StudioFooter } from "./studio-footer"
-import { useStudioQueries } from "./hooks/use-studio-queries"
-import { useStudioFile } from "./hooks/use-studio-file"
-import { useStudioSave } from "./hooks/use-studio-save"
-import { useStudioPublish } from "./hooks/use-studio-publish"
-import { CommandPalette } from "./command-palette"
+import { StudioHeader } from "./studio-header"
+import { useViewMode, ViewModeProvider } from "./view-mode-context"
 
 export interface StudioLayoutProps {
   tree: FileTreeNode[]
@@ -59,6 +62,299 @@ const STATUS_LABELS: Record<
   archived: { label: "Archived", variant: "destructive" },
 }
 
+function findTreeNodeByPath(nodes: FileTreeNode[], path: string): FileTreeNode | null {
+  for (const node of nodes) {
+    if (node.path === path) return node
+    if (node.children) {
+      const match = findTreeNodeByPath(node.children, path)
+      if (match) return match
+    }
+  }
+  return null
+}
+
+function inferTitleFromPath(path: string) {
+  const fileName = path.split("/").pop() || path
+  return fileName.replace(/\.(mdx?|markdown)$/i, "")
+}
+
+type FlatFileEntry = {
+  path: string
+  name: string
+  title?: string
+}
+
+function flattenFiles(nodes: FileTreeNode[], titleMap?: Record<string, string>) {
+  const result: FlatFileEntry[] = []
+  const walk = (entries: FileTreeNode[]) => {
+    for (const node of entries) {
+      if (node.type === "file") {
+        result.push({
+          path: node.path,
+          name: node.name,
+          title: titleMap?.[node.path],
+        })
+      }
+      if (node.children) walk(node.children)
+    }
+  }
+  walk(nodes)
+  return result
+}
+
+function StudioSidebarLoading() {
+  return (
+    <div className="flex h-full flex-col bg-studio-canvas-inset">
+      <div className="shrink-0 border-b border-studio-border px-2 py-2">
+        <Skeleton className="h-3.5 w-20" />
+      </div>
+
+      <div className="shrink-0 border-b border-studio-border px-2 py-2">
+        <div className="mb-2 flex items-center justify-between">
+          <Skeleton className="h-3.5 w-24" />
+          <div className="flex items-center gap-1">
+            <Skeleton className="h-6 w-6 rounded-md" />
+            <Skeleton className="h-6 w-6 rounded-md" />
+          </div>
+        </div>
+        <Skeleton className="h-7 w-full rounded-md" />
+      </div>
+
+      <div className="flex-1 overflow-hidden px-2 py-2">
+        <div className="space-y-1.5">
+          {Array.from({ length: 12 }).map((_, idx) => (
+            <div key={`sidebar-skeleton-${idx}`} className="flex items-center gap-2 px-1 py-1">
+              <Skeleton className="h-3.5 w-3.5 rounded" />
+              <Skeleton className={idx % 3 === 0 ? "h-3.5 w-40" : idx % 3 === 1 ? "h-3.5 w-32" : "h-3.5 w-48"} />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="shrink-0 border-t border-studio-border p-2">
+        <Skeleton className="h-8 w-full rounded-md" />
+        <div className="mt-2 flex items-center justify-between">
+          <Skeleton className="h-7 w-24 rounded-md" />
+          <Skeleton className="h-7 w-32 rounded-md" />
+        </div>
+        <Skeleton className="mt-2 h-3.5 w-28" />
+      </div>
+    </div>
+  )
+}
+
+function StudioNoSelectionLoading() {
+  return (
+    <div className="h-full flex items-center justify-center px-6">
+      <div className="w-full max-w-2xl space-y-5">
+        <div className="space-y-2 text-center">
+          <Skeleton className="h-8 w-52 mx-auto" />
+          <Skeleton className="h-4 w-96 mx-auto max-w-full" />
+        </div>
+        <div className="mx-auto max-w-xl space-y-3">
+          <Skeleton className="h-11 w-full rounded-md" />
+          <div className="space-y-1 rounded-lg border border-studio-border bg-studio-canvas-inset/30 p-2">
+            {Array.from({ length: 6 }).map((_, idx) => (
+              <div key={`empty-search-skeleton-${idx}`} className="flex items-start gap-2 rounded-md px-2 py-2">
+                <Skeleton className="h-3.5 w-3.5 mt-0.5 rounded" />
+                <div className="min-w-0 flex-1 space-y-1">
+                  <Skeleton className="h-4 w-2/3" />
+                  <Skeleton className="h-3 w-full" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function StudioPreviewLoading() {
+  return (
+    <div className="h-full flex flex-col bg-studio-canvas">
+      <div className="shrink-0 border-b border-studio-border px-3 py-1.5">
+        <div className="flex items-center justify-between">
+          <Skeleton className="h-3.5 w-14" />
+          <div className="flex items-center gap-2">
+            <Skeleton className="h-7 w-20 rounded-md" />
+            <Skeleton className="h-7 w-7 rounded-md" />
+          </div>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto">
+        <div className="mx-auto max-w-[920px] space-y-4 p-8">
+          <Skeleton className="h-9 w-2/3" />
+          <Skeleton className="h-4 w-1/4" />
+          <Skeleton className="h-52 w-full rounded-lg" />
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-11/12" />
+          <Skeleton className="h-4 w-10/12" />
+          <Skeleton className="h-8 w-1/3 mt-6" />
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-5/6" />
+          <Skeleton className="h-4 w-4/6" />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function StudioNoSelectionPreviewState() {
+  return (
+    <div className="h-full flex flex-col bg-studio-canvas">
+      <div className="flex items-center justify-between px-3 py-1.5 border-b border-studio-border shrink-0">
+        <span className="text-xs font-semibold text-studio-fg uppercase tracking-wider">Preview</span>
+      </div>
+      <div className="flex-1 flex items-center justify-center px-6">
+        <div className="max-w-sm text-center space-y-2">
+          <h3 className="text-base font-semibold text-studio-fg">Nothing to preview yet</h3>
+          <p className="text-sm text-studio-fg-muted">
+            Select a file from the explorer or search results to render live preview content.
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function StudioEditorLoading({ showTabs = true }: { showTabs?: boolean }) {
+  return (
+    <div className="h-full flex flex-col bg-studio-canvas">
+      {showTabs && (
+        <div className="shrink-0 border-b border-studio-border bg-studio-canvas">
+          <div className="flex items-center gap-1 overflow-x-auto px-2 py-1.5">
+            <Skeleton className="h-8 w-40 rounded-md" />
+            <Skeleton className="h-8 w-36 rounded-md" />
+          </div>
+        </div>
+      )}
+
+      <div className="flex-1 overflow-hidden">
+        <div className="h-full overflow-y-auto">
+          <div className="border-b border-studio-border bg-studio-canvas">
+            <div className="flex items-center justify-between px-4 py-2 border-b border-studio-border">
+              <Skeleton className="h-3.5 w-28" />
+              <Skeleton className="h-6 w-9 rounded-md" />
+            </div>
+            <div className="space-y-4 px-4 py-3">
+              <Skeleton className="h-16 w-full rounded-md" />
+              <Skeleton className="h-24 w-full rounded-md" />
+              <Skeleton className="h-8 w-40 rounded-md" />
+            </div>
+          </div>
+
+          <div className="border-b border-studio-border px-4 py-2">
+            <div className="flex items-center gap-2">
+              {Array.from({ length: 8 }).map((_, idx) => (
+                <Skeleton key={`editor-toolbar-skeleton-${idx}`} className="h-6 w-6 rounded-md" />
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-3 p-6">
+            <Skeleton className="h-8 w-1/2" />
+            <Skeleton className="h-5 w-full" />
+            <Skeleton className="h-5 w-11/12" />
+            <Skeleton className="h-5 w-4/5" />
+            <Skeleton className="h-8 w-1/3 mt-4" />
+            <Skeleton className="h-5 w-full" />
+            <Skeleton className="h-5 w-10/12" />
+            <Skeleton className="h-5 w-9/12" />
+            <Skeleton className="h-40 w-full mt-2 rounded-md" />
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function StudioSidebarRail({
+  onExpand,
+  pendingCount,
+  historyHref,
+}: {
+  onExpand: () => void
+  pendingCount: number
+  historyHref: string
+}) {
+  const pendingDisplay = pendingCount > 99 ? "99+" : String(pendingCount)
+
+  return (
+    <TooltipProvider delayDuration={120}>
+      <div className="h-full flex flex-col bg-studio-canvas-inset/95">
+        <div className="border-b border-studio-border px-2 py-2 flex flex-col items-center gap-1">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 rounded-lg border border-studio-border bg-studio-canvas text-studio-fg shadow-sm transition-colors hover:bg-studio-canvas-inset"
+                title="Expand sidebar"
+                aria-label="Expand sidebar"
+                onClick={onExpand}
+              >
+                <FolderOpen className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="right" sideOffset={8}>
+              Expand sidebar
+            </TooltipContent>
+          </Tooltip>
+        </div>
+
+        <div className="flex-1" />
+
+        <div className="border-t border-studio-border px-2 py-2 flex flex-col items-center gap-2">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                asChild
+                variant="ghost"
+                size="icon"
+                className="relative h-9 w-9 rounded-lg border border-studio-border bg-studio-canvas hover:bg-studio-canvas-inset"
+                title="History"
+                aria-label="Project history"
+              >
+                <Link href={historyHref}>
+                  <History className="h-4 w-4" />
+                  {pendingCount > 0 && (
+                    <span className="absolute -right-1 -top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-studio-accent px-1 text-[9px] font-semibold text-white">
+                      {pendingDisplay}
+                    </span>
+                  )}
+                </Link>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="right" sideOffset={8}>
+              Project history
+            </TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Badge
+                variant="secondary"
+                className={
+                  pendingCount > 0
+                    ? "h-6 min-w-[2.25rem] justify-center rounded-md border border-studio-accent/40 bg-studio-accent-muted px-1 text-[10px] text-studio-accent"
+                    : "h-6 min-w-[2.25rem] justify-center rounded-md border border-studio-border bg-studio-canvas px-1 text-[10px] text-studio-fg-muted"
+                }
+              >
+                {pendingDisplay}
+              </Badge>
+            </TooltipTrigger>
+            <TooltipContent side="right" sideOffset={8}>
+              {pendingCount > 0 ? `${pendingCount} pending change${pendingCount === 1 ? "" : "s"}` : "No pending changes"}
+            </TooltipContent>
+          </Tooltip>
+        </div>
+      </div>
+    </TooltipProvider>
+  )
+}
+
 function StudioLayoutInner({
   initialFile,
   currentPath,
@@ -72,6 +368,8 @@ function StudioLayoutInner({
     setViewMode,
     sidebarState,
     setSidebarState,
+    sidebarPanelSize,
+    setSidebarPanelSize,
     editorPanelSize,
     setEditorPanelSize,
     previewPanelSize,
@@ -81,10 +379,17 @@ function StudioLayoutInner({
   // 1. File state
   const {
     selectedFile,
+    openFiles,
+    recentFiles,
     content,
     frontmatter,
     sha,
+    isFileLoading,
     navigateToFile,
+    clearSelection,
+    closeFile,
+    discardFileFromClientState,
+    primeFileSnapshot,
     setContent,
     setFrontmatterKey,
     hydrateFromDocument,
@@ -140,6 +445,27 @@ function StudioLayoutInner({
   // Dialog state
   const [createDialogOpen, setCreateDialogOpen] = React.useState(false)
   const [createDialogParent, setCreateDialogParent] = React.useState("")
+  const [commandPaletteOpen, setCommandPaletteOpen] = React.useState(false)
+  const [emptySearch, setEmptySearch] = React.useState("")
+  const [isMobile, setIsMobile] = React.useState(false)
+  const wasMobileRef = React.useRef(false)
+
+  React.useEffect(() => {
+    if (typeof window === "undefined") return
+    const media = window.matchMedia("(max-width: 767px)")
+    const update = () => setIsMobile(media.matches)
+    update()
+    media.addEventListener("change", update)
+    return () => media.removeEventListener("change", update)
+  }, [])
+
+  React.useEffect(() => {
+    // On entering mobile viewport, start collapsed so content stays readable.
+    if (isMobile && !wasMobileRef.current && sidebarState === "expanded") {
+      setSidebarState("collapsed")
+    }
+    wasMobileRef.current = isMobile
+  }, [isMobile, sidebarState, setSidebarState])
 
   // Explorer mutations
   const stageCreate = useMutation(api.explorerOps.stageCreate)
@@ -149,44 +475,49 @@ function StudioLayoutInner({
   // Keyboard shortcuts
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't intercept if user is typing in an input or textarea
-      if (
+      const isEditableTarget =
         e.target instanceof HTMLInputElement ||
         e.target instanceof HTMLTextAreaElement ||
         (e.target as HTMLElement).isContentEditable
-      ) {
-        // Only intercept Cmd/Ctrl + S for saving, let other shortcuts pass through to the element
-        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
-          e.preventDefault()
-          saveDraft()
-        }
+
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault()
+        setCommandPaletteOpen(true)
         return
       }
 
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "b") {
+      if (e.key === "Escape" && commandPaletteOpen) {
         e.preventDefault()
-        setSidebarState(sidebarState === "hidden" ? "expanded" : "hidden")
-      } else if ((e.metaKey || e.ctrlKey) && e.key === "\\") {
+        setCommandPaletteOpen(false)
+        return
+      }
+
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "s") {
         e.preventDefault()
-        setViewMode(viewMode === "zen" ? "wysiwyg" : "zen")
-      } else if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "p") {
-        e.preventDefault()
-        setViewMode(viewMode === "split" ? "wysiwyg" : "split")
-      } else if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "s") {
-        e.preventDefault()
-        setViewMode(viewMode === "source" ? "wysiwyg" : "source")
-      } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
+        setViewMode("editor")
+        return
+      }
+
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
         e.preventDefault()
         saveDraft()
-      } else if (e.key === "Escape" && viewMode === "zen") {
+        return
+      }
+
+      if (isEditableTarget) return
+
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "b") {
         e.preventDefault()
-        setViewMode("wysiwyg")
+        setSidebarState(sidebarState === "expanded" ? "collapsed" : "expanded")
+      } else if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "p") {
+        e.preventDefault()
+        setViewMode(viewMode === "split" ? "editor" : "split")
       }
     }
 
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [sidebarState, viewMode, setSidebarState, setViewMode, saveDraft])
+  }, [sidebarState, viewMode, setSidebarState, setViewMode, saveDraft, commandPaletteOpen])
 
   // Explorer handlers
   const handleCreateFile = React.useCallback((parentPath: string) => {
@@ -197,7 +528,7 @@ function StudioLayoutInner({
   const handleConfirmCreate = React.useCallback(
     async (fileName: string, parentPath: string) => {
       if (!projectId || !userId) return
-      const isAlreadyPrefixed = contentRoot && (parentPath === contentRoot || parentPath.startsWith(contentRoot + "/"))
+      const isAlreadyPrefixed = contentRoot && (parentPath === contentRoot || parentPath.startsWith(`${contentRoot}/`))
       let filePath: string
       if (isAlreadyPrefixed) {
         filePath = parentPath ? `${parentPath}/${fileName}` : fileName
@@ -207,15 +538,21 @@ function StudioLayoutInner({
         filePath = parentPath ? `${parentPath}/${fileName}` : fileName
       }
       try {
+        const initialTitle = fileName.replace(/\.(mdx?|markdown)$/i, "")
         await stageCreate({
           projectId: projectId as Id<"projects">,
           userId,
           filePath,
-          title: fileName.replace(/\.(mdx?|markdown)$/i, ""),
+          title: initialTitle,
           initialBody: "",
           initialFrontmatter: {
-            title: fileName.replace(/\.(mdx?|markdown)$/i, ""),
+            title: initialTitle,
           },
+        })
+        primeFileSnapshot(filePath, {
+          content: "",
+          frontmatter: { title: initialTitle },
+          sha: null,
         })
         toast.success(`Created ${fileName}`)
         navigateToFile(filePath)
@@ -224,13 +561,31 @@ function StudioLayoutInner({
         toast.error(error.message || "Failed to create file")
       }
     },
-    [projectId, userId, contentRoot, stageCreate, navigateToFile],
+    [projectId, userId, contentRoot, stageCreate, primeFileSnapshot, navigateToFile],
   )
 
   const handleDeleteFile = React.useCallback(
     async (filePath: string, fileSha: string) => {
       if (!projectId || !userId) return
       try {
+        const pendingCreateOp = pendingOps?.find(
+          (op) => op.filePath === filePath && op.opType === "create" && op.status === "pending",
+        )
+        if (pendingCreateOp) {
+          await undoOp({ id: pendingCreateOp._id, userId })
+          discardFileFromClientState(filePath)
+          toast.success("Removed staged new file")
+          return
+        }
+
+        const pendingDeleteOp = pendingOps?.find(
+          (op) => op.filePath === filePath && op.opType === "delete" && op.status === "pending",
+        )
+        if (pendingDeleteOp) {
+          toast("File is already staged for deletion")
+          return
+        }
+
         const opId = await stageDelete({
           projectId: projectId as Id<"projects">,
           userId,
@@ -255,7 +610,7 @@ function StudioLayoutInner({
         toast.error(error.message || "Failed to delete file")
       }
     },
-    [projectId, userId, stageDelete, undoOp],
+    [projectId, userId, pendingOps, undoOp, discardFileFromClientState, stageDelete],
   )
 
   const handleUndoDelete = React.useCallback(
@@ -288,15 +643,181 @@ function StudioLayoutInner({
     }
   }, [pendingOps, userId, undoOp])
 
-  const handleRenameFile = React.useCallback(async (oldPath: string, newPath: string) => {
-    // In a complete implementation, this would fetch the old file content from GitHub/Convex
-    // and then call stageDelete(oldPath) + stageCreate(newPath, currentContent)
-    toast.error("Rename requires fetching content from GitHub (Not implemented)")
-  }, [])
+  const resolveRelocatePayload = React.useCallback(
+    async (oldPath: string) => {
+      const selectedPath = selectedFile?.path
+      if (selectedPath === oldPath) {
+        const currentFrontmatter = (frontmatter || {}) as Record<string, unknown>
+        const title =
+          typeof currentFrontmatter.title === "string" && currentFrontmatter.title.trim().length > 0
+            ? currentFrontmatter.title
+            : inferTitleFromPath(oldPath)
 
-  const handleMoveFile = React.useCallback(async (oldPath: string, newParentPath: string) => {
-    toast.error("Move requires fetching content from GitHub (Not implemented)")
-  }, [])
+        return {
+          body: content,
+          frontmatter: currentFrontmatter,
+          title,
+          previousSha: sha || undefined,
+          isFromPendingCreate: false,
+          pendingCreateOpId: undefined as Id<"explorerOps"> | undefined,
+        }
+      }
+
+      const pendingCreateOp = pendingOps?.find(
+        (op) => op.filePath === oldPath && op.opType === "create" && op.status === "pending",
+      )
+      if (pendingCreateOp) {
+        const pendingFrontmatter = (pendingCreateOp.initialFrontmatter || {}) as Record<string, unknown>
+        const title =
+          typeof pendingFrontmatter.title === "string" && pendingFrontmatter.title.trim().length > 0
+            ? pendingFrontmatter.title
+            : inferTitleFromPath(oldPath)
+
+        return {
+          body: pendingCreateOp.initialBody || "",
+          frontmatter: pendingFrontmatter,
+          title,
+          previousSha: undefined,
+          isFromPendingCreate: true,
+          pendingCreateOpId: pendingCreateOp._id,
+        }
+      }
+
+      const params = new URLSearchParams({
+        owner,
+        repo,
+        path: oldPath,
+        branch,
+      })
+      const response = await fetch(`/api/github/file?${params.toString()}`)
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}))
+        throw new Error(payload.error || `Failed to load file content (${response.status})`)
+      }
+
+      const payload = (await response.json()) as { content: string; sha: string }
+      const parsed = matter(payload.content || "")
+      const parsedFrontmatter = (parsed.data || {}) as Record<string, unknown>
+      const title =
+        typeof parsedFrontmatter.title === "string" && parsedFrontmatter.title.trim().length > 0
+          ? parsedFrontmatter.title
+          : inferTitleFromPath(oldPath)
+
+      return {
+        body: parsed.content || "",
+        frontmatter: parsedFrontmatter,
+        title,
+        previousSha: payload.sha || undefined,
+        isFromPendingCreate: false,
+        pendingCreateOpId: undefined as Id<"explorerOps"> | undefined,
+      }
+    },
+    [selectedFile?.path, frontmatter, content, sha, pendingOps, owner, repo, branch],
+  )
+
+  const stageRelocateFile = React.useCallback(
+    async (oldPath: string, newPath: string, actionLabel: "renamed" | "moved") => {
+      if (!projectId || !userId) return
+      if (!oldPath || !newPath || oldPath === newPath) return
+
+      const oldNode = findTreeNodeByPath(overlayTree, oldPath)
+      const oldName = oldPath.split("/").pop() || oldPath
+      const newName = newPath.split("/").pop() || newPath
+
+      try {
+        const payload = await resolveRelocatePayload(oldPath)
+        const createOpId = await stageCreate({
+          projectId: projectId as Id<"projects">,
+          userId,
+          filePath: newPath,
+          title: payload.title || inferTitleFromPath(newPath),
+          initialBody: payload.body,
+          initialFrontmatter: payload.frontmatter,
+        })
+
+        if (payload.isFromPendingCreate && payload.pendingCreateOpId) {
+          try {
+            await undoOp({ id: payload.pendingCreateOpId, userId })
+          } catch (error) {
+            await undoOp({ id: createOpId, userId }).catch(() => {})
+            throw error
+          }
+        } else {
+          let deleteOpId: Id<"explorerOps">
+          try {
+            deleteOpId = await stageDelete({
+              projectId: projectId as Id<"projects">,
+              userId,
+              filePath: oldPath,
+              previousSha: oldNode?.sha || payload.previousSha,
+            })
+          } catch (error) {
+            await undoOp({ id: createOpId, userId }).catch(() => {})
+            throw error
+          }
+
+          toast(`File staged for ${actionLabel}`, {
+            action: {
+              label: "Undo",
+              onClick: async () => {
+                try {
+                  await undoOp({ id: deleteOpId, userId })
+                  await undoOp({ id: createOpId, userId })
+                  toast.success(`${actionLabel === "renamed" ? "Rename" : "Move"} undone`)
+                } catch {
+                  toast.error("Failed to undo file operation")
+                }
+              },
+            },
+          })
+        }
+
+        primeFileSnapshot(newPath, {
+          content: payload.body,
+          frontmatter: payload.frontmatter,
+          sha: null,
+        })
+
+        if (selectedFile?.path === oldPath) {
+          navigateToFile(newPath)
+        }
+
+        toast.success(`${oldName} ${actionLabel} to ${newName}`)
+      } catch (error: any) {
+        console.error(`Error ${actionLabel} file:`, error)
+        toast.error(error.message || `Failed to ${actionLabel} file`)
+      }
+    },
+    [
+      projectId,
+      userId,
+      overlayTree,
+      resolveRelocatePayload,
+      stageCreate,
+      stageDelete,
+      undoOp,
+      selectedFile?.path,
+      primeFileSnapshot,
+      navigateToFile,
+    ],
+  )
+
+  const handleRenameFile = React.useCallback(
+    async (oldPath: string, newPath: string) => {
+      await stageRelocateFile(oldPath, newPath, "renamed")
+    },
+    [stageRelocateFile],
+  )
+
+  const handleMoveFile = React.useCallback(
+    async (oldPath: string, newParentPath: string) => {
+      const fileName = oldPath.split("/").pop()
+      if (!fileName) return
+      const newPath = newParentPath ? `${newParentPath}/${fileName}` : fileName
+      await stageRelocateFile(oldPath, newPath, "moved")
+    },
+    [stageRelocateFile],
+  )
 
   const currentStatus = document?.status || "draft"
   const statusInfo = STATUS_LABELS[currentStatus] || STATUS_LABELS.draft
@@ -329,9 +850,51 @@ function StudioLayoutInner({
   const handleEditorScroll = React.useCallback(() => syncScroll("editor"), [syncScroll])
   const handlePreviewScroll = React.useCallback(() => syncScroll("preview"), [syncScroll])
 
-  const showSidebar = sidebarState !== "hidden" && viewMode !== "zen"
-  const showPreview = viewMode === "split" || viewMode === "source"
-  const showHeaderFooter = viewMode !== "zen"
+  const showSidebar = !isMobile || sidebarState === "expanded"
+  const isSidebarCollapsed = !isMobile && sidebarState === "collapsed"
+  const showPreview = viewMode === "split" && !isMobile
+  const [resolvedProjectDataId, setResolvedProjectDataId] = React.useState<string | null>(null)
+
+  React.useEffect(() => {
+    if (!projectId) {
+      setResolvedProjectDataId("none")
+      return
+    }
+    if (pendingOps !== undefined && dirtyDocs !== undefined) {
+      setResolvedProjectDataId(projectId)
+    }
+  }, [projectId, pendingOps, dirtyDocs])
+
+  const isProjectDataLoading = Boolean(projectId) && (pendingOps === undefined || dirtyDocs === undefined)
+  const shouldShowProjectDataSkeleton = Boolean(projectId) && resolvedProjectDataId !== projectId && isProjectDataLoading
+  const isSelectedDocumentLoading = isFileLoading
+  const totalPendingCount = opCounts.creates + opCounts.deletes + editCount
+  const flatFiles = React.useMemo(() => flattenFiles(overlayTree, titleMap), [overlayTree, titleMap])
+  const flatFilesByPath = React.useMemo(() => {
+    const map = new Map<string, FlatFileEntry>()
+    for (const file of flatFiles) map.set(file.path, file)
+    return map
+  }, [flatFiles])
+  const emptySearchQuery = emptySearch.trim().toLowerCase()
+  const hasEmptySearchQuery = emptySearchQuery.length > 0
+  const emptySearchResults = React.useMemo(() => {
+    if (!hasEmptySearchQuery) return []
+    return flatFiles
+      .filter((file) => `${file.title || ""} ${file.name} ${file.path}`.toLowerCase().includes(emptySearchQuery))
+      .slice(0, 8)
+  }, [hasEmptySearchQuery, flatFiles, emptySearchQuery])
+  const recentFileResults = React.useMemo(() => {
+    const results: FlatFileEntry[] = []
+    for (const path of recentFiles) {
+      const match = flatFilesByPath.get(path)
+      if (match) results.push(match)
+      if (results.length >= 8) break
+    }
+    return results
+  }, [recentFiles, flatFilesByPath])
+
+  const showSidebarPanel = isMobile ? sidebarState === "expanded" : !isSidebarCollapsed
+  const showSidebarRail = !isMobile && isSidebarCollapsed
 
   return (
     <div
@@ -348,176 +911,332 @@ function StudioLayoutInner({
       <div aria-live="polite" aria-atomic="true" className="sr-only">
         {document ? `Editing ${selectedFile?.name || "file"}, status: ${currentStatus}` : "No file selected"}
       </div>
-      {showHeaderFooter && (
-        <div className="h-[--spacing-studio-header-h] shrink-0 border-b border-studio-border flex items-center px-4 z-10 bg-studio-canvas">
-          <StudioHeader
-            selectedFile={selectedFile}
-            documentId={document?._id}
-            currentStatus={currentStatus}
-            statusInfo={statusInfo as any}
-            onSave={saveDraft}
-            isSaving={isSaving}
-            lastSavedAt={document?.updatedAt}
-          />
-        </div>
-      )}
+      <div className="h-[--spacing-studio-header-h] shrink-0 border-b border-studio-border flex items-center px-2 sm:px-3 z-10 bg-studio-canvas">
+        <StudioHeader
+          selectedFile={selectedFile}
+          contentRoot={contentRoot}
+          documentId={document?._id}
+          currentStatus={currentStatus}
+          statusInfo={statusInfo as any}
+          onSave={saveDraft}
+          onClearSelection={() => {
+            if (selectedFile?.path) {
+              closeFile(selectedFile.path)
+            } else {
+              clearSelection()
+            }
+          }}
+          isSaving={isSaving || isFileLoading}
+          lastSavedAt={document?.updatedAt}
+        />
+      </div>
 
-      <ResizablePanelGroup orientation="horizontal" className="flex-1 min-h-0 border-t border-studio-border">
-        {showSidebar && (
+      <div className="flex-1 min-h-0 flex border-t border-studio-border">
+        {showSidebarRail && (
+          <div className="w-14 shrink-0 border-r border-studio-border bg-studio-canvas-inset">
+            <StudioSidebarRail
+              pendingCount={totalPendingCount}
+              onExpand={() => setSidebarState("expanded")}
+              historyHref={`/dashboard/${owner}/${repo}/history`}
+            />
+          </div>
+        )}
+
+        <ResizablePanelGroup orientation="horizontal" className="flex-1 min-h-0">
+          {showSidebarPanel && (
           <>
             <ResizablePanel
-              defaultSize={20}
-              minSize={15}
-              maxSize={40}
-              className="bg-studio-canvas-inset border-r border-studio-border shrink-0 flex flex-col h-full overflow-hidden"
+              id="sidebar"
+              defaultSize={isMobile ? "35%" : `${Math.max(20, Math.min(40, sidebarPanelSize))}%`}
+              minSize={isMobile ? "240px" : "20%"}
+              maxSize={isMobile ? "70%" : "40%"}
+              onResize={(size) => {
+                if (isSidebarCollapsed || isMobile) return
+                setSidebarPanelSize(Math.round(size.asPercentage))
+              }}
+              className="bg-studio-canvas-inset border-r border-studio-border flex flex-col h-full overflow-hidden transition-[flex-basis,min-width,max-width] duration-150 ease-out"
             >
-              {projectId ? (
-                <>
-                  <Tabs defaultValue="files" className="flex-1 min-h-0 flex flex-col">
-                    <TabsList className="w-full shrink-0 rounded-none border-b border-studio-border h-9 bg-transparent p-0">
-                      <TabsTrigger
-                        value="files"
-                        className="flex-1 rounded-none border-b-2 border-transparent data-[state=active]:border-studio-fg data-[state=active]:bg-transparent h-9 text-xs"
-                      >
-                        Files
-                      </TabsTrigger>
-                      <TabsTrigger
-                        value="documents"
-                        className="flex-1 rounded-none border-b-2 border-transparent data-[state=active]:border-studio-fg data-[state=active]:bg-transparent h-9 text-xs"
-                      >
-                        Documents
-                      </TabsTrigger>
-                    </TabsList>
-                    <TabsContent value="files" className="flex-1 m-0 overflow-hidden">
-                      <FileTree
-                        tree={overlayTree}
-                        onSelect={(node) => {
-                          if (node.type === "file") navigateToFile(node.path)
-                        }}
-                        selectedPath={selectedFile?.path}
-                        titleMap={titleMap}
-                        onCreateFile={handleCreateFile}
-                        onDeleteFile={handleDeleteFile}
-                        onUndoDelete={handleUndoDelete}
-                        onRenameFile={handleRenameFile}
-                        onMoveFile={handleMoveFile}
-                        owner={owner}
-                        repo={repo}
-                      />
-                    </TabsContent>
-                    <TabsContent value="documents" className="flex-1 m-0 overflow-hidden">
-                      <DocumentList
-                        projectId={projectId}
-                        selectedFilePath={selectedFile?.path}
-                        onSelectDocument={navigateToFile}
-                      />
-                    </TabsContent>
-                  </Tabs>
-                  <PublishOpsBar
-                    creates={opCounts.creates}
-                    deletes={opCounts.deletes}
-                    edits={editCount}
-                    prUrl={activeBranch?.prUrl}
-                    onPublish={() => {
-                      setPublishDialogOpen(true)
-                    }}
-                    onDiscard={handleDiscardAll}
-                  />
-                </>
+              {projectId && shouldShowProjectDataSkeleton ? (
+                <StudioSidebarLoading />
               ) : (
-                <FileTree
-                  tree={overlayTree}
-                  onSelect={(node) => {
-                    if (node.type === "file") navigateToFile(node.path)
-                  }}
-                  selectedPath={selectedFile?.path}
-                  titleMap={titleMap}
-                  owner={owner}
-                  repo={repo}
-                />
+                <>
+                  <div className="flex-1 min-h-0 overflow-hidden">
+                    <FileTree
+                      tree={overlayTree}
+                      onSelect={(node) => {
+                        if (node.type === "file") navigateToFile(node.path)
+                      }}
+                      selectedPath={selectedFile?.path}
+                      titleMap={titleMap}
+                      onCreateFile={projectId ? handleCreateFile : undefined}
+                      onDeleteFile={projectId ? handleDeleteFile : undefined}
+                      onUndoDelete={projectId ? handleUndoDelete : undefined}
+                      onRenameFile={projectId ? handleRenameFile : undefined}
+                      onMoveFile={projectId ? handleMoveFile : undefined}
+                      owner={owner}
+                      repo={repo}
+                    />
+                  </div>
+                  <div className="shrink-0 border-t border-studio-border bg-studio-canvas/95 backdrop-blur supports-[backdrop-filter]:bg-studio-canvas/80">
+                    <div className="px-2 py-1.5">
+                      <Button
+                        asChild
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-full justify-between rounded-md border border-studio-border bg-studio-canvas px-2 text-xs hover:bg-studio-canvas-inset"
+                      >
+                        <Link href={`/dashboard/${owner}/${repo}/history`}>
+                          <span className="inline-flex items-center gap-2">
+                            <History className="h-3.5 w-3.5" />
+                            History
+                          </span>
+                          <Badge variant="secondary" className="h-5 min-w-5 justify-center px-1 text-[10px]">
+                            {totalPendingCount}
+                          </Badge>
+                        </Link>
+                      </Button>
+                    </div>
+                    {projectId && (
+                      <PublishOpsBar
+                        creates={opCounts.creates}
+                        deletes={opCounts.deletes}
+                        edits={editCount}
+                        pendingOps={pendingOps}
+                        dirtyDocs={dirtyDocs}
+                        prUrl={activeBranch?.prUrl}
+                        onPublish={() => {
+                          setPublishDialogOpen(true)
+                        }}
+                        onDiscard={handleDiscardAll}
+                        onSelectFile={(path) => navigateToFile(path)}
+                      />
+                    )}
+                  </div>
+                </>
               )}
             </ResizablePanel>
-            <ResizableHandle className="bg-transparent hover:bg-studio-accent transition-colors w-1" />
-          </>
-        )}
-
-        <ResizablePanel
-          defaultSize={editorPanelSize}
-          onResize={(size) => setEditorPanelSize(Math.round(size.asPercentage))}
-          minSize={30}
-          className="flex-1 min-w-0"
-        >
-          <div className="h-full overflow-hidden">
-            {selectedFile ? (
-              <Editor
-                content={content}
-                frontmatter={frontmatter}
-                frontmatterSchema={frontmatterSchema}
-                fieldVariants={fieldVariants}
-                onChangeContent={setContent}
-                onChangeFrontmatter={setFrontmatterKey}
-                onSaveDraft={saveDraft}
-                onPublish={() => setPublishDialogOpen(true)}
-                isSaving={isSaving}
-                isPublishing={isPublishing}
-                canPublish={canPublish}
-                statusBadge={
-                  <div className="flex items-center gap-1">
-                    <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
-                    {document && <StatusActions documentId={document._id} currentStatus={currentStatus as any} />}
-                  </div>
-                }
-                scrollContainerRef={editorScrollRef}
-                onScroll={handleEditorScroll}
-                owner={owner}
-                repo={repo}
-                branch={branch}
-                contentRoot={contentRoot}
-                tree={overlayTree}
-              />
-            ) : (
-              <div className="h-full flex items-center justify-center text-studio-fg-muted">Select a file to edit</div>
+            {!isSidebarCollapsed && !isMobile && (
+              <ResizableHandle className="bg-transparent hover:bg-studio-accent transition-colors w-1" />
             )}
-          </div>
-        </ResizablePanel>
-
-        {showPreview && (
-          <>
-            <ResizableHandle className="bg-transparent border-l border-studio-border hover:bg-studio-accent transition-colors w-1" />
-            <ResizablePanel
-              defaultSize={previewPanelSize}
-              onResize={(size) => setPreviewPanelSize(Math.round(size.asPercentage))}
-              minSize={30}
-              className="flex-1 min-w-0 bg-studio-canvas"
-            >
-              <div id="studio-editor" className="h-full overflow-hidden tab-index-0" tabIndex={-1}>
-                <Preview
-                  content={content}
-                  frontmatter={frontmatter}
-                  fieldVariants={fieldVariants}
-                  owner={owner}
-                  repo={repo}
-                  branch={branch}
-                  scrollContainerRef={previewScrollRef}
-                  onScroll={handlePreviewScroll}
-                />
-              </div>
-            </ResizablePanel>
           </>
-        )}
-      </ResizablePanelGroup>
+          )}
 
-      {showHeaderFooter && (
-        <div className="h-[--spacing-studio-footer-h] shrink-0 border-t border-studio-border flex items-center bg-studio-canvas">
-          <StudioFooter
-            isSaving={isSaving}
-            lastSavedAt={document?.updatedAt}
-            fileType={
-              selectedFile?.path.endsWith(".mdx") ? "MDX" : selectedFile?.path.endsWith(".md") ? "Markdown" : "Text"
-            }
-          />
-        </div>
-      )}
+          <ResizablePanel
+            id="editor"
+            defaultSize={`${Math.max(30, Math.min(80, editorPanelSize))}%`}
+            onResize={(size) => setEditorPanelSize(Math.round(size.asPercentage))}
+            minSize="30%"
+            className="flex-1 min-w-0 transition-[flex-basis] duration-150 ease-out"
+          >
+            <div className="h-full flex flex-col overflow-hidden">
+              {openFiles.length > 0 && (
+                <div className="shrink-0 border-b border-studio-border bg-studio-canvas">
+                  <div className="flex items-center gap-1 overflow-x-auto px-2 py-1.5">
+                    {openFiles.map((path) => {
+                      const label = titleMap?.[path] || path.split("/").pop() || path
+                      const isActive = selectedFile?.path === path
+                      return (
+                        <div
+                          key={path}
+                          className={
+                            isActive
+                              ? "flex h-8 items-center gap-1 rounded-md border border-studio-accent/40 bg-studio-accent-muted px-2 text-xs"
+                              : "flex h-8 items-center gap-1 rounded-md border border-studio-border bg-studio-canvas-inset/40 px-2 text-xs"
+                          }
+                        >
+                          <button
+                            type="button"
+                            className="max-w-[220px] truncate text-left"
+                            onClick={() => navigateToFile(path)}
+                            title={path}
+                          >
+                            {label}
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded p-0.5 text-studio-fg-muted hover:bg-studio-canvas-inset hover:text-studio-fg"
+                            onClick={() => closeFile(path)}
+                            title={`Close ${label}`}
+                            aria-label={`Close ${label}`}
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              <div
+                className="flex-1 overflow-hidden"
+                aria-busy={isSelectedDocumentLoading || (!selectedFile && shouldShowProjectDataSkeleton)}
+              >
+                {selectedFile ? (
+                  isSelectedDocumentLoading ? (
+                    <StudioEditorLoading showTabs={openFiles.length > 0} />
+                  ) : (
+                    <Editor
+                      content={content}
+                      frontmatter={frontmatter}
+                      frontmatterSchema={frontmatterSchema}
+                      fieldVariants={fieldVariants}
+                      onChangeContent={setContent}
+                      onChangeFrontmatter={setFrontmatterKey}
+                      onSaveDraft={saveDraft}
+                      onPublish={() => setPublishDialogOpen(true)}
+                      isSaving={isSaving || isFileLoading}
+                      isPublishing={isPublishing}
+                      canPublish={canPublish}
+                      statusBadge={
+                        <div className="flex items-center gap-1">
+                          <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
+                          {document && <StatusActions documentId={document._id} currentStatus={currentStatus as any} />}
+                        </div>
+                      }
+                      scrollContainerRef={editorScrollRef}
+                      onScroll={handleEditorScroll}
+                      owner={owner}
+                      repo={repo}
+                      branch={branch}
+                      contentRoot={contentRoot}
+                      tree={overlayTree}
+                    />
+                  )
+                ) : shouldShowProjectDataSkeleton ? (
+                  <StudioNoSelectionLoading />
+                ) : (
+                  <div className="h-full flex items-center justify-center px-6">
+                    <div className="w-full max-w-2xl space-y-5 text-center">
+                      <div className="space-y-2">
+                        <h2 className="text-2xl font-semibold tracking-tight text-studio-fg">No file selected</h2>
+                        <p className="text-sm text-studio-fg-muted">
+                          Pick a file to continue, or search the repository to jump directly.
+                        </p>
+                      </div>
+                      <div className="mx-auto max-w-xl space-y-3">
+                        <div className="relative">
+                          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-studio-fg-muted" />
+                          <Input
+                            value={emptySearch}
+                            onChange={(e) => setEmptySearch(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key !== "Enter") return
+                              const firstResult = hasEmptySearchQuery ? emptySearchResults[0] : recentFileResults[0]
+                              if (firstResult) {
+                                navigateToFile(firstResult.path)
+                              }
+                            }}
+                            className="h-11 pl-10 pr-4"
+                            placeholder="Search docs and open with Enter"
+                          />
+                        </div>
+                        <div className="rounded-lg border border-studio-border bg-studio-canvas-inset/30 p-2 text-left">
+                          {!hasEmptySearchQuery && recentFileResults.length === 0 ? (
+                            <p className="px-2 py-4 text-xs text-studio-fg-muted">
+                              Start typing to search files in this repository.
+                            </p>
+                          ) : !hasEmptySearchQuery ? (
+                            <div className="px-2 pb-1 pt-1">
+                              <p className="pb-2 text-[11px] font-medium uppercase tracking-wide text-studio-fg-muted">
+                                Recent files
+                              </p>
+                              <ul className="space-y-1">
+                                {recentFileResults.map((file) => (
+                                  <li key={file.path}>
+                                    <button
+                                      type="button"
+                                      className="flex w-full items-start gap-2 rounded-md px-2 py-2 text-left hover:bg-studio-canvas-inset"
+                                      onClick={() => navigateToFile(file.path)}
+                                    >
+                                      <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-studio-fg-muted" />
+                                      <span className="min-w-0">
+                                        <span className="block truncate text-sm text-studio-fg">
+                                          {file.title || file.name}
+                                        </span>
+                                        <span className="block truncate text-xs text-studio-fg-muted">{file.path}</span>
+                                      </span>
+                                    </button>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          ) : emptySearchResults.length === 0 ? (
+                            <p className="px-2 py-4 text-xs text-studio-fg-muted">No files match your search.</p>
+                          ) : (
+                            <ul className="space-y-1">
+                              {emptySearchResults.map((file) => (
+                                <li key={file.path}>
+                                  <button
+                                    type="button"
+                                    className="flex w-full items-start gap-2 rounded-md px-2 py-2 text-left hover:bg-studio-canvas-inset"
+                                    onClick={() => navigateToFile(file.path)}
+                                  >
+                                    <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-studio-fg-muted" />
+                                    <span className="min-w-0">
+                                      <span className="block truncate text-sm text-studio-fg">
+                                        {file.title || file.name}
+                                      </span>
+                                      <span className="block truncate text-xs text-studio-fg-muted">{file.path}</span>
+                                    </span>
+                                  </button>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </ResizablePanel>
+
+          {showPreview && (
+            <>
+              <ResizableHandle className="bg-transparent border-l border-studio-border hover:bg-studio-accent transition-colors w-1" />
+              <ResizablePanel
+                id="preview"
+                defaultSize={`${Math.max(20, Math.min(60, previewPanelSize))}%`}
+                onResize={(size) => setPreviewPanelSize(Math.round(size.asPercentage))}
+                minSize="20%"
+                maxSize="60%"
+                className="flex-1 min-w-0 bg-studio-canvas transition-[flex-basis] duration-150 ease-out"
+              >
+                <div id="studio-editor" className="h-full overflow-hidden tab-index-0" tabIndex={-1}>
+                  {isSelectedDocumentLoading || (!selectedFile && shouldShowProjectDataSkeleton) ? (
+                    <StudioPreviewLoading />
+                  ) : !selectedFile ? (
+                    <StudioNoSelectionPreviewState />
+                  ) : (
+                    <Preview
+                      content={content}
+                      frontmatter={frontmatter}
+                      fieldVariants={fieldVariants}
+                      owner={owner}
+                      repo={repo}
+                      branch={branch}
+                      scrollContainerRef={previewScrollRef}
+                      onScroll={handlePreviewScroll}
+                    />
+                  )}
+                </div>
+              </ResizablePanel>
+            </>
+          )}
+        </ResizablePanelGroup>
+      </div>
+
+      <div className="h-[--spacing-studio-footer-h] shrink-0 border-t border-studio-border flex items-center bg-studio-canvas">
+        <StudioFooter
+          isSaving={isSaving}
+          lastSavedAt={document?.updatedAt}
+          fileType={
+            selectedFile?.path.endsWith(".mdx") ? "MDX" : selectedFile?.path.endsWith(".md") ? "Markdown" : "Text"
+          }
+        />
+      </div>
 
       <CreateFileDialog
         open={createDialogOpen}
@@ -542,8 +1261,11 @@ function StudioLayoutInner({
       />
 
       <CommandPalette
+        open={commandPaletteOpen}
+        onOpenChange={setCommandPaletteOpen}
         tree={overlayTree}
         titleMap={titleMap}
+        recentFiles={recentFiles}
         onNavigateToFile={navigateToFile}
         onSaveDraft={saveDraft}
       />

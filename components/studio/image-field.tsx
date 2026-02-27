@@ -97,6 +97,7 @@ export function ImageField({
             <div className="grid grid-cols-3 gap-2 p-1">
               {imagePaths.map((path) => (
                 <button
+                  type="button"
                   key={path}
                   onClick={() => handleSelectImage(path)}
                   className={cn(

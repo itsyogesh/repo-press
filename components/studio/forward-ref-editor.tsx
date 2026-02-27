@@ -7,8 +7,11 @@ import { forwardRef } from 'react'
 const Editor = dynamic(() => import('./mdx-editor-wrapper'), {
   ssr: false,
   loading: () => (
-    <div className="flex items-center justify-center h-full text-sm text-studio-fg-muted animate-pulse">
-      Loading editor...
+    <div className="h-full space-y-4 px-6 py-4">
+      <div className="h-8 w-1/3 animate-pulse rounded bg-studio-canvas-inset" />
+      <div className="h-6 w-2/3 animate-pulse rounded bg-studio-canvas-inset" />
+      <div className="h-6 w-1/2 animate-pulse rounded bg-studio-canvas-inset" />
+      <div className="h-80 w-full animate-pulse rounded bg-studio-canvas-inset" />
     </div>
   ),
 })
