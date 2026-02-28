@@ -288,6 +288,7 @@ export default defineSchema({
       v.literal("closed"),
     ),
     lastCommitSha: v.optional(v.string()),
+    committedFilePaths: v.optional(v.array(v.string())),
     createdAt: v.number(),
     updatedAt: v.number(),
   })

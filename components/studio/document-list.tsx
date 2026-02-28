@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Skeleton } from "@/components/ui/skeleton"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
 import { cn } from "@/lib/utils"
@@ -88,7 +89,20 @@ export function DocumentList({ projectId, selectedFilePath, onSelectDocument }: 
       <ScrollArea className="flex-1">
         <div className="p-2 space-y-1">
           {displayedDocs === undefined ? (
-            <div className="text-xs text-muted-foreground p-2 text-center">Loading...</div>
+            <div className="space-y-2 p-1">
+              {Array.from({ length: 8 }).map((_, idx) => (
+                <div key={`doc-skeleton-${idx}`} className="rounded-md border border-border/50 p-2 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Skeleton className="h-4 w-4 shrink-0" />
+                    <Skeleton className="h-3.5 w-40" />
+                  </div>
+                  <div className="flex items-center gap-2 pl-6">
+                    <Skeleton className="h-4 w-14" />
+                    <Skeleton className="h-3 w-28" />
+                  </div>
+                </div>
+              ))}
+            </div>
           ) : displayedDocs.length === 0 ? (
             <div className="text-xs text-muted-foreground p-2 text-center">
               {searchTerm ? "No results found" : "No documents yet"}

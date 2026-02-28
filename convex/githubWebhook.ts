@@ -24,6 +24,7 @@ export const handlePRMerged = mutation({
     }
 
     const projectId = publishBranch.projectId
+    const committedPaths = publishBranch.committedFilePaths
 
     // 2. Mark branch as merged
     await ctx.db.patch(publishBranch._id, {
@@ -43,7 +44,30 @@ export const handlePRMerged = mutation({
       await ctx.db.delete(op._id)
     }
 
-    // 4. Publish all draft/approved documents that have body content
+    // 4. If no committed file paths were recorded, skip publishing (safe default)
+    if (!committedPaths || committedPaths.length === 0) {
+      return
+    }
+
+    // Build a set of committed paths for fast lookup.
+    // committedFilePaths are full repo paths (with contentRoot prefix),
+    // but document filePaths are relative to contentRoot. Fetch the project
+    // to strip the prefix when matching.
+    const project = await ctx.db.get(projectId)
+    const contentRoot = project?.contentRoot ?? ""
+    const committedRelativePaths = new Set(
+      committedPaths.map((p) => {
+        if (contentRoot && p.startsWith(contentRoot + "/")) {
+          return p.slice(contentRoot.length + 1)
+        }
+        if (contentRoot && p.startsWith(contentRoot)) {
+          return p.slice(contentRoot.length)
+        }
+        return p
+      }),
+    )
+
+    // 5. Publish only documents whose filePaths are in the committed set
     const drafts = await ctx.db
       .query("documents")
       .withIndex("by_projectId_status", (q) =>
@@ -58,10 +82,11 @@ export const handlePRMerged = mutation({
       )
       .collect()
 
-    const docsToPublish = [...drafts, ...approved].filter((d) => d.body != null)
+    const docsToPublish = [...drafts, ...approved].filter(
+      (d) => d.body != null && committedRelativePaths.has(d.filePath),
+    )
 
     // Also handle docs in non-publishable states (in_review, scheduled)
-    // These need to transition through draft first per the state machine
     const inReview = await ctx.db
       .query("documents")
       .withIndex("by_projectId_status", (q) =>
@@ -76,14 +101,14 @@ export const handlePRMerged = mutation({
       )
       .collect()
 
-    const otherDocs = [...inReview, ...scheduled].filter((d) => d.body != null)
+    const otherDocs = [...inReview, ...scheduled].filter(
+      (d) => d.body != null && committedRelativePaths.has(d.filePath),
+    )
 
     const now = Date.now()
 
-    // Publish each document with per-document error handling for idempotency
     for (const doc of docsToPublish) {
       try {
-        // Already published -- skip (idempotent)
         if (doc.status === "published") continue
 
         // Do NOT set githubSha here — mergeCommitSha is a git commit SHA,
@@ -101,12 +126,10 @@ export const handlePRMerged = mutation({
       }
     }
 
-    // Handle docs in non-publishable states: transition to draft first, then publish
     for (const doc of otherDocs) {
       try {
         if (doc.status === "published") continue
 
-        // Transition through draft first per ALLOWED_TRANSITIONS
         await ctx.db.patch(doc._id, {
           status: "draft",
           updatedAt: now,

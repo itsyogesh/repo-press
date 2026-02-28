@@ -1,15 +1,45 @@
 "use client"
 
-import { ChevronDown, ChevronRight, Save, Upload } from "lucide-react"
 import * as React from "react"
-import { Button } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import { UNIVERSAL_FIELDS, buildMergedFieldList, normalizeDate } from "@/lib/framework-adapters"
-import type { FieldVariantMap, FrontmatterFieldDef, MergedFieldDef } from "@/lib/framework-adapters"
+
+import {
+  headingsPlugin,
+  quotePlugin,
+  listsPlugin,
+  linkPlugin,
+  linkDialogPlugin,
+  imagePlugin,
+  tablePlugin,
+  thematicBreakPlugin,
+  codeBlockPlugin,
+  codeMirrorPlugin,
+  diffSourcePlugin,
+  directivesPlugin,
+  jsxPlugin,
+  markdownShortcutPlugin,
+  toolbarPlugin,
+  AdmonitionDirectiveDescriptor,
+  type MDXEditorMethods,
+} from "@mdxeditor/editor"
+
+import "@mdxeditor/editor/style.css"
+import "./mdxeditor-theme.css"
+
+import type { FieldVariantMap, FrontmatterFieldDef } from "@/lib/framework-adapters"
+import { IMAGE_EXTENSIONS } from "./shared-constants"
+import { ForwardRefEditor } from "./forward-ref-editor"
+import { StudioToolbar } from "./studio-toolbar"
+import { getJsxComponentDescriptors } from "./jsx-component-descriptors"
+import { FrontmatterPanel } from "./frontmatter-panel"
+
+const YouTubeDirectiveDescriptor = {
+  name: "youtube",
+  type: "leafDirective" as const,
+  testNode: (node: { name?: string }) => node.name === "youtube",
+  attributes: [],
+  hasChildren: false,
+  Editor: () => null,
+}
 
 interface EditorProps {
   content: string
@@ -26,6 +56,11 @@ interface EditorProps {
   statusBadge: React.ReactNode
   scrollContainerRef?: React.RefObject<HTMLDivElement | null>
   onScroll?: () => void
+  owner: string
+  repo: string
+  branch: string
+  contentRoot?: string
+  tree?: { path: string; type: string }[]
 }
 
 export function Editor({
@@ -43,265 +78,174 @@ export function Editor({
   statusBadge,
   scrollContainerRef,
   onScroll,
+  owner,
+  repo,
+  branch,
+  contentRoot = "",
+  tree = [],
 }: EditorProps) {
-  const [isFrontmatterOpen, setIsFrontmatterOpen] = React.useState(true)
-  const [showEmptySchema, setShowEmptySchema] = React.useState(false)
+  const editorRef = React.useRef<MDXEditorMethods>(null)
 
-  const schema = frontmatterSchema && frontmatterSchema.length > 0 ? frontmatterSchema : UNIVERSAL_FIELDS
-  const mergedFields = React.useMemo(
-    () => buildMergedFieldList(frontmatter, schema, fieldVariants),
-    [frontmatter, schema, fieldVariants],
+  // Determine image upload path based on project structure
+  const getImageUploadPath = React.useCallback(
+    (fileName: string): string => {
+      const possibleDirs = ["public/images", "static/images", "images", "assets/images", "src/assets/images"]
+
+      const existingDirs = possibleDirs.filter((dir) =>
+        tree.some((node) => node.type === "dir" && (node.path === dir || node.path.startsWith(dir + "/"))),
+      )
+
+      const baseDir = existingDirs[0] || "public/images"
+      return `${baseDir}/${fileName}`
+    },
+    [tree],
   )
 
-  const fieldsInFile = mergedFields.filter((f) => f.isInFile)
-  const emptySchemaFields = mergedFields.filter((f) => !f.isInFile)
+  // Image upload handler - uploads to GitHub via API
+  const handleImageUpload = React.useCallback(
+    async (file: File): Promise<string> => {
+      try {
+        const arrayBuffer = await file.arrayBuffer()
+        const base64 = btoa(new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), ""))
+
+        const fileName = file.name || `image-${Date.now()}.png`
+        const imagePath = getImageUploadPath(fileName)
+
+        const response = await fetch("/api/github/upload-image", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            owner,
+            repo,
+            path: imagePath,
+            content: base64,
+            message: `Upload image: ${fileName} via RepoPress`,
+            branch,
+          }),
+        })
+
+        if (!response.ok) {
+          const error = await response.json()
+          console.error("Image upload failed:", error)
+          throw new Error(error.error || "Failed to upload image")
+        }
+
+        const result = await response.json()
+        return result.path || imagePath
+      } catch (error) {
+        console.error("Error uploading image:", error)
+        throw error
+      }
+    },
+    [owner, repo, branch, getImageUploadPath],
+  )
+
+  // Extract image paths from tree for autocomplete
+  const imageAutocompleteSuggestions = React.useMemo(() => {
+    return tree
+      .filter((node) => node.type === "file" && IMAGE_EXTENSIONS.some((ext) => node.path.toLowerCase().endsWith(ext)))
+      .map((node) => node.path)
+  }, [tree])
+
+  // Build MDXEditor plugins — memoized to avoid re-creating on every render
+  const plugins = React.useMemo(
+    () => [
+      headingsPlugin(),
+      quotePlugin(),
+      listsPlugin(),
+      linkPlugin(),
+      linkDialogPlugin({
+        linkAutocompleteSuggestions: [],
+      }),
+      tablePlugin(),
+      thematicBreakPlugin(),
+      markdownShortcutPlugin(),
+      codeBlockPlugin({ defaultCodeBlockLanguage: "typescript" }),
+      codeMirrorPlugin({
+        codeBlockLanguages: {
+          js: "JavaScript",
+          ts: "TypeScript",
+          tsx: "TypeScript (JSX)",
+          jsx: "JSX",
+          css: "CSS",
+          html: "HTML",
+          json: "JSON",
+          python: "Python",
+          bash: "Bash",
+          yaml: "YAML",
+          md: "Markdown",
+          sql: "SQL",
+          go: "Go",
+          rust: "Rust",
+          txt: "Plain Text",
+        },
+      }),
+      imagePlugin({
+        imageUploadHandler: handleImageUpload,
+        imageAutocompleteSuggestions,
+      }),
+      directivesPlugin({
+        directiveDescriptors: [AdmonitionDirectiveDescriptor, YouTubeDirectiveDescriptor],
+      }),
+      jsxPlugin({
+        jsxComponentDescriptors: getJsxComponentDescriptors(),
+      }),
+      diffSourcePlugin({
+        diffMarkdown: "",
+        viewMode: "rich-text",
+      }),
+      toolbarPlugin({
+        toolbarContents: () => <StudioToolbar />,
+      }),
+    ],
+    [handleImageUpload, imageAutocompleteSuggestions],
+  )
+
+  // Handle content change from editor
+  const handleContentChange = React.useCallback(
+    (markdown: string) => {
+      onChangeContent(markdown)
+    },
+    [onChangeContent],
+  )
+
+  // Sync content to MDXEditor when content changes externally (file switch)
+  const lastSyncedContent = React.useRef<string | null>(null)
+  React.useEffect(() => {
+    if (editorRef.current && content !== lastSyncedContent.current) {
+      editorRef.current.setMarkdown(content)
+      lastSyncedContent.current = content
+    }
+  }, [content])
 
   return (
     <div className="h-full flex flex-col">
-      <div className="flex items-center justify-between p-2 border-b bg-muted/30">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium">Editor</span>
-          {statusBadge}
-        </div>
-        <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" onClick={onSaveDraft} disabled={isSaving || isPublishing}>
-            <Save className="h-4 w-4 mr-1" />
-            {isSaving ? "Saving..." : "Save Draft"}
-          </Button>
-          <Button
-            size="sm"
-            onClick={onPublish}
-            disabled={isSaving || isPublishing || !canPublish}
-            title={canPublish ? "Publish to GitHub" : "Only draft or approved documents can be published"}
-          >
-            <Upload className="h-4 w-4 mr-1" />
-            {isPublishing ? "Publishing..." : "Publish"}
-          </Button>
-        </div>
-      </div>
-
       <div ref={scrollContainerRef} onScroll={onScroll} className="flex-1 overflow-y-auto">
-        <div className="p-4 space-y-6">
-          <Collapsible
-            open={isFrontmatterOpen}
-            onOpenChange={setIsFrontmatterOpen}
-            className="border rounded-md bg-card"
-          >
-            <div className="flex items-center justify-between px-4 py-2 border-b">
-              <h3 className="text-sm font-semibold">Frontmatter</h3>
-              <CollapsibleTrigger asChild>
-                <Button variant="ghost" size="sm" className="w-9 p-0">
-                  {isFrontmatterOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                  <span className="sr-only">Toggle Frontmatter</span>
-                </Button>
-              </CollapsibleTrigger>
-            </div>
-            <CollapsibleContent className="p-4 space-y-4">
-              {fieldsInFile.map((field) => (
-                <MergedFrontmatterField
-                  key={field.actualFieldName}
-                  field={field}
-                  value={frontmatter[field.actualFieldName]}
-                  onChange={(value) => onChangeFrontmatter(field.actualFieldName, value)}
-                />
-              ))}
-              {emptySchemaFields.length > 0 && (
-                <div className="border-t pt-3 mt-3">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-xs text-muted-foreground p-0 h-auto hover:text-foreground"
-                    onClick={() => setShowEmptySchema(!showEmptySchema)}
-                  >
-                    {showEmptySchema ? (
-                      <ChevronDown className="h-3 w-3 mr-1" />
-                    ) : (
-                      <ChevronRight className="h-3 w-3 mr-1" />
-                    )}
-                    Show {emptySchemaFields.length} available schema field{emptySchemaFields.length !== 1 ? "s" : ""}
-                    <span className="ml-1 text-muted-foreground/70">
-                      ({emptySchemaFields.map((f) => f.name).join(", ")} — not in this file)
-                    </span>
-                  </Button>
-                  {showEmptySchema && (
-                    <div className="mt-3 space-y-4">
-                      {emptySchemaFields.map((field) => (
-                        <MergedFrontmatterField
-                          key={field.actualFieldName}
-                          field={field}
-                          value={frontmatter[field.actualFieldName]}
-                          onChange={(value) => onChangeFrontmatter(field.actualFieldName, value)}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </CollapsibleContent>
-          </Collapsible>
+        <div className="space-y-0">
+          {/* Frontmatter Panel (Phase 6) */}
+          <FrontmatterPanel
+            frontmatter={frontmatter}
+            frontmatterSchema={frontmatterSchema}
+            fieldVariants={fieldVariants}
+            onChangeFrontmatter={onChangeFrontmatter}
+            tree={tree}
+          />
 
-          <div className="space-y-2">
-            <Label>Content (MDX)</Label>
-            <Textarea
-              value={content}
-              onChange={(e) => onChangeContent(e.target.value)}
-              className="min-h-[500px] font-mono text-sm"
-              placeholder="Write your content here..."
+          {/* MDXEditor */}
+          <div className="min-h-[500px]">
+            <ForwardRefEditor
+              ref={editorRef}
+              markdown={content}
+              contentEditableClassName="prose prose-neutral dark:prose-invert max-w-none font-sans px-6 py-4 min-h-[500px] focus:outline-none"
+              onChange={handleContentChange}
+              plugins={plugins}
+              className="mdxeditor-studio"
             />
           </div>
         </div>
       </div>
     </div>
   )
-}
-
-function MergedFrontmatterField({
-  field,
-  value,
-  onChange,
-}: {
-  field: MergedFieldDef
-  value: any
-  onChange: (value: any) => void
-}) {
-  const id = field.actualFieldName
-  // Show schema description as helper text when the actual field name differs from schema name
-  const hasSchemaHint = field.actualFieldName !== field.name && field.description !== field.actualFieldName
-
-  const labelEl = (
-    <div>
-      <Label htmlFor={id} className="font-semibold">
-        {field.actualFieldName}
-      </Label>
-      {hasSchemaHint && <p className="text-xs text-muted-foreground mt-0.5">{field.description}</p>}
-    </div>
-  )
-
-  switch (field.type) {
-    case "boolean":
-      return (
-        <div className="flex items-center gap-2">
-          <Checkbox id={id} checked={!!value} onCheckedChange={(checked) => onChange(checked)} />
-          <div>
-            <Label htmlFor={id} className="text-sm font-semibold">
-              {field.actualFieldName}
-            </Label>
-            {hasSchemaHint && <p className="text-xs text-muted-foreground">{field.description}</p>}
-          </div>
-        </div>
-      )
-
-    case "date":
-      return (
-        <div className="grid gap-1">
-          {labelEl}
-          <Input
-            id={id}
-            type="date"
-            value={normalizeDate(value)}
-            onChange={(e) => onChange(e.target.value)}
-          />
-        </div>
-      )
-
-    case "number":
-      return (
-        <div className="grid gap-1">
-          {labelEl}
-          <Input
-            id={id}
-            type="number"
-            value={value ?? ""}
-            onChange={(e) => onChange(e.target.value ? Number(e.target.value) : undefined)}
-          />
-        </div>
-      )
-
-    case "string[]":
-      return (
-        <div className="grid gap-1">
-          {labelEl}
-          <Input
-            id={id}
-            value={Array.isArray(value) ? value.join(", ") : value || ""}
-            onChange={(e) => {
-              const raw = e.target.value
-              onChange(
-                raw
-                  ? raw
-                      .split(",")
-                      .map((s: string) => s.trim())
-                      .filter(Boolean)
-                  : [],
-              )
-            }}
-            placeholder={`e.g. item1, item2, item3`}
-          />
-        </div>
-      )
-
-    case "image":
-      return (
-        <div className="grid gap-1">
-          {labelEl}
-          <Input
-            id={id}
-            value={value || ""}
-            onChange={(e) => onChange(e.target.value)}
-            placeholder="/images/cover.jpg"
-          />
-        </div>
-      )
-
-    case "object":
-      return (
-        <div className="grid gap-1">
-          {labelEl}
-          <Textarea
-            id={id}
-            value={typeof value === "object" ? JSON.stringify(value, null, 2) : String(value ?? "")}
-            disabled
-            className="font-mono text-xs h-24 bg-muted"
-          />
-        </div>
-      )
-
-    default: {
-      // Use textarea for description-like fields
-      const isLongText =
-        field.actualFieldName === "description" ||
-        field.actualFieldName === "summary" ||
-        field.actualFieldName === "excerpt" ||
-        field.actualFieldName === "bio" ||
-        field.name === "description" ||
-        field.name === "summary" ||
-        field.name === "excerpt"
-
-      if (isLongText) {
-        return (
-          <div className="grid gap-1">
-            {labelEl}
-            <Textarea
-              id={id}
-              value={value || ""}
-              onChange={(e) => onChange(e.target.value)}
-              placeholder={field.description}
-              className="h-20"
-            />
-          </div>
-        )
-      }
-      return (
-        <div className="grid gap-1">
-          {labelEl}
-          <Input
-            id={id}
-            value={value || ""}
-            onChange={(e) => onChange(e.target.value)}
-            placeholder={field.description}
-          />
-        </div>
-      )
-    }
-  }
 }

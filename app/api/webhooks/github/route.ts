@@ -8,7 +8,10 @@ const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
 function verifySignature(payload: string, signature: string | null, secret: string): boolean {
   if (!signature) return false
   const expected = `sha256=${crypto.createHmac("sha256", secret).update(payload).digest("hex")}`
-  return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))
+  const sigBuf = Buffer.from(signature)
+  const expBuf = Buffer.from(expected)
+  if (sigBuf.length !== expBuf.length) return false
+  return crypto.timingSafeEqual(sigBuf, expBuf)
 }
 
 export async function POST(request: Request) {

@@ -21,11 +21,6 @@ interface CreateFileDialogProps {
   onConfirm: (fileName: string, parentPath: string) => void
 }
 
-/** Escape special regex characters in a string for use in new RegExp() */
-function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-}
-
 export function CreateFileDialog({
   open,
   onOpenChange,
@@ -35,8 +30,10 @@ export function CreateFileDialog({
 }: CreateFileDialogProps) {
   const [fileName, setFileName] = React.useState("")
 
-  // Strip contentRoot from display path
-  const displayPath = contentRoot ? parentPath.replace(new RegExp(`^${escapeRegex(contentRoot)}/?`), "") : parentPath
+  // Strip contentRoot from display path (string ops — no regex needed)
+  const displayPath = contentRoot && parentPath.startsWith(contentRoot)
+    ? parentPath.slice(contentRoot.length).replace(/^\//, "")
+    : parentPath
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()

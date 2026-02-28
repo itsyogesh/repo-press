@@ -51,14 +51,23 @@ export const updateAfterCommit = mutation({
     prNumber: v.optional(v.number()),
     prUrl: v.optional(v.string()),
     lastCommitSha: v.optional(v.string()),
+    newFilePaths: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
-    const { id, ...updates } = args
+    const { id, newFilePaths, ...updates } = args
     // Remove undefined keys so we only patch provided values
     const patches: Record<string, unknown> = { updatedAt: Date.now() }
     if (updates.prNumber !== undefined) patches.prNumber = updates.prNumber
     if (updates.prUrl !== undefined) patches.prUrl = updates.prUrl
     if (updates.lastCommitSha !== undefined) patches.lastCommitSha = updates.lastCommitSha
+
+    // Merge new file paths into existing committedFilePaths
+    if (newFilePaths && newFilePaths.length > 0) {
+      const existing = await ctx.db.get(id)
+      const existingPaths = existing?.committedFilePaths ?? []
+      const merged = [...new Set([...existingPaths, ...newFilePaths])]
+      patches.committedFilePaths = merged
+    }
 
     await ctx.db.patch(id, patches)
   },

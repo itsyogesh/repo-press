@@ -1,12 +1,10 @@
 import { ConvexHttpClient } from "convex/browser"
 import type { Id } from "@/convex/_generated/dataModel"
 import { AlertCircle } from "lucide-react"
-import Link from "next/link"
 import { redirect } from "next/navigation"
-import { ProjectSwitcher } from "@/components/studio/project-switcher"
+import { StudioPageThemeToggle } from "@/components/studio/studio-page-theme-toggle"
 import { StudioLayout } from "@/components/studio/studio-layout"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Button } from "@/components/ui/button"
 import { api } from "@/convex/_generated/api"
 import { getGitHubToken } from "@/lib/auth-server"
 import type { FileTreeNode } from "@/lib/github"
@@ -21,6 +19,7 @@ interface StudioPageProps {
   searchParams: Promise<{
     branch?: string
     projectId?: string
+    file?: string
   }>
 }
 
@@ -32,9 +31,9 @@ export default async function StudioPage({ params, searchParams }: StudioPagePro
   }
 
   const { owner, repo, path } = await params
-  const { branch, projectId: projectIdParam } = await searchParams
+  const { branch, projectId: projectIdParam, file } = await searchParams
   const currentBranch = branch || "main"
-  const currentPath = path ? path.join("/") : ""
+  const currentPath = file || (path ? path.join("/") : "")
 
   // Look up the project: prefer explicit projectId, fall back to repo+branch lookup
   const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
@@ -73,32 +72,20 @@ export default async function StudioPage({ params, searchParams }: StudioPagePro
   return (
     <div className="h-screen flex flex-col overflow-hidden">
       <div className="shrink-0 border-b bg-background">
-        <div className="container mx-auto px-4 py-3 flex items-center justify-between">
+        <div className="w-full px-2 sm:px-3 py-3 flex items-center justify-between gap-3">
           <div className="flex items-center gap-4">
             <h1 className="text-lg font-semibold">
               {owner}/{repo}
             </h1>
-            <span className="text-sm text-muted-foreground">Studio</span>
-            {contentRoot && (
-              <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded">{contentRoot}</span>
-            )}
-            {project && (
-              <ProjectSwitcher
-                currentProjectId={project._id}
-                owner={owner}
-                repo={repo}
-                branch={currentBranch}
-              />
-            )}
           </div>
-          <Button variant="outline" size="sm" asChild>
-            <Link href="/dashboard">Back to Dashboard</Link>
-          </Button>
+          <div className="flex items-center gap-2">
+            <StudioPageThemeToggle />
+          </div>
         </div>
       </div>
 
       {error ? (
-        <div className="container mx-auto px-4 py-8">
+        <div className="w-full px-2 sm:px-3 py-8">
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
             <AlertTitle>Error</AlertTitle>

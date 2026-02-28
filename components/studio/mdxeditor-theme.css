@@ -1,0 +1,18 @@
+/* components/studio/mdxeditor-theme.css */
+.mdxeditor {
+    --accentBase: var(--color-studio-canvas);
+    --accentBg: var(--color-studio-accent-muted);
+    --accentBgHover: var(--color-studio-accent-muted);
+    --accentBorder: var(--color-studio-accent);
+    --accentSolid: var(--color-studio-accent);
+    --accentSolidHover: var(--color-studio-accent);
+    --accentText: var(--color-studio-accent);
+    --accentTextContrast: var(--color-studio-accent-fg);
+    --baseBase: var(--color-studio-canvas);
+    --baseBg: var(--color-studio-canvas);
+    --baseBgHover: var(--color-studio-canvas-inset);
+    --baseBorder: var(--color-studio-border);
+    --baseSolid: var(--color-studio-fg-muted);
+    --baseText: var(--color-studio-fg);
+    --baseTextContrast: var(--color-studio-fg);
+}
