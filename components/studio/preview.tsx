@@ -3,6 +3,7 @@
 import * as React from "react"
 import ReactMarkdown from "react-markdown"
 import rehypeRaw from "rehype-raw"
+import rehypeSanitize from "rehype-sanitize"
 import remarkGfm from "remark-gfm"
 import { Maximize2, Minimize2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
@@ -174,7 +175,7 @@ export function Preview({
         />
       )}
 
-      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={MDX_COMPONENTS}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw, rehypeSanitize]} components={MDX_COMPONENTS}>
         {debouncedContent}
       </ReactMarkdown>
     </article>

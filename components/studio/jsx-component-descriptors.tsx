@@ -15,38 +15,42 @@ export function getJsxComponentDescriptors(): JsxComponentDescriptor[] {
         { name: "alt", type: "string" },
       ],
       hasChildren: false,
-      Editor: ({ descriptor }) => (
-        <div
-          style={{
-            padding: "12px 16px",
-            border: "1px dashed var(--studio-border)",
-            borderRadius: "8px",
-            background: "var(--studio-canvas-inset)",
-            margin: "8px 0",
-          }}
-        >
+      Editor: ({ mdastNode, descriptor }) => {
+        const altAttr = (mdastNode as any).attributes?.find((a: any) => a.name === "alt")
+        const altValue = typeof altAttr?.value === "string" ? altAttr.value : "Image"
+        return (
           <div
             style={{
-              fontSize: "11px",
-              fontWeight: 600,
-              color: "var(--studio-fg-muted)",
-              textTransform: "uppercase",
-              letterSpacing: "0.05em",
+              padding: "12px 16px",
+              border: "1px dashed var(--studio-border)",
+              borderRadius: "8px",
+              background: "var(--studio-canvas-inset)",
+              margin: "8px 0",
             }}
           >
-            🖼️ DocsImage
+            <div
+              style={{
+                fontSize: "11px",
+                fontWeight: 600,
+                color: "var(--studio-fg-muted)",
+                textTransform: "uppercase",
+                letterSpacing: "0.05em",
+              }}
+            >
+              🖼️ {descriptor.name}
+            </div>
+            <div
+              style={{
+                fontSize: "12px",
+                marginTop: "4px",
+                color: "var(--studio-fg)",
+              }}
+            >
+              {altValue}
+            </div>
           </div>
-          <div
-            style={{
-              fontSize: "12px",
-              marginTop: "4px",
-              color: "var(--studio-fg)",
-            }}
-          >
-            {descriptor.props.find((p) => p.name === "alt")?.name || "Image"}
-          </div>
-        </div>
-      ),
+        )
+      },
     },
     {
       name: "DocsVideo",
@@ -56,38 +60,42 @@ export function getJsxComponentDescriptors(): JsxComponentDescriptor[] {
         { name: "alt", type: "string" },
       ],
       hasChildren: false,
-      Editor: ({ descriptor }) => (
-        <div
-          style={{
-            padding: "12px 16px",
-            border: "1px dashed var(--studio-border)",
-            borderRadius: "8px",
-            background: "var(--studio-canvas-inset)",
-            margin: "8px 0",
-          }}
-        >
+      Editor: ({ mdastNode, descriptor }) => {
+        const altAttr = (mdastNode as any).attributes?.find((a: any) => a.name === "alt")
+        const altValue = typeof altAttr?.value === "string" ? altAttr.value : "Video"
+        return (
           <div
             style={{
-              fontSize: "11px",
-              fontWeight: 600,
-              color: "var(--studio-fg-muted)",
-              textTransform: "uppercase",
-              letterSpacing: "0.05em",
+              padding: "12px 16px",
+              border: "1px dashed var(--studio-border)",
+              borderRadius: "8px",
+              background: "var(--studio-canvas-inset)",
+              margin: "8px 0",
             }}
           >
-            🎬 DocsVideo
+            <div
+              style={{
+                fontSize: "11px",
+                fontWeight: 600,
+                color: "var(--studio-fg-muted)",
+                textTransform: "uppercase",
+                letterSpacing: "0.05em",
+              }}
+            >
+              🎬 {descriptor.name}
+            </div>
+            <div
+              style={{
+                fontSize: "12px",
+                marginTop: "4px",
+                color: "var(--studio-fg)",
+              }}
+            >
+              {altValue}
+            </div>
           </div>
-          <div
-            style={{
-              fontSize: "12px",
-              marginTop: "4px",
-              color: "var(--studio-fg)",
-            }}
-          >
-            {descriptor.props.find((p) => p.name === "alt")?.name || "Video"}
-          </div>
-        </div>
-      ),
+        )
+      },
     },
     {
       name: "Callout",
@@ -97,31 +105,35 @@ export function getJsxComponentDescriptors(): JsxComponentDescriptor[] {
         { name: "title", type: "string" },
       ],
       hasChildren: true,
-      Editor: ({ descriptor }) => (
-        <div
-          style={{
-            padding: "12px 16px",
-            border: "1px solid var(--studio-border)",
-            borderRadius: "8px",
-            background: "var(--studio-canvas-inset)",
-            margin: "8px 0",
-          }}
-        >
+      Editor: ({ mdastNode, descriptor }) => {
+        const titleAttr = (mdastNode as any).attributes?.find((a: any) => a.name === "title")
+        const titleValue = typeof titleAttr?.value === "string" ? titleAttr.value : "Callout"
+        return (
           <div
             style={{
-              fontSize: "11px",
-              fontWeight: 600,
-              color: "var(--studio-fg-muted)",
-              marginBottom: "4px",
-              textTransform: "uppercase",
-              letterSpacing: "0.05em",
+              padding: "12px 16px",
+              border: "1px solid var(--studio-border)",
+              borderRadius: "8px",
+              background: "var(--studio-canvas-inset)",
+              margin: "8px 0",
             }}
           >
-            📌 {descriptor.name}
+            <div
+              style={{
+                fontSize: "11px",
+                fontWeight: 600,
+                color: "var(--studio-fg-muted)",
+                marginBottom: "4px",
+                textTransform: "uppercase",
+                letterSpacing: "0.05em",
+              }}
+            >
+              📌 {descriptor.name}
+            </div>
+            <div>{titleValue}</div>
           </div>
-          <div>{descriptor.props.find((p) => p.name === "title")?.type || "Callout"}</div>
-        </div>
-      ),
+        )
+      },
     },
     {
       name: "Card",

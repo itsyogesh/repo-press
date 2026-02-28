@@ -119,6 +119,7 @@ export function FileTree({
   React.useEffect(() => {
     const validDirs = collectDirPaths(tree)
     setExpandedDirs((prev) => {
+      if (prev.size === 0 && tree.length > 0) return buildInitialExpandedDirs(tree)
       const next = new Set<string>()
       for (const path of prev) {
         if (validDirs.has(path)) {
@@ -179,12 +180,6 @@ export function FileTree({
         e.target instanceof HTMLTextAreaElement ||
         (e.target as HTMLElement).isContentEditable
 
-      if (e.key === "/") {
-        e.preventDefault()
-        searchInputRef.current?.focus()
-        return
-      }
-
       if (e.key === "Escape") {
         if (renamingPath) {
           e.preventDefault()
@@ -207,6 +202,12 @@ export function FileTree({
       }
 
       if (isEditableTarget) return
+
+      if (e.key === "/") {
+        e.preventDefault()
+        searchInputRef.current?.focus()
+        return
+      }
 
       if (e.key === "ArrowDown") {
         e.preventDefault()

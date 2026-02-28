@@ -11,6 +11,7 @@ interface FileRenameInputProps {
 export function FileRenameInput({ initialValue, onSubmit, onCancel, className }: FileRenameInputProps) {
   const [value, setValue] = React.useState(initialValue)
   const inputRef = React.useRef<HTMLInputElement>(null)
+  const submittedRef = React.useRef(false)
 
   React.useEffect(() => {
     if (inputRef.current) {
@@ -26,6 +27,7 @@ export function FileRenameInput({ initialValue, onSubmit, onCancel, className }:
     if (e.key === "Enter") {
       e.preventDefault()
       e.stopPropagation()
+      submittedRef.current = true
       if (value.trim() && value !== initialValue) {
         onSubmit(value.trim())
       } else {
@@ -39,6 +41,7 @@ export function FileRenameInput({ initialValue, onSubmit, onCancel, className }:
   }
 
   const handleBlur = () => {
+    if (submittedRef.current) return
     if (value.trim() && value !== initialValue) {
       onSubmit(value.trim())
     } else {

@@ -26,6 +26,7 @@ import "@mdxeditor/editor/style.css"
 import "./mdxeditor-theme.css"
 
 import type { FieldVariantMap, FrontmatterFieldDef } from "@/lib/framework-adapters"
+import { IMAGE_EXTENSIONS } from "./shared-constants"
 import { ForwardRefEditor } from "./forward-ref-editor"
 import { StudioToolbar } from "./studio-toolbar"
 import { getJsxComponentDescriptors } from "./jsx-component-descriptors"
@@ -135,17 +136,16 @@ export function Editor({
         return result.path || imagePath
       } catch (error) {
         console.error("Error uploading image:", error)
-        return URL.createObjectURL(file)
+        throw error
       }
     },
     [owner, repo, branch, getImageUploadPath],
   )
 
   // Extract image paths from tree for autocomplete
-  const imageExtensions = [".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".bmp", ".ico"]
   const imageAutocompleteSuggestions = React.useMemo(() => {
     return tree
-      .filter((node) => node.type === "file" && imageExtensions.some((ext) => node.path.toLowerCase().endsWith(ext)))
+      .filter((node) => node.type === "file" && IMAGE_EXTENSIONS.some((ext) => node.path.toLowerCase().endsWith(ext)))
       .map((node) => node.path)
   }, [tree])
 

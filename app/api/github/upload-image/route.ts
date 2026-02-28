@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { getGitHubToken } from "@/lib/auth-server"
-import { saveFileContent } from "@/lib/github"
+import { createGitHubClient } from "@/lib/github"
 
 export async function POST(request: Request) {
   const token = await getGitHubToken()
@@ -17,10 +17,18 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
     }
 
-    // content is expected to be base64 encoded
-    const decodedContent = Buffer.from(content, "base64").toString("utf-8")
-
-    const result = await saveFileContent(token, owner, repo, path, decodedContent, sha, message, branch)
+    // content is already base64 encoded from the client.
+    // Use Octokit directly to avoid double-encoding through saveFileContent.
+    const octokit = createGitHubClient(token)
+    const { data: result } = await octokit.repos.createOrUpdateFileContents({
+      owner,
+      repo,
+      path,
+      message: message || `Upload image via RepoPress`,
+      content,
+      sha,
+      branch,
+    })
 
     if (!result.content || !result.commit) {
       return NextResponse.json({ error: "Failed to upload image" }, { status: 500 })

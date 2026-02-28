@@ -20,7 +20,7 @@ interface ViewModeContextValue {
 
 const ViewModeContext = React.createContext<ViewModeContextValue | null>(null)
 const isValidViewMode = (value: string | null): value is ViewMode => value === "editor" || value === "split"
-const isValidSidebarState = (value: string | null): value is SidebarState | "hidden" =>
+const isValidSidebarState = (value: string | null): boolean =>
   value === "expanded" || value === "collapsed" || value === "hidden"
 
 export function ViewModeProvider({ children }: { children: React.ReactNode }) {
@@ -39,7 +39,7 @@ export function ViewModeProvider({ children }: { children: React.ReactNode }) {
 
       const storedSidebarState = localStorage.getItem("studio:sidebarState")
       if (isValidSidebarState(storedSidebarState)) {
-        setSidebarStateState(storedSidebarState === "hidden" ? "collapsed" : storedSidebarState)
+        setSidebarStateState(storedSidebarState === "hidden" ? "collapsed" : (storedSidebarState as SidebarState))
       } else if (window.matchMedia("(max-width: 767px)").matches) {
         setSidebarStateState("collapsed")
       }

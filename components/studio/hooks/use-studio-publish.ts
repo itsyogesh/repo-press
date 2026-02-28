@@ -76,12 +76,17 @@ export function useStudioPublish({
         }
     }, [projectId, userId, selectedFile, ensureDocumentRecord, saveDraftMutation, content, frontmatter])
 
+    const openPublishDialog = React.useCallback(() => {
+        setPublishConflicts([])
+        setPublishDialogOpen(true)
+    }, [])
+
     return {
         isPublishing,
         publishDialogOpen,
         publishConflicts,
+        openPublishDialog,
         setPublishDialogOpen,
-        setPublishConflicts,
         handlePublish,
     }
 }

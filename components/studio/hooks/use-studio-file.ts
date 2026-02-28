@@ -49,8 +49,10 @@ function parseFileSnapshot(rawContent: string, sha: string | null): CachedFileSn
       sha,
     }
   } catch {
+    // Attempt to strip frontmatter even if gray-matter fails
+    const stripped = rawContent.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "")
     return {
-      content: rawContent,
+      content: stripped,
       frontmatter: {},
       sha,
     }
@@ -250,9 +252,7 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
           setIsFileLoading(false)
         }
       } finally {
-        if (requestVersionRef.current === requestVersion) {
-          setIsFileLoading(false)
-        }
+        setIsFileLoading(false)
       }
     },
     [owner, repo, branch, syncBrowserUrl, applySnapshot, resolveFileNode, trackRecentFile],
@@ -361,23 +361,26 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
 
     if (!openFilesHydrated) return
 
-    const validOpenFiles = openFiles.filter((path) => findNode(tree, path)?.type === "file")
-    if (validOpenFiles.length !== openFiles.length) {
-      setOpenFiles(validOpenFiles)
-    }
+    // Use functional updater to avoid including openFiles in deps (prevents double-execution)
+    let restoreTarget: string | undefined
+    setOpenFiles((prev) => {
+      const validOpenFiles = prev.filter((path) => findNode(tree, path)?.type === "file")
 
-    const storedSelectedPath =
-      typeof window !== "undefined" ? (localStorage.getItem(selectedFileStorageKey) ?? "") : ""
-    const fallbackPath = validOpenFiles[validOpenFiles.length - 1]
-    const restorePath =
-      storedSelectedPath && validOpenFiles.includes(storedSelectedPath) ? storedSelectedPath : fallbackPath
+      const storedSelectedPath =
+        typeof window !== "undefined" ? (localStorage.getItem(selectedFileStorageKey) ?? "") : ""
+      const fallbackPath = validOpenFiles[validOpenFiles.length - 1]
+      restoreTarget =
+        storedSelectedPath && validOpenFiles.includes(storedSelectedPath) ? storedSelectedPath : fallbackPath
 
-    if (restorePath) {
-      const cached = fileCacheRef.current.get(restorePath)
+      return validOpenFiles.length !== prev.length ? validOpenFiles : prev
+    })
+
+    if (restoreTarget) {
+      const cached = fileCacheRef.current.get(restoreTarget)
       if (cached) {
-        applySnapshot(restorePath, cached)
+        applySnapshot(restoreTarget, cached)
       } else {
-        void openFile(restorePath, "replace")
+        void openFile(restoreTarget, "replace")
       }
       return
     }
@@ -387,12 +390,12 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
     initialFile,
     currentPath,
     openFilesHydrated,
-    openFiles,
     tree,
     selectedFileStorageKey,
     applySnapshot,
     clearSelection,
     openFile,
+    syncBrowserUrl,
   ])
 
   React.useEffect(() => {
@@ -439,7 +442,9 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
       const currentIndex = openFiles.indexOf(path)
       const fallbackIndex = currentIndex > 0 ? currentIndex - 1 : 0
       const fallbackPath = remaining[Math.min(fallbackIndex, remaining.length - 1)]
-      void openFile(fallbackPath, "push")
+      if (fallbackPath) {
+        void openFile(fallbackPath, "push")
+      }
     },
     [selectedFile?.path, openFiles, clearSelection, openFile],
   )
@@ -459,8 +464,10 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
         const activePath = selectedFile?.path
         if (!activePath) return
 
-        let nextContent = content
-        let nextFrontmatter = frontmatter
+        const cached = fileCacheRef.current.get(activePath)
+        let nextContent = cached?.content ?? ""
+        let nextFrontmatter = cached?.frontmatter ?? {}
+        const currentSha = cached?.sha ?? null
 
         if (typeof doc.body === "string") {
           nextContent = doc.body
@@ -477,7 +484,7 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
         fileCacheRef.current.set(activePath, {
           content: nextContent,
           frontmatter: nextFrontmatter,
-          sha,
+          sha: currentSha,
         })
 
         setIsDirty(false)
@@ -485,7 +492,7 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
         console.error("Error hydrating from Convex document draft:", error)
       }
     },
-    [selectedFile?.path, content, frontmatter, sha],
+    [selectedFile?.path],
   )
 
   const handleContentChange = React.useCallback(

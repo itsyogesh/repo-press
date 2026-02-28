@@ -38,9 +38,7 @@ interface StudioHeaderProps {
     variant: "default" | "secondary" | "outline" | "destructive"
   }
   onSave: () => void
-  onClearSelection: () => void
   isSaving: boolean
-  lastSavedAt?: number | null
 }
 
 export function StudioHeader({

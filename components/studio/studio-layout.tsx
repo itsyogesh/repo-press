@@ -434,7 +434,7 @@ function StudioLayoutInner({
   })
 
   // 4. Publish
-  const { isPublishing, publishDialogOpen, publishConflicts, setPublishDialogOpen, handlePublish } = useStudioPublish({
+  const { isPublishing, publishDialogOpen, publishConflicts, openPublishDialog, setPublishDialogOpen, handlePublish } = useStudioPublish({
     userId,
     ensureDocumentRecord,
     selectedFile,
@@ -919,15 +919,7 @@ function StudioLayoutInner({
           currentStatus={currentStatus}
           statusInfo={statusInfo as any}
           onSave={saveDraft}
-          onClearSelection={() => {
-            if (selectedFile?.path) {
-              closeFile(selectedFile.path)
-            } else {
-              clearSelection()
-            }
-          }}
           isSaving={isSaving || isFileLoading}
-          lastSavedAt={document?.updatedAt}
         />
       </div>
 
@@ -1005,7 +997,7 @@ function StudioLayoutInner({
                         dirtyDocs={dirtyDocs}
                         prUrl={activeBranch?.prUrl}
                         onPublish={() => {
-                          setPublishDialogOpen(true)
+                          openPublishDialog()
                         }}
                         onDiscard={handleDiscardAll}
                         onSelectFile={(path) => navigateToFile(path)}
@@ -1028,7 +1020,7 @@ function StudioLayoutInner({
             minSize="30%"
             className="flex-1 min-w-0 transition-[flex-basis] duration-150 ease-out"
           >
-            <div className="h-full flex flex-col overflow-hidden">
+            <div id="studio-editor" className="h-full flex flex-col overflow-hidden" tabIndex={-1}>
               {openFiles.length > 0 && (
                 <div className="shrink-0 border-b border-studio-border bg-studio-canvas">
                   <div className="flex items-center gap-1 overflow-x-auto px-2 py-1.5">
@@ -1084,7 +1076,7 @@ function StudioLayoutInner({
                       onChangeContent={setContent}
                       onChangeFrontmatter={setFrontmatterKey}
                       onSaveDraft={saveDraft}
-                      onPublish={() => setPublishDialogOpen(true)}
+                      onPublish={() => openPublishDialog()}
                       isSaving={isSaving || isFileLoading}
                       isPublishing={isPublishing}
                       canPublish={canPublish}
@@ -1204,7 +1196,7 @@ function StudioLayoutInner({
                 maxSize="60%"
                 className="flex-1 min-w-0 bg-studio-canvas transition-[flex-basis] duration-150 ease-out"
               >
-                <div id="studio-editor" className="h-full overflow-hidden tab-index-0" tabIndex={-1}>
+                <div className="h-full overflow-hidden">
                   {isSelectedDocumentLoading || (!selectedFile && shouldShowProjectDataSkeleton) ? (
                     <StudioPreviewLoading />
                   ) : !selectedFile ? (

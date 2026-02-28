@@ -7,6 +7,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { UNIVERSAL_FIELDS, buildMergedFieldList } from "@/lib/framework-adapters"
 import type { FieldVariantMap, FrontmatterFieldDef } from "@/lib/framework-adapters"
 import { FrontmatterField } from "./frontmatter-field"
+import { IMAGE_EXTENSIONS } from "./shared-constants"
 
 interface FrontmatterPanelProps {
   frontmatter: Record<string, any>
@@ -36,10 +37,9 @@ export function FrontmatterPanel({
   const emptySchemaFields = mergedFields.filter((f) => !f.isInFile)
 
   // Extract image paths from tree for the image field
-  const imageExtensions = [".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".bmp", ".ico"]
   const imagePaths = React.useMemo(() => {
     return tree
-      .filter((node) => node.type === "file" && imageExtensions.some((ext) => node.path.toLowerCase().endsWith(ext)))
+      .filter((node) => node.type === "file" && IMAGE_EXTENSIONS.some((ext) => node.path.toLowerCase().endsWith(ext)))
       .map((node) => node.path)
   }, [tree])
 
