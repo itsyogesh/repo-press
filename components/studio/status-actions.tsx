@@ -102,6 +102,7 @@ export function StatusActions({ documentId, currentStatus }: StatusActionsProps)
     try {
       await transitionStatus({
         id: documentId as Id<"documents">,
+        userId: user._id as string,
         newStatus: targetStatus,
         reviewerId: user._id as string,
         reviewNote: note,

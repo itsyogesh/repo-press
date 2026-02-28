@@ -429,24 +429,22 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
 
   const closeFile = React.useCallback(
     (path: string) => {
-      setOpenFiles((prev) => prev.filter((item) => item !== path))
-
-      if (selectedFile?.path !== path) return
-
-      const remaining = openFiles.filter((item) => item !== path)
-      if (remaining.length === 0) {
-        clearSelection("push")
-        return
-      }
-
-      const currentIndex = openFiles.indexOf(path)
-      const fallbackIndex = currentIndex > 0 ? currentIndex - 1 : 0
-      const fallbackPath = remaining[Math.min(fallbackIndex, remaining.length - 1)]
-      if (fallbackPath) {
-        void openFile(fallbackPath, "push")
-      }
+      setOpenFiles((prev) => {
+        const next = prev.filter((item) => item !== path)
+        if (selectedFile?.path === path) {
+          if (next.length === 0) {
+            queueMicrotask(() => clearSelection("push"))
+          } else {
+            const currentIndex = prev.indexOf(path)
+            const fallbackIndex = currentIndex > 0 ? currentIndex - 1 : 0
+            const fallbackPath = next[Math.min(fallbackIndex, next.length - 1)]
+            if (fallbackPath) queueMicrotask(() => openFile(fallbackPath, "push"))
+          }
+        }
+        return next
+      })
     },
-    [selectedFile?.path, openFiles, clearSelection, openFile],
+    [selectedFile?.path, clearSelection, openFile],
   )
 
   const discardFileFromClientState = React.useCallback(

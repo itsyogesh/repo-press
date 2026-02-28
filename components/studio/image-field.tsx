@@ -8,6 +8,21 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
 
+/** Allow relative paths and http(s) URLs. Block javascript: and other protocol URIs. */
+function isSafeSrc(src: string): boolean {
+  if (!src) return false
+  // Relative paths are safe
+  if (src.startsWith("/") || src.startsWith("./") || src.startsWith("../")) return true
+  // Allow http(s) URLs
+  try {
+    const url = new URL(src)
+    return url.protocol === "http:" || url.protocol === "https:"
+  } catch {
+    // Not a valid URL — treat as a relative path (no protocol)
+    return !src.includes(":")
+  }
+}
+
 interface ImageFieldProps {
   value: string
   onChange: (value: string) => void
@@ -71,7 +86,7 @@ export function ImageField({
             </Button>
           )}
         </div>
-        {value && showPreview && (
+        {value && showPreview && isSafeSrc(value) && (
           <div className="rounded-md border border-studio-border overflow-hidden bg-studio-canvas-inset">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -95,7 +110,7 @@ export function ImageField({
           </DialogHeader>
           <ScrollArea className="h-[300px] mt-4">
             <div className="grid grid-cols-3 gap-2 p-1">
-              {imagePaths.map((path) => (
+              {imagePaths.filter(isSafeSrc).map((path) => (
                 <button
                   type="button"
                   key={path}

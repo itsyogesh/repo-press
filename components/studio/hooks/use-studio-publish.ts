@@ -53,7 +53,7 @@ export function useStudioPublish({
             const response = await fetch("/api/github/publish-ops", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ projectId, title, description }),
+                body: JSON.stringify({ projectId, userId, title, description }),
             })
 
             const data = await response.json()

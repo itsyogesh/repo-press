@@ -18,8 +18,9 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json()
-    const { projectId, title, description } = body as {
+    const { projectId, userId, title, description } = body as {
       projectId: string
+      userId?: string
       title?: string
       description?: string
     }
@@ -34,6 +35,11 @@ export async function POST(request: Request) {
     })
     if (!project) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 })
+    }
+
+    // ── Verify ownership ───────────────────────────────────────────────
+    if (!userId || project.userId !== userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
     }
 
     const { repoOwner: owner, repoName: repo, branch: baseBranch, contentRoot } = project
@@ -52,17 +58,49 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No pending changes to publish" }, { status: 400 })
     }
 
+    // ── Pre-fetch all files needed for conflict detection in parallel ──
+    const createOpPaths = new Set(pendingOps.filter((op) => op.opType === "create").map((op) => op.filePath))
+
+    // Collect all paths that need a getFile check
+    const pathsToFetch: { key: string; fullPath: string }[] = []
+
+    for (const op of pendingOps) {
+      const fullPath = prefixContentRoot(op.filePath, contentRoot)
+      if (op.opType === "create") {
+        pathsToFetch.push({ key: `op:${op.filePath}`, fullPath })
+      } else if (op.opType === "delete" && op.previousSha) {
+        pathsToFetch.push({ key: `op:${op.filePath}`, fullPath })
+      }
+    }
+
+    for (const doc of dirtyDocs) {
+      if (createOpPaths.has(doc.filePath)) continue
+      if (doc.githubSha) {
+        const fullPath = prefixContentRoot(doc.filePath, contentRoot)
+        pathsToFetch.push({ key: `doc:${doc.filePath}`, fullPath })
+      }
+    }
+
+    const prefetchResults = new Map<string, Awaited<ReturnType<typeof getFile>>>()
+    const fetchResults = await Promise.all(
+      pathsToFetch.map(async ({ key, fullPath }) => {
+        const result = await getFile(token, owner, repo, fullPath, baseBranch)
+        return { key, result }
+      }),
+    )
+    for (const { key, result } of fetchResults) {
+      prefetchResults.set(key, result)
+    }
+
     // ── Build batch operations with conflict detection ─────────────────
     const operations: BatchOperation[] = []
     const conflicts: { path: string; reason: string }[] = []
 
-    // Process explorer ops (create / delete)
     for (const op of pendingOps) {
       const fullPath = prefixContentRoot(op.filePath, contentRoot)
 
       if (op.opType === "create") {
-        // Conflict: file should not already exist on the base branch
-        const existing = await getFile(token, owner, repo, fullPath, baseBranch)
+        const existing = prefetchResults.get(`op:${op.filePath}`)
         if (existing) {
           conflicts.push({
             path: op.filePath,
@@ -71,7 +109,6 @@ export async function POST(request: Request) {
           continue
         }
 
-        // Use the document body if available, otherwise fall back to op defaults
         const doc = dirtyDocs.find((d) => d.filePath === op.filePath)
         const fileContent = doc
           ? matter.stringify(doc.body || "", doc.frontmatter || {})
@@ -83,9 +120,8 @@ export async function POST(request: Request) {
           action: "create",
         })
       } else if (op.opType === "delete") {
-        // Conflict: SHA mismatch means the file was modified since staging
         if (op.previousSha) {
-          const existing = await getFile(token, owner, repo, fullPath, baseBranch)
+          const existing = prefetchResults.get(`op:${op.filePath}`)
           if (existing && existing.sha !== op.previousSha) {
             conflicts.push({
               path: op.filePath,
@@ -98,18 +134,13 @@ export async function POST(request: Request) {
       }
     }
 
-    // Process dirty documents (content edits), excluding files already
-    // handled by a create op above to avoid duplicate operations.
-    const createOpPaths = new Set(pendingOps.filter((op) => op.opType === "create").map((op) => op.filePath))
-
     for (const doc of dirtyDocs) {
       if (createOpPaths.has(doc.filePath)) continue
 
       const fullPath = prefixContentRoot(doc.filePath, contentRoot)
 
-      // Conflict: SHA mismatch means the file was modified on GitHub
       if (doc.githubSha) {
-        const existing = await getFile(token, owner, repo, fullPath, baseBranch)
+        const existing = prefetchResults.get(`doc:${doc.filePath}`)
         if (existing && existing.sha !== doc.githubSha) {
           conflicts.push({
             path: doc.filePath,
@@ -189,11 +220,13 @@ export async function POST(request: Request) {
     }
 
     // ── Update Convex records ──────────────────────────────────────────
+    const committedFilePaths = operations.map((op) => op.path)
     await convex.mutation(api.publishBranches.updateAfterCommit, {
       id: publishBranch._id,
       prNumber,
       prUrl,
       lastCommitSha: commitSha,
+      newFilePaths: committedFilePaths,
     })
 
     if (pendingOps.length > 0) {
@@ -206,18 +239,27 @@ export async function POST(request: Request) {
     // Update githubSha with actual blob SHAs from the PR branch (not the commit SHA).
     // Blob SHAs are content-addressed and match across branches, so conflict detection
     // against the base branch will still work correctly after the PR is merged.
-    for (const doc of dirtyDocs) {
-      if (createOpPaths.has(doc.filePath)) continue
-      const fullPath = prefixContentRoot(doc.filePath, contentRoot)
-      try {
-        const fileOnBranch = await getFile(token, owner, repo, fullPath, branchName)
-        if (fileOnBranch) {
-          await convex.mutation(api.documents.update, {
-            id: doc._id,
-            userId: project.userId,
-            githubSha: fileOnBranch.sha,
-          })
+    const docsToUpdateSha = dirtyDocs.filter((d) => !createOpPaths.has(d.filePath))
+    const shaFetches = await Promise.all(
+      docsToUpdateSha.map(async (doc) => {
+        const fullPath = prefixContentRoot(doc.filePath, contentRoot)
+        try {
+          const fileOnBranch = await getFile(token, owner, repo, fullPath, branchName)
+          return { doc, sha: fileOnBranch?.sha ?? null }
+        } catch {
+          return { doc, sha: null }
         }
+      }),
+    )
+
+    for (const { doc, sha: blobSha } of shaFetches) {
+      if (!blobSha) continue
+      try {
+        await convex.mutation(api.documents.update, {
+          id: doc._id,
+          userId: project.userId,
+          githubSha: blobSha,
+        })
       } catch {
         // Non-critical: conflict detection may be stale for this file on next publish
       }

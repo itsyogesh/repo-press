@@ -279,6 +279,7 @@ const ALLOWED_TRANSITIONS: Record<string, string[]> = {
 export const transitionStatus = mutation({
   args: {
     id: v.id("documents"),
+    userId: v.string(),
     newStatus: v.union(
       v.literal("draft"),
       v.literal("in_review"),
@@ -294,12 +295,10 @@ export const transitionStatus = mutation({
     const doc = await ctx.db.get(args.id)
     if (!doc) throw new Error("Document not found")
 
-    // Verify ownership
-    if (args.reviewerId) {
-      const project = await ctx.db.get(doc.projectId)
-      if (!project || project.userId !== args.reviewerId) {
-        throw new Error("Unauthorized")
-      }
+    // Verify ownership — always required
+    const project = await ctx.db.get(doc.projectId)
+    if (!project || project.userId !== args.userId) {
+      throw new Error("Unauthorized")
     }
 
     const allowed = ALLOWED_TRANSITIONS[doc.status] || []

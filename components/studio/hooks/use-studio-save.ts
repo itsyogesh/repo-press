@@ -29,6 +29,14 @@ export function useStudioSave({
     const getOrCreateDocument = useMutation(api.documents.getOrCreate)
     const saveDraftMutation = useMutation(api.documents.saveDraft)
 
+    // Refs for rapidly-changing values to avoid re-creating callbacks
+    const contentRef = React.useRef(content)
+    const frontmatterRef = React.useRef(frontmatter)
+    const shaRef = React.useRef(sha)
+    contentRef.current = content
+    frontmatterRef.current = frontmatter
+    shaRef.current = sha
+
     const ensureDocumentRecord = React.useCallback(async (): Promise<Id<"documents"> | null> => {
         if (!projectId || !selectedFile || selectedFile.type !== "file" || !userId) {
             return null
@@ -40,17 +48,17 @@ export function useStudioSave({
             const docId = await getOrCreateDocument({
                 projectId: projectId as Id<"projects">,
                 filePath: selectedFile.path,
-                title: frontmatter.title || selectedFile.name.replace(/\.(mdx?|markdown)$/i, ""),
-                body: content,
-                frontmatter,
-                githubSha: sha || undefined,
+                title: frontmatterRef.current.title || selectedFile.name.replace(/\.(mdx?|markdown)$/i, ""),
+                body: contentRef.current,
+                frontmatter: frontmatterRef.current,
+                githubSha: shaRef.current || undefined,
             })
             return docId
         } catch (error) {
             console.error("Error creating document record:", error)
             return null
         }
-    }, [projectId, selectedFile, userId, documentId, getOrCreateDocument, frontmatter, content, sha])
+    }, [projectId, selectedFile, userId, documentId, getOrCreateDocument])
 
     const saveDraft = React.useCallback(async () => {
         if (!selectedFile || !userId) {
@@ -65,8 +73,8 @@ export function useStudioSave({
 
             await saveDraftMutation({
                 id: docId,
-                body: content,
-                frontmatter,
+                body: contentRef.current,
+                frontmatter: frontmatterRef.current,
                 editedBy: userId,
                 message: "Draft saved",
             })
@@ -78,7 +86,7 @@ export function useStudioSave({
         } finally {
             setIsSaving(false)
         }
-    }, [selectedFile, userId, ensureDocumentRecord, saveDraftMutation, content, frontmatter])
+    }, [selectedFile, userId, ensureDocumentRecord, saveDraftMutation])
 
     return {
         isSaving,

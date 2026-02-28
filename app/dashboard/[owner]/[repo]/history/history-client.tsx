@@ -11,14 +11,16 @@ import { Badge } from "@/components/ui/badge"
 interface HistoryClientProps {
   owner: string
   repo: string
+  branch?: string
 }
 
-export function HistoryClient({ owner, repo }: HistoryClientProps) {
+export function HistoryClient({ owner, repo, branch }: HistoryClientProps) {
   const [selectedDoc, setSelectedDoc] = useState<string | null>(null)
 
   const project = useQuery(api.projects.findByRepo, {
     repoOwner: owner,
     repoName: repo,
+    ...(branch ? { branch } : {}),
   })
 
   const documents = useQuery(api.documents.listByProject, project?._id ? { projectId: project._id } : "skip")
