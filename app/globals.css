@@ -275,22 +275,6 @@
 
 /* Resizable panel sizing is managed by react-resizable-panels + inline layout state. */
 
-/* Skip to content link */
-.skip-to-content {
-  position: absolute;
-  top: -40px;
-  left: 0;
-  background: var(--color-studio-accent);
-  color: var(--color-studio-accent-fg);
-  padding: 8px 16px;
-  z-index: 100;
-  transition: top 150ms ease;
-}
-
-.skip-to-content:focus {
-  top: 0;
-}
-
 /* Loading skeleton pulse */
 @keyframes skeleton-pulse {
   0%,

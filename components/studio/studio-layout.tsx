@@ -902,11 +902,6 @@ function StudioLayoutInner({
       role="application"
       aria-label="RepoPress Studio"
     >
-      {/* Skip to content link for keyboard accessibility */}
-      <a href="#studio-editor" className="skip-to-content">
-        Skip to editor
-      </a>
-
       {/* Live region for status announcements */}
       <div aria-live="polite" aria-atomic="true" className="sr-only">
         {document ? `Editing ${selectedFile?.name || "file"}, status: ${currentStatus}` : "No file selected"}
@@ -946,7 +941,7 @@ function StudioLayoutInner({
                 if (isSidebarCollapsed || isMobile) return
                 setSidebarPanelSize(Math.round(size.asPercentage))
               }}
-              className="bg-studio-canvas-inset border-r border-studio-border flex flex-col h-full overflow-hidden transition-[flex-basis,min-width,max-width] duration-150 ease-out"
+              className="bg-studio-canvas-inset border-r border-studio-border flex flex-col h-full overflow-hidden"
             >
               {projectId && shouldShowProjectDataSkeleton ? (
                 <StudioSidebarLoading />
@@ -1008,7 +1003,7 @@ function StudioLayoutInner({
               )}
             </ResizablePanel>
             {!isSidebarCollapsed && !isMobile && (
-              <ResizableHandle className="bg-transparent hover:bg-studio-accent transition-colors w-1" />
+              <ResizableHandle className="w-1.5 bg-studio-border/50 hover:bg-studio-accent transition-colors" />
             )}
           </>
           )}
@@ -1018,7 +1013,7 @@ function StudioLayoutInner({
             defaultSize={`${Math.max(30, Math.min(80, editorPanelSize))}%`}
             onResize={(size) => setEditorPanelSize(Math.round(size.asPercentage))}
             minSize="30%"
-            className="flex-1 min-w-0 transition-[flex-basis] duration-150 ease-out"
+            className="min-w-0"
           >
             <div id="studio-editor" className="h-full flex flex-col overflow-hidden" tabIndex={-1}>
               {openFiles.length > 0 && (
@@ -1187,14 +1182,14 @@ function StudioLayoutInner({
 
           {showPreview && (
             <>
-              <ResizableHandle className="bg-transparent border-l border-studio-border hover:bg-studio-accent transition-colors w-1" />
+              <ResizableHandle className="w-1.5 bg-studio-border/50 hover:bg-studio-accent transition-colors" />
               <ResizablePanel
                 id="preview"
                 defaultSize={`${Math.max(20, Math.min(60, previewPanelSize))}%`}
                 onResize={(size) => setPreviewPanelSize(Math.round(size.asPercentage))}
                 minSize="20%"
                 maxSize="60%"
-                className="flex-1 min-w-0 bg-studio-canvas transition-[flex-basis] duration-150 ease-out"
+                className="min-w-0 bg-studio-canvas"
               >
                 <div className="h-full overflow-hidden">
                   {isSelectedDocumentLoading || (!selectedFile && shouldShowProjectDataSkeleton) ? (

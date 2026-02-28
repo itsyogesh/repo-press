@@ -46,9 +46,9 @@ export function TagInput({ value = [], onChange, placeholder = "Add tag...", cla
       )}
       onClick={() => inputRef.current?.focus()}
     >
-      {value.map((tag) => (
+      {value.map((tag, index) => (
         <Badge
-          key={tag}
+          key={`${tag}-${index}`}
           variant="secondary"
           className="h-6 gap-1 px-2 text-xs bg-studio-accent-muted text-studio-accent hover:bg-studio-accent/20 transition-colors"
         >
