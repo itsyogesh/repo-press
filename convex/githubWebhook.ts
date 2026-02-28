@@ -86,9 +86,12 @@ export const handlePRMerged = mutation({
         // Already published -- skip (idempotent)
         if (doc.status === "published") continue
 
+        // Do NOT set githubSha here — mergeCommitSha is a git commit SHA,
+        // not a blob SHA. The correct blob SHAs were already stored by the
+        // publish-ops route before the PR was created. Storing a commit SHA
+        // would break conflict detection (which compares blob SHAs).
         await ctx.db.patch(doc._id, {
           status: "published",
-          githubSha: args.mergeCommitSha,
           lastSyncedAt: now,
           publishedAt: now,
           updatedAt: now,
@@ -111,7 +114,6 @@ export const handlePRMerged = mutation({
 
         await ctx.db.patch(doc._id, {
           status: "published",
-          githubSha: args.mergeCommitSha,
           lastSyncedAt: now,
           publishedAt: now,
           updatedAt: now,
