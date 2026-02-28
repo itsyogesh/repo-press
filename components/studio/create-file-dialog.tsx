@@ -30,7 +30,7 @@ export function CreateFileDialog({
 }: CreateFileDialogProps) {
   const [fileName, setFileName] = React.useState("")
 
-  // Strip contentRoot from display path
+  // Strip contentRoot from display path (string ops — no regex needed)
   const displayPath = contentRoot && parentPath.startsWith(contentRoot)
     ? parentPath.slice(contentRoot.length).replace(/^\//, "")
     : parentPath
@@ -41,7 +41,7 @@ export function CreateFileDialog({
 
     // Auto-append .mdx if no extension provided
     let finalName = fileName.trim()
-    if (!finalName.match(/\.(mdx?|markdown|json)$/i)) {
+    if (!finalName.match(/\.(mdx?|markdown)$/i)) {
       finalName += ".mdx"
     }
 
@@ -71,7 +71,7 @@ export function CreateFileDialog({
               autoFocus
             />
             <p className="text-xs text-muted-foreground mt-1">
-              .mdx extension will be added automatically if not specified (or use .json, .md)
+              .mdx extension will be added automatically if not specified
             </p>
           </div>
           <DialogFooter>
