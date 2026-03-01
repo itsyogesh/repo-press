@@ -81,6 +81,7 @@ export default defineSchema({
     configPath: v.optional(v.string()), // default: repopress.config.json
     previewEntry: v.optional(v.string()),
     enabledPlugins: v.optional(v.array(v.string())),
+    pluginRegistry: v.optional(v.any()), // Map of pluginId -> manifestPath
     frameworkSource: v.optional(v.union(v.literal("config"), v.literal("detected"))),
 
     createdAt: v.number(),
@@ -191,7 +192,10 @@ export default defineSchema({
     .index("by_projectId_status", ["projectId", "status"])
     .index("by_projectId_filePath", ["projectId", "filePath"])
     .index("by_collectionId", ["collectionId"])
-    .searchIndex("search_title", { searchField: "title", filterFields: ["projectId"] }),
+    .searchIndex("search_title", {
+      searchField: "title",
+      filterFields: ["projectId"],
+    }),
 
   // ─── Document History (version snapshots) ──────────────────
   documentHistory: defineTable({

@@ -3,6 +3,7 @@ import { RepoSetupForm } from "@/components/repo-setup-form"
 import { getGitHubToken } from "@/lib/auth-server"
 import { detectFramework } from "@/lib/framework-detector"
 import { getRepoBranches } from "@/lib/github"
+import { fetchRepoConfig } from "@/lib/repopress/config"
 
 interface SetupPageProps {
   params: Promise<{
@@ -31,6 +32,9 @@ export default async function SetupPage({ params }: SetupPageProps) {
     console.error("Error fetching branches:", error)
   }
 
+  // Check for repopress.config.json
+  const { config: repoConfig, error: configError } = await fetchRepoConfig(token, owner, repo, defaultBranch)
+
   // Run framework detection
   const frameworkConfig = await detectFramework(token, owner, repo, defaultBranch)
 
@@ -42,6 +46,7 @@ export default async function SetupPage({ params }: SetupPageProps) {
         branches={branches}
         defaultBranch={defaultBranch}
         frameworkConfig={frameworkConfig}
+        repoConfig={repoConfig}
       />
     </div>
   )

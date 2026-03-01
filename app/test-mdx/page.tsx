@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { PreviewRuntime } from "@/components/mdx-runtime/PreviewRuntime"
+import { adapter } from "@/components/mdx-runtime/adapter"
 
 const DEFAULT_MDX = `import { DocsImage } from "@/components/image"
 import { Callout } from "@/components/callout"
@@ -52,7 +53,7 @@ export default function TestMdxPage() {
         <div className="flex-1 flex flex-col border rounded-lg bg-card overflow-hidden">
           <div className="p-2 border-b bg-muted/50 font-mono text-sm text-muted-foreground">Live Preview</div>
           <div className="flex-1 p-4 overflow-auto prose prose-sm dark:prose-invert">
-            <PreviewRuntime source={source} />
+            <PreviewRuntime source={source} adapter={adapter} />
           </div>
         </div>
       </div>

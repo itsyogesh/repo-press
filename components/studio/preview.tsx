@@ -8,6 +8,8 @@ import { buildGitHubRawUrl, resolveFieldValue } from "@/lib/framework-adapters"
 import type { FieldVariantMap } from "@/lib/framework-adapters"
 import { cn } from "@/lib/utils"
 import { PreviewRuntime } from "@/components/mdx-runtime/PreviewRuntime"
+import { PreviewStatus } from "@/components/mdx-runtime/PreviewStatus"
+import type { RepoPressPreviewAdapter } from "@/lib/repopress/evaluate-adapter"
 
 import { DeviceFrame } from "./device-frame"
 import { ViewportToggle, type Viewport } from "./viewport-toggle"
@@ -21,39 +23,8 @@ interface PreviewProps {
   branch: string
   scrollContainerRef?: React.RefObject<HTMLDivElement | null>
   onScroll?: () => void
-}
-
-/** Styled placeholder for unresolved MDX components */
-function MdxComponentPlaceholder({
-  name,
-  children,
-  ...props
-}: { name: string; children?: React.ReactNode } & Record<string, any>) {
-  const propsDisplay = Object.entries(props)
-    .filter(([k]) => k !== "node")
-    .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
-    .join(" ")
-
-  return (
-    <div className="my-4 rounded-lg border border-dashed border-studio-accent/30 bg-studio-accent-muted/50 p-4">
-      <div className="mb-1 flex items-center gap-2">
-        <span className="rounded bg-studio-accent/10 px-1.5 py-0.5 font-mono text-xs text-studio-accent">
-          {"<"}
-          {name}
-          {propsDisplay ? ` ${propsDisplay}` : ""}
-          {children ? ">" : " />"}
-        </span>
-      </div>
-      {children && <div className="mt-2 text-sm">{children}</div>}
-    </div>
-  )
-}
-
-/** Create a component map entry for an MDX component name */
-function mdxPlaceholder(name: string) {
-  return function MdxPlaceholderWrapper(props: any) {
-    return <MdxComponentPlaceholder name={name} {...props} />
-  }
+  adapter?: RepoPressPreviewAdapter | null
+  adapterDiagnostics?: string[]
 }
 
 export function Preview({
@@ -65,9 +36,13 @@ export function Preview({
   branch,
   scrollContainerRef,
   onScroll,
+  adapter,
+  adapterDiagnostics,
 }: PreviewProps) {
   const [viewport, setViewport] = React.useState<Viewport>("desktop")
   const [isFullScreen, setIsFullScreen] = React.useState(false)
+  const [isCompiling, setIsCompiling] = React.useState(false)
+  const [warnings, setWarnings] = React.useState<string[]>([])
 
   // Debounced content for preview (300ms delay)
   const [debouncedContent, setDebouncedContent] = React.useState(content)
@@ -93,6 +68,11 @@ export function Preview({
   React.useEffect(() => {
     setImageError(false)
   }, [image])
+
+  // Stabilize the asset resolver to prevent infinite re-renders in PreviewRuntime
+  const resolveAssetUrl = React.useMemo(() => {
+    return (path: string) => buildGitHubRawUrl(path, owner, repo, branch)
+  }, [owner, repo, branch])
 
   // Escape exits full-screen
   React.useEffect(() => {
@@ -149,15 +129,25 @@ export function Preview({
         />
       )}
 
-      <PreviewRuntime source={content} />
+      <PreviewRuntime
+        source={debouncedContent}
+        adapter={adapter ?? undefined}
+        externalDiagnostics={adapterDiagnostics}
+        resolveAssetUrl={resolveAssetUrl}
+        onStatusChange={setIsCompiling}
+        onWarningsChange={setWarnings}
+      />
     </article>
   )
 
   if (isFullScreen) {
     return (
-      <div className="fixed inset-0 z-50 bg-studio-canvas flex flex-col">
+      <div className="fixed inset-0 z-50 bg-studio-canvas flex flex-col font-sans">
         <div className="flex items-center justify-between px-4 py-2 border-b border-studio-border shrink-0 bg-studio-canvas">
-          <span className="text-xs font-semibold text-studio-fg uppercase tracking-wider">Preview</span>
+          <div className="flex items-center gap-4">
+            <span className="text-xs font-semibold text-studio-fg uppercase tracking-wider">Preview</span>
+            <PreviewStatus isCompiling={isCompiling} warnings={warnings} />
+          </div>
           <div className="flex items-center gap-2">
             <ViewportToggle value={viewport} onChange={setViewport} />
             <Button
@@ -181,7 +171,10 @@ export function Preview({
   return (
     <div className="h-full flex flex-col bg-studio-canvas">
       <div className="flex items-center justify-between px-3 py-1.5 border-b border-studio-border shrink-0">
-        <span className="text-xs font-semibold text-studio-fg uppercase tracking-wider">Preview</span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold text-studio-fg uppercase tracking-wider">Preview</span>
+          <PreviewStatus isCompiling={isCompiling} warnings={warnings} />
+        </div>
         <div className="flex items-center gap-2">
           <ViewportToggle value={viewport} onChange={setViewport} />
           <Button

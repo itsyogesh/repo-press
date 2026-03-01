@@ -8,9 +8,12 @@ import {
   HelpCircle,
   PanelLeftClose,
   PanelLeftOpen,
+  RefreshCw,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { toast } from "sonner"
+import { syncProjectsFromConfigAction } from "@/app/dashboard/[owner]/[repo]/actions"
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -50,10 +53,26 @@ export function StudioHeader({
   onSave,
   isSaving,
 }: StudioHeaderProps) {
-  const { owner, repo } = useStudio()
+  const { owner, repo, branch } = useStudio()
   const { viewMode, setViewMode, sidebarState, setSidebarState } = useViewMode()
+  const [isPending, startTransition] = React.useTransition()
 
   const [showShortcuts, setShowShortcuts] = React.useState(false)
+
+  const handleSyncConfig = () => {
+    startTransition(async () => {
+      try {
+        const res = await syncProjectsFromConfigAction(owner, repo, branch)
+        if (res.success) {
+          toast.success("Project configuration synced from repository")
+        } else {
+          toast.error(res.error || "Failed to sync configuration")
+        }
+      } catch (err: any) {
+        toast.error(err.message || "An unexpected error occurred")
+      }
+    })
+  }
 
   // Build breadcrumbs from content path only.
   let pathSegments = selectedFile ? selectedFile.path.split("/") : []
@@ -118,9 +137,7 @@ export function StudioHeader({
           onClick={onSave}
           disabled={!selectedFile || isSaving}
         >
-          <span className="hidden lg:inline">
-            {isSaving ? "Saving..." : "Save"}
-          </span>
+          <span className="hidden lg:inline">{isSaving ? "Saving..." : "Save"}</span>
           <span className="lg:hidden">{isSaving ? "Saving..." : "Save"}</span>
         </Button>
 
@@ -178,6 +195,10 @@ export function StudioHeader({
             <DropdownMenuItem onClick={() => setShowShortcuts(true)}>
               <Keyboard className="h-4 w-4 mr-2" />
               Keyboard Shortcuts
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={handleSyncConfig} disabled={isPending}>
+              <RefreshCw className={`h-4 w-4 mr-2 ${isPending ? "animate-spin" : ""}`} />
+              Sync Config
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
               <Link href={`/dashboard/${owner}/${repo}/history`}>

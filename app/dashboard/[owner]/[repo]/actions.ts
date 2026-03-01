@@ -43,6 +43,7 @@ export async function syncProjectsFromConfigAction(owner: string, repo: string, 
       branch: branch,
       configVersion: config.version,
       configPath: "repopress.config.json",
+      pluginRegistry: config.plugins,
       projects: projectsToSync,
     })
 
