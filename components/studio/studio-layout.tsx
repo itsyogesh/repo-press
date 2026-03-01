@@ -2,7 +2,7 @@
 
 import { useMutation } from "convex/react"
 import matter from "gray-matter"
-import { FileText, FolderOpen, History, Search, X, AlertCircle } from "lucide-react"
+import { FileText, FolderOpen, History, Search, X, AlertCircle, Settings } from "lucide-react"
 import Link from "next/link"
 import * as React from "react"
 import { toast } from "sonner"
@@ -301,10 +301,12 @@ function StudioSidebarRail({
   onExpand,
   pendingCount,
   historyHref,
+  settingsHref,
 }: {
   onExpand: () => void
   pendingCount: number
   historyHref: string
+  settingsHref: string
 }) {
   const pendingDisplay = pendingCount > 99 ? "99+" : String(pendingCount)
 
@@ -356,6 +358,26 @@ function StudioSidebarRail({
             </TooltipTrigger>
             <TooltipContent side="right" sideOffset={8}>
               Project history
+            </TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                asChild
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 rounded-lg border border-studio-border bg-studio-canvas hover:bg-studio-canvas-inset"
+                title="Settings"
+                aria-label="Project settings"
+              >
+                <Link href={settingsHref}>
+                  <Settings className="h-4 w-4 text-studio-fg" />
+                </Link>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="right" sideOffset={8}>
+              Settings
             </TooltipContent>
           </Tooltip>
 
@@ -987,6 +1009,7 @@ function StudioLayoutInner({
               pendingCount={totalPendingCount}
               onExpand={() => setSidebarState("expanded")}
               historyHref={`/dashboard/${owner}/${repo}/history`}
+              settingsHref={`/dashboard/${owner}/${repo}/settings`}
             />
           </div>
         )}
@@ -1027,7 +1050,7 @@ function StudioLayoutInner({
                       />
                     </div>
                     <div className="shrink-0 border-t border-studio-border bg-studio-canvas/95 backdrop-blur supports-[backdrop-filter]:bg-studio-canvas/80">
-                      <div className="px-2 py-1.5">
+                      <div className="px-2 py-1.5 flex flex-col gap-1.5">
                         <Button
                           asChild
                           variant="ghost"
@@ -1042,6 +1065,20 @@ function StudioLayoutInner({
                             <Badge variant="secondary" className="h-5 min-w-5 justify-center px-1 text-[10px]">
                               {totalPendingCount}
                             </Badge>
+                          </Link>
+                        </Button>
+
+                        <Button
+                          asChild
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-full justify-start rounded-md border border-studio-border bg-studio-canvas px-2 text-xs hover:bg-studio-canvas-inset"
+                        >
+                          <Link href={`/dashboard/${owner}/${repo}/settings`}>
+                            <span className="inline-flex items-center gap-2">
+                              <Settings className="h-3.5 w-3.5" />
+                              Settings
+                            </span>
                           </Link>
                         </Button>
                       </div>

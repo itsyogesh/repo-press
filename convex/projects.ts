@@ -48,6 +48,22 @@ export const listMyProjects = query({
   },
 })
 
+export const listMyProjectsForRepo = query({
+  args: { repoOwner: v.string(), repoName: v.string() },
+  handler: async (ctx, args) => {
+    const user = await authComponent.safeGetAuthUser(ctx)
+    if (!user) return []
+
+    const userId = user._id as string
+    return await ctx.db
+      .query("projects")
+      .withIndex("by_userId_repo", (q) =>
+        q.eq("userId", userId).eq("repoOwner", args.repoOwner).eq("repoName", args.repoName),
+      )
+      .collect()
+  },
+})
+
 export const get = query({
   args: { id: v.id("projects") },
   handler: async (ctx, args) => {
