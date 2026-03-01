@@ -149,7 +149,10 @@ export const getOrCreate = mutation({
       if (args.detectedFramework && args.detectedFramework !== existing.detectedFramework) {
         updates.detectedFramework = args.detectedFramework
       }
-      if (args.frontmatterSchema && JSON.stringify(args.frontmatterSchema) !== JSON.stringify(existing.frontmatterSchema)) {
+      if (
+        args.frontmatterSchema &&
+        JSON.stringify(args.frontmatterSchema) !== JSON.stringify(existing.frontmatterSchema)
+      ) {
         updates.frontmatterSchema = args.frontmatterSchema
       }
       if (args.contentType && args.contentType !== existing.contentType) {
@@ -167,6 +170,85 @@ export const getOrCreate = mutation({
       createdAt: now,
       updatedAt: now,
     })
+  },
+})
+
+export const syncProjectsFromConfig = mutation({
+  args: {
+    userId: v.string(),
+    repoOwner: v.string(),
+    repoName: v.string(),
+    branch: v.string(),
+    configVersion: v.number(),
+    configPath: v.string(),
+    projects: v.array(
+      v.object({
+        configProjectId: v.string(),
+        name: v.string(),
+        contentRoot: v.string(),
+        framework: v.string(),
+        contentType: contentTypeValidator,
+        branch: v.optional(v.string()),
+        previewEntry: v.optional(v.string()),
+        enabledPlugins: v.optional(v.array(v.string())),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    await verifyCallerIdentity(ctx, args.userId)
+
+    const syncedProjectIds = []
+
+    for (const p of args.projects) {
+      // Match by configProjectId
+      const existing = await ctx.db
+        .query("projects")
+        .withIndex("by_userId_repo", (q) =>
+          q.eq("userId", args.userId).eq("repoOwner", args.repoOwner).eq("repoName", args.repoName),
+        )
+        .filter((q) => q.eq(q.field("configProjectId"), p.configProjectId))
+        .first()
+
+      if (existing) {
+        await ctx.db.patch(existing._id, {
+          name: p.name,
+          contentRoot: p.contentRoot,
+          branch: p.branch || args.branch,
+          detectedFramework: p.framework,
+          contentType: p.contentType,
+          configVersion: args.configVersion,
+          configPath: args.configPath,
+          previewEntry: p.previewEntry,
+          enabledPlugins: p.enabledPlugins,
+          frameworkSource: "config",
+          updatedAt: Date.now(),
+        })
+        syncedProjectIds.push(existing._id)
+      } else {
+        const now = Date.now()
+        const id = await ctx.db.insert("projects", {
+          userId: args.userId,
+          name: p.name,
+          repoOwner: args.repoOwner,
+          repoName: args.repoName,
+          branch: p.branch || args.branch,
+          contentRoot: p.contentRoot,
+          detectedFramework: p.framework,
+          contentType: p.contentType,
+          configProjectId: p.configProjectId,
+          configVersion: args.configVersion,
+          configPath: args.configPath,
+          previewEntry: p.previewEntry,
+          enabledPlugins: p.enabledPlugins,
+          frameworkSource: "config",
+          createdAt: now,
+          updatedAt: now,
+        })
+        syncedProjectIds.push(id)
+      }
+    }
+
+    return syncedProjectIds
   },
 })
 

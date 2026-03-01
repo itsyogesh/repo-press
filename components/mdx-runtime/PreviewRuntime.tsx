@@ -66,9 +66,59 @@ export function PreviewRuntime({ source }: { source: string }) {
           }
         }
 
+        // Provide a fallback for missing components natively via MDX components prop
+        // We'll just define DocsVideo explicitly for now to prevent the crash,
+        // since the proxy approach might fail due to destructuring checks.
+
         const MdxComponent = evaluateMdx(code, mergedScope)
 
-        setComponent(() => (props: any) => <MdxComponent {...props} components={componentsContext} />)
+        // Instead of a Proxy which might fail `in` checks during destructuring,
+        // let's create a wrapper that catches missing components if we can,
+        // or simply provide the known ones.
+        // Actually, we can just use a Proxy but we also need to implement `has` trap for destructuring `in` checks.
+        const proxiedComponents = new Proxy(componentsContext, {
+          get(target, prop) {
+            // MDX sometimes asks for internal symbols, allow them to pass through
+            if (typeof prop !== "string") {
+              return target[prop as any]
+            }
+
+            // If the component genuinely doesn't exist, return a generic placeholder
+            if (!(prop in target)) {
+              return function MissingComponent(props: any) {
+                const propsDisplay = Object.entries(props)
+                  .filter(([k]) => k !== "node" && k !== "children")
+                  .map(([k, v]) => {
+                    if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
+                      return `${k}=${JSON.stringify(v)}`
+                    }
+                    return `${k}={...}`
+                  })
+                  .join(" ")
+
+                return (
+                  <div className="my-4 rounded-lg border border-dashed border-red-500/30 bg-red-500/10 p-4">
+                    <div className="mb-1 flex items-center gap-2">
+                      <span className="rounded bg-red-500/20 px-1.5 py-0.5 font-mono text-xs text-red-600 dark:text-red-400">
+                        {"<"}
+                        {prop}
+                        {propsDisplay ? ` ${propsDisplay}` : ""}
+                        {props.children ? ">" : " />"}
+                      </span>
+                    </div>
+                    {props.children && <div className="mt-2 text-sm">{props.children}</div>}
+                  </div>
+                )
+              }
+            }
+            return target[prop as any]
+          },
+          has(target, prop) {
+            return true
+          },
+        })
+
+        setComponent(() => (props: any) => <MdxComponent {...props} components={proxiedComponents as any} />)
       } catch (err: any) {
         if (!active) return
         setError(err.message || "Failed to evaluate MDX")

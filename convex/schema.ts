@@ -74,6 +74,15 @@ export default defineSchema({
     ),
     // Framework-specific frontmatter field config
     frontmatterSchema: v.optional(v.any()), // JSON: field definitions for the editor
+
+    // Config properties (RepoPress Multi-Project MDX Runtime)
+    configProjectId: v.optional(v.string()),
+    configVersion: v.optional(v.number()),
+    configPath: v.optional(v.string()), // default: repopress.config.json
+    previewEntry: v.optional(v.string()),
+    enabledPlugins: v.optional(v.array(v.string())),
+    frameworkSource: v.optional(v.union(v.literal("config"), v.literal("detected"))),
+
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -263,11 +272,7 @@ export default defineSchema({
     initialBody: v.optional(v.string()),
     initialFrontmatter: v.optional(v.any()),
     previousSha: v.optional(v.string()),
-    status: v.union(
-      v.literal("pending"),
-      v.literal("committed"),
-      v.literal("undone"),
-    ),
+    status: v.union(v.literal("pending"), v.literal("committed"), v.literal("undone")),
     commitSha: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -282,11 +287,7 @@ export default defineSchema({
     baseBranch: v.string(),
     prNumber: v.optional(v.number()),
     prUrl: v.optional(v.string()),
-    status: v.union(
-      v.literal("active"),
-      v.literal("merged"),
-      v.literal("closed"),
-    ),
+    status: v.union(v.literal("active"), v.literal("merged"), v.literal("closed")),
     lastCommitSha: v.optional(v.string()),
     committedFilePaths: v.optional(v.array(v.string())),
     createdAt: v.number(),

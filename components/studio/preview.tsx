@@ -1,16 +1,13 @@
 "use client"
 
 import * as React from "react"
-import ReactMarkdown from "react-markdown"
-import rehypeRaw from "rehype-raw"
-import rehypeSanitize from "rehype-sanitize"
-import remarkGfm from "remark-gfm"
 import { Maximize2, Minimize2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { buildGitHubRawUrl, resolveFieldValue } from "@/lib/framework-adapters"
 import type { FieldVariantMap } from "@/lib/framework-adapters"
 import { cn } from "@/lib/utils"
+import { PreviewRuntime } from "@/components/mdx-runtime/PreviewRuntime"
 
 import { DeviceFrame } from "./device-frame"
 import { ViewportToggle, type Viewport } from "./viewport-toggle"
@@ -57,29 +54,6 @@ function mdxPlaceholder(name: string) {
   return function MdxPlaceholderWrapper(props: any) {
     return <MdxComponentPlaceholder name={name} {...props} />
   }
-}
-
-/** Known MDX component names to render as styled placeholders */
-const MDX_COMPONENTS: Record<string, ReturnType<typeof mdxPlaceholder>> = {
-  Callout: mdxPlaceholder("Callout"),
-  DynamicImage: mdxPlaceholder("DynamicImage"),
-  TickPoint: mdxPlaceholder("TickPoint"),
-  Note: mdxPlaceholder("Note"),
-  Warning: mdxPlaceholder("Warning"),
-  Tip: mdxPlaceholder("Tip"),
-  Info: mdxPlaceholder("Info"),
-  Card: mdxPlaceholder("Card"),
-  CardGroup: mdxPlaceholder("CardGroup"),
-  Tabs: mdxPlaceholder("Tabs"),
-  Tab: mdxPlaceholder("Tab"),
-  Steps: mdxPlaceholder("Steps"),
-  Step: mdxPlaceholder("Step"),
-  Accordion: mdxPlaceholder("Accordion"),
-  AccordionGroup: mdxPlaceholder("AccordionGroup"),
-  CodeGroup: mdxPlaceholder("CodeGroup"),
-  CodeBlock: mdxPlaceholder("CodeBlock"),
-  DocsImage: mdxPlaceholder("DocsImage"),
-  DocsVideo: mdxPlaceholder("DocsVideo"),
 }
 
 export function Preview({
@@ -175,9 +149,7 @@ export function Preview({
         />
       )}
 
-      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw, rehypeSanitize]} components={MDX_COMPONENTS}>
-        {debouncedContent}
-      </ReactMarkdown>
+      <PreviewRuntime source={content} />
     </article>
   )
 

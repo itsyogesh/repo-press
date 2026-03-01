@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { PreviewRuntime } from "@/components/mdx-prototype/PreviewRuntime"
+import { PreviewRuntime } from "@/components/mdx-runtime/PreviewRuntime"
 
 const DEFAULT_MDX = `import { DocsImage } from "@/components/image"
 import { Callout } from "@/components/callout"
