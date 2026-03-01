@@ -303,3 +303,61 @@ export const remove = mutation({
     await ctx.db.delete(args.id)
   },
 })
+
+export const removeFull = mutation({
+  args: { projectId: v.id("projects") },
+  handler: async (ctx, args) => {
+    const user = await authComponent.safeGetAuthUser(ctx)
+    if (!user) throw new Error("Unauthorized")
+
+    const project = await ctx.db.get(args.projectId)
+    if (!project) throw new Error("Project not found")
+
+    if (project.userId !== (user._id as string)) {
+      throw new Error("Unauthorized")
+    }
+
+    // 1. Delete Document History for all documents in project
+    const docs = await ctx.db
+      .query("documents")
+      .withIndex("by_projectId", (q) => q.eq("projectId", args.projectId))
+      .collect()
+
+    for (const doc of docs) {
+      const history = await ctx.db
+        .query("documentHistory")
+        .withIndex("by_documentId", (q) => q.eq("documentId", doc._id))
+        .collect()
+      for (const entry of history) {
+        await ctx.db.delete(entry._id)
+      }
+      await ctx.db.delete(doc._id)
+    }
+
+    // 2. Delete associated entities
+    const tables = [
+      "collections",
+      "authors",
+      "tags",
+      "categories",
+      "folderMeta",
+      "mediaAssets",
+      "webhooks",
+      "explorerOps",
+      "publishBranches",
+    ] as const
+
+    for (const table of tables) {
+      const records = await ctx.db
+        .query(table as any)
+        .withIndex("by_projectId", (q) => q.eq("projectId", args.projectId))
+        .collect()
+      for (const record of records) {
+        await ctx.db.delete(record._id)
+      }
+    }
+
+    // 3. Delete the project itself
+    await ctx.db.delete(args.projectId)
+  },
+})
