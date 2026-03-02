@@ -1,11 +1,11 @@
 "use client"
 
-import * as React from "react"
 import { AlertTriangle, CheckCircle2, Loader2 } from "lucide-react"
-import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
+import * as React from "react"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { cn } from "@/lib/utils"
 
 interface PreviewStatusProps {
   isCompiling: boolean
@@ -37,7 +37,7 @@ export function PreviewStatus({ isCompiling, warnings, className }: PreviewStatu
             ) : (
               <CheckCircle2 className="h-3.5 w-3.5" />
             )}
-            {isCompiling ? "Compiling" : warnings.length > 0 ? `${warnings.length} Issues` : "All Systems Go"}
+            {isCompiling ? "Compiling" : warnings.length > 0 ? `${warnings.length} Issues` : ""}
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-80 p-0" align="end">

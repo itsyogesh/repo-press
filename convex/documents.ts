@@ -1,6 +1,7 @@
 import { v } from "convex/values"
 import { api } from "./_generated/api"
 import { action, internalMutation, mutation, query } from "./_generated/server"
+import { authComponent } from "./auth"
 
 export const listByProject = query({
   args: {
@@ -190,16 +191,21 @@ export const saveDraft = mutation({
     id: v.id("documents"),
     body: v.string(),
     frontmatter: v.optional(v.any()),
-    editedBy: v.string(),
     message: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const authUser = await authComponent.safeGetAuthUser(ctx)
+    if (!authUser) {
+      throw new Error("Unauthorized: Not authenticated")
+    }
+    const userId = authUser._id as string
+
     const doc = await ctx.db.get(args.id)
     if (!doc) throw new Error("Document not found")
 
-    // Verify ownership: editedBy must own the project
+    // Verify ownership: user must own the project
     const project = await ctx.db.get(doc.projectId)
-    if (!project || project.userId !== args.editedBy) {
+    if (!project || project.userId !== userId) {
       throw new Error("Unauthorized")
     }
 
@@ -208,23 +214,23 @@ export const saveDraft = mutation({
       await ctx.db.patch(args.id, { status: "draft" })
     }
 
-    // Create history entry with current content before overwriting
-    if (doc.body) {
-      await ctx.db.insert("documentHistory", {
-        documentId: args.id,
-        body: doc.body,
-        frontmatter: doc.frontmatter,
-        editedBy: args.editedBy,
-        message: args.message || "Auto-save",
-        createdAt: Date.now(),
-      })
-    }
+    const now = Date.now()
 
-    // Update the document
+    // Update the document with the new content
     await ctx.db.patch(args.id, {
       body: args.body,
       frontmatter: args.frontmatter,
-      updatedAt: Date.now(),
+      updatedAt: now,
+    })
+
+    // Record a new version snapshot representing the updated content
+    await ctx.db.insert("documentHistory", {
+      documentId: args.id,
+      body: args.body,
+      frontmatter: args.frontmatter,
+      editedBy: userId,
+      message: args.message || "Draft saved",
+      createdAt: now,
     })
   },
 })

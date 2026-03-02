@@ -1,39 +1,70 @@
 "use client"
 
-import * as React from "react"
-
 import {
-  headingsPlugin,
-  quotePlugin,
-  listsPlugin,
-  linkPlugin,
-  linkDialogPlugin,
-  imagePlugin,
-  tablePlugin,
-  thematicBreakPlugin,
+  AdmonitionDirectiveDescriptor,
   codeBlockPlugin,
   codeMirrorPlugin,
   diffSourcePlugin,
   directivesPlugin,
+  headingsPlugin,
+  imagePlugin,
   jsxPlugin,
-  markdownShortcutPlugin,
-  toolbarPlugin,
-  AdmonitionDirectiveDescriptor,
+  linkDialogPlugin,
+  linkPlugin,
+  listsPlugin,
   type MDXEditorMethods,
+  markdownShortcutPlugin,
+  quotePlugin,
+  tablePlugin,
+  thematicBreakPlugin,
+  toolbarPlugin,
 } from "@mdxeditor/editor"
+import * as React from "react"
 
 import "@mdxeditor/editor/style.css"
 import "./mdxeditor-theme.css"
 
 import type { FieldVariantMap, FrontmatterFieldDef } from "@/lib/framework-adapters"
-import type { RepoPressPreviewAdapter } from "@/lib/repopress/evaluate-adapter"
-import { IMAGE_EXTENSIONS } from "./shared-constants"
+import { EditorErrorFallback } from "./error-boundary"
 import { ForwardRefEditor } from "./forward-ref-editor"
-import { StudioToolbar } from "./studio-toolbar"
-import { getJsxComponentDescriptors } from "./jsx-component-descriptors"
 import { FrontmatterPanel } from "./frontmatter-panel"
-import { useStudio } from "./studio-context"
+import { getJsxComponentDescriptors } from "./jsx-component-descriptors"
+import { IMAGE_EXTENSIONS } from "./shared-constants"
 import { useStudioAdapter } from "./studio-adapter-context"
+import { StudioToolbar } from "./studio-toolbar"
+
+// Error boundary for MDXEditor
+class EditorErrorBoundary extends React.Component<
+  { children: React.ReactNode; fallback: React.ReactNode; resetKey: string },
+  { hasError: boolean }
+> {
+  constructor(props: { children: React.ReactNode; fallback: React.ReactNode; resetKey: string }) {
+    super(props)
+    this.state = { hasError: false }
+  }
+
+  static getDerivedStateFromError(): { hasError: boolean } {
+    return { hasError: true }
+  }
+
+  componentDidCatch(error: Error): void {
+    console.error("MDXEditor parsing error:", error)
+  }
+
+  componentDidUpdate(prevProps: { children: React.ReactNode; fallback: React.ReactNode; resetKey: string }): void {
+    // Reset only when content/file context changes, not on every render while crashing.
+    if (this.state.hasError && prevProps.resetKey !== this.props.resetKey) {
+      this.setState({ hasError: false })
+    }
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return this.props.fallback
+    }
+    return this.props.children
+  }
+}
 
 const YouTubeDirectiveDescriptor = {
   name: "youtube",
@@ -62,6 +93,7 @@ interface EditorProps {
   owner: string
   repo: string
   branch: string
+  filePath?: string
   contentRoot?: string
   tree?: { path: string; type: string }[]
 }
@@ -73,18 +105,19 @@ export function Editor({
   fieldVariants,
   onChangeContent,
   onChangeFrontmatter,
-  onSaveDraft,
-  onPublish,
-  isSaving,
-  isPublishing,
-  canPublish,
-  statusBadge,
+  onSaveDraft: _onSaveDraft,
+  onPublish: _onPublish,
+  isSaving: _isSaving,
+  isPublishing: _isPublishing,
+  canPublish: _canPublish,
+  statusBadge: _statusBadge,
   scrollContainerRef,
   onScroll,
   owner,
   repo,
   branch,
-  contentRoot = "",
+  filePath = "",
+  contentRoot: _contentRoot = "",
   tree = [],
 }: EditorProps) {
   const { adapter, components: componentSchema } = useStudioAdapter()
@@ -96,7 +129,7 @@ export function Editor({
       const possibleDirs = ["public/images", "static/images", "images", "assets/images", "src/assets/images"]
 
       const existingDirs = possibleDirs.filter((dir) =>
-        tree.some((node) => node.type === "dir" && (node.path === dir || node.path.startsWith(dir + "/"))),
+        tree.some((node) => node.type === "dir" && (node.path === dir || node.path.startsWith(`${dir}/`))),
       )
 
       const baseDir = existingDirs[0] || "public/images"
@@ -215,14 +248,29 @@ export function Editor({
     [onChangeContent],
   )
 
+  // Sanitize markdown to fix MDXEditor parsing issues
+  // Removes empty code blocks that cause "Parsing failed: {type:code,name:N/A}" errors
+  // Always sanitize to handle content typed in Source mode as well
+  const sanitizedContent = React.useMemo(() => {
+    // Sanitize: remove empty code blocks (``` with any newlines/whitespace between them)
+    let sanitized = content.replace(/```[\s\n]*```/g, "")
+
+    // Also clean up multiple consecutive blank lines that might result
+    sanitized = sanitized.replace(/\n{3,}/g, "\n\n")
+
+    return sanitized
+  }, [content])
+
+  const errorBoundaryResetKey = React.useMemo(() => `${filePath}:${sanitizedContent}`, [filePath, sanitizedContent])
+
   // Sync content to MDXEditor when content changes externally (file switch)
   const lastSyncedContent = React.useRef<string | null>(null)
   React.useEffect(() => {
-    if (editorRef.current && content !== lastSyncedContent.current) {
-      editorRef.current.setMarkdown(content)
-      lastSyncedContent.current = content
+    if (editorRef.current && sanitizedContent !== lastSyncedContent.current) {
+      editorRef.current.setMarkdown(sanitizedContent)
+      lastSyncedContent.current = sanitizedContent
     }
-  }, [content])
+  }, [sanitizedContent])
 
   return (
     <div className="h-full flex flex-col">
@@ -239,14 +287,31 @@ export function Editor({
 
           {/* MDXEditor */}
           <div className="min-h-[500px]">
-            <ForwardRefEditor
-              ref={editorRef}
-              markdown={content}
-              contentEditableClassName="prose prose-neutral dark:prose-invert max-w-none font-sans px-6 py-4 min-h-[500px] focus:outline-none"
-              onChange={handleContentChange}
-              plugins={plugins}
-              className="mdxeditor-studio"
-            />
+            <EditorErrorBoundary
+              resetKey={errorBoundaryResetKey}
+              fallback={
+                <EditorErrorFallback
+                  content={content}
+                  onOpenSource={() => {
+                    // The error boundary will automatically reset when content changes
+                    // This is handled in componentDidUpdate
+                  }}
+                  onCopy={() => {
+                    navigator.clipboard.writeText(content)
+                  }}
+                />
+              }
+            >
+              <ForwardRefEditor
+                ref={editorRef}
+                key={filePath || "empty"}
+                markdown={sanitizedContent}
+                contentEditableClassName="prose prose-neutral dark:prose-invert max-w-none font-sans px-6 py-4 min-h-[500px] focus:outline-none"
+                onChange={handleContentChange}
+                plugins={plugins}
+                className="mdxeditor-studio"
+              />
+            </EditorErrorBoundary>
           </div>
         </div>
       </div>

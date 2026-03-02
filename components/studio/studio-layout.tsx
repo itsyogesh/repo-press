@@ -2,12 +2,13 @@
 
 import { useMutation } from "convex/react"
 import matter from "gray-matter"
-import { FileText, FolderOpen, History, Search, X, AlertCircle, Settings } from "lucide-react"
+import { AlertCircle, FileText, FolderOpen, History, Search, Settings, X } from "lucide-react"
 import Link from "next/link"
 import * as React from "react"
 import { toast } from "sonner"
-import { Badge } from "@/components/ui/badge"
+import { syncProjectsFromConfigAction } from "@/app/dashboard/[owner]/[repo]/actions"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
@@ -16,6 +17,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
 import type { FileTreeNode } from "@/lib/github"
+import { usePreviewContext } from "@/lib/hooks/use-preview-context"
 import { CommandPalette } from "./command-palette"
 import { CreateFileDialog } from "./create-file-dialog"
 import { Editor } from "./editor"
@@ -24,13 +26,11 @@ import { useStudioFile } from "./hooks/use-studio-file"
 import { useStudioPublish } from "./hooks/use-studio-publish"
 import { useStudioQueries } from "./hooks/use-studio-queries"
 import { useStudioSave } from "./hooks/use-studio-save"
-import { usePreviewContext } from "@/lib/hooks/use-preview-context"
-import { syncProjectsFromConfigAction } from "@/app/dashboard/[owner]/[repo]/actions"
 import { Preview } from "./preview"
-import { StudioAdapterProvider } from "./studio-adapter-context"
 import { PublishDialog } from "./publish-dialog"
 import { PublishOpsBar } from "./publish-ops-bar"
 import { StatusActions } from "./status-actions"
+import { StudioAdapterProvider } from "./studio-adapter-context"
 import { StudioProvider, useStudio } from "./studio-context"
 import { StudioFooter } from "./studio-footer"
 import { StudioHeader } from "./studio-header"
@@ -158,7 +158,7 @@ function StudioNoSelectionLoading() {
         <div className="mx-auto max-w-xl space-y-3">
           <Skeleton className="h-11 w-full rounded-md" />
           <div className="space-y-1 rounded-lg border border-studio-border bg-studio-canvas-inset/30 p-2">
-            {[1, 2, 3, 4, 5, 6].map((i) => (
+            {[1, 2].map((i) => (
               <div key={`empty-search-skeleton-${i}`} className="flex items-start gap-2 rounded-md px-2 py-2">
                 <Skeleton className="h-3.5 w-3.5 mt-0.5 rounded" />
                 <div className="min-w-0 flex-1 space-y-1">
@@ -672,6 +672,53 @@ function StudioLayoutInner({
   const handleEditorScroll = React.useCallback(() => syncScroll("editor"), [syncScroll])
   const handlePreviewScroll = React.useCallback(() => syncScroll("preview"), [syncScroll])
 
+  // Keyboard shortcuts
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const isEditableTarget =
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        (e.target as HTMLElement).isContentEditable
+
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault()
+        setCommandPaletteOpen(true)
+        return
+      }
+
+      if (e.key === "Escape" && commandPaletteOpen) {
+        e.preventDefault()
+        setCommandPaletteOpen(false)
+        return
+      }
+
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "s") {
+        e.preventDefault()
+        setViewMode("editor")
+        return
+      }
+
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault()
+        saveDraft()
+        return
+      }
+
+      if (isEditableTarget) return
+
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "b") {
+        e.preventDefault()
+        setSidebarState(sidebarState === "expanded" ? "collapsed" : "expanded")
+      } else if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "p") {
+        e.preventDefault()
+        setViewMode(viewMode === "split" ? "editor" : "split")
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [sidebarState, viewMode, setSidebarState, setViewMode, saveDraft, commandPaletteOpen])
+
   const showSidebar = !isMobile || sidebarState === "expanded"
   const isSidebarCollapsed = !isMobile && sidebarState === "collapsed"
   const showPreview = viewMode === "split" && !isMobile
@@ -711,7 +758,7 @@ function StudioLayoutInner({
     for (const path of recentFiles) {
       const match = flatFilesByPath.get(path)
       if (match) results.push(match)
-      if (results.length >= 8) break
+      if (results.length >= 2) break
     }
     return results
   }, [recentFiles, flatFilesByPath])
@@ -927,6 +974,7 @@ function StudioLayoutInner({
                       owner={owner}
                       repo={repo}
                       branch={branch}
+                      filePath={selectedFile.path}
                       contentRoot={contentRoot}
                       tree={overlayTree}
                     />

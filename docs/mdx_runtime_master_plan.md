@@ -419,4 +419,23 @@ This document is now finalized following full implementation and UI polish.
 
 ---
 
+# Phase 6 — Runtime Hardening [IN PROGRESS]
+
+Detailed implementation plan: `docs/plan/2026-03-02-mdx-runtime-hardening-plan.md`
+
+## Tasks
+
+1. **Persistent Adapter Cache** — IndexedDB cache for transpiled adapters
+2. **Rate Limiting & Debounce** — Protect GitHub API quota, prevent thundering herd
+3. **Private Asset URL Signing** — Signed URLs for private repository assets
+4. **Expression Sandbox** — Safe evaluation replacing `new Function()`
+5. **Compile Cache** — Memoize MDX compilation by source + adapter hash
+6. **Plugin Merge Determinism** — Defined precedence order for context merging
+
+## Status
+
+See `docs/plan/2026-03-02-mdx-runtime-hardening-plan.md` for detailed progress tracking.
+
+---
+
 END OF DOCUMENT

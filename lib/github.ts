@@ -458,3 +458,11 @@ export async function getPullRequest(
     mergeCommitSha: data.merge_commit_sha,
   }
 }
+
+export function getCommitUrl(owner: string, repo: string, sha: string): string {
+  return `https://github.com/${owner}/${repo}/commit/${sha}`
+}
+
+export function getFileAtCommitUrl(owner: string, repo: string, path: string, sha: string): string {
+  return `https://github.com/${owner}/${repo}/blob/${sha}/${path}`
+}

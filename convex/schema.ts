@@ -206,6 +206,9 @@ export default defineSchema({
     editedBy: v.string(),
     commitSha: v.optional(v.string()),
     message: v.optional(v.string()),
+    changeType: v.optional(v.union(v.literal("minor"), v.literal("major"), v.literal("patch"))),
+    diffHash: v.optional(v.string()),
+    githubCommitUrl: v.optional(v.string()),
     createdAt: v.number(),
   })
     .index("by_documentId", ["documentId"])
