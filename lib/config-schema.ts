@@ -6,6 +6,19 @@ export const previewConfigSchema = z.object({
   allowImports: z.array(z.string()).optional(),
 })
 
+export const componentPropSchema = z.object({
+  name: z.string(),
+  type: z.enum(["string", "number", "boolean", "expression", "image"]),
+  label: z.string().optional(),
+  default: z.any().optional(),
+})
+
+export const componentSchema = z.object({
+  props: z.array(componentPropSchema).optional(),
+  hasChildren: z.boolean().optional().default(true),
+  kind: z.enum(["flow", "text"]).optional().default("flow"),
+})
+
 export const projectConfigSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
@@ -14,6 +27,7 @@ export const projectConfigSchema = z.object({
   contentType: z.enum(["blog", "docs", "pages", "changelog", "custom"]).default("custom"),
   branch: z.string().optional(),
   preview: previewConfigSchema.optional(),
+  components: z.record(z.string(), componentSchema).optional(),
 })
 
 export const repoPressConfigSchema = z.object({

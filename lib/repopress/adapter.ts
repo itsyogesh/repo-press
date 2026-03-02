@@ -16,26 +16,23 @@ export async function loadPreviewAdapter(
   owner: string,
   repo: string,
   branch: string,
-  entryPath: string
+  entryPath: string,
 ): Promise<{ source: string | null; error: string | null }> {
   const cacheKey = `${owner}/${repo}@${branch}:${entryPath}`
-  
+
   if (adapterCache.has(cacheKey)) {
     return { source: adapterCache.get(cacheKey)!, error: null }
   }
 
   try {
     const content = await getFileContent(token, owner, repo, entryPath, branch)
-    
+
     if (!content) {
       return { source: null, error: `Adapter file not found at ${entryPath}` }
     }
 
-    // Initialize esbuild if not already initialized
-    if (!esbuild.default) {
-       // We'll need a different way to run esbuild in the server or we run it in Next.js edge/browser
-    }
-
+    // We'll need a different way to run esbuild in the server or we run it in Next.js edge/browser
+    // For now we just return the source and let the client handle transpilation
     return { source: content, error: null }
   } catch (error: any) {
     return { source: null, error: error.message }

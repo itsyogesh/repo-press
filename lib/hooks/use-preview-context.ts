@@ -5,6 +5,7 @@ import { fetchAdapterSourceAction } from "@/app/dashboard/[owner]/[repo]/adapter
 import { fetchPluginAction } from "@/app/dashboard/[owner]/[repo]/plugin-actions"
 import { evaluateAdapter, type RepoPressPreviewAdapter } from "@/lib/repopress/evaluate-adapter"
 import { transpileAdapter } from "@/lib/repopress/esbuild-browser"
+import { standardComponents } from "@/lib/repopress/standard-library"
 
 interface UsePreviewContextOptions {
   owner: string
@@ -133,7 +134,7 @@ export function usePreviewContext({
 
   const mergedContext = useMemo(() => {
     const result: RepoPressPreviewAdapter = {
-      components: { ...(adapter?.components || {}) },
+      components: { ...standardComponents, ...(adapter?.components || {}) },
       scope: { ...(adapter?.scope || {}) },
       allowImports: { ...(adapter?.allowImports || {}) },
     }

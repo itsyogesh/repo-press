@@ -82,6 +82,7 @@ export default defineSchema({
     previewEntry: v.optional(v.string()),
     enabledPlugins: v.optional(v.array(v.string())),
     pluginRegistry: v.optional(v.any()), // Map of pluginId -> manifestPath
+    components: v.optional(v.any()), // Map of componentName -> { props, hasChildren, kind }
     frameworkSource: v.optional(v.union(v.literal("config"), v.literal("detected"))),
 
     createdAt: v.number(),

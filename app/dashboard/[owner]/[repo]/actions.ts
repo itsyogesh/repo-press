@@ -33,6 +33,7 @@ export async function syncProjectsFromConfigAction(owner: string, repo: string, 
     branch: p.branch || config.defaults?.branch || branch,
     previewEntry: p.preview?.entry || config.defaults?.preview?.entry,
     enabledPlugins: p.preview?.plugins || config.defaults?.preview?.plugins,
+    components: p.components,
   }))
 
   try {

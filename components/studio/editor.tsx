@@ -26,11 +26,14 @@ import "@mdxeditor/editor/style.css"
 import "./mdxeditor-theme.css"
 
 import type { FieldVariantMap, FrontmatterFieldDef } from "@/lib/framework-adapters"
+import type { RepoPressPreviewAdapter } from "@/lib/repopress/evaluate-adapter"
 import { IMAGE_EXTENSIONS } from "./shared-constants"
 import { ForwardRefEditor } from "./forward-ref-editor"
 import { StudioToolbar } from "./studio-toolbar"
 import { getJsxComponentDescriptors } from "./jsx-component-descriptors"
 import { FrontmatterPanel } from "./frontmatter-panel"
+import { useStudio } from "./studio-context"
+import { useStudioAdapter } from "./studio-adapter-context"
 
 const YouTubeDirectiveDescriptor = {
   name: "youtube",
@@ -84,6 +87,7 @@ export function Editor({
   contentRoot = "",
   tree = [],
 }: EditorProps) {
+  const { adapter, components: componentSchema } = useStudioAdapter()
   const editorRef = React.useRef<MDXEditorMethods>(null)
 
   // Determine image upload path based on project structure
@@ -190,7 +194,7 @@ export function Editor({
         directiveDescriptors: [AdmonitionDirectiveDescriptor, YouTubeDirectiveDescriptor],
       }),
       jsxPlugin({
-        jsxComponentDescriptors: getJsxComponentDescriptors(),
+        jsxComponentDescriptors: getJsxComponentDescriptors(adapter?.components, componentSchema),
       }),
       diffSourcePlugin({
         diffMarkdown: "",
@@ -200,7 +204,7 @@ export function Editor({
         toolbarContents: () => <StudioToolbar />,
       }),
     ],
-    [handleImageUpload, imageAutocompleteSuggestions],
+    [handleImageUpload, imageAutocompleteSuggestions, adapter, componentSchema],
   )
 
   // Handle content change from editor

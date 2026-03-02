@@ -409,4 +409,14 @@ This document is now finalized following full implementation and UI polish.
 
 ---
 
+# Mirror Architecture (High-Fidelity Editor) [COMPLETE]
+
+- **Live Bridge**: Implemented `RepoJsxBridge` to render actual repository React components directly inside the MDXEditor WYSIWYG canvas.
+- **Dynamic Discovery**: Added automatic component extraction from repository adapters, making them available in the editor's schema.
+- **Config-Driven Descriptors**: Extended `repopress.config.json` with a `components` block to define component signatures and prop types.
+- **Insert Menu**: Added a dynamic "JSX" insertion dropdown to the Studio toolbar that automatically lists all discovered and configured components.
+- **Visual Parity**: Achieved 100% visual identity between the Editor and Preview by sharing the same transpiled component implementations and asset resolution logic.
+
+---
+
 END OF DOCUMENT

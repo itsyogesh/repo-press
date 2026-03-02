@@ -1,4 +1,4 @@
-'use client'
+"use client"
 
 import {
   BoldItalicUnderlineToggles,
@@ -14,11 +14,12 @@ import {
   DiffSourceToggleWrapper,
   Separator,
   CodeToggle,
-} from '@mdxeditor/editor'
+} from "@mdxeditor/editor"
+import { InsertRepoComponent } from "./insert-repo-component"
 
 export function StudioToolbar() {
   return (
-    <DiffSourceToggleWrapper options={['rich-text', 'source']}>
+    <DiffSourceToggleWrapper options={["rich-text", "source"]}>
       <div className="flex items-center gap-0.5 flex-wrap">
         <UndoRedo />
         <Separator />
@@ -36,6 +37,8 @@ export function StudioToolbar() {
         <InsertTable />
         <InsertThematicBreak />
         <InsertCodeBlock />
+        <Separator />
+        <InsertRepoComponent />
       </div>
     </DiffSourceToggleWrapper>
   )

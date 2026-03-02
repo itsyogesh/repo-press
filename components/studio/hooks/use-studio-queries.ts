@@ -126,5 +126,6 @@ export function useStudioQueries(selectedFilePath?: string) {
     previewEntry: project?.previewEntry,
     enabledPlugins: project?.enabledPlugins,
     pluginRegistry: project?.pluginRegistry as Record<string, string> | undefined,
+    components: project?.components as Record<string, any> | undefined,
   }
 }

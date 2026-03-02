@@ -109,8 +109,8 @@ export function StudioHeader({
         <div className="min-w-0 flex-1 overflow-x-auto">
           <Breadcrumb className="text-sm min-w-max">
             <BreadcrumbList className="flex-nowrap whitespace-nowrap">
-              {pathSegments.map((seg, i) => (
-                <React.Fragment key={`${seg}-${i}`}>
+              {pathSegments.map((seg) => (
+                <React.Fragment key={`breadcrumb-${seg}`}>
                   <BreadcrumbItem>
                     <span className="text-muted-foreground">{seg}</span>
                   </BreadcrumbItem>

@@ -15,6 +15,22 @@ export function evaluateAdapter(code: string): RepoPressPreviewAdapter {
   const require = (name: string) => {
     if (name === "react") return React
     if (name === "react/jsx-runtime") return jsxRuntime
+
+    // Provide shims for standard RepoPress paths used in default adapters
+    if (name === "@/components/docs/doc-media" || name === "@components/docs/doc-media") {
+      return {
+        DocsImage: (props: any) => null,
+        DocsVideo: (props: any) => null,
+        Callout: (props: any) => null,
+      }
+    }
+
+    if (name === "@/lib/constants/docs" || name === "@lib/constants/docs") {
+      return {
+        DOCS_SETUP_MEDIA: {},
+      }
+    }
+
     throw new Error(`Module ${name} is not available in the sandbox.`)
   }
 

@@ -208,6 +208,7 @@ export const syncProjectsFromConfig = mutation({
         branch: v.optional(v.string()),
         previewEntry: v.optional(v.string()),
         enabledPlugins: v.optional(v.array(v.string())),
+        components: v.optional(v.any()),
       }),
     ),
   },
@@ -238,6 +239,7 @@ export const syncProjectsFromConfig = mutation({
           previewEntry: p.previewEntry,
           enabledPlugins: p.enabledPlugins,
           pluginRegistry: args.pluginRegistry,
+          components: p.components,
           frameworkSource: "config",
           updatedAt: Date.now(),
         })
@@ -259,6 +261,7 @@ export const syncProjectsFromConfig = mutation({
           previewEntry: p.previewEntry,
           enabledPlugins: p.enabledPlugins,
           pluginRegistry: args.pluginRegistry,
+          components: p.components,
           frameworkSource: "config",
           createdAt: now,
           updatedAt: now,
