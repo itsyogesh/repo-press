@@ -1,5 +1,10 @@
 ## RepoPress Multi-Project MDX Runtime Spec + Implementation Plan
 
+> **Status:** COMPLETE  
+> **Done:** Spec + implementation phases 0-5 are marked complete and verified in this document.  
+> **Left:** None for v1 scope.  
+> **Last Updated:** 2026-03-03
+
 ### Summary
 Replace Markdown-only preview with a true MDX runtime that is driven by a repo-owned configuration contract (`repopress.config.json`) and repo-provided preview adapter(s).  
 Key decisions locked:

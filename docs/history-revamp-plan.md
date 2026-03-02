@@ -2,8 +2,10 @@
 
 > **Plan Version:** 1.0  
 > **Created:** March 2026  
-> **Status:** Planning  
-> **Last Updated:** March 2026
+> **Status:** Partially Complete (Core Delivered, Follow-ups Pending)  
+> **Done:** Pagination, restore flow, diff UI, and GitHub link helpers are implemented.  
+> **Left:** `editedBy` schema/user-link alignment and Phase 5 advanced features remain.  
+> **Last Updated:** 2026-03-03
 
 ---
 
@@ -14,6 +16,8 @@ This document outlines a comprehensive plan to revamp the document history/versi
 ---
 
 ## Current Implementation Review
+
+> Note: This section captures the original gap analysis at planning time. Use "Sync Progress" below for current implementation state.
 
 ### What's Working ✅
 
@@ -336,11 +340,11 @@ npm run dev
 
 | Phase                  | Status  | Started | Completed | Notes |
 | ---------------------- | ------- | ------- | --------- | ----- |
-| 1: Schema Enhancements | Pending | -       | -         | -     |
-| 2: Backend API         | Pending | -       | -         | -     |
-| 3: GitHub Integration  | Pending | -       | -         | -     |
-| 4: UI/UX               | Pending | -       | -         | -     |
-| 5: Advanced Features   | Pending | -       | -         | -     |
+| 1: Schema Enhancements | Partial | Mar 2026 | - | `changeType`, `diffHash`, `githubCommitUrl` are present; `editedBy` is still `string` and not `id("users")` |
+| 2: Backend API         | Complete | Mar 2026 | Mar 2026 | Pagination query + version count + restore mutation implemented |
+| 3: GitHub Integration  | Partial | Mar 2026 | - | Link helpers exist; full commit metadata capture path still incomplete |
+| 4: UI/UX               | Mostly Complete | Mar 2026 | Mar 2026 | Diff UI, compare, restore present; richer author linkage depends on Phase 1 schema fix |
+| 5: Advanced Features   | Pending | - | - | Auto-change detection, retention policy, branch-aware history not implemented |
 
 ---
 

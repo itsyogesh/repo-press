@@ -4,6 +4,11 @@
 > RepoPress Multi‑Project MDX Runtime. It consolidates architecture
 > decisions, risks, prototype strategy, implementation phases, and
 > pseudocode required to begin development safely.
+>
+> **Status:** PARTIAL (Core Complete, Hardening Active)  
+> **Done:** Phases -1 through 5 and mirror architecture are complete.  
+> **Left:** Phase 6 hardening tasks tracked in `docs/plans/2026-03-02-mdx-runtime-hardening-plan.md`.  
+> **Last Updated:** 2026-03-03
 
 ---
 
@@ -421,7 +426,7 @@ This document is now finalized following full implementation and UI polish.
 
 # Phase 6 — Runtime Hardening [IN PROGRESS]
 
-Detailed implementation plan: `docs/plan/2026-03-02-mdx-runtime-hardening-plan.md`
+Detailed implementation plan: `docs/plans/2026-03-02-mdx-runtime-hardening-plan.md`
 
 ## Tasks
 
@@ -434,7 +439,8 @@ Detailed implementation plan: `docs/plan/2026-03-02-mdx-runtime-hardening-plan.m
 
 ## Status
 
-See `docs/plan/2026-03-02-mdx-runtime-hardening-plan.md` for detailed progress tracking.
+See `docs/plans/2026-03-02-mdx-runtime-hardening-plan.md` for detailed progress tracking.
+As of 2026-03-03, Task 1-6 in the hardening plan remain open (planned/in progress, not yet fully checked off).
 
 ---
 

@@ -1,10 +1,36 @@
 # RepoPress - History Implementation Summary & Next Phase Context
 
-## Part 1: History Implementation Summary (Completed)
+## Plan Tracker (Canonical Status) - 2026-03-03
+
+Use this section as the single quick-status index across all docs/plans files.
+
+| Document | Scope | Status | Done | Left |
+| --- | --- | --- | --- | --- |
+| `docs/multi_project_mdx_spec.md` | Multi-project MDX runtime spec + implementation | COMPLETE | Phases 0-5 marked complete and verified in doc | None for v1 spec |
+| `docs/mdx_runtime_master_plan.md` | Master MDX runtime roadmap | PARTIAL (Core Complete, Hardening Active) | Phases -1 to 5 complete | Phase 6 hardening tasks (cache, rate limits, private assets, sandbox, compile cache, deterministic merge) |
+| `docs/plans/2026-02-27-mdx-runtime-preview-replacement-plan.md` | Preview runtime replacement | COMPLETE | Replacement architecture and acceptance track delivered | None in this plan (superseded by hardening follow-ups) |
+| `docs/history-revamp-plan.md` | Document history/versioning revamp | PARTIAL | Pagination, restore flow, diff UI, GitHub link helpers present | `editedBy` schema/user-link alignment and Phase 5 advanced features |
+| `docs/plans/2026-03-02-project-deletion-design.md` | Project deletion design | COMPLETE | Approved and implemented design | None |
+| `docs/plans/2026-03-02-project-deletion-implementation.md` | Project deletion execution | COMPLETE | Tasks 1-4 marked complete | None |
+| `docs/plans/2026-03-03-phase-2-two-way-component-authoring-plan.md` | Two-way component authoring | COMPLETE | Phases 1-5 delivered (registry/catalog/node/serializer, insert UX, Blob+fallback, diagnostics, tests/docs/flag) | Follow-up hardening items only (outside this plan) |
+| `docs/plans/2026-03-02-mdx-runtime-hardening-plan.md` | Runtime hardening backlog | IN PROGRESS | Plan and task structure defined | Tasks 1-6 execution and status updates |
+
+### Current Active Workstream
+
+1. Runtime hardening, especially private-asset and media flow hardening for private repos (hybrid path: PR-staged media + preview-safe resolution).
+2. History schema alignment (`documentHistory.editedBy`) to remove attribution inconsistency.
+
+### Documentation Organization Rules
+
+1. Keep implementation status in the originating plan file plus this tracker.
+2. Keep execution prompts in `docs/plans/STARTER_PROMPT.md` and phase-specific starter prompt files.
+3. Do not create duplicate plan files for the same scope; update status in place.
+
+## Part 1: History Implementation Summary (Core Delivered, Follow-ups Pending)
 
 ### What Was Implemented
 
-We just completed the **History Revamp** with the following changes:
+We delivered the **core History Revamp** with the following changes:
 
 #### 1. Schema Enhancements (`convex/schema.ts`)
 
@@ -13,7 +39,7 @@ documentHistory: defineTable({
   documentId: v.id("documents"),
   body: v.string(),
   frontmatter: v.optional(v.any()),
-  editedBy: v.id("users"), // Changed from string → user ID
+  editedBy: v.string(), // TODO: migrate to v.id("users") for strict user linkage
   commitSha: v.optional(v.string()),
   message: v.optional(v.string()),
   changeType: v.optional(

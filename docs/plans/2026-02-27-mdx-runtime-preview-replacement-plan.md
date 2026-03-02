@@ -1,5 +1,10 @@
 # RepoPress Studio — MDX Runtime Preview First (Full Replacement Plan)
 
+> **Status:** COMPLETE  
+> **Done:** MDX runtime preview replacement and related architecture from this plan were delivered.  
+> **Left:** No open items in this plan; follow-up hardening work is tracked separately.  
+> **Last Updated:** 2026-03-03
+
 ## Summary
 This plan prioritizes and implements a full replacement of the current Markdown-only preview pipeline with a strict-allowlist MDX runtime preview. It is designed to fit the current studio redesign progress and unblock the highest remaining functional gap: rendering MDX imports, JSX components, and expressions in preview.
 

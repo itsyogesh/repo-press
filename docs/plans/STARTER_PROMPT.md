@@ -8,7 +8,7 @@
 
 ```
 I want to implement the MDX Runtime Hardening plan located at:
-docs/plan/2026-03-02-mdx-runtime-hardening-plan.md
+docs/plans/2026-03-02-mdx-runtime-hardening-plan.md
 
 Start with Task 1: Persistent Adapter Cache.
 
@@ -21,7 +21,7 @@ Follow this workflow for each task:
 5. MANUAL TEST: Verify the feature works manually
 6. BUILD: Run `npm run build` — must pass
 7. COMMIT: Create commit with descriptive message (DO NOT PUSH)
-8. UPDATE PLAN: Update docs/plan/2026-03-02-mdx-runtime-hardening-plan.md:
+8. UPDATE PLAN: Update docs/plans/2026-03-02-mdx-runtime-hardening-plan.md:
    - Mark completed steps with [x]
    - Update Status column in Progress tables
    - Add any implementation notes
@@ -43,7 +43,7 @@ Use this if you want to implement one task at a time:
 ### Task 1 Only
 
 ```
-Implement Task 1: Persistent Adapter Cache from docs/plan/2026-03-02-mdx-runtime-hardening-plan.md
+Implement Task 1: Persistent Adapter Cache from docs/plans/2026-03-02-mdx-runtime-hardening-plan.md
 
 Workflow:
 1. Create lib/repopress/adapter-cache.ts with IndexedDB cache
@@ -58,7 +58,7 @@ Workflow:
 ### Task 2 Only
 
 ```
-Implement Task 2: GitHub API Rate Limiting & Debounce from docs/plan/2026-03-02-mdx-runtime-hardening-plan.md
+Implement Task 2: GitHub API Rate Limiting & Debounce from docs/plans/2026-03-02-mdx-runtime-hardening-plan.md
 
 Workflow:
 1. Add 500ms debounce to usePreviewContext
@@ -74,7 +74,7 @@ Workflow:
 ### Task 3 Only
 
 ```
-Implement Task 3: Private Asset URL Signing from docs/plan/2026-03-02-mdx-runtime-hardening-plan.md
+Implement Task 3: Private Asset URL Signing from docs/plans/2026-03-02-mdx-runtime-hardening-plan.md
 
 Workflow:
 1. Create app/api/github/sign-asset-url/route.ts
@@ -90,7 +90,7 @@ Workflow:
 ### Task 4 Only
 
 ```
-Implement Task 4: Expression Sandbox from docs/plan/2026-03-02-mdx-runtime-hardening-plan.md
+Implement Task 4: Expression Sandbox from docs/plans/2026-03-02-mdx-runtime-hardening-plan.md
 
 Workflow:
 1. Create lib/repopress/safe-eval.ts with allowlist parser
@@ -105,7 +105,7 @@ Workflow:
 ### Task 5 Only
 
 ```
-Implement Task 5: Compile Cache with SHA from docs/plan/2026-03-02-mdx-runtime-hardening-plan.md
+Implement Task 5: Compile Cache with SHA from docs/plans/2026-03-02-mdx-runtime-hardening-plan.md
 
 Workflow:
 1. Extend lib/repopress/adapter-cache.ts for compile cache
@@ -120,7 +120,7 @@ Workflow:
 ### Task 6 Only
 
 ```
-Implement Task 6: Plugin Merge Determinism from docs/plan/2026-03-02-mdx-runtime-hardening-plan.md
+Implement Task 6: Plugin Merge Determinism from docs/plans/2026-03-02-mdx-runtime-hardening-plan.md
 
 Workflow:
 1. Update lib/hooks/use-preview-context.ts with deterministic merge
@@ -163,5 +163,5 @@ npm run build
 npm run test
 
 # Check plan progress
-grep -E "^\| [0-9]" docs/plan/2026-03-02-mdx-runtime-hardening-plan.md
+grep -E "^\| [0-9]" docs/plans/2026-03-02-mdx-runtime-hardening-plan.md
 ```
