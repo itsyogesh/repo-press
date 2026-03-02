@@ -1,9 +1,9 @@
 "use client"
 
-import * as React from "react"
+import { Code, FileText, History, Home, Moon, PanelLeft, Save, Split, Sun } from "lucide-react"
 import { useRouter } from "next/navigation"
-import { FileText, Home, Moon, PanelLeft, Save, Split, Sun, Code, History } from "lucide-react"
 import { useTheme } from "next-themes"
+import * as React from "react"
 
 import {
   CommandDialog,
@@ -188,11 +188,7 @@ export function CommandPalette({
       title="Command Palette"
       description="Search files, actions, and navigation"
     >
-      <CommandInput
-        value={query}
-        onValueChange={setQuery}
-        placeholder="Search files, actions, and pages..."
-      />
+      <CommandInput value={query} onValueChange={setQuery} placeholder="Search files, actions, and pages..." />
       <CommandList>
         <CommandEmpty>{query.trim() ? "No results found." : "Type to search..."}</CommandEmpty>
 

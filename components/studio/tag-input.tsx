@@ -1,7 +1,7 @@
 "use client"
 
-import * as React from "react"
 import { X } from "lucide-react"
+import * as React from "react"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
@@ -16,6 +16,7 @@ interface TagInputProps {
 export function TagInput({ value = [], onChange, placeholder = "Add tag...", className }: TagInputProps) {
   const [inputValue, setInputValue] = React.useState("")
   const inputRef = React.useRef<HTMLInputElement>(null)
+  const inputId = React.useId()
 
   const addTag = (tag: string) => {
     const trimmed = tag.trim()
@@ -39,16 +40,16 @@ export function TagInput({ value = [], onChange, placeholder = "Add tag...", cla
   }
 
   return (
-    <div
+    <label
+      htmlFor={inputId}
       className={cn(
         "flex flex-wrap items-center gap-1.5 rounded-md border border-studio-border bg-studio-canvas px-2 py-1.5 min-h-[36px] cursor-text",
-        className
+        className,
       )}
-      onClick={() => inputRef.current?.focus()}
     >
-      {value.map((tag, index) => (
+      {value.map((tag) => (
         <Badge
-          key={`${tag}-${index}`}
+          key={tag}
           variant="secondary"
           className="h-6 gap-1 px-2 text-xs bg-studio-accent-muted text-studio-accent hover:bg-studio-accent/20 transition-colors"
         >
@@ -56,6 +57,7 @@ export function TagInput({ value = [], onChange, placeholder = "Add tag...", cla
           <button
             type="button"
             onClick={(e) => {
+              e.preventDefault()
               e.stopPropagation()
               removeTag(tag)
             }}
@@ -66,6 +68,7 @@ export function TagInput({ value = [], onChange, placeholder = "Add tag...", cla
         </Badge>
       ))}
       <Input
+        id={inputId}
         ref={inputRef}
         value={inputValue}
         onChange={(e) => setInputValue(e.target.value)}
@@ -78,6 +81,6 @@ export function TagInput({ value = [], onChange, placeholder = "Add tag...", cla
         placeholder={value.length === 0 ? placeholder : ""}
         className="border-0 shadow-none h-6 px-1 text-sm min-w-[80px] flex-1 focus-visible:ring-0 bg-transparent"
       />
-    </div>
+    </label>
   )
 }

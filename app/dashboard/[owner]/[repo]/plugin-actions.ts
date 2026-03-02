@@ -2,7 +2,7 @@
 
 import { getGitHubToken } from "@/lib/auth-server"
 import { getFileContent } from "@/lib/github"
-import { pluginManifestSchema, type PluginManifest } from "@/lib/repopress/plugin-schema"
+import { type PluginManifest, pluginManifestSchema } from "@/lib/repopress/plugin-schema"
 
 export async function fetchPluginAction(owner: string, repo: string, branch: string | undefined, pluginPath: string) {
   const token = await getGitHubToken()

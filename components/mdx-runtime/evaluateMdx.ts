@@ -1,5 +1,5 @@
-import * as jsxRuntime from "react/jsx-runtime"
 import { Fragment } from "react"
+import * as jsxRuntime from "react/jsx-runtime"
 
 export function evaluateMdx(code: string, scope: Record<string, unknown>, onMissing?: (name: string) => void) {
   const mdxConfig = {

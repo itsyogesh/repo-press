@@ -1,23 +1,23 @@
 "use client"
 
 import {
-  BoldItalicUnderlineToggles,
-  StrikeThroughSupSubToggles,
   BlockTypeSelect,
+  BoldItalicUnderlineToggles,
+  CodeToggle,
   CreateLink,
+  DiffSourceToggleWrapper,
+  InsertCodeBlock,
   InsertImage,
   InsertTable,
   InsertThematicBreak,
-  InsertCodeBlock,
   ListsToggle,
-  UndoRedo,
-  DiffSourceToggleWrapper,
   Separator,
-  CodeToggle,
+  StrikeThroughSupSubToggles,
+  UndoRedo,
 } from "@mdxeditor/editor"
 import { InsertRepoComponent } from "./insert-repo-component"
 
-export function StudioToolbar() {
+export function StudioToolbar({ owner, repo, branch }: { owner: string; repo: string; branch: string }) {
   return (
     <DiffSourceToggleWrapper options={["rich-text", "source"]}>
       <div className="flex items-center gap-0.5 flex-wrap">
@@ -38,7 +38,7 @@ export function StudioToolbar() {
         <InsertThematicBreak />
         <InsertCodeBlock />
         <Separator />
-        <InsertRepoComponent />
+        <InsertRepoComponent owner={owner} repo={repo} branch={branch} />
       </div>
     </DiffSourceToggleWrapper>
   )

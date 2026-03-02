@@ -36,6 +36,7 @@ interface DocumentListProps {
 export function DocumentList({ projectId, selectedFilePath, onSelectDocument }: DocumentListProps) {
   const [statusFilter, setStatusFilter] = React.useState<DocumentStatus | "all">("all")
   const [searchTerm, setSearchTerm] = React.useState("")
+  const skeletonRows = React.useMemo(() => Array.from({ length: 8 }, (_, idx) => ({ id: `doc-skeleton-${idx}` })), [])
 
   const documents = useQuery(
     api.documents.listByProject,
@@ -90,8 +91,8 @@ export function DocumentList({ projectId, selectedFilePath, onSelectDocument }: 
         <div className="p-2 space-y-1">
           {displayedDocs === undefined ? (
             <div className="space-y-2 p-1">
-              {Array.from({ length: 8 }).map((_, idx) => (
-                <div key={`doc-skeleton-${idx}`} className="rounded-md border border-border/50 p-2 space-y-2">
+              {skeletonRows.map((row) => (
+                <div key={row.id} className="rounded-md border border-border/50 p-2 space-y-2">
                   <div className="flex items-center gap-2">
                     <Skeleton className="h-4 w-4 shrink-0" />
                     <Skeleton className="h-3.5 w-40" />

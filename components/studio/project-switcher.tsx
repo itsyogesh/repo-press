@@ -3,14 +3,7 @@
 import { useQuery } from "convex/react"
 import { Plus } from "lucide-react"
 import { useRouter } from "next/navigation"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectSeparator,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { api } from "@/convex/_generated/api"
 
 interface ProjectSwitcherProps {
@@ -25,10 +18,7 @@ export function ProjectSwitcher({ currentProjectId, owner, repo, branch }: Proje
   const user = useQuery(api.auth.getCurrentUser)
   const userId = user?._id as string | undefined
 
-  const projects = useQuery(
-    api.projects.getByRepo,
-    userId ? { userId, repoOwner: owner, repoName: repo } : "skip",
-  )
+  const projects = useQuery(api.projects.getByRepo, userId ? { userId, repoOwner: owner, repoName: repo } : "skip")
 
   // Don't render if there are no sibling projects (or still loading)
   if (!projects || projects.length <= 1) return null
@@ -54,9 +44,7 @@ export function ProjectSwitcher({ currentProjectId, owner, repo, branch }: Proje
         {projects.map((p) => (
           <SelectItem key={p._id} value={p._id} className="text-xs">
             <span className="font-medium">{p.contentRoot || "/"}</span>
-            {p.detectedFramework && (
-              <span className="ml-2 text-muted-foreground">({p.detectedFramework})</span>
-            )}
+            {p.detectedFramework && <span className="ml-2 text-muted-foreground">({p.detectedFramework})</span>}
           </SelectItem>
         ))}
         <SelectSeparator />

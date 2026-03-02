@@ -7,9 +7,7 @@ export const getActiveForProject = query({
   handler: async (ctx, args) => {
     return await ctx.db
       .query("publishBranches")
-      .withIndex("by_projectId_status", (q) =>
-        q.eq("projectId", args.projectId).eq("status", "active"),
-      )
+      .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", "active"))
       .first()
   },
 })

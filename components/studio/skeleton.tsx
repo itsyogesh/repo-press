@@ -40,10 +40,12 @@ export function EditorSkeleton() {
 }
 
 export function FileTreeSkeleton() {
+  const skeletonRows = Array.from({ length: 8 }, (_, idx) => `skeleton-${idx}`)
+
   return (
     <div className="p-2 space-y-1">
-      {Array.from({ length: 8 }).map((_, i) => (
-        <div key={`skeleton-${i}`} className="flex items-center gap-2 p-2">
+      {skeletonRows.map((rowKey) => (
+        <div key={rowKey} className="flex items-center gap-2 p-2">
           <Skeleton className="h-4 w-4 rounded" />
           <Skeleton className="h-4 w-32" />
         </div>

@@ -6,10 +6,10 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
-import { normalizeDate } from "@/lib/framework-adapters"
 import type { MergedFieldDef } from "@/lib/framework-adapters"
-import { TagInput } from "./tag-input"
+import { normalizeDate } from "@/lib/framework-adapters"
 import { ImageField } from "./image-field"
+import { TagInput } from "./tag-input"
 
 interface FrontmatterFieldProps {
   field: MergedFieldDef

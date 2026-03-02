@@ -1,5 +1,5 @@
-import * as React from "react"
 import { format } from "date-fns"
+import type * as React from "react"
 
 // A dummy component for testing
 export function DocsImage({ src, alt }: { src: string; alt?: string }) {

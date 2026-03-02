@@ -1,5 +1,5 @@
 import { getFile } from "@/lib/github"
-import { repoPressConfigSchema, RepoPressConfig } from "../config-schema"
+import { type RepoPressConfig, repoPressConfigSchema } from "../config-schema"
 
 export async function fetchRepoConfig(
   token: string,

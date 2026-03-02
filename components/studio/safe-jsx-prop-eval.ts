@@ -30,6 +30,9 @@ export function safeEvalJsExpression(expression: string, scope: EvalScope): Eval
 
 function evalNode(node: any, scope: EvalScope): any {
   switch (node.type) {
+    case "ChainExpression":
+      return evalNode(node.expression, scope)
+
     case "Literal":
       return (node as any).value
 
@@ -45,6 +48,7 @@ function evalNode(node: any, scope: EvalScope): any {
       const object = evalNode(node.object, scope)
       const property = node.computed ? evalNode(node.property, scope) : node.property.name
       if (object == null) {
+        if (node.optional) return undefined
         throw new Error("Cannot read property of null/undefined")
       }
       return object[property as keyof typeof object]

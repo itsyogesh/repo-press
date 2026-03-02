@@ -360,7 +360,12 @@ export function FileTree({
           {onCreateFile && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-6 w-6 rounded-md hover:bg-studio-canvas-inset" title="New file">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 rounded-md hover:bg-studio-canvas-inset"
+                  title="New file"
+                >
                   <Plus className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
@@ -411,11 +416,7 @@ export function FileTree({
               onDragStart={handleDragStart}
               onDragEnd={handleDragEnd}
             >
-              <FileContextMenu
-                type="background"
-                onNewFile={handleCreateRootFile}
-                onCollapseAll={collapseAll}
-              >
+              <FileContextMenu type="background" onNewFile={handleCreateRootFile} onCollapseAll={collapseAll}>
                 <div className="min-h-[200px]">
                   {displayTree.map((node) => (
                     <TreeItem

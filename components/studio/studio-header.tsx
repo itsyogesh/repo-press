@@ -1,19 +1,18 @@
-import * as React from "react"
-import Link from "next/link"
 import {
-  Home,
-  MoreVertical,
-  History,
-  Keyboard,
   HelpCircle,
+  History,
+  Home,
+  Keyboard,
+  MoreVertical,
   PanelLeftClose,
   PanelLeftOpen,
   RefreshCw,
 } from "lucide-react"
-
-import { Button } from "@/components/ui/button"
+import Link from "next/link"
+import * as React from "react"
 import { toast } from "sonner"
 import { syncProjectsFromConfigAction } from "@/app/dashboard/[owner]/[repo]/actions"
+import { Badge } from "@/components/ui/badge"
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -21,15 +20,14 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb"
-import { Badge } from "@/components/ui/badge"
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import type { FileTreeNode } from "@/lib/github"
+import { StatusActions } from "./status-actions"
 import { useStudio } from "./studio-context"
 import { useViewMode } from "./view-mode-context"
-import { StatusActions } from "./status-actions"
-import type { FileTreeNode } from "@/lib/github"
 
 interface StudioHeaderProps {
   selectedFile: FileTreeNode | null

@@ -128,6 +128,7 @@ const projectArgs = {
   detectedFramework: frameworkValidator,
   contentType: contentTypeValidator,
   frontmatterSchema: v.optional(v.any()),
+  components: v.optional(v.any()),
 }
 
 export const create = mutation({
@@ -160,7 +161,7 @@ export const getOrCreate = mutation({
       .first()
 
     if (existing) {
-      // Update framework/schema if re-detected values differ from stored ones
+      // Update framework/schema/components if re-detected values differ from stored ones
       const updates: Record<string, unknown> = {}
       if (args.detectedFramework && args.detectedFramework !== existing.detectedFramework) {
         updates.detectedFramework = args.detectedFramework
@@ -173,6 +174,9 @@ export const getOrCreate = mutation({
       }
       if (args.contentType && args.contentType !== existing.contentType) {
         updates.contentType = args.contentType
+      }
+      if (args.components && JSON.stringify(args.components) !== JSON.stringify((existing as any).components)) {
+        updates.components = args.components
       }
       if (Object.keys(updates).length > 0) {
         await ctx.db.patch(existing._id, { ...updates, updatedAt: Date.now() })
@@ -216,24 +220,33 @@ export const syncProjectsFromConfig = mutation({
     await verifyCallerIdentity(ctx, args.userId)
 
     const syncedProjectIds = []
+    const repoProjects = await ctx.db
+      .query("projects")
+      .withIndex("by_userId_repo", (q) =>
+        q.eq("userId", args.userId).eq("repoOwner", args.repoOwner).eq("repoName", args.repoName),
+      )
+      .collect()
 
     for (const p of args.projects) {
-      // Match by configProjectId
-      const existing = await ctx.db
-        .query("projects")
-        .withIndex("by_userId_repo", (q) =>
-          q.eq("userId", args.userId).eq("repoOwner", args.repoOwner).eq("repoName", args.repoName),
+      const nextBranch = p.branch || args.branch
+
+      // 1) Preferred match: explicit config project ID.
+      // 2) Legacy migration match: repo + branch + contentRoot when configProjectId was never stored.
+      const existing =
+        repoProjects.find((project) => project.configProjectId === p.configProjectId) ??
+        repoProjects.find(
+          (project) =>
+            !project.configProjectId && project.branch === nextBranch && project.contentRoot === p.contentRoot,
         )
-        .filter((q) => q.eq(q.field("configProjectId"), p.configProjectId))
-        .first()
 
       if (existing) {
         await ctx.db.patch(existing._id, {
           name: p.name,
           contentRoot: p.contentRoot,
-          branch: p.branch || args.branch,
+          branch: nextBranch,
           detectedFramework: p.framework,
           contentType: p.contentType,
+          configProjectId: p.configProjectId,
           configVersion: args.configVersion,
           configPath: args.configPath,
           previewEntry: p.previewEntry,
@@ -251,7 +264,7 @@ export const syncProjectsFromConfig = mutation({
           name: p.name,
           repoOwner: args.repoOwner,
           repoName: args.repoName,
-          branch: p.branch || args.branch,
+          branch: nextBranch,
           contentRoot: p.contentRoot,
           detectedFramework: p.framework,
           contentType: p.contentType,
@@ -284,6 +297,7 @@ export const update = mutation({
     detectedFramework: frameworkValidator,
     contentType: v.optional(contentTypeValidator),
     frontmatterSchema: v.optional(v.any()),
+    components: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
     const { id, ...updates } = args

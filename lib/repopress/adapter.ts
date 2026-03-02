@@ -1,5 +1,5 @@
-import { getFileContent } from "@/lib/github"
 import * as esbuild from "esbuild-wasm"
+import { getFileContent } from "@/lib/github"
 
 export interface ResolvedPreviewContext {
   components: Record<string, any>

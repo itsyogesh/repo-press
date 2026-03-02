@@ -1,9 +1,9 @@
 "use server"
 
-import { getGitHubToken, fetchAuthMutation, fetchAuthQuery } from "@/lib/auth-server"
-import { fetchRepoConfig } from "@/lib/repopress/config"
-import { api } from "@/convex/_generated/api"
 import { revalidatePath } from "next/cache"
+import { api } from "@/convex/_generated/api"
+import { fetchAuthMutation, fetchAuthQuery, getGitHubToken } from "@/lib/auth-server"
+import { fetchRepoConfig } from "@/lib/repopress/config"
 
 export async function syncProjectsFromConfigAction(owner: string, repo: string, branch: string) {
   const token = await getGitHubToken()

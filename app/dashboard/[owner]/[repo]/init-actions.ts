@@ -1,9 +1,8 @@
 "use server"
 
-import { getGitHubToken, fetchAuthMutation, fetchAuthQuery } from "@/lib/auth-server"
-import { batchCommit } from "@/lib/github"
-import { api } from "@/convex/_generated/api"
 import { revalidatePath } from "next/cache"
+import { getGitHubToken } from "@/lib/auth-server"
+import { batchCommit } from "@/lib/github"
 
 const DEFAULT_ADAPTER_SOURCE = `"use client"
 
@@ -53,6 +52,30 @@ export async function initRepoPressAction(
       {
         ...projectConfig,
         branch,
+        components: {
+          DocsImage: {
+            props: [
+              { name: "src", type: "image", label: "Source" },
+              { name: "alt", type: "string", label: "Alt text" },
+              { name: "caption", type: "string", label: "Caption" },
+            ],
+            hasChildren: false,
+            kind: "flow",
+          },
+          DocsVideo: {
+            props: [
+              { name: "src", type: "string", label: "Source" },
+              { name: "title", type: "string", label: "Title" },
+            ],
+            hasChildren: false,
+            kind: "flow",
+          },
+          Callout: {
+            props: [{ name: "type", type: "string", label: "Type", default: "info" }],
+            hasChildren: true,
+            kind: "flow",
+          },
+        },
       },
     ],
   }

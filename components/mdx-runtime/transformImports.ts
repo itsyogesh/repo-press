@@ -1,6 +1,6 @@
-import { visit, SKIP } from "unist-util-visit"
-import type { Plugin } from "unified"
 import type { Root } from "mdast"
+import type { Plugin } from "unified"
+import { SKIP, visit } from "unist-util-visit"
 
 export interface ExtractedImport {
   source: string
@@ -14,8 +14,7 @@ export const remarkTransformImports: Plugin<[{ allowedImports: Record<string, st
     const allowed = options?.allowedImports || {}
 
     visit(tree, "mdxjsEsm", (node, index, parent) => {
-      // @ts-ignore
-      const estree = node.data?.estree
+      const estree = (node.data as { estree?: { body: any[] } } | undefined)?.estree
       if (!estree) return
 
       const newBody = []
@@ -80,7 +79,6 @@ export const remarkTransformImports: Plugin<[{ allowedImports: Record<string, st
       }
     })
 
-    // @ts-ignore
-    file.data.extractedImports = extracted
+    ;(file.data as { extractedImports?: ExtractedImport[] }).extractedImports = extracted
   }
 }

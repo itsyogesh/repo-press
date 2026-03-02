@@ -1,14 +1,14 @@
-import { redirect } from "next/navigation"
-import Link from "next/link"
-import { getGitHubToken, fetchAuthQuery } from "@/lib/auth-server"
-import { api } from "@/convex/_generated/api"
-import { RepoBreadcrumb } from "@/components/repo-breadcrumb"
-import { Button } from "@/components/ui/button"
 import { ChevronLeft, Settings } from "lucide-react"
+import Link from "next/link"
+import { redirect } from "next/navigation"
+import { RepoBreadcrumb } from "@/components/repo-breadcrumb"
 import { DeleteProjectZone } from "@/components/settings/delete-project-zone"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
-import { Badge } from "@/components/ui/badge"
+import { api } from "@/convex/_generated/api"
+import { fetchAuthQuery, getGitHubToken } from "@/lib/auth-server"
 
 interface SettingsPageProps {
   params: Promise<{

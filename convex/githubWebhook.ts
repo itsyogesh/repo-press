@@ -35,9 +35,7 @@ export const handlePRMerged = mutation({
     // 3. Clear all committed explorer ops for this project
     const committedOps = await ctx.db
       .query("explorerOps")
-      .withIndex("by_projectId_status", (q) =>
-        q.eq("projectId", projectId).eq("status", "committed"),
-      )
+      .withIndex("by_projectId_status", (q) => q.eq("projectId", projectId).eq("status", "committed"))
       .collect()
 
     for (const op of committedOps) {
@@ -70,16 +68,12 @@ export const handlePRMerged = mutation({
     // 5. Publish only documents whose filePaths are in the committed set
     const drafts = await ctx.db
       .query("documents")
-      .withIndex("by_projectId_status", (q) =>
-        q.eq("projectId", projectId).eq("status", "draft"),
-      )
+      .withIndex("by_projectId_status", (q) => q.eq("projectId", projectId).eq("status", "draft"))
       .collect()
 
     const approved = await ctx.db
       .query("documents")
-      .withIndex("by_projectId_status", (q) =>
-        q.eq("projectId", projectId).eq("status", "approved"),
-      )
+      .withIndex("by_projectId_status", (q) => q.eq("projectId", projectId).eq("status", "approved"))
       .collect()
 
     const docsToPublish = [...drafts, ...approved].filter(
@@ -89,16 +83,12 @@ export const handlePRMerged = mutation({
     // Also handle docs in non-publishable states (in_review, scheduled)
     const inReview = await ctx.db
       .query("documents")
-      .withIndex("by_projectId_status", (q) =>
-        q.eq("projectId", projectId).eq("status", "in_review"),
-      )
+      .withIndex("by_projectId_status", (q) => q.eq("projectId", projectId).eq("status", "in_review"))
       .collect()
 
     const scheduled = await ctx.db
       .query("documents")
-      .withIndex("by_projectId_status", (q) =>
-        q.eq("projectId", projectId).eq("status", "scheduled"),
-      )
+      .withIndex("by_projectId_status", (q) => q.eq("projectId", projectId).eq("status", "scheduled"))
       .collect()
 
     const otherDocs = [...inReview, ...scheduled].filter(

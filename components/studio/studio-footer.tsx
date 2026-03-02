@@ -1,6 +1,6 @@
-import * as React from "react"
-import { Check, Loader2 } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
+import { Check, Loader2 } from "lucide-react"
+import * as React from "react"
 import { useViewMode } from "./view-mode-context"
 
 interface StudioFooterProps {
@@ -10,12 +10,7 @@ interface StudioFooterProps {
   encoding?: string
 }
 
-export function StudioFooter({
-  isSaving,
-  lastSavedAt,
-  fileType = "MDX",
-  encoding = "UTF-8",
-}: StudioFooterProps) {
+export function StudioFooter({ isSaving, lastSavedAt, fileType = "MDX", encoding = "UTF-8" }: StudioFooterProps) {
   const { viewMode } = useViewMode()
 
   return (

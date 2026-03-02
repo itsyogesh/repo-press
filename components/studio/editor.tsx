@@ -25,6 +25,7 @@ import "@mdxeditor/editor/style.css"
 import "./mdxeditor-theme.css"
 
 import type { FieldVariantMap, FrontmatterFieldDef } from "@/lib/framework-adapters"
+import { uploadMedia } from "@/lib/studio/media-upload"
 import { EditorErrorFallback } from "./error-boundary"
 import { ForwardRefEditor } from "./forward-ref-editor"
 import { FrontmatterPanel } from "./frontmatter-panel"
@@ -38,7 +39,11 @@ class EditorErrorBoundary extends React.Component<
   { children: React.ReactNode; fallback: React.ReactNode; resetKey: string },
   { hasError: boolean }
 > {
-  constructor(props: { children: React.ReactNode; fallback: React.ReactNode; resetKey: string }) {
+  constructor(props: {
+    children: React.ReactNode
+    fallback: React.ReactNode
+    resetKey: string
+  }) {
     super(props)
     this.state = { hasError: false }
   }
@@ -138,39 +143,24 @@ export function Editor({
     [tree],
   )
 
-  // Image upload handler - uploads to GitHub via API
+  // Image upload handler - Blob-first with GitHub fallback
   const handleImageUpload = React.useCallback(
     async (file: File): Promise<string> => {
       try {
-        const arrayBuffer = await file.arrayBuffer()
-        const base64 = btoa(new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), ""))
-
         const fileName = file.name || `image-${Date.now()}.png`
-        const imagePath = getImageUploadPath(fileName)
+        const pathHint = getImageUploadPath(fileName).split("/").slice(0, -1).join("/")
 
-        const response = await fetch("/api/github/upload-image", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            owner,
-            repo,
-            path: imagePath,
-            content: base64,
-            message: `Upload image: ${fileName} via RepoPress`,
-            branch,
-          }),
+        // Use Blob-first upload with GitHub fallback
+        const result = await uploadMedia({
+          file,
+          owner,
+          repo,
+          branch,
+          pathHint,
+          storagePreference: "auto",
         })
 
-        if (!response.ok) {
-          const error = await response.json()
-          console.error("Image upload failed:", error)
-          throw new Error(error.error || "Failed to upload image")
-        }
-
-        const result = await response.json()
-        return result.path || imagePath
+        return result.url
       } catch (error) {
         console.error("Error uploading image:", error)
         throw error
@@ -234,10 +224,10 @@ export function Editor({
         viewMode: "rich-text",
       }),
       toolbarPlugin({
-        toolbarContents: () => <StudioToolbar />,
+        toolbarContents: () => <StudioToolbar owner={owner} repo={repo} branch={branch} />,
       }),
     ],
-    [handleImageUpload, imageAutocompleteSuggestions, adapter, componentSchema],
+    [handleImageUpload, imageAutocompleteSuggestions, adapter, componentSchema, owner, repo, branch],
   )
 
   // Handle content change from editor

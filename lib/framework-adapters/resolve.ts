@@ -235,12 +235,7 @@ export function buildMergedFieldList(
  * Absolute URLs (http/https) pass through unchanged.
  * Relative/repo-relative paths get resolved to raw.githubusercontent.com.
  */
-export function buildGitHubRawUrl(
-  imagePath: string,
-  owner: string,
-  repo: string,
-  branch: string,
-): string {
+export function buildGitHubRawUrl(imagePath: string, owner: string, repo: string, branch: string): string {
   if (!imagePath) return imagePath
 
   // Absolute URLs pass through

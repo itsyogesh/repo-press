@@ -7,9 +7,7 @@ export const listPending = query({
   handler: async (ctx, args) => {
     return await ctx.db
       .query("explorerOps")
-      .withIndex("by_projectId_status", (q) =>
-        q.eq("projectId", args.projectId).eq("status", "pending"),
-      )
+      .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", "pending"))
       .collect()
   },
 })
@@ -23,9 +21,7 @@ export const getByFilePath = query({
   handler: async (ctx, args) => {
     return await ctx.db
       .query("explorerOps")
-      .withIndex("by_projectId_filePath", (q) =>
-        q.eq("projectId", args.projectId).eq("filePath", args.filePath),
-      )
+      .withIndex("by_projectId_filePath", (q) => q.eq("projectId", args.projectId).eq("filePath", args.filePath))
       .first()
   },
 })
@@ -53,9 +49,7 @@ export const stageCreate = mutation({
     // Check for existing pending op at this filePath
     const existingOp = await ctx.db
       .query("explorerOps")
-      .withIndex("by_projectId_filePath", (q) =>
-        q.eq("projectId", args.projectId).eq("filePath", args.filePath),
-      )
+      .withIndex("by_projectId_filePath", (q) => q.eq("projectId", args.projectId).eq("filePath", args.filePath))
       .filter((q) => q.eq(q.field("status"), "pending"))
       .first()
     if (existingOp) {
@@ -65,9 +59,7 @@ export const stageCreate = mutation({
     // Check for existing document at this filePath
     const existingDoc = await ctx.db
       .query("documents")
-      .withIndex("by_projectId_filePath", (q) =>
-        q.eq("projectId", args.projectId).eq("filePath", args.filePath),
-      )
+      .withIndex("by_projectId_filePath", (q) => q.eq("projectId", args.projectId).eq("filePath", args.filePath))
       .first()
 
     const now = Date.now()
@@ -81,9 +73,7 @@ export const stageCreate = mutation({
           publishedAt: undefined,
           ...(args.title ? { title: args.title } : {}),
           ...(args.initialBody !== undefined ? { body: args.initialBody } : {}),
-          ...(args.initialFrontmatter !== undefined
-            ? { frontmatter: args.initialFrontmatter }
-            : {}),
+          ...(args.initialFrontmatter !== undefined ? { frontmatter: args.initialFrontmatter } : {}),
           updatedAt: now,
         })
       } else {
@@ -155,9 +145,7 @@ export const stageDelete = mutation({
     // Check for existing pending op at this path
     const existingOp = await ctx.db
       .query("explorerOps")
-      .withIndex("by_projectId_filePath", (q) =>
-        q.eq("projectId", args.projectId).eq("filePath", args.filePath),
-      )
+      .withIndex("by_projectId_filePath", (q) => q.eq("projectId", args.projectId).eq("filePath", args.filePath))
       .filter((q) => q.eq(q.field("status"), "pending"))
       .first()
     if (existingOp) {
@@ -212,9 +200,7 @@ export const undoOp = mutation({
     if (op.opType === "create") {
       const doc = await ctx.db
         .query("documents")
-        .withIndex("by_projectId_filePath", (q) =>
-          q.eq("projectId", op.projectId).eq("filePath", op.filePath),
-        )
+        .withIndex("by_projectId_filePath", (q) => q.eq("projectId", op.projectId).eq("filePath", op.filePath))
         .first()
       if (doc && doc.status === "draft") {
         await ctx.db.delete(doc._id)
@@ -255,9 +241,7 @@ export const clearCommittedForProject = mutation({
   handler: async (ctx, args) => {
     const committed = await ctx.db
       .query("explorerOps")
-      .withIndex("by_projectId_status", (q) =>
-        q.eq("projectId", args.projectId).eq("status", "committed"),
-      )
+      .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", "committed"))
       .collect()
     for (const op of committed) {
       await ctx.db.delete(op._id)

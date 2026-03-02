@@ -1,4 +1,4 @@
-import * as React from "react"
+import type * as React from "react"
 import {
   ContextMenu,
   ContextMenuContent,
@@ -32,7 +32,7 @@ export function FileContextMenu({
   onDelete,
   onNewFile,
   onCollapseAll,
-  disabled
+  disabled,
 }: FileContextMenuProps) {
   if (disabled) return <>{children}</>
 

@@ -371,20 +371,159 @@ type: "string" | "number" | "boolean" | "expression" | "image";
 
 _Generated: March 2026_
 
+## Part 5: Phase 2 — Two-Way Component Authoring (Delivered)
+
+### What Was Implemented
+
+Phase 2 delivers **schema-driven component insertion** with a full pipeline from component registry through to MDX serialization, plus Blob-primary media upload with GitHub fallback.
+
+#### Architecture: Registry → Catalog → Node → Serializer
+
+```
+repopress.config.json + adapter
+         │
+         ▼
+┌─────────────────────────────────┐
+│   Component Registry            │  lib/studio/component-registry.ts
+│   buildComponentRegistry()      │  Single runtime source of truth.
+│   Merges config + adapter defs. │  Outputs: Record<string, RepoComponentDef>
+│   Source tracking: config /     │
+│   adapter / merged.             │
+│   Derives capability flags.     │
+└────────────┬────────────────────┘
+             │
+             ▼
+┌─────────────────────────────────┐
+│   Component Catalog             │  lib/studio/component-catalog.ts
+│   buildComponentCatalog()       │  Read-only UI projection.
+│   Sorted alphabetically.        │  Never mutates registry.
+└────────────┬────────────────────┘
+             │  (user picks a component)
+             ▼
+┌─────────────────────────────────┐
+│   Component Prop Form           │  components/studio/component-prop-form.tsx
+│   Dynamic typed controls per    │  string/number/boolean/expression/image
+│   prop definition.              │  Image props support upload via Blob/GitHub.
+│   Children textarea when        │
+│   hasChildren is true.          │
+└────────────┬────────────────────┘
+             │  (user fills in form → PropFormState)
+             ▼
+┌─────────────────────────────────┐
+│   Component Node Builder        │  lib/studio/component-node.ts
+│   buildComponentNode()          │  Intermediate model between form
+│   Resolves defaults, coerces    │  state and serializer.
+│   types, filters empty values.  │  Only input the serializer accepts.
+└────────────┬────────────────────┘
+             │
+             ▼
+┌─────────────────────────────────┐
+│   Component Serializer          │  lib/studio/component-serializer.ts
+│   serializeComponentNode()      │  Deterministic JSX output.
+│   Lexicographic prop ordering.  │  Self-closing = single-line.
+│   Type-specific formatting.     │  Children = open/close tags.
+└────────────┬────────────────────┘
+             │
+             ▼
+    insertJsx$ → content change → preview re-render
+```
+
+#### Key Types
+
+- `RepoComponentPropType` — `"string" | "number" | "boolean" | "expression" | "image"`
+- `RepoComponentPropDef` — `{ name, type, label?, default? }`
+- `RepoComponentCapabilityFlags` — `{ inline?, media?, configurable? }`
+- `RepoComponentDef` — `{ name, version?, displayName?, description?, props, hasChildren, kind, source, capabilities? }`
+- `ComponentNode` — `{ name, kind, props, hasChildren, children? }`
+
+#### Registry Merge Strategy
+
+| Scenario     | Source      | Props from    |
+| ------------ | ----------- | ------------- |
+| Config only  | `"config"`  | Config        |
+| Adapter only | `"adapter"` | Adapter       |
+| Both present | `"merged"`  | Config (wins) |
+
+#### Component Insert Modal (Two-Step)
+
+1. **Pick** — Catalog list sorted alphabetically, badges for source (Config/Adapter/Merged), icons for capability (media/inline/configurable).
+2. **Configure** — Dynamic prop form. Components with no props and no children insert immediately (skip step 2).
+
+Insert flow enforces the sync contract:
+
+```
+form → ComponentNode → serializer → insertJsx$ → MDAST change → content change → preview update
+```
+
+Preview updates **only** derive from MDX source state changes. No direct preview mutation.
+
+#### Blob-Primary Media Upload
+
+- Route: `POST /api/media/upload`
+- Strategy: `storagePreference` param — `"auto"` (Blob first, GitHub fallback), `"blob"` (fail if unavailable), `"github"` (force GitHub).
+- Client helper: `uploadMedia()` in `lib/studio/media-upload.ts`.
+- Integrated in: editor image plugin handler + image prop control in component form.
+
+#### Runtime Diagnostics
+
+- `validateProps()` in `repo-jsx-bridge.tsx` — validates MDAST props against component schema.
+- Improved expression evaluation warnings — includes expression text, component name, prop name, reason.
+- Prop warning badges on hover overlay in WYSIWYG editor.
+- Warnings logged via `console.warn` with `[RepoPress]` prefix — never crashes.
+
+#### Feature Flag
+
+Set `NEXT_PUBLIC_COMPONENT_AUTHORING_V2=true` to enable the new modal-based component insertion. When unset or `false`, the toolbar button is hidden (original insertion behavior removed; set the flag to enable).
+
+#### Test Coverage
+
+- 65 unit tests across 4 test files covering registry, catalog, node, and serializer.
+- Integration test covering the full pipeline (registry → catalog → node → serializer round-trip).
+- All tests run via `npm test` (vitest).
+
+#### Files Created
+
+| File                                           | Purpose                                   |
+| ---------------------------------------------- | ----------------------------------------- |
+| `lib/studio/component-registry.ts`             | Registry types + buildComponentRegistry() |
+| `lib/studio/component-catalog.ts`              | Catalog projection + getComponentLabel()  |
+| `lib/studio/component-node.ts`                 | ComponentNode type + buildComponentNode() |
+| `lib/studio/component-serializer.ts`           | Deterministic JSX serializer              |
+| `lib/studio/media-upload.ts`                   | Client upload helper (Blob/GitHub)        |
+| `components/studio/component-prop-form.tsx`    | Dynamic typed prop form                   |
+| `components/studio/component-insert-modal.tsx` | Two-step insert modal                     |
+| `app/api/media/upload/route.ts`                | Media upload API route                    |
+| `lib/studio/__tests__/*.test.ts`               | Unit + integration tests                  |
+
+#### Files Modified
+
+| File                                          | Change                                                                         |
+| --------------------------------------------- | ------------------------------------------------------------------------------ |
+| `components/studio/insert-repo-component.tsx` | Replaced dropdown with modal trigger, source-mode detection, feature flag gate |
+| `components/studio/editor.tsx`                | Image upload uses uploadMedia()                                                |
+| `components/studio/repo-jsx-bridge.tsx`       | Prop validation, improved warnings                                             |
+| `package.json`                                | Added vitest, @vercel/blob, test scripts                                       |
+
+---
+
 ## GEMINI Findings: Phase 2 Architecture & Implementation State
 
 During the deep architectural analysis, several critical insights were identified that will shape the Phase 2 implementation.
 
 ### 1. Critical Bug Identified: Editor Remounting
+
 In `components/studio/editor.tsx`, the `ForwardRefEditor` is passed `key={sanitizedContent}`. This causes the entire MDXEditor component to unmount and re-mount on **every single keystroke**, resulting in severe performance degradation and occasional focus loss. This must be fixed by using a stable identifier like `selectedFile.path`.
 
 ### 2. Architectural Foundational: `RepoJsxBridge`
-A powerful architectural bridge already exists in `components/studio/repo-jsx-bridge.tsx`. This component successfully bridges the `MDAST` node attributes to the "Live" evaluated components from the repository adapter. This means RepoPress is already capable of rendering repository-native UI *within* the editing surface, which is the primary requirement for a visual "Two-Way" system.
+
+A powerful architectural bridge already exists in `components/studio/repo-jsx-bridge.tsx`. This component successfully bridges the `MDAST` node attributes to the "Live" evaluated components from the repository adapter. This means RepoPress is already capable of rendering repository-native UI _within_ the editing surface, which is the primary requirement for a visual "Two-Way" system.
 
 ### 3. Resilient MDX Runtime
+
 The runtime implementation in `components/mdx-runtime/compileMdx.ts` is more sophisticated than initially thought. It surgically modifies the compiled MDX function body to replace hard `_missingMdxReference` throw statements with a fallback mechanism. This ensures that the editor remains stable even when a user inserts a component that isn't fully defined in the adapter.
 
 ### 4. Phase 2 Technical Direction
-*   **AST Synchronization:** To enable visual property editing, we must transition from string-based content updates to an AST-driven flow. This will allow the "Properties Panel" to update specific component attributes without re-compiling the entire document.
-*   **Visual Schema Mapper:** A missing link is an automated way to map adapter exports to `JsxComponentDescriptor`. Automating this discovery will allow RepoPress to support any repository component without manual configuration.
-*   **Expression Serialization:** We need a robust serializer for complex MDX expressions (e.g., `DOCS_SETUP_MEDIA.cloudflare`) to ensure that visual edits don't break valid JavaScript logic embedded in props.
+
+- **AST Synchronization:** To enable visual property editing, we must transition from string-based content updates to an AST-driven flow. This will allow the "Properties Panel" to update specific component attributes without re-compiling the entire document.
+- **Visual Schema Mapper:** A missing link is an automated way to map adapter exports to `JsxComponentDescriptor`. Automating this discovery will allow RepoPress to support any repository component without manual configuration.
+- **Expression Serialization:** We need a robust serializer for complex MDX expressions (e.g., `DOCS_SETUP_MEDIA.cloudflare`) to ensure that visual edits don't break valid JavaScript logic embedded in props.

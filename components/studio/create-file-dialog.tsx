@@ -31,9 +31,10 @@ export function CreateFileDialog({
   const [fileName, setFileName] = React.useState("")
 
   // Strip contentRoot from display path (string ops — no regex needed)
-  const displayPath = contentRoot && parentPath.startsWith(contentRoot)
-    ? parentPath.slice(contentRoot.length).replace(/^\//, "")
-    : parentPath
+  const displayPath =
+    contentRoot && parentPath.startsWith(contentRoot)
+      ? parentPath.slice(contentRoot.length).replace(/^\//, "")
+      : parentPath
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()

@@ -9,7 +9,8 @@ export const fumadocsAdapter: FrameworkAdapter = {
   fieldVariants: {},
   contentArchitecture: {
     hasConfigSchema: true,
-    architectureNote: "Fumadocs uses source.config.ts for content source definitions and meta.json for sidebar ordering.",
+    architectureNote:
+      "Fumadocs uses source.config.ts for content source definitions and meta.json for sidebar ordering.",
   },
   fields: [
     ...UNIVERSAL_FIELDS,
