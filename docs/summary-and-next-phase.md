@@ -13,17 +13,22 @@ Use this section as the single quick-status index across all docs/plans files.
 | `docs/plans/2026-03-02-project-deletion-design.md` | Project deletion design | COMPLETE | Approved and implemented design | None |
 | `docs/plans/2026-03-02-project-deletion-implementation.md` | Project deletion execution | COMPLETE | Tasks 1-4 marked complete | None |
 | `docs/plans/2026-03-03-phase-2-two-way-component-authoring-plan.md` | Two-way component authoring | COMPLETE | Phases 1-5 delivered (registry/catalog/node/serializer, insert UX, Blob+fallback, diagnostics, tests/docs/flag) | Follow-up hardening items only (outside this plan) |
+| `docs/plans/2026-03-03-phase-2-starter-prompt.md` | Phase 2 execution prompt | ARCHIVED | Preserved as historical execution prompt for completed Phase 2 | Do not use for new work |
 | `docs/plans/2026-03-02-mdx-runtime-hardening-plan.md` | Runtime hardening backlog | IN PROGRESS | Plan and task structure defined | Tasks 1-6 execution and status updates |
+| `docs/plans/2026-03-03-mdx-runtime-hardening-handover-starter-prompt.md` | Hardening execution handover prompt | READY | Task-ordered prompt aligned to current baseline commit and verification gates | Execute Task 1, then Task 2 |
+| `docs/plans/2026-03-03-automation-backbone-and-daily-flow-plan.md` | Automation backbone and daily flow | PLANNED | Architecture decisions + task graph + rollout gates documented | Start with Decision A+B / shared publish service extraction |
 
 ### Current Active Workstream
 
 1. Runtime hardening, especially private-asset and media flow hardening for private repos (hybrid path: PR-staged media + preview-safe resolution).
-2. History schema alignment (`documentHistory.editedBy`) to remove attribution inconsistency.
+2. Execute hardening handover prompt (`docs/plans/2026-03-03-mdx-runtime-hardening-handover-starter-prompt.md`) starting at Task 1.
+3. History schema alignment (`documentHistory.editedBy`) to remove attribution inconsistency.
+4. Automation backbone remains planned and not yet started.
 
 ### Documentation Organization Rules
 
 1. Keep implementation status in the originating plan file plus this tracker.
-2. Keep execution prompts in `docs/plans/STARTER_PROMPT.md` and phase-specific starter prompt files.
+2. Keep execution prompts in `docs/plans/STARTER_PROMPT.md` and phase-specific starter prompt files. Mark superseded prompts as archived to prevent accidental reuse.
 3. Do not create duplicate plan files for the same scope; update status in place.
 
 ## Part 1: History Implementation Summary (Core Delivered, Follow-ups Pending)

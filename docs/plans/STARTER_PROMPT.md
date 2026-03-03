@@ -1,5 +1,8 @@
 # MDX Runtime Hardening — Starter Prompt
 
+> **Status:** LEGACY STARTER PROMPT  
+> Prefer: `docs/plans/2026-03-03-mdx-runtime-hardening-handover-starter-prompt.md` for current execution order and baseline alignment.
+
 > Use this prompt to begin implementation of the MDX Runtime Hardening plan.
 
 ---
