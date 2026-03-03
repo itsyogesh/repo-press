@@ -3,9 +3,9 @@
 > **Plan Version:** 1.0  
 > **Created:** 2026-03-02  
 > **Status:** IN PROGRESS
-> **Done:** Plan structure complete; Task 1 code/test/build completed and committed.
-> **Left:** Task 1 manual browser verification, then Tasks 2-6 execution and check-off.
-> **Last Audited:** 2026-03-03 (Task 1 updated with commit `6cbd6ab`)
+> **Done:** Plan structure complete; Task 1 and Task 2 are implemented, verified, and committed.
+> **Left:** Execute Tasks 3-6 and check-off.
+> **Last Audited:** 2026-03-03 (Task 2 updated with commit `c6d2d11`)
 > **Execution Prompt:** `docs/plans/2026-03-03-mdx-runtime-hardening-handover-starter-prompt.md`
 > **Baseline Commit Before Task Execution:** `4da9b6b`
 
@@ -90,7 +90,7 @@ Replace in-memory adapter cache with IndexedDB for persistence across sessions. 
 | 1.3 Invalidation strategy  | DONE    | SHA-keyed entries + startup prune + stale entry eviction on read |
 | Lint pass                  | DONE    | `npx biome check` passes (repo has existing non-blocking warnings) |
 | Typecheck pass             | DONE    | `npx tsc --noEmit` passed |
-| Manual test                | PENDING | Browser verification for adapter reload/cache reuse still pending |
+| Manual test                | DONE    | Verified in Studio on localhost:3001 (open project, reload/switch files, no new runtime errors) |
 | Build pass                 | DONE    | `npm run build` passed |
 | Commit                     | DONE    | `6cbd6ab` |
 
@@ -150,14 +150,14 @@ Add debounce to adapter/plugin loading and implement rate limiting for GitHub AP
 
 | Step                      | Status  | Notes |
 | ------------------------- | ------- | ----- |
-| 2.1 Debounce loading      | PENDING |       |
-| 2.2 Rate limiting         | PENDING |       |
-| 2.3 Request deduplication | PENDING |       |
-| Lint pass                 | PENDING |       |
-| Typecheck pass            | PENDING |       |
-| Manual test               | PENDING |       |
-| Build pass                | PENDING |       |
-| Commit                    | PENDING |       |
+| 2.1 Debounce loading      | DONE    | Added 500ms debounce in `use-preview-context` before adapter/plugin load execution |
+| 2.2 Rate limiting         | DONE    | Added shared GitHub request controller with sliding-window queue + exponential-backoff retries for 403/429 |
+| 2.3 Request deduplication | DONE    | Added in-flight dedupe for adapter/plugin fetches in both client hook and server request controller |
+| Lint pass                 | DONE    | `npx biome check` passes (repo has existing non-blocking warnings) |
+| Typecheck pass            | DONE    | `npx tsc --noEmit` passed |
+| Manual test               | DONE    | Verified in Studio on localhost:3001 with rapid file switching and no new console errors |
+| Build pass                | DONE    | `npm run build` passed |
+| Commit                    | DONE    | `c6d2d11` |
 
 ---
 
@@ -425,8 +425,8 @@ Make plugin context merging deterministic with defined precedence order.
 
 | Task                         | Status  | Commit | Notes |
 | ---------------------------- | ------- | ------ | ----- |
-| 1: Persistent Adapter Cache  | PARTIAL | `6cbd6ab` | Code + tests + typecheck + build complete; manual browser verification pending |
-| 2: Rate Limiting & Debounce  | PENDING | -      |       |
+| 1: Persistent Adapter Cache  | COMPLETE | `6cbd6ab` | Code + tests + typecheck + manual Studio check + build complete |
+| 2: Rate Limiting & Debounce  | COMPLETE | `c6d2d11` | Debounce + queue/retry + dedupe delivered with tests and manual Studio validation |
 | 3: Private Asset URL Signing | PENDING | -      |       |
 | 4: Expression Sandbox        | PENDING | -      |       |
 | 5: Compile Cache             | PENDING | -      |       |
