@@ -1,6 +1,7 @@
 import { v } from "convex/values"
 import { mutation, query } from "./_generated/server"
 import { authComponent } from "./auth"
+import { buildRestoreVersionMutation } from "./documentHistory-restore"
 
 export const listByDocument = query({
   args: { documentId: v.id("documents") },
@@ -75,23 +76,19 @@ export const restoreVersion = mutation({
     }
 
     const now = Date.now()
-
-    // Insert a new history entry representing the restored content
-    await ctx.db.insert("documentHistory", {
+    const restoreMutation = buildRestoreVersionMutation({
       documentId: document._id,
       body: historyEntry.body,
       frontmatter: historyEntry.frontmatter,
       editedBy: userId,
-      message: `Restored to version from ${new Date(historyEntry.createdAt).toISOString()}`,
-      changeType: "patch",
-      createdAt: now,
+      historyCreatedAt: historyEntry.createdAt,
+      now,
     })
 
-    await ctx.db.patch(document._id, {
-      body: historyEntry.body,
-      frontmatter: historyEntry.frontmatter,
-      updatedAt: now,
-    })
+    // Insert a new history entry representing the restored content
+    await ctx.db.insert("documentHistory", restoreMutation.historyInsert)
+
+    await ctx.db.patch(document._id, restoreMutation.documentPatch)
 
     return document._id
   },

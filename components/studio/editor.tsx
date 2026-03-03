@@ -27,6 +27,7 @@ import "./mdxeditor-theme.css"
 import type { FieldVariantMap, FrontmatterFieldDef } from "@/lib/framework-adapters"
 import { resolveStudioAssetUrl } from "@/lib/studio/media-resolve"
 import { uploadMedia } from "@/lib/studio/media-upload"
+import { shouldResetEditorBoundary } from "./editor-error-boundary-utils"
 import { EditorErrorFallback } from "./error-boundary"
 import { ForwardRefEditor } from "./forward-ref-editor"
 import { FrontmatterPanel } from "./frontmatter-panel"
@@ -59,7 +60,7 @@ class EditorErrorBoundary extends React.Component<
 
   componentDidUpdate(prevProps: { children: React.ReactNode; fallback: React.ReactNode; resetKey: string }): void {
     // Reset only when content/file context changes, not on every render while crashing.
-    if (this.state.hasError && prevProps.resetKey !== this.props.resetKey) {
+    if (shouldResetEditorBoundary(this.state.hasError, prevProps.resetKey, this.props.resetKey)) {
       this.setState({ hasError: false })
     }
   }
