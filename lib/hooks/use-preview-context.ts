@@ -3,6 +3,12 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { fetchAdapterSourceAction } from "@/app/dashboard/[owner]/[repo]/adapter-actions"
 import { fetchPluginAction } from "@/app/dashboard/[owner]/[repo]/plugin-actions"
+import {
+  buildAdapterCacheKey,
+  getCachedAdapter,
+  pruneExpiredAdapterCache,
+  setCachedAdapter,
+} from "@/lib/repopress/adapter-cache"
 import { transpileAdapter } from "@/lib/repopress/esbuild-browser"
 import { evaluateAdapter, type RepoPressPreviewAdapter } from "@/lib/repopress/evaluate-adapter"
 import { standardComponents } from "@/lib/repopress/standard-library"
@@ -23,6 +29,15 @@ interface UsePreviewContextResult {
   diagnostics: string[]
 }
 
+function hashSource(source: string) {
+  let hash = 0
+  for (let i = 0; i < source.length; i += 1) {
+    hash = (hash << 5) - hash + source.charCodeAt(i)
+    hash |= 0
+  }
+  return String(hash >>> 0)
+}
+
 export function usePreviewContext({
   owner,
   repo,
@@ -38,6 +53,8 @@ export function usePreviewContext({
   const [diagnostics, setDiagnostics] = useState<string[]>([])
 
   const lastAdapterSourceRef = useRef<string | null>(null)
+  const lastAdapterShaRef = useRef<string | null>(null)
+  const didPruneCacheRef = useRef(false)
 
   useEffect(() => {
     let isMounted = true
@@ -48,18 +65,35 @@ export function usePreviewContext({
       const newDiagnostics: string[] = []
 
       try {
+        if (!didPruneCacheRef.current) {
+          didPruneCacheRef.current = true
+          await pruneExpiredAdapterCache()
+        }
+
         // 1. Load Main Adapter
-        let resolvedAdapter = adapter
         if (adapterPath) {
           const result = await fetchAdapterSourceAction(owner, repo, branch, adapterPath)
           if (isMounted) {
             if (result.success && result.source) {
-              if (result.source !== lastAdapterSourceRef.current) {
+              const sourceSha = result.sha || hashSource(result.source)
+              const cacheKey = buildAdapterCacheKey(owner, repo, branch, adapterPath, sourceSha)
+              const sourceChanged =
+                result.source !== lastAdapterSourceRef.current || sourceSha !== lastAdapterShaRef.current
+
+              if (sourceChanged) {
                 try {
-                  const transpiled = await transpileAdapter(result.source)
-                  resolvedAdapter = evaluateAdapter(transpiled)
-                  setAdapter(resolvedAdapter)
+                  let transpiled = await getCachedAdapter(cacheKey, sourceSha)
+                  if (!transpiled) {
+                    transpiled = await transpileAdapter(result.source)
+                    await setCachedAdapter({
+                      key: cacheKey,
+                      sourceSha,
+                      transpiledCode: transpiled,
+                    })
+                  }
+                  setAdapter(evaluateAdapter(transpiled))
                   lastAdapterSourceRef.current = result.source
+                  lastAdapterShaRef.current = sourceSha
                 } catch (e: any) {
                   newDiagnostics.push(`Failed to evaluate adapter at ${adapterPath}: ${e.message}`)
                   setAdapter(null)
@@ -68,11 +102,13 @@ export function usePreviewContext({
             } else if (!result.success) {
               newDiagnostics.push(`Adapter missing or failed at ${adapterPath}: ${result.error}`)
               setAdapter(null)
+              lastAdapterShaRef.current = null
             }
           }
         } else {
           setAdapter(null)
           lastAdapterSourceRef.current = null
+          lastAdapterShaRef.current = null
         }
 
         // 2. Load Plugins
@@ -130,7 +166,7 @@ export function usePreviewContext({
     return () => {
       isMounted = false
     }
-  }, [owner, repo, branch, adapterPath, JSON.stringify(enabledPlugins), JSON.stringify(pluginRegistry)])
+  }, [owner, repo, branch, adapterPath, enabledPlugins, pluginRegistry])
 
   const mergedContext = useMemo(() => {
     const result: RepoPressPreviewAdapter = {
