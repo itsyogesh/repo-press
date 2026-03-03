@@ -463,6 +463,23 @@ function StudioLayoutInner({
     fieldVariants,
   } = studioQueries
 
+  const hydratedForPath = React.useRef<string | null>(null)
+
+  React.useEffect(() => {
+    const selectedPath = selectedFile?.path ?? null
+    if (!selectedPath) {
+      hydratedForPath.current = null
+      return
+    }
+    if (!document || hydratedForPath.current === selectedPath) return
+
+    const draftStatuses = new Set(["draft", "in_review", "approved"])
+    if (draftStatuses.has(document.status)) {
+      hydrateFromDocument(document)
+    }
+    hydratedForPath.current = selectedPath
+  }, [document, selectedFile?.path, hydrateFromDocument])
+
   // Explorer mutations
   const stageCreate = useMutation(api.explorerOps.stageCreate)
   const stageDelete = useMutation(api.explorerOps.stageDelete)
@@ -612,11 +629,163 @@ function StudioLayoutInner({
     }
   }, [pendingOps, userId, undoOp])
 
+  const resolveRelocatePayload = React.useCallback(
+    async (oldPath: string) => {
+      const selectedPath = selectedFile?.path
+      if (selectedPath === oldPath) {
+        const currentFrontmatter = (frontmatter || {}) as Record<string, unknown>
+        const title =
+          typeof currentFrontmatter.title === "string" && currentFrontmatter.title.trim().length > 0
+            ? currentFrontmatter.title
+            : inferTitleFromPath(oldPath)
+
+        return {
+          body: content,
+          frontmatter: currentFrontmatter,
+          title,
+          previousSha: sha || undefined,
+          isFromPendingCreate: false,
+          pendingCreateOpId: undefined as Id<"explorerOps"> | undefined,
+        }
+      }
+
+      const pendingCreateOp = pendingOps?.find(
+        (op: any) => op.filePath === oldPath && op.opType === "create" && op.status === "pending",
+      )
+      if (pendingCreateOp) {
+        const pendingFrontmatter = (pendingCreateOp.initialFrontmatter || {}) as Record<string, unknown>
+        const title =
+          typeof pendingFrontmatter.title === "string" && pendingFrontmatter.title.trim().length > 0
+            ? pendingFrontmatter.title
+            : inferTitleFromPath(oldPath)
+
+        return {
+          body: pendingCreateOp.initialBody || "",
+          frontmatter: pendingFrontmatter,
+          title,
+          previousSha: undefined,
+          isFromPendingCreate: true,
+          pendingCreateOpId: pendingCreateOp._id as Id<"explorerOps">,
+        }
+      }
+
+      const params = new URLSearchParams({
+        owner,
+        repo,
+        path: oldPath,
+        branch,
+      })
+      const response = await fetch(`/api/github/file?${params.toString()}`)
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}))
+        throw new Error(payload.error || `Failed to load file content (${response.status})`)
+      }
+
+      const payload = (await response.json()) as { content: string; sha: string }
+      const parsed = matter(payload.content || "")
+      const parsedFrontmatter = (parsed.data || {}) as Record<string, unknown>
+      const title =
+        typeof parsedFrontmatter.title === "string" && parsedFrontmatter.title.trim().length > 0
+          ? parsedFrontmatter.title
+          : inferTitleFromPath(oldPath)
+
+      return {
+        body: parsed.content || "",
+        frontmatter: parsedFrontmatter,
+        title,
+        previousSha: payload.sha || undefined,
+        isFromPendingCreate: false,
+        pendingCreateOpId: undefined as Id<"explorerOps"> | undefined,
+      }
+    },
+    [selectedFile?.path, frontmatter, content, sha, pendingOps, owner, repo, branch],
+  )
+
   const stageRelocateFile = React.useCallback(
     async (oldPath: string, newPath: string, actionLabel: "renamed" | "moved") => {
-      // Logic for moving/renaming (re-implemented correctly or abstracted)
+      if (!projectId || !userId) return
+      if (!oldPath || !newPath || oldPath === newPath) return
+
+      const oldNode = findTreeNodeByPath(overlayTree, oldPath)
+      const oldName = oldPath.split("/").pop() || oldPath
+      const newName = newPath.split("/").pop() || newPath
+
+      try {
+        const payload = await resolveRelocatePayload(oldPath)
+        const createOpId = await stageCreate({
+          projectId: projectId as Id<"projects">,
+          userId,
+          filePath: newPath,
+          title: payload.title || inferTitleFromPath(newPath),
+          initialBody: payload.body,
+          initialFrontmatter: payload.frontmatter,
+        })
+
+        if (payload.isFromPendingCreate && payload.pendingCreateOpId) {
+          try {
+            await undoOp({ id: payload.pendingCreateOpId, userId })
+          } catch (error) {
+            await undoOp({ id: createOpId, userId }).catch(() => {})
+            throw error
+          }
+        } else {
+          let deleteOpId: Id<"explorerOps">
+          try {
+            deleteOpId = await stageDelete({
+              projectId: projectId as Id<"projects">,
+              userId,
+              filePath: oldPath,
+              previousSha: oldNode?.sha || payload.previousSha,
+            })
+          } catch (error) {
+            await undoOp({ id: createOpId, userId }).catch(() => {})
+            throw error
+          }
+
+          toast(`File staged for ${actionLabel}`, {
+            action: {
+              label: "Undo",
+              onClick: async () => {
+                try {
+                  await undoOp({ id: deleteOpId, userId })
+                  await undoOp({ id: createOpId, userId })
+                  toast.success(`${actionLabel === "renamed" ? "Rename" : "Move"} undone`)
+                } catch {
+                  toast.error("Failed to undo file operation")
+                }
+              },
+            },
+          })
+        }
+
+        primeFileSnapshot(newPath, {
+          content: payload.body,
+          frontmatter: payload.frontmatter,
+          sha: null,
+        })
+
+        if (selectedFile?.path === oldPath) {
+          navigateToFile(newPath)
+        }
+
+        toast.success(`${oldName} ${actionLabel} to ${newName}`)
+      } catch (error: any) {
+        console.error(`Error ${actionLabel} file:`, error)
+        toast.error(error.message || `Failed to ${actionLabel} file`)
+      }
     },
-    [],
+    [
+      projectId,
+      userId,
+      overlayTree,
+      resolveRelocatePayload,
+      stageCreate,
+      stageDelete,
+      undoOp,
+      selectedFile?.path,
+      primeFileSnapshot,
+      navigateToFile,
+    ],
   )
 
   const handleRenameFile = React.useCallback(
@@ -974,6 +1143,8 @@ function StudioLayoutInner({
                       owner={owner}
                       repo={repo}
                       branch={branch}
+                      projectId={projectId}
+                      userId={userId}
                       filePath={selectedFile.path}
                       contentRoot={contentRoot}
                       tree={overlayTree}
@@ -1102,9 +1273,7 @@ function StudioLayoutInner({
                       content={content}
                       frontmatter={frontmatter}
                       fieldVariants={fieldVariants}
-                      owner={owner}
-                      repo={repo}
-                      branch={branch}
+                      projectId={projectId}
                       scrollContainerRef={previewScrollRef}
                       onScroll={handlePreviewScroll}
                       adapter={adapter}

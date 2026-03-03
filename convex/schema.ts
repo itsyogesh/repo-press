@@ -289,6 +289,29 @@ export default defineSchema({
     .index("by_projectId_status", ["projectId", "status"])
     .index("by_projectId_filePath", ["projectId", "filePath"]),
 
+  // ─── Media Ops (staged media writes for PR-based publish) ──────────────
+  mediaOps: defineTable({
+    projectId: v.id("projects"),
+    userId: v.string(),
+    repoPath: v.string(),
+    fileName: v.string(),
+    mimeType: v.string(),
+    sizeBytes: v.optional(v.number()),
+    sourceType: v.union(v.literal("blob"), v.literal("githubBranch")),
+    blobUrl: v.optional(v.string()),
+    blobAccess: v.optional(v.union(v.literal("public"), v.literal("private"))),
+    githubBranch: v.optional(v.string()),
+    githubPath: v.optional(v.string()),
+    githubSha: v.optional(v.string()),
+    status: v.union(v.literal("pending"), v.literal("committed"), v.literal("undone"), v.literal("failed")),
+    commitSha: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_projectId", ["projectId"])
+    .index("by_projectId_status", ["projectId", "status"])
+    .index("by_projectId_repoPath", ["projectId", "repoPath"]),
+
   // ─── Publish Branches (PR-based publish workflow) ─────────────────
   publishBranches: defineTable({
     projectId: v.id("projects"),

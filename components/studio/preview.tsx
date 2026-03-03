@@ -7,8 +7,9 @@ import { PreviewStatus } from "@/components/mdx-runtime/PreviewStatus"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import type { FieldVariantMap } from "@/lib/framework-adapters"
-import { buildGitHubRawUrl, resolveFieldValue } from "@/lib/framework-adapters"
+import { resolveFieldValue } from "@/lib/framework-adapters"
 import type { RepoPressPreviewAdapter } from "@/lib/repopress/evaluate-adapter"
+import { resolveStudioAssetUrl } from "@/lib/studio/media-resolve"
 import { cn } from "@/lib/utils"
 
 import { DeviceFrame } from "./device-frame"
@@ -18,9 +19,7 @@ interface PreviewProps {
   content: string
   frontmatter: Record<string, any>
   fieldVariants?: FieldVariantMap
-  owner: string
-  repo: string
-  branch: string
+  projectId?: string
   scrollContainerRef?: React.RefObject<HTMLDivElement | null>
   onScroll?: () => void
   adapter?: RepoPressPreviewAdapter | null
@@ -31,9 +30,7 @@ export function Preview({
   content,
   frontmatter,
   fieldVariants,
-  owner,
-  repo,
-  branch,
+  projectId,
   scrollContainerRef,
   onScroll,
   adapter,
@@ -61,7 +58,7 @@ export function Preview({
   const tags = resolveFieldValue(frontmatter, "tags", fieldVariants) as string[] | undefined
   const author = resolveFieldValue(frontmatter, "author", fieldVariants) as string | undefined
 
-  const image = rawImage ? buildGitHubRawUrl(rawImage, owner, repo, branch) : undefined
+  const image = rawImage ? resolveStudioAssetUrl(rawImage, projectId) : undefined
   const [imageError, setImageError] = React.useState(false)
 
   // Reset image error when image URL changes
@@ -71,8 +68,8 @@ export function Preview({
 
   // Stabilize the asset resolver to prevent infinite re-renders in PreviewRuntime
   const resolveAssetUrl = React.useMemo(() => {
-    return (path: string) => buildGitHubRawUrl(path, owner, repo, branch)
-  }, [owner, repo, branch])
+    return (path: string) => resolveStudioAssetUrl(path, projectId)
+  }, [projectId])
 
   // Escape exits full-screen
   React.useEffect(() => {

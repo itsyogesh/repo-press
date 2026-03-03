@@ -377,6 +377,7 @@ export const removeFull = mutation({
       "mediaAssets",
       "webhooks",
       "explorerOps",
+      "mediaOps",
       "publishBranches",
     ] as const
 

@@ -22,6 +22,49 @@ function hashSource(str: string) {
   return hash.toString()
 }
 
+function isRenderableComponent(value: unknown): value is React.ElementType {
+  if (typeof value === "function" || typeof value === "string") return true
+  if (!value || typeof value !== "object") return false
+  return "$$typeof" in (value as Record<string, unknown>)
+}
+
+function resolveAssetPropValue(value: unknown, resolveAssetUrl?: (path: string) => string) {
+  if (!resolveAssetUrl || typeof value !== "string" || !value.trim()) return value
+  return resolveAssetUrl(value)
+}
+
+function withResolvedMediaProps(props: any, resolveAssetUrl?: (path: string) => string) {
+  if (!props || !resolveAssetUrl) return props
+
+  let nextProps = props
+  const resolvedSrc = resolveAssetPropValue(props.src, resolveAssetUrl)
+  if (resolvedSrc !== props.src) {
+    nextProps = { ...nextProps, src: resolvedSrc }
+  }
+
+  const resolvedPoster = resolveAssetPropValue(props.poster, resolveAssetUrl)
+  if (resolvedPoster !== props.poster) {
+    nextProps = { ...nextProps, poster: resolvedPoster }
+  }
+
+  return nextProps
+}
+
+function withAssetResolver(component: React.ElementType, resolveAssetUrl?: (path: string) => string) {
+  return function AssetResolvedComponent(props: any) {
+    const resolvedProps = withResolvedMediaProps(props, resolveAssetUrl)
+
+    if (!resolveAssetUrl || typeof resolvedProps?.resolveAssetUrl === "function") {
+      return React.createElement(component, resolvedProps)
+    }
+
+    return React.createElement(component, {
+      ...resolvedProps,
+      resolveAssetUrl: (input: string) => resolveAssetUrl(input),
+    })
+  }
+}
+
 function PreviewSkeleton() {
   return (
     <div className="space-y-8 animate-pulse font-sans max-w-2xl mx-auto py-8 px-4 text-left">
@@ -243,6 +286,23 @@ export function PreviewRuntime({
             const src = props.src && resolveAssetUrl ? resolveAssetUrl(props.src) : props.src
             return <video {...props} src={src} className="rounded-lg border shadow-sm max-w-full" controls />
           },
+          img: (props) => {
+            const src = props.src && resolveAssetUrl ? resolveAssetUrl(props.src) : props.src
+            return <img {...props} src={src} alt={props.alt || ""} />
+          },
+          video: (props) => {
+            const src = props.src && resolveAssetUrl ? resolveAssetUrl(props.src) : props.src
+            const poster = props.poster && resolveAssetUrl ? resolveAssetUrl(props.poster) : props.poster
+            return <video {...props} src={src} poster={poster} />
+          },
+          source: (props) => {
+            const src = props.src && resolveAssetUrl ? resolveAssetUrl(props.src) : props.src
+            return <source {...props} src={src} />
+          },
+          audio: (props) => {
+            const src = props.src && resolveAssetUrl ? resolveAssetUrl(props.src) : props.src
+            return <audio {...props} src={src} />
+          },
           CopyIpsButton: (props) => (
             <button
               type="button"
@@ -321,9 +381,40 @@ export function PreviewRuntime({
           },
         }
 
+        const adapterComponents: Record<string, React.ComponentType<any>> = {}
+        for (const [name, component] of Object.entries(adapter?.components || {})) {
+          if (isRenderableComponent(component)) {
+            adapterComponents[name] = withAssetResolver(component, resolveAssetUrl)
+          }
+        }
+
+        const scopeComponents: Record<string, unknown> = {}
+        for (const [name, value] of Object.entries(adapter?.scope || {})) {
+          if (/^[A-Z]/.test(name) && isRenderableComponent(value)) {
+            scopeComponents[name] = withAssetResolver(value, resolveAssetUrl)
+          } else {
+            scopeComponents[name] = value
+          }
+        }
+
+        const importBindings: Record<string, unknown> = {}
+        for (const imported of imports || []) {
+          const exportMap = adapter?.allowImports?.[imported.source]
+          if (!exportMap) continue
+
+          const importedValue = exportMap[imported.imported]
+          if (importedValue === undefined) continue
+
+          if (/^[A-Z]/.test(imported.local) && isRenderableComponent(importedValue)) {
+            importBindings[imported.local] = withAssetResolver(importedValue, resolveAssetUrl)
+          } else {
+            importBindings[imported.local] = importedValue
+          }
+        }
+
         const componentsContext: Record<string, React.ComponentType<any>> = {
           ...standardComponents,
-          ...(adapter?.components || {}),
+          ...adapterComponents,
         }
 
         const missingRef = new Set<string>()
@@ -383,7 +474,8 @@ export function PreviewRuntime({
 
         const mergedScope: Record<string, any> = {
           ...componentsContext,
-          ...(adapter?.scope || {}),
+          ...scopeComponents,
+          ...importBindings,
           FIXIE_IPS: {
             PRIMARY: "52.5.155.132",
             SECONDARY: "52.87.82.133",

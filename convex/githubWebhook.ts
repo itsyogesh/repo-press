@@ -42,6 +42,15 @@ export const handlePRMerged = mutation({
       await ctx.db.delete(op._id)
     }
 
+    const committedMediaOps = await ctx.db
+      .query("mediaOps")
+      .withIndex("by_projectId_status", (q) => q.eq("projectId", projectId).eq("status", "committed"))
+      .collect()
+
+    for (const op of committedMediaOps) {
+      await ctx.db.delete(op._id)
+    }
+
     // 4. If no committed file paths were recorded, skip publishing (safe default)
     if (!committedPaths || committedPaths.length === 0) {
       return

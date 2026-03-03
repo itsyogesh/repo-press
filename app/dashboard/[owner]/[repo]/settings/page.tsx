@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import { api } from "@/convex/_generated/api"
+import type { Doc } from "@/convex/_generated/dataModel"
 import { fetchAuthQuery, getGitHubToken } from "@/lib/auth-server"
 
 interface SettingsPageProps {
@@ -26,11 +27,23 @@ export default async function SettingsPage({ params }: SettingsPageProps) {
 
   const { owner, repo } = await params
 
-  // Fetch projects for this repo
-  const projects = await fetchAuthQuery!(api.projects.listMyProjectsForRepo, {
-    repoOwner: owner,
-    repoName: repo,
-  })
+  let projects: Doc<"projects">[] = []
+  let settingsLoadError: string | null = null
+
+  if (!fetchAuthQuery) {
+    settingsLoadError =
+      "Settings requires Better Auth server helpers. PAT-only mode can still edit and publish in Studio, but project settings are unavailable in this deployment."
+  } else {
+    try {
+      projects = await fetchAuthQuery(api.projects.listMyProjectsForRepo, {
+        repoOwner: owner,
+        repoName: repo,
+      })
+    } catch (error) {
+      console.error("Failed to load repository settings projects:", error)
+      settingsLoadError = "Failed to load project settings. Please refresh or re-authenticate and try again."
+    }
+  }
 
   return (
     <div className="container mx-auto py-8 px-4 max-w-5xl">
@@ -62,7 +75,19 @@ export default async function SettingsPage({ params }: SettingsPageProps) {
         </div>
 
         <div className="grid gap-6">
-          {projects && projects.length > 0 ? (
+          {settingsLoadError ? (
+            <Card className="overflow-hidden border-amber-300 bg-amber-50/30 shadow-sm">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg">Settings unavailable</CardTitle>
+                <CardDescription>{settingsLoadError}</CardDescription>
+              </CardHeader>
+              <CardContent className="pt-0">
+                <Button variant="outline" asChild>
+                  <Link href={`/dashboard/${owner}/${repo}`}>Return to repository</Link>
+                </Button>
+              </CardContent>
+            </Card>
+          ) : projects.length > 0 ? (
             projects.map((project) => (
               <Card key={project._id} className="overflow-hidden border-studio-border bg-studio-canvas shadow-sm">
                 <CardHeader className="pb-4">

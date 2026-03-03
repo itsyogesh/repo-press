@@ -25,6 +25,7 @@ import "@mdxeditor/editor/style.css"
 import "./mdxeditor-theme.css"
 
 import type { FieldVariantMap, FrontmatterFieldDef } from "@/lib/framework-adapters"
+import { resolveStudioAssetUrl } from "@/lib/studio/media-resolve"
 import { uploadMedia } from "@/lib/studio/media-upload"
 import { EditorErrorFallback } from "./error-boundary"
 import { ForwardRefEditor } from "./forward-ref-editor"
@@ -98,6 +99,8 @@ interface EditorProps {
   owner: string
   repo: string
   branch: string
+  projectId?: string
+  userId?: string
   filePath?: string
   contentRoot?: string
   tree?: { path: string; type: string }[]
@@ -121,6 +124,8 @@ export function Editor({
   owner,
   repo,
   branch,
+  projectId,
+  userId,
   filePath = "",
   contentRoot: _contentRoot = "",
   tree = [],
@@ -147,12 +152,17 @@ export function Editor({
   const handleImageUpload = React.useCallback(
     async (file: File): Promise<string> => {
       try {
+        if (!projectId) {
+          throw new Error("Missing project context for media upload")
+        }
         const fileName = file.name || `image-${Date.now()}.png`
         const pathHint = getImageUploadPath(fileName).split("/").slice(0, -1).join("/")
 
         // Use Blob-first upload with GitHub fallback
         const result = await uploadMedia({
           file,
+          projectId,
+          userId,
           owner,
           repo,
           branch,
@@ -160,13 +170,13 @@ export function Editor({
           storagePreference: "auto",
         })
 
-        return result.url
+        return result.repoPath
       } catch (error) {
         console.error("Error uploading image:", error)
         throw error
       }
     },
-    [owner, repo, branch, getImageUploadPath],
+    [projectId, userId, owner, repo, branch, getImageUploadPath],
   )
 
   // Extract image paths from tree for autocomplete
@@ -175,6 +185,13 @@ export function Editor({
       .filter((node) => node.type === "file" && IMAGE_EXTENSIONS.some((ext) => node.path.toLowerCase().endsWith(ext)))
       .map((node) => node.path)
   }, [tree])
+
+  const handleImagePreview = React.useCallback(
+    async (imageSource: string): Promise<string> => {
+      return resolveStudioAssetUrl(imageSource, projectId)
+    },
+    [projectId],
+  )
 
   // Build MDXEditor plugins — memoized to avoid re-creating on every render
   const plugins = React.useMemo(
@@ -212,6 +229,7 @@ export function Editor({
       imagePlugin({
         imageUploadHandler: handleImageUpload,
         imageAutocompleteSuggestions,
+        imagePreviewHandler: handleImagePreview,
       }),
       directivesPlugin({
         directiveDescriptors: [AdmonitionDirectiveDescriptor, YouTubeDirectiveDescriptor],
@@ -224,10 +242,23 @@ export function Editor({
         viewMode: "rich-text",
       }),
       toolbarPlugin({
-        toolbarContents: () => <StudioToolbar owner={owner} repo={repo} branch={branch} />,
+        toolbarContents: () => (
+          <StudioToolbar owner={owner} repo={repo} branch={branch} projectId={projectId} userId={userId} />
+        ),
       }),
     ],
-    [handleImageUpload, imageAutocompleteSuggestions, adapter, componentSchema, owner, repo, branch],
+    [
+      handleImageUpload,
+      imageAutocompleteSuggestions,
+      handleImagePreview,
+      adapter,
+      componentSchema,
+      owner,
+      repo,
+      branch,
+      projectId,
+      userId,
+    ],
   )
 
   // Handle content change from editor

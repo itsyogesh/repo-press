@@ -22,7 +22,19 @@ const COMPONENT_AUTHORING_V2 = process.env.NEXT_PUBLIC_COMPONENT_AUTHORING_V2 ==
  * In source mode, shows a message asking the user to switch to rich-text
  * mode (source-cursor insertion is deferred per plan).
  */
-export function InsertRepoComponent({ owner, repo, branch }: { owner: string; repo: string; branch: string }) {
+export function InsertRepoComponent({
+  owner,
+  repo,
+  branch,
+  projectId,
+  userId,
+}: {
+  owner: string
+  repo: string
+  branch: string
+  projectId?: string
+  userId?: string
+}) {
   const { components: schema, adapter } = useStudioAdapter()
   const insertJsx = usePublisher(insertJsx$)
   const editorViewMode = useCellValue(viewMode$)
@@ -97,7 +109,7 @@ export function InsertRepoComponent({ owner, repo, branch }: { owner: string; re
         onOpenChange={setModalOpen}
         adapterComponents={adapter?.components}
         projectComponents={schema}
-        repoContext={{ owner, repo, branch }}
+        repoContext={projectId ? { projectId, userId, owner, repo, branch } : undefined}
         onInsert={handleInsert}
       />
     </>

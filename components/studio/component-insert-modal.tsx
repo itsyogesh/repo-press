@@ -32,6 +32,8 @@ interface ComponentInsertModalProps {
   projectComponents?: Record<string, any> | null
   /** Optional repo context for image uploads in prop form. */
   repoContext?: {
+    projectId: string
+    userId?: string
     owner: string
     repo: string
     branch: string

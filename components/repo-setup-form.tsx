@@ -97,16 +97,15 @@ export function RepoSetupForm({
 
       if (res.success) {
         toast.success("RepoPress initialized successfully! Committing config files...")
-        // Wait a bit for GitHub to reflect changes then sync
-        setTimeout(async () => {
-          await handleSyncFromConfig()
-        }, 2000)
+        // Wait for GitHub to surface the config commit before syncing projects.
+        await new Promise((resolve) => setTimeout(resolve, 2000))
+        await handleSyncFromConfig()
       } else {
         toast.error(res.error || "Failed to initialize RepoPress")
-        setIsInitializing(false)
       }
     } catch (err: any) {
       toast.error(err.message)
+    } finally {
       setIsInitializing(false)
     }
   }

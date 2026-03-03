@@ -17,7 +17,19 @@ import {
 } from "@mdxeditor/editor"
 import { InsertRepoComponent } from "./insert-repo-component"
 
-export function StudioToolbar({ owner, repo, branch }: { owner: string; repo: string; branch: string }) {
+export function StudioToolbar({
+  owner,
+  repo,
+  branch,
+  projectId,
+  userId,
+}: {
+  owner: string
+  repo: string
+  branch: string
+  projectId?: string
+  userId?: string
+}) {
   return (
     <DiffSourceToggleWrapper options={["rich-text", "source"]}>
       <div className="flex items-center gap-0.5 flex-wrap">
@@ -38,7 +50,7 @@ export function StudioToolbar({ owner, repo, branch }: { owner: string; repo: st
         <InsertThematicBreak />
         <InsertCodeBlock />
         <Separator />
-        <InsertRepoComponent owner={owner} repo={repo} branch={branch} />
+        <InsertRepoComponent owner={owner} repo={repo} branch={branch} projectId={projectId} userId={userId} />
       </div>
     </DiffSourceToggleWrapper>
   )

@@ -23,6 +23,8 @@ interface ComponentPropFormProps {
   onFormChange: (next: PropFormState) => void
   /** Optional repo context for image uploads. */
   repoContext?: {
+    projectId: string
+    userId?: string
     owner: string
     repo: string
     branch: string
@@ -97,6 +99,8 @@ function PropField({
   value: unknown
   onChange: (v: unknown) => void
   repoContext?: {
+    projectId: string
+    userId?: string
     owner: string
     repo: string
     branch: string
@@ -105,6 +109,7 @@ function PropField({
   const label = propDef.label ?? propDef.name
   const id = `prop-${propDef.name}`
   const [uploading, setUploading] = React.useState(false)
+  const [previewUrl, setPreviewUrl] = React.useState<string | null>(null)
 
   switch (propDef.type) {
     case "boolean":
@@ -162,13 +167,16 @@ function PropField({
         try {
           const result = await uploadMedia({
             file,
+            projectId: repoContext.projectId,
+            userId: repoContext.userId,
             owner: repoContext.owner,
             repo: repoContext.repo,
             branch: repoContext.branch,
             storagePreference: "auto",
           })
-          onChange(result.url)
-          toast.success(`Uploaded via ${result.storage}`)
+          onChange(result.repoPath)
+          setPreviewUrl(result.previewUrl)
+          toast.success(`Uploaded via ${result.storage}: ${result.repoPath}`)
         } catch (err) {
           toast.error(err instanceof Error ? err.message : "Upload failed")
         } finally {
@@ -211,6 +219,11 @@ function PropField({
               <ImageIcon className="h-3 w-3" />
               <span className="truncate">{value}</span>
             </div>
+          )}
+          {previewUrl && (
+            <p className="text-xs text-muted-foreground break-all">
+              Preview: <span className="font-mono">{previewUrl}</span>
+            </p>
           )}
         </div>
       )

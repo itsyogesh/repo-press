@@ -8,12 +8,13 @@
 // Usage:
 //   const result = await uploadMedia({
 //     file,
+//     projectId: "project_id",
 //     owner: "owner",
 //     repo: "repo",
 //     branch: "main",
 //     storagePreference: "auto", // "auto" | "blob" | "github"
 //   })
-//   // result.url contains the accessible URL (Blob or GitHub raw)
+//   // Persist result.repoPath in MDX src
 // ---------------------------------------------------------------------------
 
 export type StoragePreference = "auto" | "blob" | "github"
@@ -21,6 +22,10 @@ export type StoragePreference = "auto" | "blob" | "github"
 export interface UploadMediaOptions {
   /** The file to upload. */
   file: File
+  /** Project identifier used for ownership checks and staging records. */
+  projectId: string
+  /** Optional user ID fallback for PAT flows without auth session cookies. */
+  userId?: string
   /** Repository owner (username or org). */
   owner: string
   /** Repository name. */
@@ -36,14 +41,18 @@ export interface UploadMediaOptions {
 export interface UploadMediaResult {
   /** Which storage was used. */
   storage: "blob" | "github"
-  /** Accessible URL (Blob URL or GitHub raw URL). */
-  url: string
-  /** GitHub repo-relative path (only for GitHub storage). */
-  repoPath?: string
-  /** File SHA in GitHub (only for GitHub storage). */
-  sha?: string
-  /** Commit SHA (only for GitHub storage). */
-  commitSha?: string
+  /** Repo-relative path persisted in MDX (always present). */
+  repoPath: string
+  /** Auth-proxy preview URL for immediate rendering in Studio. */
+  previewUrl: string
+  /** Staging marker for publish-ops integration. */
+  staged: true
+  /** Media op identifier in Convex. */
+  mediaOpId: string
+  /** Optional diagnostics metadata from the server. */
+  diagnostics?: Record<string, string>
+  /** Backward compatibility alias for older callers. */
+  url?: string
 }
 
 /**
@@ -53,6 +62,8 @@ export interface UploadMediaResult {
  */
 export async function uploadMedia({
   file,
+  projectId,
+  userId,
   owner,
   repo,
   branch,
@@ -69,6 +80,8 @@ export async function uploadMedia({
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
+      projectId,
+      userId,
       owner,
       repo,
       branch,
@@ -84,5 +97,9 @@ export async function uploadMedia({
     throw new Error(error.error || "Failed to upload media")
   }
 
-  return response.json()
+  const result = (await response.json()) as UploadMediaResult
+  if (!result.url) {
+    result.url = result.previewUrl
+  }
+  return result
 }

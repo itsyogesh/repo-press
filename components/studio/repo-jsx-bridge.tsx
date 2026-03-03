@@ -2,6 +2,7 @@
 
 import React, { useMemo } from "react"
 import { REAL_DOCS_SETUP_MEDIA } from "@/lib/repopress/standard-library"
+import { resolveStudioAssetUrl } from "@/lib/studio/media-resolve"
 import { GenericJsxEditor } from "./jsx-component-descriptors"
 import { safeEvalJsExpression } from "./safe-jsx-prop-eval"
 import { useStudioAdapter } from "./studio-adapter-context"
@@ -59,7 +60,7 @@ function validateProps(componentName: string, props: Record<string, any>, schema
 }
 
 export function RepoJsxBridge({ mdastNode, descriptor }: RepoJsxBridgeProps) {
-  const { owner, repo, branch } = useStudio()
+  const { projectId } = useStudio()
   const { adapter, components: componentSchema } = useStudioAdapter()
 
   const Component = adapter?.components?.[descriptor.name]
@@ -102,16 +103,14 @@ export function RepoJsxBridge({ mdastNode, descriptor }: RepoJsxBridgeProps) {
 
     // Inject the asset resolver
     result.resolveAssetUrl = (path: string) => {
-      if (!path) return ""
-      if (path.startsWith("http")) return path
-      return `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${path.replace(/^\.\//, "")}`
+      return resolveStudioAssetUrl(path, projectId)
     }
 
     return {
       props: result,
       propWarnings: [...evalWarnings, ...schemaWarnings],
     }
-  }, [mdastNode, owner, repo, branch, adapter, descriptor.name, schema])
+  }, [mdastNode, projectId, adapter, descriptor.name, schema])
 
   // Log actionable warnings (non-crashing)
   React.useEffect(() => {

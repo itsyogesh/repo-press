@@ -1,152 +1,395 @@
 import { put } from "@vercel/blob"
+import { ConvexHttpClient } from "convex/browser"
 import { NextResponse } from "next/server"
-import { getGitHubToken } from "@/lib/auth-server"
+import { api } from "@/convex/_generated/api"
+import type { Id } from "@/convex/_generated/dataModel"
+import { fetchAuthQuery, getGitHubToken } from "@/lib/auth-server"
 import { createGitHubClient } from "@/lib/github"
+import { buildMediaResolveUrl, normalizeRepoMediaPath } from "@/lib/studio/media-resolve"
 
 export const runtime = "nodejs"
 
+const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
+
+type StoragePreference = "auto" | "blob" | "github"
+
 interface UploadRequest {
+  projectId?: string
+  userId?: string
   owner: string
   repo: string
   branch: string
   pathHint?: string
   fileName: string
   contentBase64: string
-  storagePreference: "auto" | "blob" | "github"
+  storagePreference?: StoragePreference
 }
 
 interface UploadResponse {
   storage: "blob" | "github"
+  repoPath: string
+  previewUrl: string
+  staged: true
+  mediaOpId: string
   url: string
-  repoPath?: string
+  diagnostics?: Record<string, string>
+}
+
+interface BlobUploadResult {
+  url: string
+  access: "public" | "private"
+}
+
+interface GitHubUploadResult {
   sha?: string
   commitSha?: string
 }
 
 export async function POST(request: Request) {
   const token = await getGitHubToken()
-
   if (!token) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
   try {
-    const body: UploadRequest = await request.json()
-    const { owner, repo, branch, pathHint, fileName, contentBase64, storagePreference } = body
+    const body = (await request.json()) as UploadRequest
+    const {
+      projectId,
+      userId,
+      owner,
+      repo,
+      branch,
+      pathHint,
+      fileName,
+      contentBase64,
+      storagePreference = "auto",
+    } = body
 
     if (!owner || !repo || !branch || !fileName || !contentBase64) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
     }
 
-    // Decode base64 content
-    const contentBuffer = Buffer.from(contentBase64, "base64")
-    const contentType = getContentType(fileName)
-
-    // Determine storage strategy
-    const useBlob = shouldUseBlob(storagePreference)
-    const blobUrl = useBlob ? await uploadToBlob(fileName, contentBuffer, contentType) : null
-
-    // Blob succeeded or we skipped it
-    if (blobUrl) {
-      return NextResponse.json({
-        storage: "blob",
-        url: blobUrl,
-      } satisfies UploadResponse)
+    const actingUserId = await resolveActingUserId(userId)
+    if (!actingUserId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
     }
 
-    // Fallback to GitHub
-    const githubResult = await uploadToGitHub(token, owner, repo, branch, pathHint, fileName, contentBase64)
+    const project = await resolveProject({ projectId, owner, repo, branch, userId: actingUserId })
+    if (!project) {
+      return NextResponse.json({ error: "Project not found. Pass a valid projectId for uploads." }, { status: 404 })
+    }
 
-    return NextResponse.json(githubResult satisfies UploadResponse)
+    if (project.userId !== actingUserId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
+    }
+
+    if (project.repoOwner !== owner || project.repoName !== repo || project.branch !== branch) {
+      return NextResponse.json(
+        {
+          error:
+            "Upload repo context does not match project settings. Refresh Studio and retry with the active project branch.",
+        },
+        { status: 400 },
+      )
+    }
+
+    const repoPath = buildRepoPath(pathHint, fileName)
+    const githubPath = repoPath.replace(/^\/+/, "")
+    const contentBuffer = Buffer.from(contentBase64, "base64")
+    const contentType = getContentType(fileName)
+    const sizeBytes = contentBuffer.byteLength
+
+    // Capture base-branch SHA at staging time for later publish conflict detection.
+    const baseShaAtStage = await getExistingFileShaSafe(token, owner, repo, githubPath, project.branch)
+
+    if (shouldTryBlob(storagePreference)) {
+      const blobResult = await uploadToBlobWithRetry({
+        owner: project.repoOwner,
+        repo: project.repoName,
+        githubPath,
+        content: contentBuffer,
+        contentType,
+      })
+
+      if (blobResult.ok) {
+        const mediaOpId = await convex.mutation(api.mediaOps.stage, {
+          projectId: project._id,
+          userId: actingUserId,
+          repoPath,
+          fileName: sanitizeFileName(fileName),
+          mimeType: contentType,
+          sizeBytes,
+          sourceType: "blob",
+          blobUrl: blobResult.value.url,
+          blobAccess: blobResult.value.access,
+          githubSha: baseShaAtStage ?? undefined,
+        })
+
+        const previewUrl = buildMediaResolveUrl(project._id, repoPath)
+        return NextResponse.json({
+          storage: "blob",
+          repoPath,
+          previewUrl,
+          staged: true,
+          mediaOpId,
+          url: previewUrl,
+          diagnostics: blobResult.diagnostics,
+        } satisfies UploadResponse)
+      }
+
+      if (storagePreference === "blob") {
+        return NextResponse.json(
+          {
+            error: blobResult.error || "Blob upload failed",
+            diagnostics: blobResult.diagnostics,
+          },
+          { status: 502 },
+        )
+      }
+    }
+
+    const activePublishBranch = await convex.query(api.publishBranches.getActiveForProject, {
+      projectId: project._id,
+    })
+
+    if (!activePublishBranch?.branchName) {
+      return NextResponse.json(
+        {
+          error:
+            "Blob upload fallback requires an active publish branch. Start a publish draft first, then retry upload.",
+        },
+        { status: 409 },
+      )
+    }
+
+    const githubUpload = await uploadToGitHub({
+      token,
+      owner: project.repoOwner,
+      repo: project.repoName,
+      branch: activePublishBranch.branchName,
+      path: githubPath,
+      fileName,
+      contentBase64,
+    })
+
+    const mediaOpId = await convex.mutation(api.mediaOps.stage, {
+      projectId: project._id,
+      userId: actingUserId,
+      repoPath,
+      fileName: sanitizeFileName(fileName),
+      mimeType: contentType,
+      sizeBytes,
+      sourceType: "githubBranch",
+      githubBranch: activePublishBranch.branchName,
+      githubPath,
+      githubSha: baseShaAtStage ?? undefined,
+    })
+
+    const previewUrl = buildMediaResolveUrl(project._id, repoPath)
+    return NextResponse.json({
+      storage: "github",
+      repoPath,
+      previewUrl,
+      staged: true,
+      mediaOpId,
+      url: previewUrl,
+      diagnostics: {
+        fallback: "githubBranch",
+        githubUploadSha: githubUpload.sha || "",
+        githubCommitSha: githubUpload.commitSha || "",
+      },
+    } satisfies UploadResponse)
   } catch (error) {
-    console.error("Media upload error:", error)
+    console.error("[media-upload] failed", error)
     return NextResponse.json({ error: "Failed to upload media" }, { status: 500 })
   }
 }
 
-/** Resolve the Blob read-write token from env. Supports Vercel's standard name and legacy fallback. */
+async function resolveActingUserId(explicitUserId?: string): Promise<string | null> {
+  if (fetchAuthQuery) {
+    try {
+      const authUser = await fetchAuthQuery(api.auth.getCurrentUser)
+      if (authUser?._id) {
+        return authUser._id as string
+      }
+    } catch {
+      // fallback to explicit user ID for PAT-driven sessions
+    }
+  }
+
+  return explicitUserId || null
+}
+
+async function resolveProject({
+  projectId,
+  owner,
+  repo,
+  branch,
+  userId,
+}: {
+  projectId?: string
+  owner: string
+  repo: string
+  branch: string
+  userId: string
+}) {
+  if (projectId) {
+    return await convex.query(api.projects.get, {
+      id: projectId as Id<"projects">,
+    })
+  }
+
+  const byRepo = await convex.query(api.projects.getByRepo, {
+    userId,
+    repoOwner: owner,
+    repoName: repo,
+  })
+
+  if (!byRepo || byRepo.length === 0) {
+    return null
+  }
+
+  const exact = byRepo.find((project) => project.branch === branch)
+  return exact || byRepo[0]
+}
+
+function shouldTryBlob(preference: StoragePreference): boolean {
+  if (preference === "github") return false
+  return true
+}
+
 function getBlobToken(): string | undefined {
   return process.env.BLOB_READ_WRITE_TOKEN || process.env.VERCEL_BLOB_API_TOKEN
 }
 
-function shouldUseBlob(preference: string): boolean {
-  if (preference === "github") return false
-  if (preference === "blob") return true
-
-  // "auto" — try blob first, fallback to github
-  return !!getBlobToken()
+function buildRepoPath(pathHint: string | undefined, fileName: string): string {
+  const safeName = sanitizeFileName(fileName)
+  const cleanHint = (pathHint || "public/images").trim().replace(/^\/+/, "").replace(/\/+$/, "")
+  const combined = cleanHint ? `${cleanHint}/${safeName}` : safeName
+  return normalizeRepoMediaPath(combined)
 }
 
-async function uploadToBlob(fileName: string, content: Buffer, contentType: string): Promise<string | null> {
-  try {
-    const blobToken = getBlobToken()
+function sanitizeFileName(fileName: string): string {
+  return fileName.replace(/[^a-zA-Z0-9._-]/g, "_")
+}
 
-    if (!blobToken) {
-      console.warn("Vercel Blob not configured (set BLOB_READ_WRITE_TOKEN), falling back to GitHub")
-      return null
+async function uploadToBlobWithRetry({
+  owner,
+  repo,
+  githubPath,
+  content,
+  contentType,
+}: {
+  owner: string
+  repo: string
+  githubPath: string
+  content: Buffer
+  contentType: string
+}): Promise<
+  | { ok: true; value: BlobUploadResult; diagnostics?: Record<string, string> }
+  | { ok: false; error: string; diagnostics?: Record<string, string> }
+> {
+  const blobToken = getBlobToken()
+  if (!blobToken) {
+    return {
+      ok: false,
+      error: "Blob token missing",
+      diagnostics: { blob: "token-missing" },
     }
+  }
 
-    // Generate a unique path for the blob
-    const timestamp = Date.now()
-    const cleanFileName = fileName.replace(/[^a-zA-Z0-9.-]/g, "_")
-    const blobPath = `repo-press/${timestamp}-${cleanFileName}`
+  const blobPath = `repo-press/${owner}/${repo}/${githubPath}`
 
+  try {
     const blob = await put(blobPath, content, {
       access: "public",
       contentType,
       addRandomSuffix: false,
       token: blobToken,
     })
-
-    return blob.url
+    return {
+      ok: true,
+      value: { url: blob.url, access: "public" },
+    }
   } catch (error) {
-    console.error("Blob upload failed:", error)
-    return null
+    if (!isBlobAccessMismatch(error)) {
+      return {
+        ok: false,
+        error: "Blob upload failed",
+        diagnostics: { blob: "public-upload-failed" },
+      }
+    }
+  }
+
+  try {
+    const blob = await put(blobPath, content, {
+      access: "private",
+      contentType,
+      addRandomSuffix: false,
+      token: blobToken,
+    })
+    return {
+      ok: true,
+      value: { url: blob.url, access: "private" },
+      diagnostics: { blob: "retried-private" },
+    }
+  } catch {
+    return {
+      ok: false,
+      error: "Blob upload failed",
+      diagnostics: { blob: "private-upload-failed" },
+    }
   }
 }
 
-async function uploadToGitHub(
-  token: string,
-  owner: string,
-  repo: string,
-  branch: string,
-  pathHint: string | undefined,
-  fileName: string,
-  contentBase64: string,
-): Promise<UploadResponse> {
+async function uploadToGitHub({
+  token,
+  owner,
+  repo,
+  branch,
+  path,
+  fileName,
+  contentBase64,
+}: {
+  token: string
+  owner: string
+  repo: string
+  branch: string
+  path: string
+  fileName: string
+  contentBase64: string
+}): Promise<GitHubUploadResult> {
   const octokit = createGitHubClient(token)
-
-  // Use pathHint if provided, otherwise use default
-  const baseDir = pathHint || "public/images"
-  const cleanFileName = fileName.replace(/[^a-zA-Z0-9.-]/g, "_")
-  const filePath = baseDir ? `${baseDir}/${cleanFileName}` : cleanFileName
-
-  const message = `Upload media: ${cleanFileName} via RepoPress`
+  const message = `Upload media: ${sanitizeFileName(fileName)} via RepoPress`
 
   const result = await createOrUpdateFile({
     octokit,
     owner,
     repo,
     branch,
-    path: filePath,
+    path,
     message,
     contentBase64,
   })
 
-  if (!result.content || !result.commit) {
-    throw new Error("Failed to upload to GitHub")
-  }
-
-  // Build the raw URL for GitHub-hosted media
-  const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${filePath}`
-
   return {
-    storage: "github",
-    url: rawUrl,
-    repoPath: filePath,
-    sha: result.content.sha,
-    commitSha: result.commit.sha,
+    sha: result.content?.sha,
+    commitSha: result.commit?.sha,
   }
+}
+
+function isBlobAccessMismatch(error: unknown): boolean {
+  if (!(error instanceof Error)) return false
+  const message = error.message.toLowerCase()
+  return message.includes("public") || message.includes("access")
+}
+
+function isShaRequiredError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false
+
+  const maybeStatus = "status" in error ? error.status : undefined
+  const maybeMessage = "message" in error ? error.message : undefined
+  return maybeStatus === 422 && typeof maybeMessage === "string" && maybeMessage.toLowerCase().includes("sha")
 }
 
 async function createOrUpdateFile({
@@ -182,7 +425,6 @@ async function createOrUpdateFile({
     }
 
     const sha = await getExistingFileSha(octokit, owner, repo, path, branch)
-
     if (!sha) {
       throw error
     }
@@ -198,17 +440,6 @@ async function createOrUpdateFile({
     })
     return data
   }
-}
-
-function isShaRequiredError(error: unknown): boolean {
-  if (!error || typeof error !== "object") {
-    return false
-  }
-
-  const maybeStatus = "status" in error ? error.status : undefined
-  const maybeMessage = "message" in error ? error.message : undefined
-
-  return maybeStatus === 422 && typeof maybeMessage === "string" && maybeMessage.toLowerCase().includes("sha")
 }
 
 async function getExistingFileSha(
@@ -230,6 +461,20 @@ async function getExistingFileSha(
   }
 
   return data.sha
+}
+
+async function getExistingFileShaSafe(
+  token: string,
+  owner: string,
+  repo: string,
+  path: string,
+  branch: string,
+): Promise<string | null> {
+  try {
+    return await getExistingFileSha(createGitHubClient(token), owner, repo, path, branch)
+  } catch {
+    return null
+  }
 }
 
 function getContentType(fileName: string): string {

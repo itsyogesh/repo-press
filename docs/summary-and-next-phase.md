@@ -490,6 +490,22 @@ Preview updates **only** derive from MDX source state changes. No direct preview
 - Client helper: `uploadMedia()` in `lib/studio/media-upload.ts`.
 - Integrated in: editor image plugin handler + image prop control in component form.
 
+#### Hybrid Media Sync Hardening (PR-Safe + Private-Repo Preview)
+
+The media flow now follows the locked hybrid rules for private-repo-safe authoring:
+
+1. MDX persists repo-relative `src` values (for example `/public/images/hero.png`) instead of Blob/raw URLs.
+2. Uploads create staged `mediaOps` records immediately, but repository writes are finalized only via Publish-to-PR commit flow.
+3. Studio preview/runtime resolves repo-relative assets through authenticated proxy `GET /api/media/resolve` for both public and private repos.
+4. GitHub fallback is allowed only when an active publish branch exists; upload never writes directly to base branch.
+5. Publish commit batching now includes staged media and marks `mediaOps` committed after successful PR-branch commit.
+
+Troubleshooting (Blob private store):
+
+1. If upload fails with `Blob upload fallback requires an active publish branch`, open Publish once to create/activate the RepoPress publish branch, then retry.
+2. If Blob public access is disallowed for the token/store, RepoPress retries with private Blob access automatically.
+3. If preview image requests fail, verify `/api/media/resolve` returns `200` and the request includes authenticated session cookies.
+
 #### Runtime Diagnostics
 
 - `validateProps()` in `repo-jsx-bridge.tsx` — validates MDAST props against component schema.
