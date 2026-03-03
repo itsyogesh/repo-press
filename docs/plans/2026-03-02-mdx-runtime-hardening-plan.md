@@ -3,9 +3,9 @@
 > **Plan Version:** 1.0  
 > **Created:** 2026-03-02  
 > **Status:** IN PROGRESS
-> **Done:** Plan structure, task breakdown, and progress tables are defined.
-> **Left:** Tasks 1-6 implementation and status check-off.
-> **Last Audited:** 2026-03-03 (Task checkboxes and summary table are still all pending)
+> **Done:** Plan structure complete; Task 1 code/test/build completed and committed.
+> **Left:** Task 1 manual browser verification, then Tasks 2-6 execution and check-off.
+> **Last Audited:** 2026-03-03 (Task 1 updated with commit `6cbd6ab`)
 > **Execution Prompt:** `docs/plans/2026-03-03-mdx-runtime-hardening-handover-starter-prompt.md`
 > **Baseline Commit Before Task Execution:** `4da9b6b`
 
@@ -39,8 +39,9 @@ Replace in-memory adapter cache with IndexedDB for persistence across sessions. 
 ### Files to Modify/Create
 
 - Create: `lib/repopress/adapter-cache.ts` (new)
-- Modify: `lib/repopress/adapter.ts`
-- Modify: `lib/repopress/esbuild-browser.ts`
+- Create: `lib/repopress/__tests__/adapter-cache.test.ts` (new)
+- Modify: `lib/hooks/use-preview-context.ts`
+- Modify: `app/dashboard/[owner]/[repo]/adapter-actions.ts`
 
 ### Implementation Details
 
@@ -75,23 +76,23 @@ Replace in-memory adapter cache with IndexedDB for persistence across sessions. 
 
 ### Completion Criteria
 
-- [ ] IndexedDB cache module created
-- [ ] Adapters load from cache on page refresh
-- [ ] Cache invalidates when file SHA changes
-- [ ] No duplicate adapter fetches on same session
+- [x] IndexedDB cache module created
+- [x] Adapters load from cache on page refresh
+- [x] Cache invalidates when file SHA changes
+- [x] No duplicate adapter fetches on same session
 
 ### Progress
 
 | Step                       | Status  | Notes |
 | -------------------------- | ------- | ----- |
-| 1.1 Create cache module    | PENDING |       |
-| 1.2 Update adapter loading | PENDING |       |
-| 1.3 Invalidation strategy  | PENDING |       |
-| Lint pass                  | PENDING |       |
-| Typecheck pass             | PENDING |       |
-| Manual test                | PENDING |       |
-| Build pass                 | PENDING |       |
-| Commit                     | PENDING |       |
+| 1.1 Create cache module    | DONE    | Added IndexedDB + memory fallback cache with TTL, invalidation, pruning, clear APIs |
+| 1.2 Update adapter loading | DONE    | `use-preview-context` now keys adapter compile cache by owner/repo/branch/path+sha |
+| 1.3 Invalidation strategy  | DONE    | SHA-keyed entries + startup prune + stale entry eviction on read |
+| Lint pass                  | DONE    | `npx biome check` passes (repo has existing non-blocking warnings) |
+| Typecheck pass             | DONE    | `npx tsc --noEmit` passed |
+| Manual test                | PENDING | Browser verification for adapter reload/cache reuse still pending |
+| Build pass                 | DONE    | `npm run build` passed |
+| Commit                     | DONE    | `6cbd6ab` |
 
 ---
 
@@ -424,7 +425,7 @@ Make plugin context merging deterministic with defined precedence order.
 
 | Task                         | Status  | Commit | Notes |
 | ---------------------------- | ------- | ------ | ----- |
-| 1: Persistent Adapter Cache  | PENDING | -      |       |
+| 1: Persistent Adapter Cache  | PARTIAL | `6cbd6ab` | Code + tests + typecheck + build complete; manual browser verification pending |
 | 2: Rate Limiting & Debounce  | PENDING | -      |       |
 | 3: Private Asset URL Signing | PENDING | -      |       |
 | 4: Expression Sandbox        | PENDING | -      |       |
