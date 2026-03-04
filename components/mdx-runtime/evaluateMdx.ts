@@ -28,7 +28,9 @@ const BLOCKED_GLOBALS = [
   "frames",
   "postMessage",
   "importScripts",
-  "eval",
+  // `eval` cannot be used as a strict-mode function parameter name.
+  // Compiled MDX includes `"use strict"`, so shadowing `eval` via `new Function`
+  // parameters causes a SyntaxError before evaluation.
   "Function",
 ] as const
 

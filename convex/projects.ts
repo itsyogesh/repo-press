@@ -381,54 +381,71 @@ export const _removeFullBatch = internalMutation({
     phase: v.string(),
   },
   handler: async (ctx, args) => {
-    const BATCH_SIZE = 100
+    const QUERY_BATCH_SIZE = 100
+    const MAX_DELETES_PER_INVOCATION = 250
+
+    const scheduleNext = async (phase: "documents" | "associated") => {
+      await ctx.scheduler.runAfter(0, internal.projects._removeFullBatch, {
+        projectId: args.projectId,
+        phase,
+      })
+    }
+
+    const project = await ctx.db.get(args.projectId)
+    if (!project) {
+      // Project may already be deleted by a concurrent scheduled batch.
+      return
+    }
 
     if (args.phase === "documents") {
-      // Delete document history + documents in batches
-      const docs = await ctx.db
-        .query("documents")
-        .withIndex("by_projectId", (q) => q.eq("projectId", args.projectId))
-        .take(BATCH_SIZE)
+      let deletesRemaining = MAX_DELETES_PER_INVOCATION
 
-      for (const doc of docs) {
-        const history = await ctx.db
-          .query("documentHistory")
-          .withIndex("by_documentId", (q) => q.eq("documentId", doc._id))
-          .take(BATCH_SIZE)
-        for (const entry of history) {
-          await ctx.db.delete(entry._id)
-        }
+      // Always process the first remaining document so we can drain its history
+      // before deleting the document itself.
+      while (deletesRemaining > 0) {
+        const [doc] = await ctx.db
+          .query("documents")
+          .withIndex("by_projectId", (q) => q.eq("projectId", args.projectId))
+          .take(1)
 
-        // If there might be more history entries, reschedule for same doc
-        if (history.length >= BATCH_SIZE) {
-          await ctx.scheduler.runAfter(0, internal.projects._removeFullBatch, {
-            projectId: args.projectId,
-            phase: "documents",
-          })
+        if (!doc) {
+          await scheduleNext("associated")
           return
         }
 
+        const historyLimit = Math.min(QUERY_BATCH_SIZE, deletesRemaining)
+        const history = await ctx.db
+          .query("documentHistory")
+          .withIndex("by_documentId", (q) => q.eq("documentId", doc._id))
+          .take(historyLimit)
+
+        if (history.length > 0) {
+          for (const entry of history) {
+            await ctx.db.delete(entry._id)
+            deletesRemaining -= 1
+            if (deletesRemaining === 0) {
+              await scheduleNext("documents")
+              return
+            }
+          }
+          continue
+        }
+
         await ctx.db.delete(doc._id)
+        deletesRemaining -= 1
+
+        if (deletesRemaining === 0) {
+          await scheduleNext("documents")
+          return
+        }
       }
 
-      if (docs.length >= BATCH_SIZE) {
-        // More documents to delete
-        await ctx.scheduler.runAfter(0, internal.projects._removeFullBatch, {
-          projectId: args.projectId,
-          phase: "documents",
-        })
-        return
-      }
-
-      // All documents deleted — move to associated tables
-      await ctx.scheduler.runAfter(0, internal.projects._removeFullBatch, {
-        projectId: args.projectId,
-        phase: "associated",
-      })
+      await scheduleNext("documents")
       return
     }
 
     if (args.phase === "associated") {
+      let deletesRemaining = MAX_DELETES_PER_INVOCATION
       const tables = [
         "collections",
         "authors",
@@ -443,27 +460,33 @@ export const _removeFullBatch = internalMutation({
       ] as const
 
       for (const table of tables) {
-        const records = await ctx.db
-          .query(table as any)
-          .withIndex("by_projectId", (q) => q.eq("projectId", args.projectId))
-          .take(BATCH_SIZE)
+        while (deletesRemaining > 0) {
+          const recordLimit = Math.min(QUERY_BATCH_SIZE, deletesRemaining)
+          const records = await ctx.db
+            .query(table as any)
+            .withIndex("by_projectId", (q) => q.eq("projectId", args.projectId))
+            .take(recordLimit)
 
-        for (const record of records) {
-          await ctx.db.delete(record._id)
-        }
+          if (records.length === 0) {
+            break
+          }
 
-        if (records.length >= BATCH_SIZE) {
-          // More records in this table — reschedule
-          await ctx.scheduler.runAfter(0, internal.projects._removeFullBatch, {
-            projectId: args.projectId,
-            phase: "associated",
-          })
-          return
+          for (const record of records) {
+            await ctx.db.delete(record._id)
+            deletesRemaining -= 1
+            if (deletesRemaining === 0) {
+              await scheduleNext("associated")
+              return
+            }
+          }
         }
       }
 
       // All associated records deleted — delete the project itself
       await ctx.db.delete(args.projectId)
+      return
     }
+
+    throw new Error(`Unknown cleanup phase: ${args.phase}`)
   },
 })
