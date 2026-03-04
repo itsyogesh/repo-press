@@ -17,4 +17,12 @@ describe("evaluateMdx", () => {
 
     expect(result).toBe("undefined")
   })
+
+  it("blocks global aliases that can bypass blocked globals", () => {
+    const code = '"use strict"; return { default: [typeof window, typeof self, typeof globalThis] };'
+
+    const result = evaluateMdx(code, {})
+
+    expect(result).toEqual(["undefined", "undefined", "undefined"])
+  })
 })

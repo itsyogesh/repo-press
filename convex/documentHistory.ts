@@ -14,10 +14,6 @@ async function resolveCallerUserId(ctx: MutationCtx, explicitUserId?: string) {
     return authUserId
   }
 
-  if (explicitUserId) {
-    return explicitUserId
-  }
-
   throw new Error("Unauthorized: Not authenticated")
 }
 
@@ -93,8 +89,10 @@ export const restoreVersion = mutation({
     const now = Date.now()
     const restoreMutation = buildRestoreVersionMutation({
       documentId: document._id,
-      body: historyEntry.body,
-      frontmatter: historyEntry.frontmatter,
+      currentBody: document.body,
+      currentFrontmatter: document.frontmatter,
+      targetBody: historyEntry.body,
+      targetFrontmatter: historyEntry.frontmatter,
       editedBy: userId,
       historyCreatedAt: historyEntry.createdAt,
       now,

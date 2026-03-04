@@ -98,8 +98,20 @@ describe("github request control", () => {
     expect(attempts).toBe(2)
   })
 
-  it("detects GitHub 403/429 as rate-limit errors", () => {
-    expect(isGitHubRateLimitError({ status: 403 })).toBe(true)
+  it("detects only 429 and rate-limit-specific 403 responses", () => {
+    expect(isGitHubRateLimitError({ status: 403 })).toBe(false)
+    expect(
+      isGitHubRateLimitError({
+        status: 403,
+        response: { headers: { "x-ratelimit-remaining": "0" } },
+      }),
+    ).toBe(true)
+    expect(
+      isGitHubRateLimitError({
+        status: 403,
+        message: "You have exceeded a secondary rate limit and have been temporarily blocked.",
+      }),
+    ).toBe(true)
     expect(isGitHubRateLimitError({ response: { status: 429 } })).toBe(true)
     expect(isGitHubRateLimitError({ status: 500 })).toBe(false)
     expect(isGitHubRateLimitError(new Error("no status"))).toBe(false)

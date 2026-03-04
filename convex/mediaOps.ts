@@ -2,8 +2,14 @@ import { v } from "convex/values"
 import type { Id } from "./_generated/dataModel"
 import type { MutationCtx } from "./_generated/server"
 import { mutation, query } from "./_generated/server"
+import { authComponent } from "./auth"
 
 async function requireProjectOwnership(ctx: MutationCtx, projectId: Id<"projects">, userId: string) {
+  const authUser = await authComponent.safeGetAuthUser(ctx)
+  const authUserId = authUser?._id ? (authUser._id as string) : null
+  if (!authUserId || authUserId !== userId) {
+    throw new Error("Unauthorized: Not authenticated or identity mismatch")
+  }
   const project = await ctx.db.get(projectId)
   if (!project || project.userId !== userId) {
     throw new Error("Unauthorized")

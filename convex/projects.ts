@@ -352,6 +352,10 @@ export const removeFull = mutation({
     const project = await ctx.db.get(args.projectId)
     if (!project) throw new Error("Project not found")
 
+    if (project.name.startsWith("[DELETING]")) {
+      throw new Error("Project is already being deleted")
+    }
+
     if (project.userId !== (user._id as string)) {
       throw new Error("Unauthorized")
     }

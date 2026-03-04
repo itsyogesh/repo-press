@@ -10,6 +10,9 @@ import * as jsxRuntime from "react/jsx-runtime"
  * `new Function()` entirely.
  */
 const BLOCKED_GLOBALS = [
+  "window",
+  "self",
+  "globalThis",
   "fetch",
   "XMLHttpRequest",
   "WebSocket",

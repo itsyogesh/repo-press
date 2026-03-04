@@ -1,7 +1,9 @@
 type BuildRestoreVersionMutationInput<TDocumentId> = {
   documentId: TDocumentId
-  body: string
-  frontmatter?: unknown
+  currentBody: string
+  currentFrontmatter?: unknown
+  targetBody: string
+  targetFrontmatter?: unknown
   editedBy: string
   historyCreatedAt: number
   now: number
@@ -30,16 +32,16 @@ export function buildRestoreVersionMutation<TDocumentId>(
   return {
     historyInsert: {
       documentId: input.documentId,
-      body: input.body,
-      frontmatter: input.frontmatter,
+      body: input.currentBody,
+      frontmatter: input.currentFrontmatter,
       editedBy: input.editedBy,
       message: `Restored to version from ${new Date(input.historyCreatedAt).toISOString()}`,
       changeType: "patch",
       createdAt: input.now,
     },
     documentPatch: {
-      body: input.body,
-      frontmatter: input.frontmatter,
+      body: input.targetBody,
+      frontmatter: input.targetFrontmatter,
       updatedAt: input.now,
     },
   }

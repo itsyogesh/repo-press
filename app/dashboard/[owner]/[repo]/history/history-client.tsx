@@ -231,17 +231,15 @@ export function HistoryClient({ owner, repo, branch }: HistoryClientProps) {
                                 </>
                               )}
                             </Button>
-                            {index !== 0 && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleRestore(entry._id)}
-                                disabled={isRestoring}
-                              >
-                                <RotateCcw className="h-3 w-3 mr-1" />
-                                Restore
-                              </Button>
-                            )}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleRestore(entry._id)}
+                              disabled={isRestoring}
+                            >
+                              <RotateCcw className="h-3 w-3 mr-1" />
+                              Restore
+                            </Button>
                           </div>
                         </div>
                         <div className="text-sm text-muted-foreground">
