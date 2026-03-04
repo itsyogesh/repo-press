@@ -4,9 +4,11 @@ Use this handover prompt to continue the **in-progress** hardening stream from:
 `docs/plans/2026-03-02-mdx-runtime-hardening-plan.md`
 
 Current repository baseline before starting:
-- Branch includes hybrid media architecture + review fixes commit: `4da9b6b`
+
+- Branch: `feat/mdx-runtime` at commit `8c61a36` (PR #8 submitted)
 - Phase 2 component authoring is complete
-- Hardening plan status is still pending for Tasks 1-6
+- Hardening Tasks 1-2 are complete (persistent adapter cache + GitHub API rate limiting)
+- **Remaining:** Tasks 3-6 (Private Asset URL Signing, Expression Sandbox, Compile Cache, Plugin Merge Determinism)
 
 ---
 
@@ -15,6 +17,7 @@ Current repository baseline before starting:
 Start with **Task 1: Persistent Adapter Cache** (foundational), then continue to Task 2 only if Task 1 is fully complete and verified.
 
 Reason:
+
 - Task 1 is the dependency foundation for Task 2 and Task 5 in the plan.
 - Current code in `lib/hooks/use-preview-context.ts` still reloads/transpiles adapters without persistent cache.
 

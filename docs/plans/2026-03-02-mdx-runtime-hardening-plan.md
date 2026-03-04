@@ -2,12 +2,12 @@
 
 > **Plan Version:** 1.0  
 > **Created:** 2026-03-02  
-> **Status:** IN PROGRESS
-> **Done:** Plan structure complete; Task 1 and Task 2 are implemented, verified, and committed.
-> **Left:** Execute Tasks 3-6 and check-off.
-> **Last Audited:** 2026-03-03 (Task 2 updated with commit `c6d2d11`)
+> **Status:** IN PROGRESS (Tasks 1-2 complete, Tasks 3-6 pending — next phase after PR #8)
+> **Done:** Plan structure complete; Task 1 and Task 2 are implemented, verified, and committed. All work included in PR #8.
+> **Left:** Execute Tasks 3-6 (Private Asset URL Signing, Expression Sandbox, Compile Cache, Plugin Merge Determinism).
+> **Last Audited:** 2026-03-04 (PR #8 submitted with all work through Task 2 + additional studio hardening)
 > **Execution Prompt:** `docs/plans/2026-03-03-mdx-runtime-hardening-handover-starter-prompt.md`
-> **Baseline Commit Before Task Execution:** `4da9b6b`
+> **Baseline Commit Before Task Execution:** `8c61a36` (tip of feat/mdx-runtime at PR #8)
 
 ---
 
@@ -83,16 +83,16 @@ Replace in-memory adapter cache with IndexedDB for persistence across sessions. 
 
 ### Progress
 
-| Step                       | Status  | Notes |
-| -------------------------- | ------- | ----- |
-| 1.1 Create cache module    | DONE    | Added IndexedDB + memory fallback cache with TTL, invalidation, pruning, clear APIs |
-| 1.2 Update adapter loading | DONE    | `use-preview-context` now keys adapter compile cache by owner/repo/branch/path+sha |
-| 1.3 Invalidation strategy  | DONE    | SHA-keyed entries + startup prune + stale entry eviction on read |
-| Lint pass                  | DONE    | `npx biome check` passes (repo has existing non-blocking warnings) |
-| Typecheck pass             | DONE    | `npx tsc --noEmit` passed |
-| Manual test                | DONE    | Verified in Studio on localhost:3001 (open project, reload/switch files, no new runtime errors) |
-| Build pass                 | DONE    | `npm run build` passed |
-| Commit                     | DONE    | `6cbd6ab` |
+| Step                       | Status | Notes                                                                                           |
+| -------------------------- | ------ | ----------------------------------------------------------------------------------------------- |
+| 1.1 Create cache module    | DONE   | Added IndexedDB + memory fallback cache with TTL, invalidation, pruning, clear APIs             |
+| 1.2 Update adapter loading | DONE   | `use-preview-context` now keys adapter compile cache by owner/repo/branch/path+sha              |
+| 1.3 Invalidation strategy  | DONE   | SHA-keyed entries + startup prune + stale entry eviction on read                                |
+| Lint pass                  | DONE   | `npx biome check` passes (repo has existing non-blocking warnings)                              |
+| Typecheck pass             | DONE   | `npx tsc --noEmit` passed                                                                       |
+| Manual test                | DONE   | Verified in Studio on localhost:3001 (open project, reload/switch files, no new runtime errors) |
+| Build pass                 | DONE   | `npm run build` passed                                                                          |
+| Commit                     | DONE   | `6cbd6ab`                                                                                       |
 
 ---
 
@@ -148,16 +148,16 @@ Add debounce to adapter/plugin loading and implement rate limiting for GitHub AP
 
 ### Progress
 
-| Step                      | Status  | Notes |
-| ------------------------- | ------- | ----- |
-| 2.1 Debounce loading      | DONE    | Added 500ms debounce in `use-preview-context` before adapter/plugin load execution |
-| 2.2 Rate limiting         | DONE    | Added shared GitHub request controller with sliding-window queue + exponential-backoff retries for 403/429 |
-| 2.3 Request deduplication | DONE    | Added in-flight dedupe for adapter/plugin fetches in both client hook and server request controller |
-| Lint pass                 | DONE    | `npx biome check` passes (repo has existing non-blocking warnings) |
-| Typecheck pass            | DONE    | `npx tsc --noEmit` passed |
-| Manual test               | DONE    | Verified in Studio on localhost:3001 with rapid file switching and no new console errors |
-| Build pass                | DONE    | `npm run build` passed |
-| Commit                    | DONE    | `c6d2d11` |
+| Step                      | Status | Notes                                                                                                      |
+| ------------------------- | ------ | ---------------------------------------------------------------------------------------------------------- |
+| 2.1 Debounce loading      | DONE   | Added 500ms debounce in `use-preview-context` before adapter/plugin load execution                         |
+| 2.2 Rate limiting         | DONE   | Added shared GitHub request controller with sliding-window queue + exponential-backoff retries for 403/429 |
+| 2.3 Request deduplication | DONE   | Added in-flight dedupe for adapter/plugin fetches in both client hook and server request controller        |
+| Lint pass                 | DONE   | `npx biome check` passes (repo has existing non-blocking warnings)                                         |
+| Typecheck pass            | DONE   | `npx tsc --noEmit` passed                                                                                  |
+| Manual test               | DONE   | Verified in Studio on localhost:3001 with rapid file switching and no new console errors                   |
+| Build pass                | DONE   | `npm run build` passed                                                                                     |
+| Commit                    | DONE   | `c6d2d11`                                                                                                  |
 
 ---
 
@@ -423,14 +423,14 @@ Make plugin context merging deterministic with defined precedence order.
 
 ## Summary Progress
 
-| Task                         | Status  | Commit | Notes |
-| ---------------------------- | ------- | ------ | ----- |
-| 1: Persistent Adapter Cache  | COMPLETE | `6cbd6ab` | Code + tests + typecheck + manual Studio check + build complete |
+| Task                         | Status   | Commit    | Notes                                                                             |
+| ---------------------------- | -------- | --------- | --------------------------------------------------------------------------------- |
+| 1: Persistent Adapter Cache  | COMPLETE | `6cbd6ab` | Code + tests + typecheck + manual Studio check + build complete                   |
 | 2: Rate Limiting & Debounce  | COMPLETE | `c6d2d11` | Debounce + queue/retry + dedupe delivered with tests and manual Studio validation |
-| 3: Private Asset URL Signing | PENDING | -      |       |
-| 4: Expression Sandbox        | PENDING | -      |       |
-| 5: Compile Cache             | PENDING | -      |       |
-| 6: Plugin Merge Determinism  | PENDING | -      |       |
+| 3: Private Asset URL Signing | PENDING  | -         |                                                                                   |
+| 4: Expression Sandbox        | PENDING  | -         |                                                                                   |
+| 5: Compile Cache             | PENDING  | -         |                                                                                   |
+| 6: Plugin Merge Determinism  | PENDING  | -         |                                                                                   |
 
 ---
 
