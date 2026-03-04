@@ -89,7 +89,7 @@ export const restoreVersion = mutation({
     const now = Date.now()
     const restoreMutation = buildRestoreVersionMutation({
       documentId: document._id,
-      currentBody: document.body,
+      currentBody: document.body ?? "",
       currentFrontmatter: document.frontmatter,
       targetBody: historyEntry.body,
       targetFrontmatter: historyEntry.frontmatter,
