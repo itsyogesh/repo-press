@@ -138,7 +138,7 @@ describe("GET /api/media/resolve", () => {
   })
 
   it("falls back to base branch when no pending media op exists", async () => {
-    convexQueryMock.mockResolvedValueOnce(projectRecord).mockResolvedValueOnce(null)
+    convexQueryMock.mockResolvedValueOnce(projectRecord).mockResolvedValueOnce(null).mockResolvedValueOnce(null)
 
     const getContent = vi.fn().mockResolvedValue({
       data: {
@@ -166,8 +166,40 @@ describe("GET /api/media/resolve", () => {
     )
   })
 
+  it("falls back to active publish branch when staged op has already been committed", async () => {
+    convexQueryMock.mockResolvedValueOnce(projectRecord).mockResolvedValueOnce(null).mockResolvedValueOnce({
+      _id: "publish-branch-1",
+      branchName: "repopress/main/999",
+    })
+
+    const getContent = vi.fn().mockResolvedValue({
+      data: {
+        type: "file",
+        name: "hero.png",
+        path: "public/images/hero.png",
+        sha: "blob-sha-publish",
+        content: Buffer.from("publish-branch-bytes").toString("base64"),
+        encoding: "base64",
+      },
+    })
+
+    vi.mocked(createGitHubClient).mockReturnValue({
+      repos: { getContent },
+      git: { getBlob: vi.fn() },
+    } as any)
+
+    const response = await GET(requestFor("/public/images/hero.png"))
+
+    expect(response.status).toBe(200)
+    expect(getContent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ref: "repopress/main/999",
+      }),
+    )
+  })
+
   it("returns 404 when file is not found in staged or base branch sources", async () => {
-    convexQueryMock.mockResolvedValueOnce(projectRecord).mockResolvedValueOnce(null)
+    convexQueryMock.mockResolvedValueOnce(projectRecord).mockResolvedValueOnce(null).mockResolvedValueOnce(null)
 
     const getContent = vi.fn().mockRejectedValue({ status: 404, message: "Not Found" })
     vi.mocked(createGitHubClient).mockReturnValue({
@@ -180,5 +212,44 @@ describe("GET /api/media/resolve", () => {
 
     expect(response.status).toBe(404)
     expect(payload.error).toContain("not found")
+  })
+
+  it("falls back to public/ path when resolving Next.js public assets", async () => {
+    convexQueryMock.mockResolvedValueOnce(projectRecord).mockResolvedValueOnce(null).mockResolvedValueOnce(null)
+
+    const getContent = vi.fn().mockImplementation(async ({ path }: { path: string }) => {
+      if (path === "images/blog/hero.png") {
+        throw { status: 404, message: "Not Found" }
+      }
+      if (path === "public/images/blog/hero.png") {
+        return {
+          data: {
+            type: "file",
+            name: "hero.png",
+            path,
+            sha: "blob-sha-public-image",
+            content: Buffer.from("public-image-bytes").toString("base64"),
+            encoding: "base64",
+          },
+        }
+      }
+      throw { status: 404, message: "Not Found" }
+    })
+
+    vi.mocked(createGitHubClient).mockReturnValue({
+      repos: { getContent },
+      git: { getBlob: vi.fn() },
+    } as any)
+
+    const response = await GET(requestFor("/images/blog/hero.png"))
+    const buffer = Buffer.from(await response.arrayBuffer())
+
+    expect(response.status).toBe(200)
+    expect(buffer).toEqual(Buffer.from("public-image-bytes"))
+    expect(getContent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "public/images/blog/hero.png",
+      }),
+    )
   })
 })

@@ -20,6 +20,8 @@ interface PreviewProps {
   frontmatter: Record<string, any>
   fieldVariants?: FieldVariantMap
   projectId?: string
+  userId?: string
+  filePath?: string
   scrollContainerRef?: React.RefObject<HTMLDivElement | null>
   onScroll?: () => void
   adapter?: RepoPressPreviewAdapter | null
@@ -31,6 +33,8 @@ export function Preview({
   frontmatter,
   fieldVariants,
   projectId,
+  userId,
+  filePath,
   scrollContainerRef,
   onScroll,
   adapter,
@@ -58,7 +62,7 @@ export function Preview({
   const tags = resolveFieldValue(frontmatter, "tags", fieldVariants) as string[] | undefined
   const author = resolveFieldValue(frontmatter, "author", fieldVariants) as string | undefined
 
-  const image = rawImage ? resolveStudioAssetUrl(rawImage, projectId) : undefined
+  const image = rawImage ? resolveStudioAssetUrl(rawImage, projectId, userId, filePath) : undefined
   const [imageError, setImageError] = React.useState(false)
 
   // Reset image error when image URL changes
@@ -68,8 +72,8 @@ export function Preview({
 
   // Stabilize the asset resolver to prevent infinite re-renders in PreviewRuntime
   const resolveAssetUrl = React.useMemo(() => {
-    return (path: string) => resolveStudioAssetUrl(path, projectId)
-  }, [projectId])
+    return (path: string) => resolveStudioAssetUrl(path, projectId, userId, filePath)
+  }, [projectId, userId, filePath])
 
   // Escape exits full-screen
   React.useEffect(() => {
@@ -126,14 +130,17 @@ export function Preview({
         />
       )}
 
-      <PreviewRuntime
-        source={debouncedContent}
-        adapter={adapter ?? undefined}
-        externalDiagnostics={adapterDiagnostics}
-        resolveAssetUrl={resolveAssetUrl}
-        onStatusChange={setIsCompiling}
-        onWarningsChange={setWarnings}
-      />
+      <div data-scroll-sync-root="preview">
+        <PreviewRuntime
+          source={debouncedContent}
+          frontmatter={frontmatter}
+          adapter={adapter ?? undefined}
+          externalDiagnostics={adapterDiagnostics}
+          resolveAssetUrl={resolveAssetUrl}
+          onStatusChange={setIsCompiling}
+          onWarningsChange={setWarnings}
+        />
+      </div>
     </article>
   )
 

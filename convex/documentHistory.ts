@@ -1,7 +1,25 @@
 import { v } from "convex/values"
+import type { MutationCtx } from "./_generated/server"
 import { mutation, query } from "./_generated/server"
 import { authComponent } from "./auth"
 import { buildRestoreVersionMutation } from "./documentHistory-restore"
+
+async function resolveCallerUserId(ctx: MutationCtx, explicitUserId?: string) {
+  const authUser = await authComponent.safeGetAuthUser(ctx)
+  if (authUser?._id) {
+    const authUserId = authUser._id as string
+    if (explicitUserId && explicitUserId !== authUserId) {
+      throw new Error("Unauthorized: caller identity does not match userId")
+    }
+    return authUserId
+  }
+
+  if (explicitUserId) {
+    return explicitUserId
+  }
+
+  throw new Error("Unauthorized: Not authenticated")
+}
 
 export const listByDocument = query({
   args: { documentId: v.id("documents") },
@@ -52,13 +70,10 @@ export const get = query({
 export const restoreVersion = mutation({
   args: {
     historyId: v.id("documentHistory"),
+    userId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const authUser = await authComponent.safeGetAuthUser(ctx)
-    if (!authUser) {
-      throw new Error("Unauthorized: Not authenticated")
-    }
-    const userId = authUser._id as string
+    const userId = await resolveCallerUserId(ctx, args.userId)
 
     const historyEntry = await ctx.db.get(args.historyId)
     if (!historyEntry) {
@@ -88,7 +103,10 @@ export const restoreVersion = mutation({
     // Insert a new history entry representing the restored content
     await ctx.db.insert("documentHistory", restoreMutation.historyInsert)
 
-    await ctx.db.patch(document._id, restoreMutation.documentPatch)
+    await ctx.db.patch(document._id, {
+      ...restoreMutation.documentPatch,
+      ...(document.status === "published" ? { status: "draft" as const } : {}),
+    })
 
     return document._id
   },

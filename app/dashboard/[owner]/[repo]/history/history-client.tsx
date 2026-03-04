@@ -52,7 +52,10 @@ export function HistoryClient({ owner, repo, branch }: HistoryClientProps) {
 
     setIsRestoring(true)
     try {
-      await restoreMutation({ historyId: historyId as Id<"documentHistory"> })
+      await restoreMutation({
+        historyId: historyId as Id<"documentHistory">,
+        userId: (project?.userId as string | undefined) ?? undefined,
+      })
       toast.success("Version restored successfully")
     } catch (error) {
       console.error("Error restoring version:", error)

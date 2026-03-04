@@ -125,7 +125,7 @@ export async function POST(request: Request) {
           githubSha: baseShaAtStage ?? undefined,
         })
 
-        const previewUrl = buildMediaResolveUrl(project._id, repoPath)
+        const previewUrl = buildMediaResolveUrl(project._id, repoPath, actingUserId)
         return NextResponse.json({
           storage: "blob",
           repoPath,
@@ -185,7 +185,7 @@ export async function POST(request: Request) {
       githubSha: baseShaAtStage ?? undefined,
     })
 
-    const previewUrl = buildMediaResolveUrl(project._id, repoPath)
+    const previewUrl = buildMediaResolveUrl(project._id, repoPath, actingUserId)
     return NextResponse.json({
       storage: "github",
       repoPath,
@@ -305,6 +305,7 @@ async function uploadToBlobWithRetry({
       access: "public",
       contentType,
       addRandomSuffix: false,
+      allowOverwrite: true,
       token: blobToken,
     })
     return {
@@ -326,6 +327,7 @@ async function uploadToBlobWithRetry({
       access: "private",
       contentType,
       addRandomSuffix: false,
+      allowOverwrite: true,
       token: blobToken,
     })
     return {

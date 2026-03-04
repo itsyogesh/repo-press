@@ -7,6 +7,8 @@ interface StudioContextValue {
   repo: string
   branch: string
   projectId?: string
+  userId?: string
+  selectedFilePath?: string
   contentRoot: string
   tree: FileTreeNode[]
   // Dynamic Adapter state

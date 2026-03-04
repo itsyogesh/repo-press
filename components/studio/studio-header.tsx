@@ -25,6 +25,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import type { FileTreeNode } from "@/lib/github"
+import { ProjectSwitcher } from "./project-switcher"
 import { StatusActions } from "./status-actions"
 import { useStudio } from "./studio-context"
 import { useViewMode } from "./view-mode-context"
@@ -51,7 +52,7 @@ export function StudioHeader({
   onSave,
   isSaving,
 }: StudioHeaderProps) {
-  const { owner, repo, branch } = useStudio()
+  const { owner, repo, branch, projectId } = useStudio()
   const { viewMode, setViewMode, sidebarState, setSidebarState } = useViewMode()
   const [isPending, startTransition] = React.useTransition()
 
@@ -147,6 +148,8 @@ export function StudioHeader({
             {documentId && <StatusActions documentId={documentId} currentStatus={currentStatus as any} />}
           </div>
         )}
+
+        {projectId ? <ProjectSwitcher currentProjectId={projectId} owner={owner} repo={repo} branch={branch} /> : null}
 
         <ToggleGroup
           type="single"

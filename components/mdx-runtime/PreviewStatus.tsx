@@ -1,7 +1,6 @@
 "use client"
 
 import { AlertTriangle, CheckCircle2, Loader2 } from "lucide-react"
-import * as React from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"

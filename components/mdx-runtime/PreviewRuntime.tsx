@@ -1,10 +1,7 @@
 "use client"
 
-import { AlertCircle, AlertTriangle, CheckCircle2, Info, Loader2, Settings } from "lucide-react"
+import { AlertCircle, Info, Settings } from "lucide-react"
 import React, { useEffect, useMemo, useRef, useState } from "react"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import type { RepoPressPreviewAdapter } from "@/lib/repopress/evaluate-adapter"
 import { cn } from "@/lib/utils"
 import { compileMdx } from "./compileMdx"
@@ -91,6 +88,7 @@ function PreviewSkeleton() {
 
 export function PreviewRuntime({
   source,
+  frontmatter,
   adapter,
   externalDiagnostics = [],
   resolveAssetUrl,
@@ -98,6 +96,7 @@ export function PreviewRuntime({
   onWarningsChange,
 }: {
   source: string
+  frontmatter?: Record<string, unknown>
   adapter?: RepoPressPreviewAdapter
   externalDiagnostics?: string[]
   resolveAssetUrl?: (path: string) => string
@@ -286,6 +285,40 @@ export function PreviewRuntime({
             const src = props.src && resolveAssetUrl ? resolveAssetUrl(props.src) : props.src
             return <video {...props} src={src} className="rounded-lg border shadow-sm max-w-full" controls />
           },
+          TickPoint: (props) => (
+            <div className="my-4 rounded-lg border border-muted/70 bg-muted/20 p-4 text-left font-sans">
+              {props.children}
+            </div>
+          ),
+          DynamicImage: (props) => {
+            const fallbackImage = typeof frontmatter?.image === "string" ? frontmatter.image : undefined
+            const fallbackSlug = typeof frontmatter?.slug === "string" ? frontmatter.slug : undefined
+
+            let src: string | undefined =
+              props.src || props.image || props.path || props.url || props.fileName || fallbackImage
+
+            if (src && fallbackSlug && !src.includes("/")) {
+              src = `/images/blog/${fallbackSlug}/${src}`
+            }
+
+            const resolvedSrc = src && resolveAssetUrl ? resolveAssetUrl(src) : src
+            if (!resolvedSrc) {
+              return (
+                <div className="my-6 rounded-xl border border-dashed border-muted-foreground/30 bg-muted/10 p-6 text-center text-sm text-muted-foreground">
+                  DynamicImage: no source
+                </div>
+              )
+            }
+
+            return (
+              <img
+                src={resolvedSrc}
+                alt={props.alt || (typeof frontmatter?.title === "string" ? frontmatter.title : "")}
+                className="my-6 rounded-xl border shadow-sm w-full h-auto object-cover"
+                loading="lazy"
+              />
+            )
+          },
           img: (props) => {
             const src = props.src && resolveAssetUrl ? resolveAssetUrl(props.src) : props.src
             return <img {...props} src={src} alt={props.alt || ""} />
@@ -303,7 +336,7 @@ export function PreviewRuntime({
             const src = props.src && resolveAssetUrl ? resolveAssetUrl(props.src) : props.src
             return <audio {...props} src={src} />
           },
-          CopyIpsButton: (props) => (
+          CopyIpsButton: (_props) => (
             <button
               type="button"
               className="my-2 inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 px-3 gap-2 font-sans"
@@ -418,6 +451,28 @@ export function PreviewRuntime({
         }
 
         const missingRef = new Set<string>()
+        let warningFlushQueued = false
+        const queueWarningFlush = () => {
+          if (warningFlushQueued) return
+          warningFlushQueued = true
+          queueMicrotask(() => {
+            warningFlushQueued = false
+            if (!active || missingRef.size === 0) return
+            setWarnings((prev) =>
+              Array.from(
+                new Set([
+                  ...prev,
+                  ...Array.from(missingRef).map((name) => `Component <${name} /> is missing from adapter.`),
+                ]),
+              ),
+            )
+          })
+        }
+        const noteMissing = (name: string) => {
+          if (missingRef.has(name)) return
+          missingRef.add(name)
+          queueWarningFlush()
+        }
 
         const safeComponents: Record<string, React.ComponentType<any>> = new Proxy(componentsContext as any, {
           get(target, prop) {
@@ -425,10 +480,7 @@ export function PreviewRuntime({
             if (prop === "$$typeof" || prop === "prototype" || prop === "__esModule") return target[prop]
             const isComponent = /^[A-Z]/.test(prop)
             if (!(prop in target) && isComponent) {
-              if (!missingRef.has(prop)) {
-                missingRef.add(prop)
-                setWarnings((prev) => Array.from(new Set([...prev, `Component <${prop} /> is missing from adapter.`])))
-              }
+              noteMissing(prop)
               return function MissingComponent(props: any) {
                 return (
                   <div className="my-4 rounded-lg border border-muted bg-muted/20 p-4 font-sans not-prose text-left shadow-sm text-foreground">
@@ -487,9 +539,9 @@ export function PreviewRuntime({
         }
 
         // Robust DOCS_SETUP_MEDIA fallback
-        const fromAdapter = mergedScope["DOCS_SETUP_MEDIA"]
+        const fromAdapter = mergedScope.DOCS_SETUP_MEDIA
         if (!fromAdapter || (typeof fromAdapter === "object" && Object.keys(fromAdapter).length === 0)) {
-          mergedScope["DOCS_SETUP_MEDIA"] = REAL_DOCS_SETUP_MEDIA
+          mergedScope.DOCS_SETUP_MEDIA = REAL_DOCS_SETUP_MEDIA
         }
 
         const commonKeys = [
@@ -532,10 +584,7 @@ export function PreviewRuntime({
         }
 
         const MdxComponent = evaluateMdx(code, mergedScope, (name) => {
-          if (!missingRef.has(name)) {
-            missingRef.add(name)
-            setWarnings((prev) => Array.from(new Set([...prev, `Component <${name} /> is missing from adapter.`])))
-          }
+          noteMissing(name)
         })
         setRenderedComponent(() => (props: any) => <MdxComponent {...props} components={safeComponents as any} />)
       } catch (err: any) {
@@ -550,7 +599,7 @@ export function PreviewRuntime({
       active = false
       clearTimeout(timeout)
     }
-  }, [hashSource(source), adapter, resolveAssetUrl, onStatusChange, onWarningsChange])
+  }, [source, frontmatter, adapter, resolveAssetUrl])
 
   return (
     <>

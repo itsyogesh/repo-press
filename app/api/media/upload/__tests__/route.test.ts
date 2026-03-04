@@ -101,7 +101,10 @@ describe("POST /api/media/upload", () => {
       staged: true,
       mediaOpId: "media-op-1",
     })
-    expect(payload.previewUrl).toBe("/api/media/resolve?projectId=project_123&path=%2Fpublic%2Fimages%2Fhero.png")
+    expect(payload.previewUrl).toBe(
+      "/api/media/resolve?projectId=project_123&path=%2Fpublic%2Fimages%2Fhero.png&userId=user_1",
+    )
+    expect(vi.mocked(put).mock.calls[0]?.[2]).toEqual(expect.objectContaining({ allowOverwrite: true }))
     expect(convexMutationMock).toHaveBeenCalled()
   })
 

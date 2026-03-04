@@ -23,12 +23,14 @@ export function StudioToolbar({
   branch,
   projectId,
   userId,
+  showMarkdownMediaInserts = true,
 }: {
   owner: string
   repo: string
   branch: string
   projectId?: string
   userId?: string
+  showMarkdownMediaInserts?: boolean
 }) {
   return (
     <DiffSourceToggleWrapper options={["rich-text", "source"]}>
@@ -45,7 +47,7 @@ export function StudioToolbar({
         <ListsToggle />
         <Separator />
         <CreateLink />
-        <InsertImage />
+        {showMarkdownMediaInserts ? <InsertImage /> : null}
         <InsertTable />
         <InsertThematicBreak />
         <InsertCodeBlock />

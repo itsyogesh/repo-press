@@ -69,6 +69,7 @@ export function useStudioSave({ userId, documentId, selectedFile, content, front
         body: contentRef.current,
         frontmatter: frontmatterRef.current,
         message: "Draft saved",
+        userId: userId ?? undefined,
       })
 
       toast.success("Draft saved")
@@ -78,7 +79,7 @@ export function useStudioSave({ userId, documentId, selectedFile, content, front
     } finally {
       setIsSaving(false)
     }
-  }, [selectedFile, ensureDocumentRecord, saveDraftMutation])
+  }, [selectedFile, ensureDocumentRecord, saveDraftMutation, userId])
 
   return {
     isSaving,

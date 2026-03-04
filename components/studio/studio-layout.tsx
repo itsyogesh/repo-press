@@ -439,7 +439,6 @@ function StudioLayoutInner({
     sha,
     isFileLoading,
     navigateToFile,
-    clearSelection,
     closeFile,
     discardFileFromClientState,
     primeFileSnapshot,
@@ -491,7 +490,6 @@ function StudioLayoutInner({
   const [commandPaletteOpen, setCommandPaletteOpen] = React.useState(false)
   const [emptySearch, setEmptySearch] = React.useState("")
   const [isMobile, setIsMobile] = React.useState(false)
-  const wasMobileRef = React.useRef(false)
 
   // 3. Save logic
   const { isSaving, saveDraft, ensureDocumentRecord } = useStudioSave({
@@ -819,24 +817,68 @@ function StudioLayoutInner({
   const previewScrollRef = React.useRef<HTMLDivElement>(null)
   const isSyncingScroll = React.useRef(false)
 
-  const syncScroll = React.useCallback((source: "editor" | "preview") => {
-    if (isSyncingScroll.current) return
-    isSyncingScroll.current = true
+  const getScrollSyncMetrics = React.useCallback((container: HTMLDivElement) => {
+    const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight)
+    const root = container.querySelector<HTMLElement>("[data-scroll-sync-root]")
 
-    const sourceEl = source === "editor" ? editorScrollRef.current : previewScrollRef.current
-    const targetEl = source === "editor" ? previewScrollRef.current : editorScrollRef.current
-
-    if (sourceEl && targetEl) {
-      const maxScroll = sourceEl.scrollHeight - sourceEl.clientHeight
-      const pct = maxScroll > 0 ? sourceEl.scrollTop / maxScroll : 0
-      const targetMax = targetEl.scrollHeight - targetEl.clientHeight
-      targetEl.scrollTop = pct * targetMax
+    if (!root) {
+      return {
+        start: 0,
+        scrollable: maxScroll,
+        maxScroll,
+      }
     }
 
-    requestAnimationFrame(() => {
-      isSyncingScroll.current = false
-    })
+    const containerRect = container.getBoundingClientRect()
+    const rootRect = root.getBoundingClientRect()
+    const start = Math.max(0, rootRect.top - containerRect.top + container.scrollTop)
+    const end = Math.max(start, start + root.scrollHeight - container.clientHeight)
+
+    return {
+      start,
+      scrollable: Math.max(0, end - start),
+      maxScroll,
+    }
   }, [])
+
+  const syncScroll = React.useCallback(
+    (source: "editor" | "preview") => {
+      if (isSyncingScroll.current) return
+      isSyncingScroll.current = true
+
+      const sourceEl = source === "editor" ? editorScrollRef.current : previewScrollRef.current
+      const targetEl = source === "editor" ? previewScrollRef.current : editorScrollRef.current
+
+      if (sourceEl && targetEl) {
+        const sourceMetrics = getScrollSyncMetrics(sourceEl)
+        const targetMetrics = getScrollSyncMetrics(targetEl)
+
+        const rawProgress =
+          sourceMetrics.scrollable > 0
+            ? (sourceEl.scrollTop - sourceMetrics.start) / sourceMetrics.scrollable
+            : sourceMetrics.maxScroll > 0
+              ? sourceEl.scrollTop / sourceMetrics.maxScroll
+              : 0
+
+        const progress = Math.min(1, Math.max(0, rawProgress))
+        const desiredTargetTop =
+          targetMetrics.scrollable > 0
+            ? targetMetrics.start + progress * targetMetrics.scrollable
+            : progress * targetMetrics.maxScroll
+
+        const clampedTargetTop = Math.min(targetMetrics.maxScroll, Math.max(0, desiredTargetTop))
+
+        if (Math.abs(targetEl.scrollTop - clampedTargetTop) > 1) {
+          targetEl.scrollTop = clampedTargetTop
+        }
+      }
+
+      requestAnimationFrame(() => {
+        isSyncingScroll.current = false
+      })
+    },
+    [getScrollSyncMetrics],
+  )
 
   const handleEditorScroll = React.useCallback(() => syncScroll("editor"), [syncScroll])
   const handlePreviewScroll = React.useCallback(() => syncScroll("preview"), [syncScroll])
@@ -888,7 +930,6 @@ function StudioLayoutInner({
     return () => window.removeEventListener("keydown", handleKeyDown)
   }, [sidebarState, viewMode, setSidebarState, setViewMode, saveDraft, commandPaletteOpen])
 
-  const showSidebar = !isMobile || sidebarState === "expanded"
   const isSidebarCollapsed = !isMobile && sidebarState === "collapsed"
   const showPreview = viewMode === "split" && !isMobile
   const [resolvedProjectDataId, setResolvedProjectDataId] = React.useState<string | null>(null)
@@ -1274,6 +1315,8 @@ function StudioLayoutInner({
                       frontmatter={frontmatter}
                       fieldVariants={fieldVariants}
                       projectId={projectId}
+                      userId={userId}
+                      filePath={selectedFile.path}
                       scrollContainerRef={previewScrollRef}
                       onScroll={handlePreviewScroll}
                       adapter={adapter}
@@ -1341,7 +1384,14 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
 
   // 2. Queries hook
   const studioQueries = useStudioQueries(selectedFile?.path)
-  const { previewEntry, enabledPlugins, pluginRegistry, activeBranch, components: componentSchema } = studioQueries
+  const {
+    previewEntry,
+    enabledPlugins,
+    pluginRegistry,
+    activeBranch,
+    userId,
+    components: componentSchema,
+  } = studioQueries
 
   // 3. Preview Context hook
   const previewContext = usePreviewContext({
@@ -1368,6 +1418,8 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
       repo,
       branch,
       projectId,
+      userId,
+      selectedFilePath: selectedFile?.path,
       contentRoot,
       tree,
       adapter: previewContext.context,
@@ -1376,7 +1428,7 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
       adapterDiagnostics: previewContext.diagnostics,
       components: componentSchema,
     }),
-    [owner, repo, branch, projectId, contentRoot, tree, previewContext, componentSchema],
+    [owner, repo, branch, projectId, userId, selectedFile?.path, contentRoot, tree, previewContext, componentSchema],
   )
 
   return (
@@ -1397,6 +1449,8 @@ export function StudioLayout(props: StudioLayoutProps) {
       repo,
       branch,
       projectId,
+      userId: undefined,
+      selectedFilePath: undefined,
       contentRoot,
       tree,
       adapter: null,

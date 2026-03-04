@@ -60,7 +60,7 @@ function validateProps(componentName: string, props: Record<string, any>, schema
 }
 
 export function RepoJsxBridge({ mdastNode, descriptor }: RepoJsxBridgeProps) {
-  const { projectId } = useStudio()
+  const { projectId, userId, selectedFilePath } = useStudio()
   const { adapter, components: componentSchema } = useStudioAdapter()
 
   const Component = adapter?.components?.[descriptor.name]
@@ -103,14 +103,14 @@ export function RepoJsxBridge({ mdastNode, descriptor }: RepoJsxBridgeProps) {
 
     // Inject the asset resolver
     result.resolveAssetUrl = (path: string) => {
-      return resolveStudioAssetUrl(path, projectId)
+      return resolveStudioAssetUrl(path, projectId, userId, selectedFilePath)
     }
 
     return {
       props: result,
       propWarnings: [...evalWarnings, ...schemaWarnings],
     }
-  }, [mdastNode, projectId, adapter, descriptor.name, schema])
+  }, [mdastNode, projectId, userId, selectedFilePath, adapter, descriptor.name, schema])
 
   // Log actionable warnings (non-crashing)
   React.useEffect(() => {

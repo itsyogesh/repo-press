@@ -55,6 +55,19 @@ export interface UploadMediaResult {
   url?: string
 }
 
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer)
+  const chunkSize = 0x8000
+  const binaryChunks: string[] = []
+
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize)
+    binaryChunks.push(String.fromCharCode(...chunk))
+  }
+
+  return btoa(binaryChunks.join(""))
+}
+
 /**
  * Upload a media file using the Blob-first + GitHub fallback strategy.
  *
@@ -70,9 +83,9 @@ export async function uploadMedia({
   pathHint,
   storagePreference = "auto",
 }: UploadMediaOptions): Promise<UploadMediaResult> {
-  // Convert file to base64
+  // Convert file to base64 in chunks to avoid quadratic string concatenation.
   const arrayBuffer = await file.arrayBuffer()
-  const base64 = btoa(new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), ""))
+  const base64 = arrayBufferToBase64(arrayBuffer)
 
   const response = await fetch("/api/media/upload", {
     method: "POST",

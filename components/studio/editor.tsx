@@ -134,6 +134,30 @@ export function Editor({
   const { adapter, components: componentSchema } = useStudioAdapter()
   const editorRef = React.useRef<MDXEditorMethods>(null)
 
+  const discoveredJsxComponentNames = React.useMemo(() => {
+    const names = new Set<string>()
+    const componentTagRegex = /<\/?([A-Z][A-Za-z0-9_]*)\b/g
+    for (const match of content.matchAll(componentTagRegex)) {
+      const name = match[1]
+      if (name) {
+        names.add(name)
+      }
+    }
+
+    return Array.from(names)
+  }, [content])
+
+  const hasConfiguredMediaComponent = React.useMemo(() => {
+    const configuredNames = new Set([...Object.keys(adapter?.components || {}), ...Object.keys(componentSchema || {})])
+
+    return (
+      configuredNames.has("DocsImage") ||
+      configuredNames.has("Image") ||
+      configuredNames.has("DocsVideo") ||
+      configuredNames.has("Video")
+    )
+  }, [adapter, componentSchema])
+
   // Determine image upload path based on project structure
   const getImageUploadPath = React.useCallback(
     (fileName: string): string => {
@@ -189,9 +213,9 @@ export function Editor({
 
   const handleImagePreview = React.useCallback(
     async (imageSource: string): Promise<string> => {
-      return resolveStudioAssetUrl(imageSource, projectId)
+      return resolveStudioAssetUrl(imageSource, projectId, userId, filePath)
     },
-    [projectId],
+    [projectId, userId, filePath],
   )
 
   // Build MDXEditor plugins — memoized to avoid re-creating on every render
@@ -207,7 +231,7 @@ export function Editor({
       tablePlugin(),
       thematicBreakPlugin(),
       markdownShortcutPlugin(),
-      codeBlockPlugin({ defaultCodeBlockLanguage: "typescript" }),
+      codeBlockPlugin({ defaultCodeBlockLanguage: "ts" }),
       codeMirrorPlugin({
         codeBlockLanguages: {
           js: "JavaScript",
@@ -236,7 +260,11 @@ export function Editor({
         directiveDescriptors: [AdmonitionDirectiveDescriptor, YouTubeDirectiveDescriptor],
       }),
       jsxPlugin({
-        jsxComponentDescriptors: getJsxComponentDescriptors(adapter?.components, componentSchema),
+        jsxComponentDescriptors: getJsxComponentDescriptors(
+          adapter?.components,
+          componentSchema,
+          discoveredJsxComponentNames,
+        ),
       }),
       diffSourcePlugin({
         diffMarkdown: "",
@@ -244,7 +272,14 @@ export function Editor({
       }),
       toolbarPlugin({
         toolbarContents: () => (
-          <StudioToolbar owner={owner} repo={repo} branch={branch} projectId={projectId} userId={userId} />
+          <StudioToolbar
+            owner={owner}
+            repo={repo}
+            branch={branch}
+            projectId={projectId}
+            userId={userId}
+            showMarkdownMediaInserts={!hasConfiguredMediaComponent}
+          />
         ),
       }),
     ],
@@ -254,11 +289,13 @@ export function Editor({
       handleImagePreview,
       adapter,
       componentSchema,
+      discoveredJsxComponentNames,
       owner,
       repo,
       branch,
       projectId,
       userId,
+      hasConfiguredMediaComponent,
     ],
   )
 
@@ -270,18 +307,8 @@ export function Editor({
     [onChangeContent],
   )
 
-  // Sanitize markdown to fix MDXEditor parsing issues
-  // Removes empty code blocks that cause "Parsing failed: {type:code,name:N/A}" errors
-  // Always sanitize to handle content typed in Source mode as well
-  const sanitizedContent = React.useMemo(() => {
-    // Sanitize: remove empty code blocks (``` with any newlines/whitespace between them)
-    let sanitized = content.replace(/```[\s\n]*```/g, "")
-
-    // Also clean up multiple consecutive blank lines that might result
-    sanitized = sanitized.replace(/\n{3,}/g, "\n\n")
-
-    return sanitized
-  }, [content])
+  // Keep editor content lossless: stripping empty code fences breaks "Insert code block".
+  const sanitizedContent = React.useMemo(() => content, [content])
 
   const errorBoundaryResetKey = React.useMemo(() => `${filePath}:${sanitizedContent}`, [filePath, sanitizedContent])
 
@@ -308,7 +335,7 @@ export function Editor({
           />
 
           {/* MDXEditor */}
-          <div className="min-h-[500px]">
+          <div className="min-h-[500px]" data-scroll-sync-root="editor">
             <EditorErrorBoundary
               resetKey={errorBoundaryResetKey}
               fallback={

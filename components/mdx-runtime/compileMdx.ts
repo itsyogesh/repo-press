@@ -24,16 +24,18 @@ export async function compileMdx(source: string, allowedImports: Record<string, 
     // So we replace the hard throw statements with a fallback assignment.
     let code = String(vfile)
 
-    // 1. Change const to let only for component/scope declarations
-    // MDX v3 typically uses const { ... } = props.components or similar patterns
-    // We target declarations to avoid matching keywords inside strings or comments.
-    code = code.replace(/(^|;|\n)\s*const\s+\{/g, "$1let {")
-    code = code.replace(/(^|;|\n)\s*var\s+\{/g, "$1let {")
+    // 1. MDX emits missing-component checks that we rewrite to assign placeholders.
+    // To keep those assignments valid, make top-level declarations mutable.
+    code = code.replace(/(^|[;\n]\s*)(?:const|var)\s+/g, "$1let ")
 
-    // 2. Replace the throw check with a fallback assignment using a safer approach
+    // 2. Replace the throw checks with fallback assignments.
     code = code.replace(
       /if\s*\(!([a-zA-Z0-9_$]+)\)\s*_missingMdxReference\("([^"]+)",\s*([^)]+)\);/g,
-      'try { if (!$1) $1 = _mdxConfig._missingMdxReference("$2", $3); } catch(e) { /* ignore read-only */ }',
+      'if (!$1) $1 = _mdxConfig._missingMdxReference("$2", $3);',
+    )
+    code = code.replace(
+      /if\s*\(!([a-zA-Z0-9_$]+)\)\s*\{\s*_missingMdxReference\("([^"]+)",\s*([^)]+)\);\s*\}/g,
+      'if (!$1) { $1 = _mdxConfig._missingMdxReference("$2", $3); }',
     )
 
     return {

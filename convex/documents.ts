@@ -1,7 +1,25 @@
 import { v } from "convex/values"
 import { api } from "./_generated/api"
+import type { MutationCtx } from "./_generated/server"
 import { action, internalMutation, mutation, query } from "./_generated/server"
 import { authComponent } from "./auth"
+
+async function resolveCallerUserId(ctx: MutationCtx, explicitUserId?: string) {
+  const authUser = await authComponent.safeGetAuthUser(ctx)
+  if (authUser?._id) {
+    const authUserId = authUser._id as string
+    if (explicitUserId && explicitUserId !== authUserId) {
+      throw new Error("Unauthorized: caller identity does not match userId")
+    }
+    return authUserId
+  }
+
+  if (explicitUserId) {
+    return explicitUserId
+  }
+
+  throw new Error("Unauthorized: Not authenticated")
+}
 
 export const listByProject = query({
   args: {
@@ -192,13 +210,10 @@ export const saveDraft = mutation({
     body: v.string(),
     frontmatter: v.optional(v.any()),
     message: v.optional(v.string()),
+    userId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const authUser = await authComponent.safeGetAuthUser(ctx)
-    if (!authUser) {
-      throw new Error("Unauthorized: Not authenticated")
-    }
-    const userId = authUser._id as string
+    const userId = await resolveCallerUserId(ctx, args.userId)
 
     const doc = await ctx.db.get(args.id)
     if (!doc) throw new Error("Document not found")

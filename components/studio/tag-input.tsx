@@ -17,6 +17,17 @@ export function TagInput({ value = [], onChange, placeholder = "Add tag...", cla
   const [inputValue, setInputValue] = React.useState("")
   const inputRef = React.useRef<HTMLInputElement>(null)
   const inputId = React.useId()
+  const tagEntries = React.useMemo(() => {
+    const seen = new Map<string, number>()
+    return value.map((tag) => {
+      const nextCount = (seen.get(tag) ?? 0) + 1
+      seen.set(tag, nextCount)
+      return {
+        tag,
+        key: `${tag}::${nextCount}`,
+      }
+    })
+  }, [value])
 
   const addTag = (tag: string) => {
     const trimmed = tag.trim()
@@ -26,16 +37,31 @@ export function TagInput({ value = [], onChange, placeholder = "Add tag...", cla
     setInputValue("")
   }
 
-  const removeTag = (tag: string) => {
-    onChange(value.filter((t) => t !== tag))
+  const removeTagByKey = (keyToRemove: string) => {
+    const seen = new Map<string, number>()
+    const next: string[] = []
+
+    for (const tag of value) {
+      const nextCount = (seen.get(tag) ?? 0) + 1
+      seen.set(tag, nextCount)
+      const key = `${tag}::${nextCount}`
+
+      if (key === keyToRemove) {
+        continue
+      }
+      next.push(tag)
+    }
+
+    onChange(next)
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" || e.key === ",") {
       e.preventDefault()
       addTag(inputValue)
-    } else if (e.key === "Backspace" && inputValue === "" && value.length > 0) {
-      removeTag(value[value.length - 1])
+    } else if (e.key === "Backspace" && inputValue === "" && tagEntries.length > 0) {
+      const lastEntry = tagEntries[tagEntries.length - 1]
+      removeTagByKey(lastEntry.key)
     }
   }
 
@@ -47,9 +73,9 @@ export function TagInput({ value = [], onChange, placeholder = "Add tag...", cla
         className,
       )}
     >
-      {value.map((tag) => (
+      {tagEntries.map(({ tag, key }) => (
         <Badge
-          key={tag}
+          key={key}
           variant="secondary"
           className="h-6 gap-1 px-2 text-xs bg-studio-accent-muted text-studio-accent hover:bg-studio-accent/20 transition-colors"
         >
@@ -59,7 +85,7 @@ export function TagInput({ value = [], onChange, placeholder = "Add tag...", cla
             onClick={(e) => {
               e.preventDefault()
               e.stopPropagation()
-              removeTag(tag)
+              removeTagByKey(key)
             }}
             className="ml-0.5 rounded-full hover:bg-studio-accent/30 p-0.5 transition-colors"
           >

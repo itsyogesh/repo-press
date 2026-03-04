@@ -45,6 +45,7 @@ export function useStudioPublish({
               body: content,
               frontmatter,
               message: "Pre-publish save",
+              userId: userId ?? undefined,
             })
           }
         }

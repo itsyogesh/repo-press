@@ -40,6 +40,7 @@ export function GenericJsxEditor({ descriptor }: { mdastNode: any; descriptor: J
 export function getJsxComponentDescriptors(
   adapterComponents?: Record<string, any>,
   componentSchema?: Record<string, any>,
+  discoveredComponentNames: string[] = [],
 ): JsxComponentDescriptor[] {
   // 1. Built-in descriptors
   const baseDescriptors: JsxComponentDescriptor[] = [
@@ -129,7 +130,11 @@ export function getJsxComponentDescriptors(
   ]
 
   // 2. Add dynamic descriptors from schema or adapter discovery
-  const dynamicNames = new Set([...Object.keys(adapterComponents || {}), ...Object.keys(componentSchema || {})])
+  const dynamicNames = new Set([
+    ...Object.keys(adapterComponents || {}),
+    ...Object.keys(componentSchema || {}),
+    ...discoveredComponentNames,
+  ])
 
   const dynamicDescriptors: JsxComponentDescriptor[] = []
 

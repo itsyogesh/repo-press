@@ -43,6 +43,7 @@ export async function GET(request: Request) {
 
     const repoPath = normalizeRepoMediaPath(rawPath)
     const githubPath = repoPath.replace(/^\/+/, "")
+    const githubPathCandidates = getGitHubPathCandidates(githubPath)
 
     const pendingOp = await convex.query(api.mediaOps.getPendingByRepoPath, {
       projectId: project._id,
@@ -88,13 +89,31 @@ export async function GET(request: Request) {
       })
     }
 
-    const githubFile = await fetchGitHubFileBytes({
-      token,
-      owner: project.repoOwner,
-      repo: project.repoName,
-      path: githubPath,
-      ref: branchOverride || project.branch,
+    const activePublishBranch = await convex.query(api.publishBranches.getActiveForProject, {
+      projectId: project._id,
     })
+    const refsToTry = Array.from(
+      new Set([branchOverride, activePublishBranch?.branchName, project.branch].filter((ref): ref is string => !!ref)),
+    )
+
+    let githubFile: { bytes: Buffer; contentType?: string; etag?: string } | null = null
+    let resolvedGitHubPath = githubPath
+    for (const ref of refsToTry) {
+      for (const candidatePath of githubPathCandidates) {
+        githubFile = await fetchGitHubFileBytes({
+          token,
+          owner: project.repoOwner,
+          repo: project.repoName,
+          path: candidatePath,
+          ref,
+        })
+        if (githubFile) {
+          resolvedGitHubPath = candidatePath
+          break
+        }
+      }
+      if (githubFile) break
+    }
 
     if (!githubFile) {
       return NextResponse.json({ error: "Media not found" }, { status: 404 })
@@ -103,7 +122,7 @@ export async function GET(request: Request) {
     return new Response(new Uint8Array(githubFile.bytes), {
       status: 200,
       headers: buildProxyHeaders({
-        contentType: githubFile.contentType || getContentType(githubPath),
+        contentType: githubFile.contentType || getContentType(resolvedGitHubPath),
         etag: githubFile.etag,
       }),
     })
@@ -217,4 +236,16 @@ function getContentType(fileName: string): string {
     pdf: "application/pdf",
   }
   return types[ext || ""] || "application/octet-stream"
+}
+
+function getGitHubPathCandidates(path: string): string[] {
+  const normalized = path.replace(/^\/+/, "")
+  if (!normalized) return [normalized]
+
+  const candidates = new Set<string>([normalized])
+  if (!normalized.startsWith("public/") && normalized.startsWith("images/")) {
+    candidates.add(`public/${normalized}`)
+  }
+
+  return Array.from(candidates)
 }

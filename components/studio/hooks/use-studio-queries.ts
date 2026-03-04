@@ -12,9 +12,10 @@ export function useStudioQueries(selectedFilePath?: string) {
   const { projectId, tree, contentRoot, owner, repo, branch } = useStudio()
 
   const user = useQuery(api.auth.getCurrentUser)
-  const userId = user?._id as string | undefined
+  const authUserId = user?._id as string | undefined
 
   const project = useQuery(api.projects.get, projectId ? { id: projectId as Id<"projects"> } : "skip")
+  const userId = authUserId ?? (project?.userId as string | undefined) ?? undefined
 
   const document = useQuery(
     api.documents.getByFilePath,

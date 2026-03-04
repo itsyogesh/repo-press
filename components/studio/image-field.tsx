@@ -6,7 +6,9 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { resolveStudioAssetUrl } from "@/lib/studio/media-resolve"
 import { cn } from "@/lib/utils"
+import { useStudio } from "./studio-context"
 
 /** Allow relative paths and http(s) URLs. Block javascript: and other protocol URIs. */
 function isSafeSrc(src: string): boolean {
@@ -38,8 +40,10 @@ export function ImageField({
   className,
   imagePaths = [],
 }: ImageFieldProps) {
+  const { projectId, userId, selectedFilePath } = useStudio()
   const [showPreview, setShowPreview] = React.useState(!!value)
   const [browserOpen, setBrowserOpen] = React.useState(false)
+  const resolvedValuePreview = value ? resolveStudioAssetUrl(value, projectId, userId, selectedFilePath) : value
 
   const handleSelectImage = (path: string) => {
     onChange(path)
@@ -90,7 +94,7 @@ export function ImageField({
           <div className="rounded-md border border-studio-border overflow-hidden bg-studio-canvas-inset">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={value}
+              src={resolvedValuePreview}
               alt="Cover preview"
               className="max-h-32 w-full object-cover"
               onError={(e) => {
@@ -123,7 +127,7 @@ export function ImageField({
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={path}
+                    src={resolveStudioAssetUrl(path, projectId, userId, selectedFilePath)}
                     alt={path.split("/").pop()}
                     className="w-full h-full object-cover"
                     onError={(e) => {
