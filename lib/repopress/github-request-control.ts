@@ -27,10 +27,43 @@ function sleep(ms: number) {
   })
 }
 
+/**
+ * Fix #6: Only treat HTTP 429 and actual rate-limit 403s as rate-limit errors.
+ * GitHub returns 403 for many non-rate-limit reasons (access denied, SAML enforcement,
+ * abuse detection, etc.). We now check for rate-limit-specific signals before retrying.
+ */
 export function isGitHubRateLimitError(error: unknown): boolean {
   if (!error || typeof error !== "object") return false
+
   const status = (error as { status?: number }).status ?? (error as { response?: { status?: number } }).response?.status
-  return status === 403 || status === 429
+
+  // 429 is unambiguously a rate limit
+  if (status === 429) return true
+
+  // For 403, check for rate-limit-specific signals
+  if (status === 403) {
+    // Check response headers for rate limit exhaustion
+    const headers =
+      (error as { response?: { headers?: Record<string, string> } }).response?.headers ??
+      (error as { headers?: Record<string, string> }).headers
+    if (headers) {
+      const remaining = headers["x-ratelimit-remaining"]
+      if (remaining === "0") return true
+      const retryAfter = headers["retry-after"]
+      if (retryAfter) return true
+    }
+
+    // Check error message for rate limit keywords
+    const message =
+      (error as { message?: string }).message ??
+      (error as { response?: { data?: { message?: string } } }).response?.data?.message
+    if (typeof message === "string") {
+      const lower = message.toLowerCase()
+      if (lower.includes("rate limit") || lower.includes("abuse detection")) return true
+    }
+  }
+
+  return false
 }
 
 export function buildRequestScopeId(seed: string): string {

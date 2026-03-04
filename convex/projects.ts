@@ -1,6 +1,7 @@
 import { v } from "convex/values"
+import { internal } from "./_generated/api"
 import type { MutationCtx } from "./_generated/server"
-import { mutation, query } from "./_generated/server"
+import { internalMutation, mutation, query } from "./_generated/server"
 import { authComponent } from "./auth"
 
 /**
@@ -337,6 +338,11 @@ export const remove = mutation({
   },
 })
 
+/**
+ * Fix #8: Two-phase project deletion to avoid exceeding Convex transaction limits.
+ * Phase 1 (removeFull): Mark project as deleting, schedule batch cleanup.
+ * Phase 2 (_removeFullBatch): Delete records in batches via scheduled mutations.
+ */
 export const removeFull = mutation({
   args: { projectId: v.id("projects") },
   handler: async (ctx, args) => {
@@ -350,48 +356,114 @@ export const removeFull = mutation({
       throw new Error("Unauthorized")
     }
 
-    // 1. Delete Document History for all documents in project
-    const docs = await ctx.db
-      .query("documents")
-      .withIndex("by_projectId", (q) => q.eq("projectId", args.projectId))
-      .collect()
+    // Mark project as deleting to prevent access during cleanup
+    await ctx.db.patch(args.projectId, {
+      name: `[DELETING] ${project.name}`,
+      updatedAt: Date.now(),
+    })
 
-    for (const doc of docs) {
-      const history = await ctx.db
-        .query("documentHistory")
-        .withIndex("by_documentId", (q) => q.eq("documentId", doc._id))
-        .collect()
-      for (const entry of history) {
-        await ctx.db.delete(entry._id)
-      }
-      await ctx.db.delete(doc._id)
-    }
+    // Schedule the batch deletion (runs as a separate transaction)
+    await ctx.scheduler.runAfter(0, internal.projects._removeFullBatch, {
+      projectId: args.projectId,
+      phase: "documents",
+    })
+  },
+})
 
-    // 2. Delete associated entities
-    const tables = [
-      "collections",
-      "authors",
-      "tags",
-      "categories",
-      "folderMeta",
-      "mediaAssets",
-      "webhooks",
-      "explorerOps",
-      "mediaOps",
-      "publishBranches",
-    ] as const
+/**
+ * Internal mutation that deletes project data in batches.
+ * Processes up to BATCH_SIZE records per transaction, then reschedules
+ * itself for the next batch to avoid transaction limits.
+ */
+export const _removeFullBatch = internalMutation({
+  args: {
+    projectId: v.id("projects"),
+    phase: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const BATCH_SIZE = 100
 
-    for (const table of tables) {
-      const records = await ctx.db
-        .query(table as any)
+    if (args.phase === "documents") {
+      // Delete document history + documents in batches
+      const docs = await ctx.db
+        .query("documents")
         .withIndex("by_projectId", (q) => q.eq("projectId", args.projectId))
-        .collect()
-      for (const record of records) {
-        await ctx.db.delete(record._id)
+        .take(BATCH_SIZE)
+
+      for (const doc of docs) {
+        const history = await ctx.db
+          .query("documentHistory")
+          .withIndex("by_documentId", (q) => q.eq("documentId", doc._id))
+          .take(BATCH_SIZE)
+        for (const entry of history) {
+          await ctx.db.delete(entry._id)
+        }
+
+        // If there might be more history entries, reschedule for same doc
+        if (history.length >= BATCH_SIZE) {
+          await ctx.scheduler.runAfter(0, internal.projects._removeFullBatch, {
+            projectId: args.projectId,
+            phase: "documents",
+          })
+          return
+        }
+
+        await ctx.db.delete(doc._id)
       }
+
+      if (docs.length >= BATCH_SIZE) {
+        // More documents to delete
+        await ctx.scheduler.runAfter(0, internal.projects._removeFullBatch, {
+          projectId: args.projectId,
+          phase: "documents",
+        })
+        return
+      }
+
+      // All documents deleted — move to associated tables
+      await ctx.scheduler.runAfter(0, internal.projects._removeFullBatch, {
+        projectId: args.projectId,
+        phase: "associated",
+      })
+      return
     }
 
-    // 3. Delete the project itself
-    await ctx.db.delete(args.projectId)
+    if (args.phase === "associated") {
+      const tables = [
+        "collections",
+        "authors",
+        "tags",
+        "categories",
+        "folderMeta",
+        "mediaAssets",
+        "webhooks",
+        "explorerOps",
+        "mediaOps",
+        "publishBranches",
+      ] as const
+
+      for (const table of tables) {
+        const records = await ctx.db
+          .query(table as any)
+          .withIndex("by_projectId", (q) => q.eq("projectId", args.projectId))
+          .take(BATCH_SIZE)
+
+        for (const record of records) {
+          await ctx.db.delete(record._id)
+        }
+
+        if (records.length >= BATCH_SIZE) {
+          // More records in this table — reschedule
+          await ctx.scheduler.runAfter(0, internal.projects._removeFullBatch, {
+            projectId: args.projectId,
+            phase: "associated",
+          })
+          return
+        }
+      }
+
+      // All associated records deleted — delete the project itself
+      await ctx.db.delete(args.projectId)
+    }
   },
 })

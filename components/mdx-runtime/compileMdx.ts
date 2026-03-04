@@ -9,6 +9,53 @@ export interface CompileMdxResult {
   imports?: ExtractedImport[]
 }
 
+/**
+ * Fix #5: Replace top-level `const`/`var` declarations with `let` using a
+ * line-by-line approach that skips string literals and comments, instead of
+ * a single broad regex that could corrupt content inside strings.
+ */
+function makeTopLevelDeclarationsMutable(code: string): string {
+  return code
+    .split("\n")
+    .map((line) => {
+      // Skip lines that are clearly inside string literals or comments
+      const trimmed = line.trimStart()
+      if (
+        trimmed.startsWith("//") ||
+        trimmed.startsWith("*") ||
+        trimmed.startsWith("/*") ||
+        trimmed.startsWith('"') ||
+        trimmed.startsWith("'") ||
+        trimmed.startsWith("`")
+      ) {
+        return line
+      }
+      // Only replace `const ` or `var ` at the start of a statement
+      // (possibly preceded by whitespace or a semicolon)
+      return line.replace(/^(\s*)(?:const|var)\s+/g, "$1let ")
+    })
+    .join("\n")
+}
+
+/**
+ * Fix #5: Replace MDX missing-component throw checks with fallback assignments.
+ * These regexes are intentionally narrow — they match only the specific pattern
+ * emitted by @mdx-js/mdx for missing references, not arbitrary code.
+ */
+function rewriteMissingRefChecks(code: string): string {
+  // Pattern 1: if (!Foo) _missingMdxReference("Foo", true);
+  code = code.replace(
+    /if\s*\(!([a-zA-Z0-9_$]+)\)\s*_missingMdxReference\("([^"]+)",\s*([^)]+)\);/g,
+    'if (!$1) $1 = _mdxConfig._missingMdxReference("$2", $3);',
+  )
+  // Pattern 2: if (!Foo) { _missingMdxReference("Foo", true); }
+  code = code.replace(
+    /if\s*\(!([a-zA-Z0-9_$]+)\)\s*\{\s*_missingMdxReference\("([^"]+)",\s*([^)]+)\);\s*\}/g,
+    'if (!$1) { $1 = _mdxConfig._missingMdxReference("$2", $3); }',
+  )
+  return code
+}
+
 export async function compileMdx(source: string, allowedImports: Record<string, string[]>): Promise<CompileMdxResult> {
   try {
     const vfile = await compile(source, {
@@ -19,24 +66,13 @@ export async function compileMdx(source: string, allowedImports: Record<string, 
 
     const imports = vfile.data.extractedImports as ExtractedImport[] | undefined
 
-    // MDX strictly throws when a component isn't provided.
-    // We want our proxy/scope to handle missing components gracefully (rendering placeholders).
-    // So we replace the hard throw statements with a fallback assignment.
     let code = String(vfile)
 
-    // 1. MDX emits missing-component checks that we rewrite to assign placeholders.
-    // To keep those assignments valid, make top-level declarations mutable.
-    code = code.replace(/(^|[;\n]\s*)(?:const|var)\s+/g, "$1let ")
+    // 1. Make top-level declarations mutable so fallback assignments work.
+    code = makeTopLevelDeclarationsMutable(code)
 
     // 2. Replace the throw checks with fallback assignments.
-    code = code.replace(
-      /if\s*\(!([a-zA-Z0-9_$]+)\)\s*_missingMdxReference\("([^"]+)",\s*([^)]+)\);/g,
-      'if (!$1) $1 = _mdxConfig._missingMdxReference("$2", $3);',
-    )
-    code = code.replace(
-      /if\s*\(!([a-zA-Z0-9_$]+)\)\s*\{\s*_missingMdxReference\("([^"]+)",\s*([^)]+)\);\s*\}/g,
-      'if (!$1) { $1 = _mdxConfig._missingMdxReference("$2", $3); }',
-    )
+    code = rewriteMissingRefChecks(code)
 
     return {
       code,

@@ -216,6 +216,7 @@ export const markCommitted = mutation({
   args: {
     ids: v.array(v.id("explorerOps")),
     commitSha: v.string(),
+    userId: v.string(),
   },
   handler: async (ctx, args) => {
     const now = Date.now()
@@ -223,6 +224,12 @@ export const markCommitted = mutation({
       const op = await ctx.db.get(id)
       // Only mark ops that are still pending (avoid overwriting concurrent undos)
       if (op && op.status === "pending") {
+        // Fix #4: Verify ownership before marking as committed
+        const project = await ctx.db.get(op.projectId)
+        if (!project || project.userId !== args.userId) {
+          throw new Error("Unauthorized")
+        }
+
         await ctx.db.patch(id, {
           status: "committed",
           commitSha: args.commitSha,
@@ -237,8 +244,17 @@ export const markCommitted = mutation({
  * Remove all committed explorer ops for a project (cleanup after publish).
  */
 export const clearCommittedForProject = mutation({
-  args: { projectId: v.id("projects") },
+  args: {
+    projectId: v.id("projects"),
+    userId: v.string(),
+  },
   handler: async (ctx, args) => {
+    // Fix #4: Verify ownership before clearing committed records
+    const project = await ctx.db.get(args.projectId)
+    if (!project || project.userId !== args.userId) {
+      throw new Error("Unauthorized")
+    }
+
     const committed = await ctx.db
       .query("explorerOps")
       .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", "committed"))

@@ -1,6 +1,37 @@
 import { Fragment } from "react"
 import * as jsxRuntime from "react/jsx-runtime"
 
+/**
+ * List of global browser APIs that compiled MDX code must NOT access.
+ * Used to shadow dangerous globals inside the evaluation sandbox.
+ *
+ * NOTE: This is a defence-in-depth measure, not a full sandbox.
+ * Task 4 (expression sandbox / allowlist evaluator) will replace
+ * `new Function()` entirely.
+ */
+const BLOCKED_GLOBALS = [
+  "fetch",
+  "XMLHttpRequest",
+  "WebSocket",
+  "EventSource",
+  "localStorage",
+  "sessionStorage",
+  "indexedDB",
+  "document",
+  "navigator",
+  "location",
+  "history",
+  "crypto",
+  "opener",
+  "parent",
+  "top",
+  "frames",
+  "postMessage",
+  "importScripts",
+  "eval",
+  "Function",
+] as const
+
 export function evaluateMdx(code: string, scope: Record<string, unknown>, onMissing?: (name: string) => void) {
   const warnedMissing = new Set<string>()
 
@@ -45,11 +76,23 @@ export function evaluateMdx(code: string, scope: Record<string, unknown>, onMiss
   // Add _missingMdxReference to scope so it's available as a local variable
   pairs.push(["_missingMdxReference", mdxConfig._missingMdxReference])
 
+  // Fix #2: Shadow dangerous browser globals to prevent exfiltration from MDX content.
+  // Each blocked name becomes a function parameter set to `undefined`, which shadows the
+  // real global inside the function body produced by `new Function()`.
+  for (const name of BLOCKED_GLOBALS) {
+    if (!pairs.some(([k]) => k === name)) {
+      pairs.push([name, undefined])
+    }
+  }
+
   const keys = pairs.map(([k]) => k)
   const values = pairs.map(([, v]) => v)
 
   // Create a new function where the first argument is the config expected by MDX,
   // followed by any scope variables we want to inject.
+  // SECURITY: `new Function()` still executes arbitrary JS — the blocked-globals
+  // shadow above is defence-in-depth only. Task 4 will replace this with a proper
+  // allowlist evaluator.
   const fn = new Function("_mdxConfig", ...keys, code)
 
   // Execute to get the module exports

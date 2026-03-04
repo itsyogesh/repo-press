@@ -13,9 +13,11 @@ const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
 
 type StoragePreference = "auto" | "blob" | "github"
 
+// Fix #3: Maximum upload size — 50MB (base64 string is ~33% larger than binary)
+const MAX_UPLOAD_BASE64_LENGTH = Math.ceil(50 * 1024 * 1024 * (4 / 3))
+
 interface UploadRequest {
   projectId?: string
-  userId?: string
   owner: string
   repo: string
   branch: string
@@ -53,35 +55,33 @@ export async function POST(request: Request) {
 
   try {
     const body = (await request.json()) as UploadRequest
-    const {
-      projectId,
-      userId,
-      owner,
-      repo,
-      branch,
-      pathHint,
-      fileName,
-      contentBase64,
-      storagePreference = "auto",
-    } = body
+    const { projectId, owner, repo, branch, pathHint, fileName, contentBase64, storagePreference = "auto" } = body
 
     if (!owner || !repo || !branch || !fileName || !contentBase64) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
     }
 
-    const actingUserId = await resolveActingUserId(userId)
-    if (!actingUserId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
+    // Fix #3: Validate upload size before decoding base64 to prevent OOM
+    if (contentBase64.length > MAX_UPLOAD_BASE64_LENGTH) {
+      return NextResponse.json({ error: "Upload exceeds maximum file size of 50MB" }, { status: 413 })
     }
 
-    const project = await resolveProject({ projectId, owner, repo, branch, userId: actingUserId })
+    // Fix #1: Resolve userId server-side only, never from client input
+    const oauthUserId = await resolveActingUserId()
+
+    const project = await resolveProject({ projectId, owner, repo, branch })
     if (!project) {
       return NextResponse.json({ error: "Project not found. Pass a valid projectId for uploads." }, { status: 404 })
     }
 
-    if (project.userId !== actingUserId) {
+    // Fix #1: Verify access server-side (OAuth checks userId, PAT checks repo access)
+    const hasAccess = await verifyProjectAccess(token, project, oauthUserId)
+    if (!hasAccess) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
     }
+
+    // Use the project's userId for downstream Convex calls (trusted, from DB)
+    const actingUserId = project.userId
 
     if (project.repoOwner !== owner || project.repoName !== repo || project.branch !== branch) {
       return NextResponse.json(
@@ -125,7 +125,7 @@ export async function POST(request: Request) {
           githubSha: baseShaAtStage ?? undefined,
         })
 
-        const previewUrl = buildMediaResolveUrl(project._id, repoPath, actingUserId)
+        const previewUrl = buildMediaResolveUrl(project._id, repoPath)
         return NextResponse.json({
           storage: "blob",
           repoPath,
@@ -185,7 +185,7 @@ export async function POST(request: Request) {
       githubSha: baseShaAtStage ?? undefined,
     })
 
-    const previewUrl = buildMediaResolveUrl(project._id, repoPath, actingUserId)
+    const previewUrl = buildMediaResolveUrl(project._id, repoPath)
     return NextResponse.json({
       storage: "github",
       repoPath,
@@ -205,7 +205,13 @@ export async function POST(request: Request) {
   }
 }
 
-async function resolveActingUserId(explicitUserId?: string): Promise<string | null> {
+/**
+ * Fix #1: Resolve the acting user ID server-side only.
+ * OAuth users: derived from the auth session (trusted).
+ * PAT users: returns null — access is verified via GitHub API instead.
+ * Never accepts a client-supplied userId to prevent auth bypass.
+ */
+async function resolveActingUserId(): Promise<string | null> {
   if (fetchAuthQuery) {
     try {
       const authUser = await fetchAuthQuery(api.auth.getCurrentUser)
@@ -213,11 +219,37 @@ async function resolveActingUserId(explicitUserId?: string): Promise<string | nu
         return authUser._id as string
       }
     } catch {
-      // fallback to explicit user ID for PAT-driven sessions
+      // Not an OAuth session
     }
   }
+  return null
+}
 
-  return explicitUserId || null
+/**
+ * Fix #1: Verify the caller has access to the project.
+ * OAuth users: checks project.userId matches auth session.
+ * PAT users: verifies the token can access the project's GitHub repo.
+ */
+async function verifyProjectAccess(
+  token: string,
+  project: { userId: string; repoOwner: string; repoName: string },
+  oauthUserId: string | null,
+): Promise<boolean> {
+  if (oauthUserId) {
+    return project.userId === oauthUserId
+  }
+
+  // PAT user — verify the token can access the repo
+  try {
+    const octokit = createGitHubClient(token)
+    await octokit.repos.get({
+      owner: project.repoOwner,
+      repo: project.repoName,
+    })
+    return true
+  } catch {
+    return false
+  }
 }
 
 async function resolveProject({
@@ -225,13 +257,11 @@ async function resolveProject({
   owner,
   repo,
   branch,
-  userId,
 }: {
   projectId?: string
   owner: string
   repo: string
   branch: string
-  userId: string
 }) {
   if (projectId) {
     return await convex.query(api.projects.get, {
@@ -239,18 +269,13 @@ async function resolveProject({
     })
   }
 
-  const byRepo = await convex.query(api.projects.getByRepo, {
-    userId,
+  // Without a projectId, find by repo metadata using the server-side findByRepo query
+  const project = await convex.query(api.projects.findByRepo, {
     repoOwner: owner,
     repoName: repo,
+    branch,
   })
-
-  if (!byRepo || byRepo.length === 0) {
-    return null
-  }
-
-  const exact = byRepo.find((project) => project.branch === branch)
-  return exact || byRepo[0]
+  return project || null
 }
 
 function shouldTryBlob(preference: StoragePreference): boolean {
@@ -380,10 +405,20 @@ async function uploadToGitHub({
   }
 }
 
+/**
+ * Fix #10: Match specific Vercel Blob access-mode mismatch errors only.
+ * Previously matched any error containing "public" or "access", which could
+ * mask unrelated errors like "Cannot access property of undefined".
+ */
 function isBlobAccessMismatch(error: unknown): boolean {
   if (!(error instanceof Error)) return false
   const message = error.message.toLowerCase()
-  return message.includes("public") || message.includes("access")
+  // Match Vercel Blob's specific error about public/private access mode mismatch
+  return (
+    message.includes("public access is not allowed") ||
+    message.includes("access mode") ||
+    (message.includes("public") && message.includes("not allowed"))
+  )
 }
 
 function isShaRequiredError(error: unknown): boolean {

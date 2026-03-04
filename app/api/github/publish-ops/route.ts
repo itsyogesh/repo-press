@@ -44,7 +44,9 @@ export async function POST(request: Request) {
 
     const [pendingOps, dirtyDocs, pendingMediaOps] = await Promise.all([
       convex.query(api.explorerOps.listPending, { projectId: project._id }),
-      convex.query(api.documents.listDirtyForProject, { projectId: project._id }),
+      convex.query(api.documents.listDirtyForProject, {
+        projectId: project._id,
+      }),
       convex.query(api.mediaOps.listPending, { projectId: project._id }),
     ])
 
@@ -73,7 +75,10 @@ export async function POST(request: Request) {
 
     for (const mediaOp of pendingMediaOps) {
       const normalizedPath = normalizeMediaPath(mediaOp.repoPath)
-      pathsToFetch.push({ key: `media:${normalizedPath}`, fullPath: normalizedPath })
+      pathsToFetch.push({
+        key: `media:${normalizedPath}`,
+        fullPath: normalizedPath,
+      })
     }
 
     const prefetchResults = new Map<string, Awaited<ReturnType<typeof getFile>>>()
@@ -238,6 +243,7 @@ export async function POST(request: Request) {
       await convex.mutation(api.explorerOps.markCommitted, {
         ids: pendingOps.map((op) => op._id),
         commitSha,
+        userId: project.userId,
       })
     }
 
@@ -245,6 +251,7 @@ export async function POST(request: Request) {
       await convex.mutation(api.mediaOps.markCommitted, {
         ids: pendingMediaOps.map((op) => op._id),
         commitSha,
+        userId: project.userId,
       })
     }
 

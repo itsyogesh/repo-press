@@ -21,23 +21,22 @@ export async function GET(request: Request) {
     const projectId = searchParams.get("projectId")
     const rawPath = searchParams.get("path")
     const branchOverride = searchParams.get("branch")
-    const explicitUserId = searchParams.get("userId") || undefined
 
     if (!projectId || !rawPath) {
       return NextResponse.json({ error: "Missing required query params: projectId, path" }, { status: 400 })
     }
 
-    const actingUserId = await resolveActingUserId(explicitUserId)
-    if (!actingUserId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
-    }
+    const oauthUserId = await resolveActingUserId()
 
-    const project = await convex.query(api.projects.get, { id: projectId as Id<"projects"> })
+    const project = await convex.query(api.projects.get, {
+      id: projectId as Id<"projects">,
+    })
     if (!project) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 })
     }
 
-    if (project.userId !== actingUserId) {
+    const hasAccess = await verifyProjectAccess(token, project, oauthUserId)
+    if (!hasAccess) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 
@@ -96,7 +95,11 @@ export async function GET(request: Request) {
       new Set([branchOverride, activePublishBranch?.branchName, project.branch].filter((ref): ref is string => !!ref)),
     )
 
-    let githubFile: { bytes: Buffer; contentType?: string; etag?: string } | null = null
+    let githubFile: {
+      bytes: Buffer
+      contentType?: string
+      etag?: string
+    } | null = null
     let resolvedGitHubPath = githubPath
     for (const ref of refsToTry) {
       for (const candidatePath of githubPathCandidates) {
@@ -132,7 +135,13 @@ export async function GET(request: Request) {
   }
 }
 
-async function resolveActingUserId(explicitUserId?: string): Promise<string | null> {
+/**
+ * Resolve the acting user ID server-side only.
+ * OAuth users: derived from the auth session (trusted).
+ * PAT users: returns null — access is verified via GitHub API instead.
+ * Never accepts a client-supplied userId to prevent auth bypass.
+ */
+async function resolveActingUserId(): Promise<string | null> {
   if (fetchAuthQuery) {
     try {
       const authUser = await fetchAuthQuery(api.auth.getCurrentUser)
@@ -140,11 +149,37 @@ async function resolveActingUserId(explicitUserId?: string): Promise<string | nu
         return authUser._id as string
       }
     } catch {
-      // fallback to explicit user ID for PAT sessions
+      // Not an OAuth session
     }
   }
+  return null
+}
 
-  return explicitUserId || null
+/**
+ * Verify the caller has access to the project.
+ * OAuth users: checks project.userId matches auth session.
+ * PAT users: verifies the token has access to the project's GitHub repo.
+ */
+async function verifyProjectAccess(
+  token: string,
+  project: { userId: string; repoOwner: string; repoName: string },
+  oauthUserId: string | null,
+): Promise<boolean> {
+  if (oauthUserId) {
+    return project.userId === oauthUserId
+  }
+
+  // PAT user — verify the token can access the repo
+  try {
+    const octokit = createGitHubClient(token)
+    await octokit.repos.get({
+      owner: project.repoOwner,
+      repo: project.repoName,
+    })
+    return true
+  } catch {
+    return false
+  }
 }
 
 async function fetchBlobContent(url: string) {

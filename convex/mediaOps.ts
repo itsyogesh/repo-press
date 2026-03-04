@@ -91,12 +91,16 @@ export const markCommitted = mutation({
   args: {
     ids: v.array(v.id("mediaOps")),
     commitSha: v.string(),
+    userId: v.string(),
   },
   handler: async (ctx, args) => {
     const now = Date.now()
     for (const id of args.ids) {
       const op = await ctx.db.get(id)
       if (!op || op.status !== "pending") continue
+
+      // Fix #4: Verify ownership before marking as committed
+      await requireProjectOwnership(ctx, op.projectId, args.userId)
 
       await ctx.db.patch(id, {
         status: "committed",
@@ -134,8 +138,14 @@ export const undoByRepoPath = mutation({
 })
 
 export const clearCommittedForProject = mutation({
-  args: { projectId: v.id("projects") },
+  args: {
+    projectId: v.id("projects"),
+    userId: v.string(),
+  },
   handler: async (ctx, args) => {
+    // Fix #4: Verify ownership before clearing committed records
+    await requireProjectOwnership(ctx, args.projectId, args.userId)
+
     const committed = await ctx.db
       .query("mediaOps")
       .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", "committed"))

@@ -231,21 +231,25 @@ export const saveDraft = mutation({
 
     const now = Date.now()
 
+    // Fix #7: Create history entry with the PREVIOUS content before overwriting.
+    // This preserves the old content so restore/diff operations show what existed
+    // before each edit, not what was just saved.
+    if (doc.body) {
+      await ctx.db.insert("documentHistory", {
+        documentId: args.id,
+        body: doc.body,
+        frontmatter: doc.frontmatter,
+        editedBy: userId,
+        message: args.message || "Draft saved",
+        createdAt: now,
+      })
+    }
+
     // Update the document with the new content
     await ctx.db.patch(args.id, {
       body: args.body,
       frontmatter: args.frontmatter,
       updatedAt: now,
-    })
-
-    // Record a new version snapshot representing the updated content
-    await ctx.db.insert("documentHistory", {
-      documentId: args.id,
-      body: args.body,
-      frontmatter: args.frontmatter,
-      editedBy: userId,
-      message: args.message || "Draft saved",
-      createdAt: now,
     })
   },
 })
