@@ -14,10 +14,6 @@ async function resolveCallerUserId(ctx: MutationCtx, explicitUserId?: string) {
     return authUserId
   }
 
-  if (explicitUserId) {
-    return explicitUserId
-  }
-
   throw new Error("Unauthorized: Not authenticated")
 }
 
@@ -207,6 +203,7 @@ export const search = query({
 export const saveDraft = mutation({
   args: {
     id: v.id("documents"),
+    expectedUpdatedAt: v.optional(v.number()),
     body: v.string(),
     frontmatter: v.optional(v.any()),
     message: v.optional(v.string()),
@@ -217,6 +214,10 @@ export const saveDraft = mutation({
 
     const doc = await ctx.db.get(args.id)
     if (!doc) throw new Error("Document not found")
+
+    if (args.expectedUpdatedAt !== undefined && doc.updatedAt !== args.expectedUpdatedAt) {
+      throw new Error("Document was modified by another user. Please refresh and try again.")
+    }
 
     // Verify ownership: user must own the project
     const project = await ctx.db.get(doc.projectId)

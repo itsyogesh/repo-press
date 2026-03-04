@@ -1,7 +1,7 @@
 "use client"
 
 import { useMutation, useQuery } from "convex/react"
-import { AlertTriangle, CheckCircle2, Folder, GitBranch, Loader2, Settings, Sparkles } from "lucide-react"
+import { CheckCircle2, Folder, GitBranch, Loader2, Settings, Sparkles } from "lucide-react"
 import { useRouter } from "next/navigation"
 import type React from "react"
 import { useState } from "react"
@@ -16,7 +16,6 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { api } from "@/convex/_generated/api"
 import type { RepoPressConfig } from "@/lib/config-schema"
-import type { FrameworkConfig } from "@/lib/framework-adapters"
 import { getFrameworkConfig, getRegisteredAdapters } from "@/lib/framework-adapters"
 
 interface RepoSetupFormProps {

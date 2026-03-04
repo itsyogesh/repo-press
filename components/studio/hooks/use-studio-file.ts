@@ -404,7 +404,7 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
     const snapshot = fileCacheRef.current.get(path)
     if (!snapshot) return
     setSelectedFile(resolveFileNode(path, snapshot.sha))
-  }, [tree, selectedFile?.path, resolveFileNode])
+  }, [selectedFile?.path, resolveFileNode])
 
   React.useEffect(() => {
     if (typeof window === "undefined") return

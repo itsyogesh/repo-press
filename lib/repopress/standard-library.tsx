@@ -119,7 +119,7 @@ export const standardComponents: Record<string, React.ComponentType<any>> = {
   ),
   Image: (props) => <img {...props} className="rounded-lg border shadow-sm max-w-full" alt={props.alt || ""} />,
   Video: (props) => <video {...props} className="rounded-lg border shadow-sm max-w-full" controls />,
-  CopyIpsButton: (props) => (
+  CopyIpsButton: (_props) => (
     <button
       type="button"
       className="my-2 inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 px-3 gap-2 font-sans"

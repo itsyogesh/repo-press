@@ -180,7 +180,7 @@ export async function getContentTree(
     })
 
     // Filter tree to content files within contentRoot
-    const prefix = contentRoot ? contentRoot + "/" : ""
+    const prefix = contentRoot ? `${contentRoot}/` : ""
     const contentFiles = new Set<string>()
     const contentDirs = new Set<string>()
 

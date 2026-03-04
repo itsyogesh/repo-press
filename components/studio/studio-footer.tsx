@@ -1,6 +1,5 @@
 import { formatDistanceToNow } from "date-fns"
 import { Check, Loader2 } from "lucide-react"
-import * as React from "react"
 import { useViewMode } from "./view-mode-context"
 
 interface StudioFooterProps {

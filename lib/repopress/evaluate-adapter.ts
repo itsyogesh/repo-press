@@ -49,6 +49,9 @@ export function evaluateAdapter(code: string): RepoPressPreviewAdapter {
   // exfiltrate session tokens via fetch/XMLHttpRequest/etc.
   // SECURITY: This is defence-in-depth. Task 4 will replace `new Function()`.
   const blockedGlobals = [
+    "window",
+    "self",
+    "globalThis",
     "fetch",
     "XMLHttpRequest",
     "WebSocket",
@@ -70,7 +73,7 @@ export function evaluateAdapter(code: string): RepoPressPreviewAdapter {
     "eval",
     "Function",
   ]
-  const blockedParams = blockedGlobals.join(",")
+  const _blockedParams = blockedGlobals.join(",")
   const blockedValues = blockedGlobals.map(() => undefined)
 
   const fn = new Function("exports", "module", "require", "React", ...blockedGlobals, code)

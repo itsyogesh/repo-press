@@ -1,4 +1,3 @@
-import * as esbuild from "esbuild-wasm"
 import { getFileContent } from "@/lib/github"
 
 export interface ResolvedPreviewContext {

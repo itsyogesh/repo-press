@@ -81,6 +81,11 @@ export function RepoJsxBridge({ mdastNode, descriptor }: RepoJsxBridgeProps) {
     attrs.forEach((attr: any) => {
       if (attr.type === "mdxJsxAttribute") {
         if (attr.value?.type === "mdxJsxAttributeValueExpression") {
+          if (attr.name === "dangerouslySetInnerHTML") {
+            evalWarnings.push(`Blocked dangerous prop: ${attr.name}`)
+            result[attr.name] = undefined
+            return
+          }
           const expression = attr.value.value as string
           const evaluated = safeEvalJsExpression(expression, evalScope)
           if (evaluated.ok) {

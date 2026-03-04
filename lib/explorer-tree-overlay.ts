@@ -19,7 +19,7 @@ export type ExplorerOp = {
 export function prefixContentRoot(filePath: string, contentRoot: string): string {
   if (!contentRoot) return filePath
   // Don't double-prefix if already prefixed
-  if (filePath.startsWith(contentRoot + "/") || filePath === contentRoot) {
+  if (filePath.startsWith(`${contentRoot}/`) || filePath === contentRoot) {
     return filePath
   }
   return `${contentRoot}/${filePath}`
@@ -176,7 +176,7 @@ export function filterTree(
   function matches(node: OverlayTreeNode): boolean {
     if (node.name.toLowerCase().includes(lowerQuery)) return true
     if (node.path.toLowerCase().includes(lowerQuery)) return true
-    if (titleMap && titleMap[node.path]?.toLowerCase().includes(lowerQuery)) return true
+    if (titleMap?.[node.path]?.toLowerCase().includes(lowerQuery)) return true
     return false
   }
 

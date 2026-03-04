@@ -64,7 +64,7 @@ export const handlePRMerged = mutation({
     const contentRoot = project?.contentRoot ?? ""
     const committedRelativePaths = new Set(
       committedPaths.map((p) => {
-        if (contentRoot && p.startsWith(contentRoot + "/")) {
+        if (contentRoot && p.startsWith(`${contentRoot}/`)) {
           return p.slice(contentRoot.length + 1)
         }
         if (contentRoot && p.startsWith(contentRoot)) {

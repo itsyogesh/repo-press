@@ -39,7 +39,7 @@ export function PublishDialog({
   const [description, setDescription] = React.useState("")
 
   const { creates, deletes, edits } = pendingCounts
-  const total = creates + deletes + edits
+  const _total = creates + deletes + edits
   const summaryParts: string[] = []
   if (creates > 0) summaryParts.push(`${creates} new`)
   if (edits > 0) summaryParts.push(`${edits} modified`)

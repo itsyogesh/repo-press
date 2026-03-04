@@ -68,7 +68,7 @@ export function Preview({
   // Reset image error when image URL changes
   React.useEffect(() => {
     setImageError(false)
-  }, [image])
+  }, [])
 
   // Stabilize the asset resolver to prevent infinite re-renders in PreviewRuntime
   const resolveAssetUrl = React.useMemo(() => {
