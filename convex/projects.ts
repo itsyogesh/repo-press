@@ -108,6 +108,21 @@ export const findByRepo = query({
   },
 })
 
+export const listByRepoAndBranch = query({
+  args: {
+    repoOwner: v.string(),
+    repoName: v.string(),
+    branch: v.string(),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("projects")
+      .withIndex("by_repo", (q) => q.eq("repoOwner", args.repoOwner).eq("repoName", args.repoName))
+      .filter((q) => q.eq(q.field("branch"), args.branch))
+      .collect()
+  },
+})
+
 const frameworkValidator = v.optional(v.string())
 
 const contentTypeValidator = v.union(

@@ -9,6 +9,7 @@ interface StudioContextValue {
   repo: string
   branch: string
   projectId?: string
+  projectAccessToken?: string
   userId?: string
   selectedFilePath?: string
   contentRoot: string

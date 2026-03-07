@@ -1,9 +1,7 @@
-import { ConvexHttpClient } from "convex/browser"
 import { redirect } from "next/navigation"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
-import { getGitHubToken } from "@/lib/auth-server"
-import { projectMatchesRoute } from "@/lib/studio/project-route"
+import { fetchAuthQuery, getGitHubToken } from "@/lib/auth-server"
 import { HistoryClient } from "./history-client"
 
 interface PageProps {
@@ -18,12 +16,23 @@ export default async function HistoryPage({ params, searchParams }: PageProps) {
   if (!token) {
     redirect("/login")
   }
+  if (!fetchAuthQuery) {
+    return <HistoryClient owner={owner} repo={repo} branch={branch} projectId={undefined} />
+  }
+
+  const authUser = await fetchAuthQuery(api.auth.getCurrentUser).catch(() => null)
+  if (!authUser?._id) {
+    return <HistoryClient owner={owner} repo={repo} branch={branch} projectId={undefined} />
+  }
 
   let validatedProjectId: string | undefined
   if (projectId) {
-    const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
-    const project = await convex.query(api.projects.get, { id: projectId as Id<"projects"> })
-    if (projectMatchesRoute(project, owner, repo, branch)) {
+    const projects = await fetchAuthQuery(api.projects.listMyProjectsForRepo, {
+      repoOwner: owner,
+      repoName: repo,
+    })
+    const project = projects.find((entry) => entry._id === (projectId as Id<"projects">))
+    if (project && (!branch || project.branch === branch)) {
       validatedProjectId = projectId
     }
   }

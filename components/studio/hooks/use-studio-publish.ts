@@ -10,6 +10,7 @@ import { useStudio } from "../studio-context"
 
 interface UseStudioPublishProps {
   userId?: string | null
+  projectAccessToken?: string | null
   documentUpdatedAt?: number | null
   ensureDocumentRecord: () => Promise<Id<"documents"> | null>
   selectedFile: FileTreeNode | null
@@ -19,6 +20,7 @@ interface UseStudioPublishProps {
 
 export function useStudioPublish({
   userId,
+  projectAccessToken,
   documentUpdatedAt,
   ensureDocumentRecord,
   selectedFile,
@@ -51,6 +53,7 @@ export function useStudioPublish({
               frontmatter,
               message: "Pre-publish save",
               userId: userId ?? undefined,
+              projectAccessToken: projectAccessToken ?? undefined,
             })
           }
         }
@@ -81,7 +84,17 @@ export function useStudioPublish({
         setIsPublishing(false)
       }
     },
-    [projectId, userId, documentUpdatedAt, selectedFile, ensureDocumentRecord, saveDraftMutation, content, frontmatter],
+    [
+      projectId,
+      userId,
+      projectAccessToken,
+      documentUpdatedAt,
+      selectedFile,
+      ensureDocumentRecord,
+      saveDraftMutation,
+      content,
+      frontmatter,
+    ],
   )
 
   const openPublishDialog = React.useCallback(() => {

@@ -1,21 +1,39 @@
 import { v } from "convex/values"
-import { api } from "./_generated/api"
+import { verifyProjectAccessToken } from "../lib/project-access-token"
+import { api, internal } from "./_generated/api"
 import type { MutationCtx } from "./_generated/server"
 import { action, internalMutation, mutation, query } from "./_generated/server"
 import { authComponent } from "./auth"
 
-async function resolveCallerUserId(ctx: MutationCtx, explicitUserId?: string) {
+async function resolveProjectCaller(
+  ctx: MutationCtx,
+  projectId: string,
+  explicitUserId?: string,
+  projectAccessToken?: string,
+) {
   const authUser = await authComponent.safeGetAuthUser(ctx)
   if (authUser?._id) {
     const authUserId = authUser._id as string
     if (explicitUserId && explicitUserId !== authUserId) {
       throw new Error("Unauthorized: caller identity does not match userId")
     }
-    return authUserId
+    const project = await ctx.db.get(projectId as any)
+    if (!project || project.userId !== authUserId) {
+      throw new Error("Unauthorized")
+    }
+    return { userId: authUserId, project }
   }
 
-  if (explicitUserId) {
-    return explicitUserId
+  const payload = await verifyProjectAccessToken(projectAccessToken)
+  if (payload && payload.projectId === projectId) {
+    const project = await ctx.db.get(projectId as any)
+    if (!project || project.userId !== payload.userId) {
+      throw new Error("Unauthorized")
+    }
+    if (explicitUserId && explicitUserId !== payload.userId) {
+      throw new Error("Unauthorized: caller identity does not match userId")
+    }
+    return { userId: payload.userId, project }
   }
 
   throw new Error("Unauthorized: Not authenticated")
@@ -119,8 +137,12 @@ export const getOrCreate = mutation({
     body: v.optional(v.string()),
     frontmatter: v.optional(v.any()),
     githubSha: v.optional(v.string()),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    await resolveProjectCaller(ctx, args.projectId, args.userId, args.projectAccessToken)
+
     const existing = await ctx.db
       .query("documents")
       .withIndex("by_projectId_filePath", (q) => q.eq("projectId", args.projectId).eq("filePath", args.filePath))
@@ -186,18 +208,14 @@ export const update = mutation({
 export const remove = mutation({
   args: {
     id: v.id("documents"),
-    userId: v.string(),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const userId = await resolveCallerUserId(ctx, args.userId)
-
     const doc = await ctx.db.get(args.id)
     if (!doc) throw new Error("Document not found")
 
-    const project = await ctx.db.get(doc.projectId)
-    if (!project || project.userId !== userId) {
-      throw new Error("Unauthorized")
-    }
+    await resolveProjectCaller(ctx, doc.projectId, args.userId, args.projectAccessToken)
 
     await ctx.db.delete(args.id)
   },
@@ -225,21 +243,16 @@ export const saveDraft = mutation({
     frontmatter: v.optional(v.any()),
     message: v.optional(v.string()),
     userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const userId = await resolveCallerUserId(ctx, args.userId)
-
     const doc = await ctx.db.get(args.id)
     if (!doc) throw new Error("Document not found")
 
+    const { userId } = await resolveProjectCaller(ctx, doc.projectId, args.userId, args.projectAccessToken)
+
     if (args.expectedUpdatedAt !== undefined && doc.updatedAt !== args.expectedUpdatedAt) {
       throw new Error("Document was modified by another user. Please refresh and try again.")
-    }
-
-    // Verify ownership: user must own the project
-    const project = await ctx.db.get(doc.projectId)
-    if (!project || project.userId !== userId) {
-      throw new Error("Unauthorized")
     }
 
     // Auto-transition published->draft when editing (edge case #6)
@@ -504,10 +517,11 @@ export const syncTreeTitles = action({
               if (titleMatch) title = titleMatch[1].trim()
             }
 
-            await ctx.runMutation(api.documents.getOrCreate, {
+            await ctx.runMutation(internal.documents.create, {
               projectId: args.projectId,
               filePath: file.path,
               title,
+              status: "draft",
               githubSha: file.sha,
             })
           } catch {

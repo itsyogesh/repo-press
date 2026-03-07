@@ -1,21 +1,39 @@
 import { v } from "convex/values"
+import { verifyProjectAccessToken } from "../lib/project-access-token"
 import type { MutationCtx } from "./_generated/server"
 import { mutation, query } from "./_generated/server"
 import { authComponent } from "./auth"
 import { buildRestoreVersionMutation } from "./documentHistory-restore"
 
-async function resolveCallerUserId(ctx: MutationCtx, explicitUserId?: string) {
+async function resolveProjectCaller(
+  ctx: MutationCtx,
+  projectId: string,
+  explicitUserId?: string,
+  projectAccessToken?: string,
+) {
   const authUser = await authComponent.safeGetAuthUser(ctx)
   if (authUser?._id) {
     const authUserId = authUser._id as string
     if (explicitUserId && explicitUserId !== authUserId) {
       throw new Error("Unauthorized: caller identity does not match userId")
     }
-    return authUserId
+    const project = await ctx.db.get(projectId as any)
+    if (!project || project.userId !== authUserId) {
+      throw new Error("Unauthorized")
+    }
+    return { userId: authUserId, project }
   }
 
-  if (explicitUserId) {
-    return explicitUserId
+  const payload = await verifyProjectAccessToken(projectAccessToken)
+  if (payload && payload.projectId === projectId) {
+    const project = await ctx.db.get(projectId as any)
+    if (!project || project.userId !== payload.userId) {
+      throw new Error("Unauthorized")
+    }
+    if (explicitUserId && explicitUserId !== payload.userId) {
+      throw new Error("Unauthorized: caller identity does not match userId")
+    }
+    return { userId: payload.userId, project }
   }
 
   throw new Error("Unauthorized: Not authenticated")
@@ -71,10 +89,9 @@ export const restoreVersion = mutation({
   args: {
     historyId: v.id("documentHistory"),
     userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const userId = await resolveCallerUserId(ctx, args.userId)
-
     const historyEntry = await ctx.db.get(args.historyId)
     if (!historyEntry) {
       throw new Error("History entry not found")
@@ -85,10 +102,7 @@ export const restoreVersion = mutation({
       throw new Error("Document not found")
     }
 
-    const project = await ctx.db.get(document.projectId)
-    if (!project || project.userId !== userId) {
-      throw new Error("Unauthorized")
-    }
+    const { userId } = await resolveProjectCaller(ctx, document.projectId, args.userId, args.projectAccessToken)
 
     const now = Date.now()
     const restoreMutation = buildRestoreVersionMutation({

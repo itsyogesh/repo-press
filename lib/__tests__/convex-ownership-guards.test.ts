@@ -28,6 +28,7 @@ import {
   markMerged as markPublishBranchMerged,
   updateAfterCommit as updatePublishBranchAfterCommit,
 } from "@/convex/publishBranches"
+import { mintProjectAccessToken } from "@/lib/project-access-token"
 
 function createCtx(overrides?: {
   get?: ReturnType<typeof vi.fn>
@@ -51,6 +52,7 @@ function createCtx(overrides?: {
 describe("Convex ownership guards", () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    process.env.BETTER_AUTH_SECRET = "test-secret"
     safeGetAuthUserMock.mockResolvedValue({ _id: "user_owner" })
   })
 
@@ -184,8 +186,15 @@ describe("Convex ownership guards", () => {
     expect(ctx.db.patch).not.toHaveBeenCalled()
   })
 
-  it("allows saveDraft when PAT mode supplies an explicit owning userId", async () => {
+  it("allows saveDraft when PAT mode supplies a valid project access token", async () => {
     safeGetAuthUserMock.mockResolvedValue(null)
+    const projectAccessToken = await mintProjectAccessToken({
+      projectId: "project_1",
+      userId: "user_owner",
+      repoOwner: "acme",
+      repoName: "docs-site",
+      branch: "main",
+    })
     const patch = vi.fn()
     const insert = vi.fn()
     const ctx = createCtx({
@@ -208,7 +217,7 @@ describe("Convex ownership guards", () => {
       id: "doc_1",
       body: "# New body",
       frontmatter: { title: "New" },
-      userId: "user_owner",
+      projectAccessToken,
     })
 
     expect(insert).toHaveBeenCalled()
@@ -273,8 +282,15 @@ describe("Convex ownership guards", () => {
     )
   })
 
-  it("allows history restore when PAT mode supplies an explicit owning userId", async () => {
+  it("allows history restore when PAT mode supplies a valid project access token", async () => {
     safeGetAuthUserMock.mockResolvedValue(null)
+    const projectAccessToken = await mintProjectAccessToken({
+      projectId: "project_1",
+      userId: "user_owner",
+      repoOwner: "acme",
+      repoName: "docs-site",
+      branch: "main",
+    })
     const insert = vi.fn()
     const patch = vi.fn()
     const ctx = createCtx({
@@ -301,7 +317,7 @@ describe("Convex ownership guards", () => {
 
     await (restoreDocumentHistoryVersion as any).handler(ctx, {
       historyId: "history_1",
-      userId: "user_owner",
+      projectAccessToken,
     })
 
     expect(insert).toHaveBeenCalled()

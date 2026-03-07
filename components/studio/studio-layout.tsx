@@ -49,6 +49,7 @@ export interface StudioLayoutProps {
   branch: string
   currentPath: string
   projectId?: string
+  projectAccessToken?: string
   contentRoot?: string
 }
 
@@ -415,8 +416,18 @@ function StudioLayoutInner({
   studioFile: ReturnType<typeof useStudioFile>
   studioQueries: ReturnType<typeof useStudioQueries>
 }) {
-  const { projectId, contentRoot, owner, repo, branch, adapter, adapterLoading, adapterError, adapterDiagnostics } =
-    useStudio()
+  const {
+    projectId,
+    projectAccessToken,
+    contentRoot,
+    owner,
+    repo,
+    branch,
+    adapter,
+    adapterLoading,
+    adapterError,
+    adapterDiagnostics,
+  } = useStudio()
   const {
     viewMode,
     setViewMode,
@@ -495,6 +506,7 @@ function StudioLayoutInner({
   // 3. Save logic
   const { isSaving, saveDraft, ensureDocumentRecord } = useStudioSave({
     userId,
+    projectAccessToken,
     documentId: document?._id,
     documentUpdatedAt: document?.updatedAt,
     selectedFile,
@@ -507,6 +519,7 @@ function StudioLayoutInner({
   const { isPublishing, publishDialogOpen, publishConflicts, openPublishDialog, setPublishDialogOpen, handlePublish } =
     useStudioPublish({
       userId,
+      projectAccessToken,
       documentUpdatedAt: document?.updatedAt,
       ensureDocumentRecord,
       selectedFile,
@@ -537,6 +550,7 @@ function StudioLayoutInner({
         await stageCreate({
           projectId: projectId as Id<"projects">,
           userId,
+          projectAccessToken,
           filePath,
           title: initialTitle,
           initialBody: "",
@@ -556,7 +570,7 @@ function StudioLayoutInner({
         toast.error(error.message || "Failed to create file")
       }
     },
-    [projectId, userId, contentRoot, stageCreate, primeFileSnapshot, navigateToFile],
+    [projectId, userId, projectAccessToken, contentRoot, stageCreate, primeFileSnapshot, navigateToFile],
   )
 
   const handleDeleteFile = React.useCallback(
@@ -567,7 +581,7 @@ function StudioLayoutInner({
           (op: any) => op.filePath === filePath && op.opType === "create" && op.status === "pending",
         )
         if (pendingCreateOp) {
-          await undoOp({ id: pendingCreateOp._id, userId })
+          await undoOp({ id: pendingCreateOp._id, userId, projectAccessToken })
           discardFileFromClientState(filePath)
           toast.success("Removed staged new file")
           return
@@ -576,6 +590,7 @@ function StudioLayoutInner({
         const opId = await stageDelete({
           projectId: projectId as Id<"projects">,
           userId,
+          projectAccessToken,
           filePath,
           previousSha: fileSha || undefined,
         })
@@ -584,7 +599,7 @@ function StudioLayoutInner({
             label: "Undo",
             onClick: async () => {
               try {
-                await undoOp({ id: opId, userId })
+                await undoOp({ id: opId, userId, projectAccessToken })
                 toast.success("Delete undone")
               } catch {
                 toast.error("Failed to undo")
@@ -597,7 +612,7 @@ function StudioLayoutInner({
         toast.error(error.message || "Failed to delete file")
       }
     },
-    [projectId, userId, pendingOps, undoOp, discardFileFromClientState, stageDelete],
+    [projectId, userId, projectAccessToken, pendingOps, undoOp, discardFileFromClientState, stageDelete],
   )
 
   const handleUndoDelete = React.useCallback(
@@ -606,14 +621,14 @@ function StudioLayoutInner({
       const op = pendingOps.find((o: any) => o.filePath === filePath && o.opType === "delete" && o.status === "pending")
       if (!op) return
       try {
-        await undoOp({ id: op._id, userId })
+        await undoOp({ id: op._id, userId, projectAccessToken })
         toast.success("Delete undone")
       } catch (error: any) {
         console.error("Error undoing delete:", error)
         toast.error(error.message || "Failed to undo")
       }
     },
-    [projectId, userId, pendingOps, undoOp],
+    [projectId, userId, projectAccessToken, pendingOps, undoOp],
   )
 
   const handleDiscardAll = React.useCallback(async () => {
@@ -621,14 +636,14 @@ function StudioLayoutInner({
     try {
       for (const op of pendingOps) {
         if (op.status === "pending") {
-          await undoOp({ id: op._id, userId })
+          await undoOp({ id: op._id, userId, projectAccessToken })
         }
       }
       toast.success("All pending changes discarded")
     } catch (error: any) {
       toast.error(error.message || "Failed to discard changes")
     }
-  }, [pendingOps, userId, undoOp])
+  }, [pendingOps, userId, projectAccessToken, undoOp])
 
   const resolveRelocatePayload = React.useCallback(
     async (oldPath: string) => {
@@ -716,6 +731,7 @@ function StudioLayoutInner({
         const createOpId = await stageCreate({
           projectId: projectId as Id<"projects">,
           userId,
+          projectAccessToken,
           filePath: newPath,
           title: payload.title || inferTitleFromPath(newPath),
           initialBody: payload.body,
@@ -724,9 +740,9 @@ function StudioLayoutInner({
 
         if (payload.isFromPendingCreate && payload.pendingCreateOpId) {
           try {
-            await undoOp({ id: payload.pendingCreateOpId, userId })
+            await undoOp({ id: payload.pendingCreateOpId, userId, projectAccessToken })
           } catch (error) {
-            await undoOp({ id: createOpId, userId }).catch(() => {})
+            await undoOp({ id: createOpId, userId, projectAccessToken }).catch(() => {})
             throw error
           }
         } else {
@@ -735,11 +751,12 @@ function StudioLayoutInner({
             deleteOpId = await stageDelete({
               projectId: projectId as Id<"projects">,
               userId,
+              projectAccessToken,
               filePath: oldPath,
               previousSha: oldNode?.sha || payload.previousSha,
             })
           } catch (error) {
-            await undoOp({ id: createOpId, userId }).catch(() => {})
+            await undoOp({ id: createOpId, userId, projectAccessToken }).catch(() => {})
             throw error
           }
 
@@ -748,8 +765,8 @@ function StudioLayoutInner({
               label: "Undo",
               onClick: async () => {
                 try {
-                  await undoOp({ id: deleteOpId, userId })
-                  await undoOp({ id: createOpId, userId })
+                  await undoOp({ id: deleteOpId, userId, projectAccessToken })
+                  await undoOp({ id: createOpId, userId, projectAccessToken })
                   toast.success(`${actionLabel === "renamed" ? "Rename" : "Move"} undone`)
                 } catch {
                   toast.error("Failed to undo file operation")
@@ -778,6 +795,7 @@ function StudioLayoutInner({
     [
       projectId,
       userId,
+      projectAccessToken,
       overlayTree,
       resolveRelocatePayload,
       stageCreate,
@@ -1380,7 +1398,7 @@ function StudioLayoutInner({
 }
 
 function StudioProviderWrapper(props: StudioLayoutProps) {
-  const { owner, repo, branch, projectId, contentRoot = "", tree, initialFile, currentPath } = props
+  const { owner, repo, branch, projectId, projectAccessToken, contentRoot = "", tree, initialFile, currentPath } = props
 
   // 1. File state hook
   const studioFile = useStudioFile(initialFile, currentPath)
@@ -1422,6 +1440,7 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
       repo,
       branch,
       projectId,
+      projectAccessToken,
       userId,
       selectedFilePath: selectedFile?.path,
       contentRoot,
@@ -1432,7 +1451,19 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
       adapterDiagnostics: previewContext.diagnostics,
       components: componentSchema,
     }),
-    [owner, repo, branch, projectId, userId, selectedFile?.path, contentRoot, tree, previewContext, componentSchema],
+    [
+      owner,
+      repo,
+      branch,
+      projectId,
+      projectAccessToken,
+      userId,
+      selectedFile?.path,
+      contentRoot,
+      tree,
+      previewContext,
+      componentSchema,
+    ],
   )
 
   return (
@@ -1445,7 +1476,7 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
 }
 
 export function StudioLayout(props: StudioLayoutProps) {
-  const { owner, repo, branch, projectId, contentRoot = "", tree } = props
+  const { owner, repo, branch, projectId, projectAccessToken, contentRoot = "", tree } = props
 
   const baseContextValue = React.useMemo(
     () => ({
@@ -1453,6 +1484,7 @@ export function StudioLayout(props: StudioLayoutProps) {
       repo,
       branch,
       projectId,
+      projectAccessToken,
       userId: undefined,
       selectedFilePath: undefined,
       contentRoot,
@@ -1463,7 +1495,7 @@ export function StudioLayout(props: StudioLayoutProps) {
       adapterDiagnostics: [],
       components: undefined,
     }),
-    [owner, repo, branch, projectId, contentRoot, tree],
+    [owner, repo, branch, projectId, projectAccessToken, contentRoot, tree],
   )
 
   return (

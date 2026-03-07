@@ -10,6 +10,7 @@ import { useStudio } from "../studio-context"
 
 interface UseStudioSaveProps {
   userId?: string | null
+  projectAccessToken?: string | null
   documentId?: string | null
   documentUpdatedAt?: number | null
   selectedFile: FileTreeNode | null
@@ -20,6 +21,7 @@ interface UseStudioSaveProps {
 
 export function useStudioSave({
   userId,
+  projectAccessToken,
   documentId,
   documentUpdatedAt,
   selectedFile,
@@ -44,7 +46,7 @@ export function useStudioSave({
   updatedAtRef.current = documentUpdatedAt
 
   const ensureDocumentRecord = React.useCallback(async (): Promise<Id<"documents"> | null> => {
-    if (!projectId || !selectedFile || selectedFile.type !== "file" || !userId) {
+    if (!projectId || !selectedFile || selectedFile.type !== "file" || (!userId && !projectAccessToken)) {
       return null
     }
 
@@ -58,13 +60,15 @@ export function useStudioSave({
         body: contentRef.current,
         frontmatter: frontmatterRef.current,
         githubSha: shaRef.current || undefined,
+        userId: userId ?? undefined,
+        projectAccessToken: projectAccessToken ?? undefined,
       })
       return docId
     } catch (error) {
       console.error("Error creating document record:", error)
       return null
     }
-  }, [projectId, selectedFile, userId, documentId, getOrCreateDocument])
+  }, [projectId, selectedFile, userId, projectAccessToken, documentId, getOrCreateDocument])
 
   const saveDraft = React.useCallback(async () => {
     if (!selectedFile) {
@@ -84,6 +88,7 @@ export function useStudioSave({
         frontmatter: frontmatterRef.current,
         message: "Draft saved",
         userId: userId ?? undefined,
+        projectAccessToken: projectAccessToken ?? undefined,
       })
 
       toast.success("Draft saved")
@@ -93,7 +98,7 @@ export function useStudioSave({
     } finally {
       setIsSaving(false)
     }
-  }, [selectedFile, ensureDocumentRecord, saveDraftMutation, userId])
+  }, [selectedFile, ensureDocumentRecord, saveDraftMutation, userId, projectAccessToken])
 
   return {
     isSaving,

@@ -1,4 +1,5 @@
 import { v } from "convex/values"
+import { verifyProjectAccessToken } from "../lib/project-access-token"
 import { mutation, query } from "./_generated/server"
 import { authComponent } from "./auth"
 
@@ -8,6 +9,35 @@ async function verifyCallerUserId(ctx: any, explicitUserId: string) {
     throw new Error("Unauthorized")
   }
   return explicitUserId
+}
+
+async function resolveProjectCaller(ctx: any, projectId: string, explicitUserId?: string, projectAccessToken?: string) {
+  const authUser = await authComponent.safeGetAuthUser(ctx)
+  if (authUser?._id) {
+    const authUserId = authUser._id as string
+    if (explicitUserId && authUserId !== explicitUserId) {
+      throw new Error("Unauthorized")
+    }
+    const project = await ctx.db.get(projectId)
+    if (!project || project.userId !== authUserId) {
+      throw new Error("Unauthorized")
+    }
+    return { userId: authUserId, project }
+  }
+
+  const payload = await verifyProjectAccessToken(projectAccessToken)
+  if (payload && payload.projectId === projectId) {
+    const project = await ctx.db.get(projectId)
+    if (!project || project.userId !== payload.userId) {
+      throw new Error("Unauthorized")
+    }
+    if (explicitUserId && explicitUserId !== payload.userId) {
+      throw new Error("Unauthorized")
+    }
+    return { userId: payload.userId, project }
+  }
+
+  throw new Error("Unauthorized")
 }
 
 /** Returns all pending explorer ops for a project. */
@@ -42,18 +72,15 @@ export const getByFilePath = query({
 export const stageCreate = mutation({
   args: {
     projectId: v.id("projects"),
-    userId: v.string(),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
     filePath: v.string(),
     title: v.string(),
     initialBody: v.optional(v.string()),
     initialFrontmatter: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
-    // Verify ownership
-    const project = await ctx.db.get(args.projectId)
-    if (!project || project.userId !== args.userId) {
-      throw new Error("Unauthorized")
-    }
+    const { userId } = await resolveProjectCaller(ctx, args.projectId, args.userId, args.projectAccessToken)
 
     // Check for existing pending op at this filePath
     const existingOp = await ctx.db
@@ -119,7 +146,7 @@ export const stageCreate = mutation({
     // Insert the explorerOp
     const opId = await ctx.db.insert("explorerOps", {
       projectId: args.projectId,
-      userId: args.userId,
+      userId,
       opType: "create",
       filePath: args.filePath,
       initialBody: args.initialBody,
@@ -140,16 +167,13 @@ export const stageCreate = mutation({
 export const stageDelete = mutation({
   args: {
     projectId: v.id("projects"),
-    userId: v.string(),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
     filePath: v.string(),
     previousSha: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    // Verify ownership
-    const project = await ctx.db.get(args.projectId)
-    if (!project || project.userId !== args.userId) {
-      throw new Error("Unauthorized")
-    }
+    const { userId } = await resolveProjectCaller(ctx, args.projectId, args.userId, args.projectAccessToken)
 
     // Check for existing pending op at this path
     const existingOp = await ctx.db
@@ -164,7 +188,7 @@ export const stageDelete = mutation({
     const now = Date.now()
     const opId = await ctx.db.insert("explorerOps", {
       projectId: args.projectId,
-      userId: args.userId,
+      userId,
       opType: "delete",
       filePath: args.filePath,
       previousSha: args.previousSha,
@@ -184,7 +208,8 @@ export const stageDelete = mutation({
 export const undoOp = mutation({
   args: {
     id: v.id("explorerOps"),
-    userId: v.string(),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const op = await ctx.db.get(args.id)
@@ -193,11 +218,7 @@ export const undoOp = mutation({
       throw new Error("Can only undo pending operations")
     }
 
-    // Verify ownership via project
-    const project = await ctx.db.get(op.projectId)
-    if (!project || project.userId !== args.userId) {
-      throw new Error("Unauthorized")
-    }
+    await resolveProjectCaller(ctx, op.projectId, args.userId, args.projectAccessToken)
 
     // Mark the op as undone
     await ctx.db.patch(args.id, {
