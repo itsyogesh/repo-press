@@ -11,13 +11,22 @@ import { useStudio } from "../studio-context"
 interface UseStudioSaveProps {
   userId?: string | null
   documentId?: string | null
+  documentUpdatedAt?: number | null
   selectedFile: FileTreeNode | null
   content: string
   frontmatter: Record<string, any>
   sha: string | null
 }
 
-export function useStudioSave({ userId, documentId, selectedFile, content, frontmatter, sha }: UseStudioSaveProps) {
+export function useStudioSave({
+  userId,
+  documentId,
+  documentUpdatedAt,
+  selectedFile,
+  content,
+  frontmatter,
+  sha,
+}: UseStudioSaveProps) {
   const { projectId } = useStudio()
   const [isSaving, setIsSaving] = React.useState(false)
 
@@ -28,9 +37,11 @@ export function useStudioSave({ userId, documentId, selectedFile, content, front
   const contentRef = React.useRef(content)
   const frontmatterRef = React.useRef(frontmatter)
   const shaRef = React.useRef(sha)
+  const updatedAtRef = React.useRef(documentUpdatedAt)
   contentRef.current = content
   frontmatterRef.current = frontmatter
   shaRef.current = sha
+  updatedAtRef.current = documentUpdatedAt
 
   const ensureDocumentRecord = React.useCallback(async (): Promise<Id<"documents"> | null> => {
     if (!projectId || !selectedFile || selectedFile.type !== "file" || !userId) {
@@ -68,6 +79,7 @@ export function useStudioSave({ userId, documentId, selectedFile, content, front
 
       await saveDraftMutation({
         id: docId,
+        expectedUpdatedAt: updatedAtRef.current ?? undefined,
         body: contentRef.current,
         frontmatter: frontmatterRef.current,
         message: "Draft saved",

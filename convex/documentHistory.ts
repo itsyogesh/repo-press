@@ -14,6 +14,10 @@ async function resolveCallerUserId(ctx: MutationCtx, explicitUserId?: string) {
     return authUserId
   }
 
+  if (explicitUserId) {
+    return explicitUserId
+  }
+
   throw new Error("Unauthorized: Not authenticated")
 }
 

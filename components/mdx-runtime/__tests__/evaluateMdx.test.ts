@@ -33,4 +33,13 @@ describe("evaluateMdx", () => {
 
     expect(result).toBe("undefined")
   })
+
+  it("blocks indirect eval from escaping to the real global scope", () => {
+    const code =
+      '"use strict"; return { default: (() => { try { return (0, eval)("typeof globalThis") } catch { return "blocked" } })() };'
+
+    const result = evaluateMdx(code, {})
+
+    expect(result).toBe("blocked")
+  })
 })

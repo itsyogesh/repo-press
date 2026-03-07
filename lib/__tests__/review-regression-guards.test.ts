@@ -32,6 +32,11 @@ const noEffectFetchFiles = [
   "lib/hooks/use-preview-context.ts",
 ]
 
+const optimisticSaveFiles = [
+  "components/studio/hooks/use-studio-save.ts",
+  "components/studio/hooks/use-studio-publish.ts",
+]
+
 function read(relativePath: string) {
   return fs.readFileSync(path.join(ROOT, relativePath), "utf8")
 }
@@ -57,6 +62,12 @@ describe("review regression guards", () => {
       const source = read(relativePath)
       expect(source).not.toContain("useEffect(")
       expect(source).not.toContain("React.useEffect(")
+    }
+  })
+
+  it("threads optimistic-lock tokens through the reviewed save paths", () => {
+    for (const relativePath of optimisticSaveFiles) {
+      expect(read(relativePath)).toContain("expectedUpdatedAt")
     }
   })
 

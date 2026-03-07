@@ -11,7 +11,7 @@ import {
 } from "@/lib/repopress/adapter-cache"
 import { transpileAdapter } from "@/lib/repopress/esbuild-browser"
 import { evaluateAdapter, type RepoPressPreviewAdapter } from "@/lib/repopress/evaluate-adapter"
-import { standardComponents } from "@/lib/repopress/standard-library"
+import { buildMergedContext } from "@/lib/repopress/preview-context"
 
 interface UsePreviewContextOptions {
   owner: string
@@ -47,39 +47,6 @@ const inFlightAdapterRequests = new Map<string, Promise<AdapterSourceActionResul
 const inFlightPluginRequests = new Map<string, Promise<PluginSourceActionResult>>()
 
 let didPruneAdapterCache = false
-
-function buildMergedContext(
-  adapter: RepoPressPreviewAdapter | null,
-  plugins: Record<string, RepoPressPreviewAdapter>,
-): RepoPressPreviewAdapter {
-  const result: RepoPressPreviewAdapter = {
-    components: { ...standardComponents, ...(adapter?.components || {}) },
-    scope: { ...(adapter?.scope || {}) },
-    allowImports: { ...(adapter?.allowImports || {}) },
-  }
-
-  for (const plugin of Object.values(plugins)) {
-    if (plugin.components) {
-      result.components = { ...result.components, ...plugin.components }
-    }
-    if (plugin.scope) {
-      result.scope = { ...result.scope, ...plugin.scope }
-    }
-    if (plugin.allowImports) {
-      for (const [moduleName, exports] of Object.entries(plugin.allowImports)) {
-        result.allowImports![moduleName] = {
-          ...(result.allowImports![moduleName] || {}),
-          ...(exports as object),
-        }
-      }
-    }
-    if (plugin.resolveAssetUrl) {
-      result.resolveAssetUrl = plugin.resolveAssetUrl
-    }
-  }
-
-  return result
-}
 
 const EMPTY_RESULT: UsePreviewContextResult = {
   context: buildMergedContext(null, {}),

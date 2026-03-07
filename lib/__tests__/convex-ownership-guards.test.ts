@@ -17,6 +17,7 @@ vi.mock("@/convex/auth", () => ({
   },
 }))
 
+import { restoreVersion as restoreDocumentHistoryVersion } from "@/convex/documentHistory"
 import { remove as removeDocument, saveDraft } from "@/convex/documents"
 import { markCommitted as markExplorerOpsCommitted } from "@/convex/explorerOps"
 import { stage as stageMediaOp } from "@/convex/mediaOps"
@@ -270,5 +271,40 @@ describe("Convex ownership guards", () => {
         commitSha: "commit_1",
       }),
     )
+  })
+
+  it("allows history restore when PAT mode supplies an explicit owning userId", async () => {
+    safeGetAuthUserMock.mockResolvedValue(null)
+    const insert = vi.fn()
+    const patch = vi.fn()
+    const ctx = createCtx({
+      get: vi
+        .fn()
+        .mockResolvedValueOnce({
+          _id: "history_1",
+          documentId: "doc_1",
+          body: "# Old version",
+          frontmatter: { title: "Old" },
+          createdAt: 100,
+        })
+        .mockResolvedValueOnce({
+          _id: "doc_1",
+          projectId: "project_1",
+          body: "# Current version",
+          frontmatter: { title: "Current" },
+          status: "draft",
+        })
+        .mockResolvedValueOnce({ _id: "project_1", userId: "user_owner" }),
+      insert,
+      patch,
+    })
+
+    await (restoreDocumentHistoryVersion as any).handler(ctx, {
+      historyId: "history_1",
+      userId: "user_owner",
+    })
+
+    expect(insert).toHaveBeenCalled()
+    expect(patch).toHaveBeenCalled()
   })
 })

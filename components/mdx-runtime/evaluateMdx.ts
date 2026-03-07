@@ -1,6 +1,6 @@
 import { Fragment } from "react"
 import * as jsxRuntime from "react/jsx-runtime"
-import { withFunctionConstructorGuard } from "@/lib/repopress/function-constructor-guard"
+import { withEvalGuard, withFunctionConstructorGuard } from "@/lib/repopress/function-constructor-guard"
 
 /**
  * List of global browser APIs that compiled MDX code must NOT access.
@@ -99,10 +99,12 @@ export function evaluateMdx(code: string, scope: Record<string, unknown>, onMiss
   // SECURITY: `new Function()` still executes arbitrary JS — the blocked-globals
   // shadow above is defence-in-depth only. Task 4 will replace this with a proper
   // allowlist evaluator.
-  const result = withFunctionConstructorGuard(() => {
-    const fn = new Function("_mdxConfig", ...keys, code)
-    return fn(mdxConfig, ...values)
-  })
+  const result = withEvalGuard(() =>
+    withFunctionConstructorGuard(() => {
+      const fn = new Function("_mdxConfig", ...keys, code)
+      return fn(mdxConfig, ...values)
+    }),
+  )
 
   return result.default
 }

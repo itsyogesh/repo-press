@@ -1,6 +1,6 @@
 import React from "react"
 import * as jsxRuntime from "react/jsx-runtime"
-import { withFunctionConstructorGuard } from "./function-constructor-guard"
+import { withEvalGuard, withFunctionConstructorGuard } from "./function-constructor-guard"
 
 export interface RepoPressPreviewAdapter {
   components?: Record<string, React.ComponentType<any>>
@@ -78,10 +78,12 @@ export function evaluateAdapter(code: string): RepoPressPreviewAdapter {
   const blockedValues = blockedGlobals.map(() => undefined)
 
   try {
-    withFunctionConstructorGuard(() => {
-      const fn = new Function("exports", "module", "require", "React", ...blockedGlobals, code)
-      fn(exports, module, require, React, ...blockedValues)
-    })
+    withEvalGuard(() =>
+      withFunctionConstructorGuard(() => {
+        const fn = new Function("exports", "module", "require", "React", ...blockedGlobals, code)
+        fn(exports, module, require, React, ...blockedValues)
+      }),
+    )
   } catch (err: any) {
     console.error("Adapter evaluation failed", err)
     throw new Error(`Failed to evaluate adapter: ${err.message}`)

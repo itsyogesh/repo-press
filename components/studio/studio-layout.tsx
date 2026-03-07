@@ -496,6 +496,7 @@ function StudioLayoutInner({
   const { isSaving, saveDraft, ensureDocumentRecord } = useStudioSave({
     userId,
     documentId: document?._id,
+    documentUpdatedAt: document?.updatedAt,
     selectedFile,
     content,
     frontmatter,
@@ -506,6 +507,7 @@ function StudioLayoutInner({
   const { isPublishing, publishDialogOpen, publishConflicts, openPublishDialog, setPublishDialogOpen, handlePublish } =
     useStudioPublish({
       userId,
+      documentUpdatedAt: document?.updatedAt,
       ensureDocumentRecord,
       selectedFile,
       content,
