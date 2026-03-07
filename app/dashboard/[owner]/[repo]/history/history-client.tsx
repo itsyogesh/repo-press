@@ -16,21 +16,18 @@ interface HistoryClientProps {
   owner: string
   repo: string
   branch?: string
+  projectId?: string
 }
 
 type ViewMode = "list" | "compare"
 
-export function HistoryClient({ owner, repo, branch }: HistoryClientProps) {
+export function HistoryClient({ owner, repo, branch: _branch, projectId }: HistoryClientProps) {
   const [selectedDoc, setSelectedDoc] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<ViewMode>("list")
   const [compareVersions, setCompareVersions] = useState<[string | null, string | null]>([null, null])
   const [isRestoring, setIsRestoring] = useState(false)
 
-  const project = useQuery(api.projects.findByRepo, {
-    repoOwner: owner,
-    repoName: repo,
-    ...(branch ? { branch } : {}),
-  })
+  const project = useQuery(api.projects.get, projectId ? { id: projectId as Id<"projects"> } : "skip")
 
   const documents = useQuery(api.documents.listByProject, project?._id ? { projectId: project._id } : "skip")
 
@@ -135,7 +132,11 @@ export function HistoryClient({ owner, repo, branch }: HistoryClientProps) {
               <FileText className="h-5 w-5" />
               Documents
             </h2>
-            {!project ? (
+            {!projectId ? (
+              <p className="text-muted-foreground">
+                Open history from Studio so RepoPress can target the active project.
+              </p>
+            ) : !project ? (
               <p className="text-muted-foreground">Loading project...</p>
             ) : !documents ? (
               <p className="text-muted-foreground">Loading documents...</p>

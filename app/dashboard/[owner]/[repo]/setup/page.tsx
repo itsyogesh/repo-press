@@ -33,7 +33,7 @@ export default async function SetupPage({ params }: SetupPageProps) {
   }
 
   // Check for repopress.config.json
-  const { config: repoConfig, error: configError } = await fetchRepoConfig(token, owner, repo, defaultBranch)
+  const { config: repoConfig } = await fetchRepoConfig(token, owner, repo, defaultBranch)
 
   // Run framework detection
   const frameworkConfig = await detectFramework(token, owner, repo, defaultBranch)

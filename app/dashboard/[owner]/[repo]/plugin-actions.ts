@@ -8,6 +8,7 @@ import {
   isGitHubRateLimitError,
 } from "@/lib/repopress/github-request-control"
 import { pluginManifestSchema } from "@/lib/repopress/plugin-schema"
+import { collectRepoModuleBundle } from "@/lib/repopress/repo-module-bundle"
 
 export async function fetchPluginAction(owner: string, repo: string, branch: string | undefined, pluginPath: string) {
   const token = await getGitHubToken()
@@ -34,21 +35,26 @@ export async function fetchPluginAction(owner: string, repo: string, branch: str
     const pluginDir = pluginPath.split("/").slice(0, -1).join("/")
     const entryPath = `${pluginDir}/${manifest.entry.replace(/^\.\//, "")}`
 
-    const entryResponse = await executeGitHubRequest({
-      key: `plugin-entry:${scope}:${owner}/${repo}@${branch}:${entryPath}`,
-      request: () => getFileContent(token, owner, repo, entryPath, branch),
+    const bundle = await collectRepoModuleBundle({
+      token,
+      owner,
+      repo,
+      branch: branch || "main",
+      entryPath,
     })
-    const entrySource = entryResponse.value
-    if (entrySource === null) {
+    if (!bundle.entrySource) {
       return { success: false as const, error: "Plugin entry not found" }
     }
 
     return {
       success: true as const,
       manifest,
-      source: entrySource,
-      rateLimited: manifestResponse.rateLimited || entryResponse.rateLimited,
-      retryCount: manifestResponse.retryCount + entryResponse.retryCount,
+      source: bundle.entrySource,
+      entryPath: bundle.entryPath,
+      sources: bundle.sources,
+      sha: bundle.sha,
+      rateLimited: manifestResponse.rateLimited || bundle.rateLimited,
+      retryCount: manifestResponse.retryCount + bundle.retryCount,
     }
   } catch (error: any) {
     if (isGitHubRateLimitError(error)) {

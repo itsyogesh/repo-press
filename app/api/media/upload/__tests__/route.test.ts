@@ -122,6 +122,37 @@ describe("POST /api/media/upload", () => {
     expect(convexMutationMock).not.toHaveBeenCalled()
   })
 
+  it("rejects PAT-mode uploads when the caller userId does not match the project owner", async () => {
+    vi.mocked(fetchAuthQuery!).mockResolvedValue(null as never)
+
+    const response = await POST(
+      buildRequest({
+        ...baseBody(),
+        userId: "different_user",
+      }),
+    )
+    const payload = await response.json()
+
+    expect(response.status).toBe(403)
+    expect(payload.error).toContain("Unauthorized")
+    expect(convexMutationMock).not.toHaveBeenCalled()
+  })
+
+  it("allows PAT-mode uploads when the caller userId matches the project owner", async () => {
+    vi.mocked(fetchAuthQuery!).mockResolvedValue(null as never)
+    vi.mocked(put).mockResolvedValue({ url: "https://blob.vercel-storage.com/repo-press/hero.png" } as any)
+
+    const response = await POST(
+      buildRequest({
+        ...baseBody(),
+        userId: "user_1",
+      }),
+    )
+
+    expect(response.status).toBe(200)
+    expect(convexMutationMock).toHaveBeenCalled()
+  })
+
   it("retries blob upload with private access when public upload fails with access issues", async () => {
     vi.mocked(put)
       .mockRejectedValueOnce(new Error("public access is not allowed for this token"))

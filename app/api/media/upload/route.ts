@@ -18,6 +18,7 @@ const MAX_UPLOAD_BASE64_LENGTH = Math.ceil(50 * 1024 * 1024 * (4 / 3))
 
 interface UploadRequest {
   projectId?: string
+  userId?: string
   owner: string
   repo: string
   branch: string
@@ -55,7 +56,17 @@ export async function POST(request: Request) {
 
   try {
     const body = (await request.json()) as UploadRequest
-    const { projectId, owner, repo, branch, pathHint, fileName, contentBase64, storagePreference = "auto" } = body
+    const {
+      projectId,
+      userId,
+      owner,
+      repo,
+      branch,
+      pathHint,
+      fileName,
+      contentBase64,
+      storagePreference = "auto",
+    } = body
 
     if (!owner || !repo || !branch || !fileName || !contentBase64) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
@@ -75,13 +86,13 @@ export async function POST(request: Request) {
     }
 
     // Fix #1: Verify access server-side (OAuth checks userId, PAT checks repo access)
-    const hasAccess = await verifyProjectAccess(token, project, oauthUserId)
+    const hasAccess = await verifyProjectAccess(token, project, oauthUserId, userId)
     if (!hasAccess) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
     }
 
     // Use the project's userId for downstream Convex calls (trusted, from DB)
-    const actingUserId = project.userId
+    const actingUserId = oauthUserId ?? userId ?? project.userId
 
     if (project.repoOwner !== owner || project.repoName !== repo || project.branch !== branch) {
       return NextResponse.json(
@@ -125,7 +136,7 @@ export async function POST(request: Request) {
           githubSha: baseShaAtStage ?? undefined,
         })
 
-        const previewUrl = buildMediaResolveUrl(project._id, repoPath)
+        const previewUrl = buildMediaResolveUrl(project._id, repoPath, oauthUserId ? undefined : actingUserId)
         return NextResponse.json({
           storage: "blob",
           repoPath,
@@ -185,7 +196,7 @@ export async function POST(request: Request) {
       githubSha: baseShaAtStage ?? undefined,
     })
 
-    const previewUrl = buildMediaResolveUrl(project._id, repoPath)
+    const previewUrl = buildMediaResolveUrl(project._id, repoPath, oauthUserId ? undefined : actingUserId)
     return NextResponse.json({
       storage: "github",
       repoPath,
@@ -231,25 +242,16 @@ async function resolveActingUserId(): Promise<string | null> {
  * PAT users: verifies the token can access the project's GitHub repo.
  */
 async function verifyProjectAccess(
-  token: string,
+  _token: string,
   project: { userId: string; repoOwner: string; repoName: string },
   oauthUserId: string | null,
+  explicitUserId?: string,
 ): Promise<boolean> {
   if (oauthUserId) {
     return project.userId === oauthUserId
   }
 
-  // PAT user — verify the token can access the repo
-  try {
-    const octokit = createGitHubClient(token)
-    await octokit.repos.get({
-      owner: project.repoOwner,
-      repo: project.repoName,
-    })
-    return true
-  } catch {
-    return false
-  }
+  return explicitUserId === project.userId
 }
 
 async function resolveProject({

@@ -38,9 +38,15 @@ const projectRecord = {
   branch: "main",
 }
 
-function requestFor(path: string) {
-  const encodedPath = encodeURIComponent(path)
-  return new Request(`http://localhost/api/media/resolve?projectId=project_123&path=${encodedPath}`, {
+function requestFor(path: string, userId?: string) {
+  const searchParams = new URLSearchParams({
+    projectId: "project_123",
+    path,
+  })
+  if (userId) {
+    searchParams.set("userId", userId)
+  }
+  return new Request(`http://localhost/api/media/resolve?${searchParams.toString()}`, {
     method: "GET",
   })
 }
@@ -48,6 +54,7 @@ function requestFor(path: string) {
 describe("GET /api/media/resolve", () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    convexQueryMock.mockReset()
     vi.mocked(getGitHubToken).mockResolvedValue("gh-token")
     vi.mocked(fetchAuthQuery!).mockResolvedValue({ _id: "user_1" })
   })
@@ -62,6 +69,43 @@ describe("GET /api/media/resolve", () => {
     const response = await GET(requestFor("/public/images/hero.png"))
 
     expect(response.status).toBe(401)
+  })
+
+  it("rejects PAT-mode media access when the caller userId does not match the project owner", async () => {
+    vi.mocked(fetchAuthQuery!).mockResolvedValue(null as never)
+    convexQueryMock.mockResolvedValueOnce(projectRecord)
+
+    const response = await GET(requestFor("/public/images/hero.png", "different_user"))
+    const payload = await response.json()
+
+    expect(response.status).toBe(403)
+    expect(payload.error).toBe("Forbidden")
+  })
+
+  it("allows PAT-mode media access when the caller userId matches the project owner", async () => {
+    vi.mocked(fetchAuthQuery!).mockResolvedValue(null as never)
+    convexQueryMock.mockResolvedValueOnce(projectRecord).mockResolvedValueOnce({
+      _id: "media-op-1",
+      sourceType: "blob",
+      blobUrl: "https://blob.vercel-storage.com/private/hero.png",
+      repoPath: "/public/images/hero.png",
+      mimeType: "image/png",
+      status: "pending",
+    })
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(Uint8Array.from([1, 2, 3]), {
+        status: 200,
+        headers: {
+          "content-type": "image/png",
+        },
+      }),
+    )
+
+    const response = await GET(requestFor("/public/images/hero.png", "user_1"))
+
+    expect(response.status).toBe(200)
+    expect(fetchSpy).toHaveBeenCalled()
   })
 
   it("resolves pending blob-backed media via auth proxy fetch", async () => {

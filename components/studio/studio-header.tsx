@@ -27,6 +27,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import type { FileTreeNode } from "@/lib/github"
+import { buildHistoryHref } from "@/lib/studio/history-link"
 import { ProjectSwitcher } from "./project-switcher"
 import { StatusActions } from "./status-actions"
 import { useStudio } from "./studio-context"
@@ -59,6 +60,7 @@ export function StudioHeader({
   const [isPending, startTransition] = React.useTransition()
 
   const [showShortcuts, setShowShortcuts] = React.useState(false)
+  const historyHref = buildHistoryHref({ owner, repo, branch, projectId })
 
   const handleSyncConfig = () => {
     startTransition(async () => {
@@ -204,7 +206,7 @@ export function StudioHeader({
               Sync Config
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
-              <Link href={`/dashboard/${owner}/${repo}/history`}>
+              <Link href={historyHref}>
                 <History className="h-4 w-4 mr-2" />
                 History
               </Link>

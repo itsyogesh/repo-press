@@ -28,7 +28,7 @@ vi.mock("@/lib/github", () => ({
 process.env.NEXT_PUBLIC_CONVEX_URL = process.env.NEXT_PUBLIC_CONVEX_URL || "https://example.convex.cloud"
 
 import { fetchAuthQuery, getGitHubToken } from "@/lib/auth-server"
-import { batchCommit, getFile } from "@/lib/github"
+import { batchCommit, createGitHubClient, getFile } from "@/lib/github"
 import { POST } from "../route"
 
 function buildRequest(body: Record<string, unknown>) {
@@ -42,8 +42,15 @@ function buildRequest(body: Record<string, unknown>) {
 describe("POST /api/github/publish-ops", () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    convexQueryMock.mockReset()
+    convexMutationMock.mockReset()
     vi.mocked(getGitHubToken).mockResolvedValue("gh-token")
     vi.mocked(fetchAuthQuery).mockResolvedValue({ _id: "user_owner" } as never)
+    vi.mocked(createGitHubClient).mockReturnValue({
+      repos: {
+        get: vi.fn().mockResolvedValue({}),
+      },
+    } as never)
     vi.mocked(batchCommit).mockResolvedValue({ commitSha: "commit-sha-1" } as never)
     vi.mocked(getFile).mockResolvedValue({ sha: "new-sha-1" } as never)
 
@@ -117,5 +124,39 @@ describe("POST /api/github/publish-ops", () => {
     expect(response.status).toBe(403)
     expect(payload.error).toBe("Unauthorized")
     expect(batchCommit).not.toHaveBeenCalled()
+  })
+
+  it("rejects PAT-mode publishing when the caller userId does not match the project owner", async () => {
+    vi.mocked(fetchAuthQuery).mockResolvedValue(null as never)
+
+    const response = await POST(
+      buildRequest({
+        projectId: "project_123",
+        userId: "different_user",
+        title: "Publish docs",
+      }),
+    )
+    const payload = await response.json()
+
+    expect(response.status).toBe(403)
+    expect(payload.error).toBe("Unauthorized")
+    expect(batchCommit).not.toHaveBeenCalled()
+  })
+
+  it("allows PAT-mode publishing when the caller userId matches the project owner", async () => {
+    vi.mocked(fetchAuthQuery).mockResolvedValue(null as never)
+
+    const response = await POST(
+      buildRequest({
+        projectId: "project_123",
+        userId: "user_owner",
+        title: "Publish docs",
+      }),
+    )
+    const payload = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(payload.ok).toBe(true)
+    expect(batchCommit).toHaveBeenCalled()
   })
 })

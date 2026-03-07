@@ -1,25 +1,22 @@
 "use server"
 
 import { getGitHubToken } from "@/lib/auth-server"
-import { getFile } from "@/lib/github"
-import {
-  buildRequestScopeId,
-  executeGitHubRequest,
-  isGitHubRateLimitError,
-} from "@/lib/repopress/github-request-control"
+import { isGitHubRateLimitError } from "@/lib/repopress/github-request-control"
+import { collectRepoModuleBundle } from "@/lib/repopress/repo-module-bundle"
 
 export async function fetchAdapterSourceAction(owner: string, repo: string, branch: string, entryPath: string) {
   const token = await getGitHubToken()
   if (!token) return { success: false, error: "Not authenticated with GitHub" }
-  const scope = buildRequestScopeId(token)
 
   try {
-    const requestResult = await executeGitHubRequest({
-      key: `adapter:${scope}:${owner}/${repo}@${branch}:${entryPath}`,
-      request: () => getFile(token, owner, repo, entryPath, branch),
+    const bundle = await collectRepoModuleBundle({
+      token,
+      owner,
+      repo,
+      branch,
+      entryPath,
     })
-    const file = requestResult.value
-    if (!file) {
+    if (!bundle.entrySource) {
       return {
         success: false,
         error: `Adapter file not found at ${entryPath}`,
@@ -28,10 +25,12 @@ export async function fetchAdapterSourceAction(owner: string, repo: string, bran
 
     return {
       success: true,
-      source: file.content,
-      sha: file.sha,
-      rateLimited: requestResult.rateLimited,
-      retryCount: requestResult.retryCount,
+      source: bundle.entrySource,
+      entryPath: bundle.entryPath,
+      sources: bundle.sources,
+      sha: bundle.sha,
+      rateLimited: bundle.rateLimited,
+      retryCount: bundle.retryCount,
     }
   } catch (error: any) {
     if (error.status === 404) {

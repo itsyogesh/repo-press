@@ -18,6 +18,7 @@ import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
 import type { FileTreeNode } from "@/lib/github"
 import { usePreviewContext } from "@/lib/hooks/use-preview-context"
+import { buildHistoryHref } from "@/lib/studio/history-link"
 import { CommandPalette } from "./command-palette"
 import { CreateFileDialog } from "./create-file-dialog"
 import { Editor } from "./editor"
@@ -979,6 +980,7 @@ function StudioLayoutInner({
   const currentStatus = document?.status || "draft"
   const statusInfo = STATUS_LABELS[currentStatus] || STATUS_LABELS.draft
   const canPublish = ["draft", "approved"].includes(currentStatus)
+  const historyHref = buildHistoryHref({ owner, repo, branch, projectId })
 
   return (
     <div
@@ -1007,7 +1009,7 @@ function StudioLayoutInner({
             <StudioSidebarRail
               pendingCount={totalPendingCount}
               onExpand={() => setSidebarState("expanded")}
-              historyHref={`/dashboard/${owner}/${repo}/history`}
+              historyHref={historyHref}
               settingsHref={`/dashboard/${owner}/${repo}/settings`}
             />
           </div>
@@ -1056,7 +1058,7 @@ function StudioLayoutInner({
                           size="sm"
                           className="h-8 w-full justify-between rounded-md border border-studio-border bg-studio-canvas px-2 text-xs hover:bg-studio-canvas-inset"
                         >
-                          <Link href={`/dashboard/${owner}/${repo}/history`}>
+                          <Link href={historyHref}>
                             <span className="inline-flex items-center gap-2">
                               <History className="h-3.5 w-3.5" />
                               History

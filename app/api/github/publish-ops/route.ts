@@ -18,8 +18,9 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json()
-    const { projectId, title, description } = body as {
+    const { projectId, userId, title, description } = body as {
       projectId: string
+      userId?: string
       title?: string
       description?: string
     }
@@ -36,7 +37,7 @@ export async function POST(request: Request) {
     }
 
     const oauthUserId = await resolveActingUserId()
-    const hasAccess = await verifyProjectAccess(token, project, oauthUserId)
+    const hasAccess = await verifyProjectAccess(token, project, oauthUserId, userId)
     if (!hasAccess) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
     }
@@ -317,24 +318,16 @@ async function resolveActingUserId(): Promise<string | null> {
 }
 
 async function verifyProjectAccess(
-  token: string,
+  _token: string,
   project: { userId: string; repoOwner: string; repoName: string },
   oauthUserId: string | null,
+  explicitUserId?: string,
 ): Promise<boolean> {
   if (oauthUserId) {
     return project.userId === oauthUserId
   }
 
-  try {
-    const octokit = createGitHubClient(token)
-    await octokit.repos.get({
-      owner: project.repoOwner,
-      repo: project.repoName,
-    })
-    return true
-  } catch {
-    return false
-  }
+  return explicitUserId === project.userId
 }
 
 function normalizeMediaPath(repoPath: string) {

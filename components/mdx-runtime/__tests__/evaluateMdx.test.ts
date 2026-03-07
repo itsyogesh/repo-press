@@ -25,4 +25,12 @@ describe("evaluateMdx", () => {
 
     expect(result).toEqual(["undefined", "undefined", "undefined"])
   })
+
+  it("removes access to the Function constructor through injected runtime helpers", () => {
+    const code = '"use strict"; return { default: typeof _mdxConfig.jsx.constructor };'
+
+    const result = evaluateMdx(code, {})
+
+    expect(result).toBe("undefined")
+  })
 })

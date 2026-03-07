@@ -17,7 +17,9 @@ vi.mock("@/convex/auth", () => ({
   },
 }))
 
-import { remove as removeDocument } from "@/convex/documents"
+import { remove as removeDocument, saveDraft } from "@/convex/documents"
+import { markCommitted as markExplorerOpsCommitted } from "@/convex/explorerOps"
+import { stage as stageMediaOp } from "@/convex/mediaOps"
 import { remove as removeProject, update as updateProject } from "@/convex/projects"
 import {
   create as createPublishBranch,
@@ -179,5 +181,94 @@ describe("Convex ownership guards", () => {
     ).rejects.toThrow("Unauthorized")
 
     expect(ctx.db.patch).not.toHaveBeenCalled()
+  })
+
+  it("allows saveDraft when PAT mode supplies an explicit owning userId", async () => {
+    safeGetAuthUserMock.mockResolvedValue(null)
+    const patch = vi.fn()
+    const insert = vi.fn()
+    const ctx = createCtx({
+      get: vi
+        .fn()
+        .mockResolvedValueOnce({
+          _id: "doc_1",
+          projectId: "project_1",
+          status: "draft",
+          body: "# Old body",
+          frontmatter: { title: "Old" },
+          updatedAt: 1,
+        })
+        .mockResolvedValueOnce({ _id: "project_1", userId: "user_owner" }),
+      patch,
+      insert,
+    })
+
+    await (saveDraft as any).handler(ctx, {
+      id: "doc_1",
+      body: "# New body",
+      frontmatter: { title: "New" },
+      userId: "user_owner",
+    })
+
+    expect(insert).toHaveBeenCalled()
+    expect(patch).toHaveBeenCalled()
+  })
+
+  it("allows media staging when PAT mode supplies an explicit owning userId", async () => {
+    safeGetAuthUserMock.mockResolvedValue(null)
+    const insert = vi.fn().mockResolvedValue("media_op_1")
+    const ctx = createCtx({
+      get: vi.fn().mockResolvedValue({ _id: "project_1", userId: "user_owner" }),
+      insert,
+    })
+    ctx.db.query = vi.fn(() => ({
+      withIndex: () => ({
+        filter: () => ({
+          first: vi.fn().mockResolvedValue(null),
+        }),
+      }),
+    }))
+
+    await (stageMediaOp as any).handler(ctx, {
+      projectId: "project_1",
+      userId: "user_owner",
+      repoPath: "/public/images/hero.png",
+      fileName: "hero.png",
+      mimeType: "image/png",
+      sourceType: "blob",
+      blobUrl: "https://blob.example/hero.png",
+    })
+
+    expect(insert).toHaveBeenCalled()
+  })
+
+  it("allows explorer op commit marking when PAT mode supplies an explicit owning userId", async () => {
+    safeGetAuthUserMock.mockResolvedValue(null)
+    const patch = vi.fn()
+    const ctx = createCtx({
+      get: vi
+        .fn()
+        .mockResolvedValueOnce({
+          _id: "op_1",
+          projectId: "project_1",
+          status: "pending",
+        })
+        .mockResolvedValueOnce({ _id: "project_1", userId: "user_owner" }),
+      patch,
+    })
+
+    await (markExplorerOpsCommitted as any).handler(ctx, {
+      ids: ["op_1"],
+      commitSha: "commit_1",
+      userId: "user_owner",
+    })
+
+    expect(patch).toHaveBeenCalledWith(
+      "op_1",
+      expect.objectContaining({
+        status: "committed",
+        commitSha: "commit_1",
+      }),
+    )
   })
 })

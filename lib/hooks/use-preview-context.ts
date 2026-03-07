@@ -180,7 +180,10 @@ async function loadPreviewContext(key: string, options: Required<UsePreviewConte
           )
           let transpiled = await getCachedAdapter(cacheKey, sourceSha)
           if (!transpiled) {
-            transpiled = await transpileAdapter(result.source)
+            transpiled = await transpileAdapter({
+              entryPath: result.entryPath || options.adapterPath,
+              sources: result.sources || { [options.adapterPath]: result.source },
+            })
             await setCachedAdapter({
               key: cacheKey,
               sourceSha,
@@ -208,7 +211,10 @@ async function loadPreviewContext(key: string, options: Required<UsePreviewConte
                 if (result.rateLimited) {
                   diagnostics.push(`Plugin "${id}" hit GitHub rate limits and retried ${result.retryCount} time(s).`)
                 }
-                const transpiled = await transpileAdapter(result.source)
+                const transpiled = await transpileAdapter({
+                  entryPath: result.entryPath || path!,
+                  sources: result.sources || { [path!]: result.source },
+                })
                 return { id, adapter: evaluateAdapter(transpiled) }
               }
               return { id, error: result.error || "Unknown error" }

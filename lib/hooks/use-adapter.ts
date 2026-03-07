@@ -68,7 +68,10 @@ async function loadAdapterSource(key: string, options: Required<UseAdapterOption
         return
       }
 
-      const transpiled = await transpileAdapter(result.source)
+      const transpiled = await transpileAdapter({
+        entryPath: result.entryPath || options.adapterPath,
+        sources: result.sources || { [options.adapterPath]: result.source },
+      })
       entry.adapter = evaluateAdapter(transpiled)
       entry.error = null
     } catch (error: unknown) {

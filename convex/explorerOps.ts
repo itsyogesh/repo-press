@@ -2,6 +2,14 @@ import { v } from "convex/values"
 import { mutation, query } from "./_generated/server"
 import { authComponent } from "./auth"
 
+async function verifyCallerUserId(ctx: any, explicitUserId: string) {
+  const authUser = await authComponent.safeGetAuthUser(ctx)
+  if (authUser?._id && authUser._id !== explicitUserId) {
+    throw new Error("Unauthorized")
+  }
+  return explicitUserId
+}
+
 /** Returns all pending explorer ops for a project. */
 export const listPending = query({
   args: { projectId: v.id("projects") },
@@ -220,8 +228,7 @@ export const markCommitted = mutation({
     userId: v.string(),
   },
   handler: async (ctx, args) => {
-    const authUser = await authComponent.safeGetAuthUser(ctx)
-    if (!authUser || authUser._id !== args.userId) throw new Error("Unauthorized")
+    await verifyCallerUserId(ctx, args.userId)
 
     const now = Date.now()
     for (const id of args.ids) {
@@ -253,8 +260,7 @@ export const clearCommittedForProject = mutation({
     userId: v.string(),
   },
   handler: async (ctx, args) => {
-    const authUser = await authComponent.safeGetAuthUser(ctx)
-    if (!authUser || authUser._id !== args.userId) throw new Error("Unauthorized")
+    await verifyCallerUserId(ctx, args.userId)
 
     // Fix #4: Verify ownership before clearing committed records
     const project = await ctx.db.get(args.projectId)

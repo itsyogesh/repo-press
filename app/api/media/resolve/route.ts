@@ -20,6 +20,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const projectId = searchParams.get("projectId")
     const rawPath = searchParams.get("path")
+    const explicitUserId = searchParams.get("userId")
     const branchOverride = searchParams.get("branch")
 
     if (!projectId || !rawPath) {
@@ -35,7 +36,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 })
     }
 
-    const hasAccess = await verifyProjectAccess(token, project, oauthUserId)
+    const hasAccess = await verifyProjectAccess(token, project, oauthUserId, explicitUserId)
     if (!hasAccess) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
@@ -161,25 +162,16 @@ async function resolveActingUserId(): Promise<string | null> {
  * PAT users: verifies the token has access to the project's GitHub repo.
  */
 async function verifyProjectAccess(
-  token: string,
+  _token: string,
   project: { userId: string; repoOwner: string; repoName: string },
   oauthUserId: string | null,
+  explicitUserId?: string | null,
 ): Promise<boolean> {
   if (oauthUserId) {
     return project.userId === oauthUserId
   }
 
-  // PAT user — verify the token can access the repo
-  try {
-    const octokit = createGitHubClient(token)
-    await octokit.repos.get({
-      owner: project.repoOwner,
-      repo: project.repoName,
-    })
-    return true
-  } catch {
-    return false
-  }
+  return explicitUserId === project.userId
 }
 
 async function fetchBlobContent(url: string) {
