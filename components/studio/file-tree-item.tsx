@@ -1,3 +1,5 @@
+"use client"
+
 import { useDraggable, useDroppable } from "@dnd-kit/core"
 import { CSS } from "@dnd-kit/utilities"
 import { ChevronDown, ChevronRight, File, Folder, FolderOpen, Plus, Undo2 } from "lucide-react"

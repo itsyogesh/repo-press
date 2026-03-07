@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useMemo, useSyncExternalStore } from "react"
 import { fetchAdapterSourceAction } from "@/app/dashboard/[owner]/[repo]/adapter-actions"
 import { transpileAdapter } from "@/lib/repopress/esbuild-browser"
 import { evaluateAdapter, type RepoPressPreviewAdapter } from "@/lib/repopress/evaluate-adapter"
@@ -18,72 +18,113 @@ interface UseAdapterResult {
   error: string | null
 }
 
-export function useAdapter({ owner, repo, branch, adapterPath }: UseAdapterOptions): UseAdapterResult {
-  const [adapter, setAdapter] = useState<RepoPressPreviewAdapter | null>(null)
-  const [loading, setLoading] = useState<boolean>(false)
-  const [error, setError] = useState<string | null>(null)
+interface AdapterStoreEntry extends UseAdapterResult {
+  listeners: Set<() => void>
+  promise: Promise<void> | null
+}
 
-  const lastSourceRef = useRef<string | null>(null)
+const EMPTY_RESULT: UseAdapterResult = {
+  adapter: null,
+  loading: false,
+  error: null,
+}
 
-  useEffect(() => {
-    if (!adapterPath) {
-      setAdapter(null)
-      setLoading(false)
-      setError(null)
-      lastSourceRef.current = null
-      return
+const adapterStore = new Map<string, AdapterStoreEntry>()
+
+function getStoreEntry(key: string) {
+  let entry = adapterStore.get(key)
+  if (!entry) {
+    entry = {
+      ...EMPTY_RESULT,
+      listeners: new Set(),
+      promise: null,
     }
+    adapterStore.set(key, entry)
+  }
+  return entry
+}
 
-    let isMounted = true
+function emit(entry: AdapterStoreEntry) {
+  for (const listener of entry.listeners) {
+    listener()
+  }
+}
 
-    async function loadAdapter() {
-      setLoading(true)
-      setError(null)
+async function loadAdapterSource(key: string, options: Required<UseAdapterOptions>) {
+  const entry = getStoreEntry(key)
+  if (entry.promise || entry.loading) return
 
-      try {
-        const result = await fetchAdapterSourceAction(owner, repo, branch, adapterPath!)
+  entry.loading = true
+  entry.error = null
+  emit(entry)
 
-        if (!isMounted) return
+  entry.promise = (async () => {
+    try {
+      const result = await fetchAdapterSourceAction(options.owner, options.repo, options.branch, options.adapterPath)
 
-        if (!result.success || !result.source) {
-          setError(result.error ?? "Failed to fetch adapter")
-          setAdapter(null)
-          lastSourceRef.current = null
-          return
-        }
-
-        // Only re-transpile and evaluate if source changed
-        if (result.source === lastSourceRef.current) {
-          setLoading(false)
-          return
-        }
-
-        const transpiled = await transpileAdapter(result.source)
-        if (!isMounted) return
-
-        const evaluatedAdapter = evaluateAdapter(transpiled)
-        setAdapter(evaluatedAdapter)
-        lastSourceRef.current = result.source
-        setError(null)
-      } catch (err: unknown) {
-        if (!isMounted) return
-        const message = err instanceof Error ? err.message : "Failed to load adapter"
-        setError(message)
-        setAdapter(null)
-        lastSourceRef.current = null
-      } finally {
-        if (isMounted) {
-          setLoading(false)
-        }
+      if (!result.success || !result.source) {
+        entry.adapter = null
+        entry.error = result.error ?? "Failed to fetch adapter"
+        return
       }
+
+      const transpiled = await transpileAdapter(result.source)
+      entry.adapter = evaluateAdapter(transpiled)
+      entry.error = null
+    } catch (error: unknown) {
+      entry.adapter = null
+      entry.error = error instanceof Error ? error.message : "Failed to load adapter"
+    } finally {
+      entry.loading = false
+      entry.promise = null
+      emit(entry)
     }
+  })()
+}
 
-    loadAdapter()
+function subscribeAdapter(key: string | null, options: Required<UseAdapterOptions> | null, listener: () => void) {
+  if (!key || !options) return () => {}
 
-    return () => {
-      isMounted = false
-    }
-  }, [owner, repo, branch, adapterPath])
+  const entry = getStoreEntry(key)
+  entry.listeners.add(listener)
+  void loadAdapterSource(key, options)
 
-  return { adapter, loading, error }
+  return () => {
+    entry.listeners.delete(listener)
+  }
+}
+
+function getSnapshot(key: string | null) {
+  if (!key) return EMPTY_RESULT
+  const entry = getStoreEntry(key)
+  return {
+    adapter: entry.adapter,
+    loading: entry.loading,
+    error: entry.error,
+  }
+}
+
+export function useAdapter({ owner, repo, branch, adapterPath }: UseAdapterOptions): UseAdapterResult {
+  const key = useMemo(
+    () => (adapterPath ? `${owner}/${repo}@${branch}:${adapterPath}` : null),
+    [owner, repo, branch, adapterPath],
+  )
+
+  return useSyncExternalStore(
+    (listener) =>
+      subscribeAdapter(
+        key,
+        adapterPath
+          ? {
+              owner,
+              repo,
+              branch,
+              adapterPath,
+            }
+          : null,
+        listener,
+      ),
+    () => getSnapshot(key),
+    () => EMPTY_RESULT,
+  )
 }

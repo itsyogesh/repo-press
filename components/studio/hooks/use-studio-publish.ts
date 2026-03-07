@@ -1,3 +1,5 @@
+"use client"
+
 import { useMutation } from "convex/react"
 import * as React from "react"
 import { toast } from "sonner"
@@ -31,7 +33,7 @@ export function useStudioPublish({
 
   const handlePublish = React.useCallback(
     async (title?: string, description?: string) => {
-      if (!projectId || !userId) return
+      if (!projectId) return
       setIsPublishing(true)
       setPublishConflicts([])
 
@@ -54,7 +56,7 @@ export function useStudioPublish({
         const response = await fetch("/api/github/publish-ops", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ projectId, userId, title, description }),
+          body: JSON.stringify({ projectId, title, description }),
         })
 
         const data = await response.json()

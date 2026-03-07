@@ -1,3 +1,5 @@
+"use client"
+
 import matter from "gray-matter"
 import * as React from "react"
 import { normalizeFrontmatterDates } from "@/lib/framework-adapters"

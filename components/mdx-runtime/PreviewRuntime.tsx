@@ -170,9 +170,9 @@ export function PreviewRuntime({
 
         const standardComponents: Record<string, React.ComponentType<any>> = {
           Callout: (props) => (
-            <div className="my-4 flex gap-3 rounded-lg border border-blue-200 bg-blue-50/50 p-4 text-sm text-blue-900 shadow-sm text-left font-sans">
+            <div className="my-4 flex gap-3 rounded-lg border border-studio-accent/20 bg-studio-accent-muted/60 p-4 text-left text-sm text-foreground shadow-sm font-sans">
               <div className="mt-0.5">
-                <Info className="h-4 w-4 text-blue-600" />
+                <Info className="h-4 w-4 text-studio-accent" />
               </div>
               <div className="flex-1">{props.children}</div>
             </div>
@@ -256,7 +256,7 @@ export function PreviewRuntime({
               if (id) resolvedSrc = `https://www.youtube.com/embed/${id}`
             }
             return (
-              <div className="my-6 overflow-hidden rounded-xl border bg-slate-950 aspect-video flex items-center justify-center relative text-left font-sans shadow-lg">
+              <div className="my-6 relative aspect-video overflow-hidden rounded-xl border bg-foreground text-background flex items-center justify-center text-left font-sans shadow-lg">
                 {resolvedSrc ? (
                   <iframe
                     src={resolvedSrc}
@@ -266,9 +266,9 @@ export function PreviewRuntime({
                     allowFullScreen
                   />
                 ) : (
-                  <div className="text-white/50 flex flex-col items-center gap-2">
-                    <div className="size-12 rounded-full border-2 border-white/20 flex items-center justify-center bg-white/5">
-                      <div className="size-0 border-t-[8px] border-t-transparent border-l-[12px] border-l-white/60 border-b-[8px] border-b-transparent ml-1" />
+                  <div className="flex flex-col items-center gap-2 text-background/60">
+                    <div className="size-12 rounded-full border-2 border-background/20 bg-background/5 flex items-center justify-center">
+                      <div className="ml-1 size-0 border-t-[8px] border-t-transparent border-l-[12px] border-l-background/70 border-b-[8px] border-b-transparent" />
                     </div>
                     <span className="text-[10px] uppercase font-bold tracking-widest opacity-50">
                       Video: {props.title || "No Source"}
@@ -531,17 +531,19 @@ export function PreviewRuntime({
   return (
     <>
       {error ? (
-        <div className="p-6 bg-red-50/50 text-red-900 border border-red-200 rounded-lg font-sans shadow-sm m-4">
-          <div className="flex items-center gap-2 mb-4 text-red-700">
+        <div className="m-4 rounded-lg border border-destructive/20 bg-destructive/10 p-6 font-sans text-destructive shadow-sm">
+          <div className="mb-4 flex items-center gap-2 text-destructive">
             <AlertCircle className="h-5 w-5" />
             <h3 className="font-bold text-lg">MDX Preview Failure</h3>
           </div>
-          <div className="bg-red-900 text-red-50 p-4 rounded-md font-mono text-sm mb-4 break-all whitespace-pre-wrap shadow-inner overflow-auto max-h-[300px]">
+          <div className="mb-4 max-h-[300px] overflow-auto break-all rounded-md bg-destructive px-4 py-4 font-mono text-sm whitespace-pre-wrap text-destructive-foreground shadow-inner">
             {error}
           </div>
           <div className="space-y-3 text-left">
-            <h4 className="font-semibold text-sm text-red-800 uppercase tracking-wider font-sans">Potential Fixes:</h4>
-            <ul className="text-sm space-y-2 list-disc pl-5 text-red-700 font-sans">
+            <h4 className="font-semibold text-sm uppercase tracking-wider text-destructive font-sans">
+              Potential Fixes:
+            </h4>
+            <ul className="text-sm space-y-2 list-disc pl-5 text-destructive/90 font-sans">
               <li>Check for syntax errors in your MDX content.</li>
               <li>Ensure all components used are defined in your mdx-preview.tsx adapter.</li>
               <li>Verify that all imports are allowed in your repopress.config.json.</li>

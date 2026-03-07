@@ -291,6 +291,7 @@ export const syncProjectsFromConfig = mutation({
 export const update = mutation({
   args: {
     id: v.id("projects"),
+    userId: v.string(),
     name: v.optional(v.string()),
     description: v.optional(v.string()),
     branch: v.optional(v.string()),
@@ -301,7 +302,13 @@ export const update = mutation({
     components: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
-    const { id, ...updates } = args
+    await verifyCallerIdentity(ctx, args.userId)
+
+    const project = await ctx.db.get(args.id)
+    if (!project) throw new Error("Project not found")
+    if (project.userId !== args.userId) throw new Error("Unauthorized")
+
+    const { id, userId: _userId, ...updates } = args
     await ctx.db.patch(id, {
       ...updates,
       updatedAt: Date.now(),
@@ -332,8 +339,19 @@ export const updateFramework = mutation({
 })
 
 export const remove = mutation({
-  args: { id: v.id("projects") },
+  args: {
+    id: v.id("projects"),
+    userId: v.string(),
+  },
   handler: async (ctx, args) => {
+    await verifyCallerIdentity(ctx, args.userId)
+
+    const project = await ctx.db.get(args.id)
+    if (!project) throw new Error("Project not found")
+    if (project.userId !== args.userId) {
+      throw new Error("Unauthorized")
+    }
+
     await ctx.db.delete(args.id)
   },
 })

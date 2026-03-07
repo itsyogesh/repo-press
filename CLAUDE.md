@@ -58,6 +58,7 @@ app/                              # Next.js App Router
     page.tsx                      # Repo list dashboard
   login/page.tsx                  # Login (OAuth + PAT tabs)
   page.tsx                        # Landing page
+proxy.ts                         # Next.js 16 route proxy for auth redirects
 
 convex/                           # Convex backend (all database logic)
   schema.ts                       # Full schema (11 tables)
@@ -232,7 +233,7 @@ await signIn.social({ provider: "github", callbackURL: "/dashboard" })
 ```
 
 ### Protected routes:
-- `middleware.ts` checks for `better-auth.session_token` or `github_pat` cookies
+- `proxy.ts` checks for `better-auth.session_token` or `github_pat` cookies
 - Redirects unauthenticated users from `/dashboard/*` to `/login`
 
 ## GitHub API Patterns

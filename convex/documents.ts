@@ -180,8 +180,21 @@ export const update = mutation({
 })
 
 export const remove = mutation({
-  args: { id: v.id("documents") },
+  args: {
+    id: v.id("documents"),
+    userId: v.string(),
+  },
   handler: async (ctx, args) => {
+    const userId = await resolveCallerUserId(ctx, args.userId)
+
+    const doc = await ctx.db.get(args.id)
+    if (!doc) throw new Error("Document not found")
+
+    const project = await ctx.db.get(doc.projectId)
+    if (!project || project.userId !== userId) {
+      throw new Error("Unauthorized")
+    }
+
     await ctx.db.delete(args.id)
   },
 })

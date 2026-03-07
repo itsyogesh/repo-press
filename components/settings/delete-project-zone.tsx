@@ -52,28 +52,29 @@ export function DeleteProjectZone({ project }: DeleteProjectZoneProps) {
   }
 
   return (
-    <div className="rounded-lg border border-red-200 bg-red-50/50 p-6">
-      <div className="flex items-center gap-2 text-red-800 mb-4">
+    <div className="rounded-lg border border-destructive/20 bg-destructive/10 p-6">
+      <div className="mb-4 flex items-center gap-2 text-destructive">
         <AlertCircle className="h-5 w-5" />
         <h2 className="text-lg font-bold uppercase tracking-tight">Danger Zone</h2>
       </div>
 
       <div className="space-y-4">
-        <p className="text-sm text-red-700">
+        <p className="text-sm text-destructive/90">
           Deleting this project will permanently remove all drafts, version history, and metadata associated with it in
           RepoPress. This action cannot be undone.
         </p>
 
         {isConfigDriven && (
-          <Alert className="bg-amber-50 border-amber-200 text-amber-800">
+          <Alert className="border-studio-attention/25 bg-studio-attention-muted text-studio-attention">
             <AlertTriangle className="h-4 w-4" />
-            <AlertTitle className="text-xs font-bold uppercase tracking-tight text-amber-900">
+            <AlertTitle className="text-xs font-bold uppercase tracking-tight text-studio-attention">
               Source of Truth Warning
             </AlertTitle>
-            <AlertDescription className="text-xs text-amber-800">
-              This project is defined in your <code className="bg-amber-100 px-1 rounded">repopress.config.json</code>.
-              Deleting it here will clear local state, but the project will reappear if you sync again unless you also
-              remove it from your config file on GitHub.
+            <AlertDescription className="text-xs text-studio-attention">
+              This project is defined in your{" "}
+              <code className="rounded bg-background/70 px-1 text-foreground">repopress.config.json</code>. Deleting it
+              here will clear local state, but the project will reappear if you sync again unless you also remove it
+              from your config file on GitHub.
             </AlertDescription>
           </Alert>
         )}
@@ -103,7 +104,7 @@ export function DeleteProjectZone({ project }: DeleteProjectZoneProps) {
                 value={confirmName}
                 onChange={(e) => setConfirmName(e.target.value)}
                 placeholder={project.name}
-                className="border-red-200 focus-visible:ring-red-500"
+                className="border-destructive/25 focus-visible:ring-destructive/20"
               />
             </div>
 
@@ -112,7 +113,7 @@ export function DeleteProjectZone({ project }: DeleteProjectZoneProps) {
               <AlertDialogAction
                 onClick={handleDelete}
                 disabled={confirmName !== project.name || isDeleting}
-                className="bg-red-600 hover:bg-red-700 focus:ring-red-500"
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90 focus-visible:ring-destructive/20"
               >
                 {isDeleting ? "Deleting..." : "Yes, Delete Project"}
               </AlertDialogAction>

@@ -221,17 +221,17 @@ function CatalogPicker({
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
               {def.source === "config" && (
-                <span className="text-[10px] bg-blue-500/10 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded font-medium">
+                <span className="text-[10px] bg-studio-accent-muted text-studio-accent px-1.5 py-0.5 rounded font-medium">
                   Config
                 </span>
               )}
               {def.source === "adapter" && (
-                <span className="text-[10px] bg-green-500/10 text-green-600 dark:text-green-400 px-1.5 py-0.5 rounded font-medium">
+                <span className="text-[10px] bg-studio-success-muted text-studio-success px-1.5 py-0.5 rounded font-medium">
                   Adapter
                 </span>
               )}
               {def.source === "merged" && (
-                <span className="text-[10px] bg-purple-500/10 text-purple-600 dark:text-purple-400 px-1.5 py-0.5 rounded font-medium">
+                <span className="text-[10px] bg-secondary text-secondary-foreground px-1.5 py-0.5 rounded font-medium">
                   Merged
                 </span>
               )}

@@ -132,10 +132,10 @@ export function RepoJsxBridge({ mdastNode, descriptor }: RepoJsxBridgeProps) {
   try {
     return (
       <div className="repo-jsx-container relative group">
-        <div className="absolute -top-6 left-0 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 bg-studio-accent text-white text-[10px] font-bold px-1.5 py-0.5 rounded-t-sm pointer-events-none z-20">
+        <div className="absolute -top-6 left-0 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 bg-studio-accent text-studio-accent-fg text-[10px] font-bold px-1.5 py-0.5 rounded-t-sm pointer-events-none z-20">
           {descriptor.name} (Live)
           {propWarnings.length > 0 && (
-            <span className="ml-1 bg-yellow-500 text-yellow-950 px-1 rounded text-[9px]">
+            <span className="ml-1 bg-studio-attention-muted text-studio-attention px-1 rounded text-[9px]">
               {propWarnings.length} warning{propWarnings.length > 1 ? "s" : ""}
             </span>
           )}

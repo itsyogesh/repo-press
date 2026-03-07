@@ -23,10 +23,10 @@ export function PreviewStatus({ isCompiling, warnings, className }: PreviewStatu
             className={cn(
               "h-7 gap-1.5 px-2 rounded-full text-[10px] uppercase tracking-wider font-bold shadow-sm transition-colors",
               isCompiling
-                ? "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
+                ? "border-studio-accent/25 bg-studio-accent-muted text-studio-accent hover:bg-studio-accent-muted/80"
                 : warnings.length > 0
-                  ? "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
-                  : "border-green-200 bg-green-50 text-green-700 hover:bg-green-100",
+                  ? "border-studio-attention/25 bg-studio-attention-muted text-studio-attention hover:bg-studio-attention-muted/80"
+                  : "border-studio-success/25 bg-studio-success-muted text-studio-success hover:bg-studio-success-muted/80",
             )}
           >
             {isCompiling ? (
@@ -43,13 +43,15 @@ export function PreviewStatus({ isCompiling, warnings, className }: PreviewStatu
           <div
             className={cn(
               "border-b p-3 flex items-center justify-between",
-              warnings.length > 0 ? "bg-amber-50 border-amber-100" : "bg-green-50 border-green-100",
+              warnings.length > 0
+                ? "bg-studio-attention-muted/70 border-studio-attention/15"
+                : "bg-studio-success-muted/70 border-studio-success/15",
             )}
           >
             <div
               className={cn(
                 "flex items-center gap-2 font-bold text-xs uppercase tracking-wider",
-                warnings.length > 0 ? "text-amber-800" : "text-green-800",
+                warnings.length > 0 ? "text-studio-attention" : "text-studio-success",
               )}
             >
               {warnings.length > 0 ? <AlertTriangle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
@@ -60,8 +62,8 @@ export function PreviewStatus({ isCompiling, warnings, className }: PreviewStatu
               className={cn(
                 "h-5 px-1.5 text-[10px]",
                 warnings.length > 0
-                  ? "bg-amber-100 border-amber-200 text-amber-800"
-                  : "bg-green-100 border-green-200 text-green-800",
+                  ? "bg-studio-attention-muted border-studio-attention/25 text-studio-attention"
+                  : "bg-studio-success-muted border-studio-success/25 text-studio-success",
               )}
             >
               {warnings.length}
@@ -73,9 +75,9 @@ export function PreviewStatus({ isCompiling, warnings, className }: PreviewStatu
                 {warnings.map((w) => (
                   <li
                     key={w}
-                    className="text-xs p-2 rounded bg-muted/50 border border-transparent hover:border-amber-200 hover:bg-amber-50/50 transition-colors flex gap-2"
+                    className="text-xs p-2 rounded bg-muted/50 border border-transparent hover:border-studio-attention/20 hover:bg-studio-attention-muted/40 transition-colors flex gap-2"
                   >
-                    <div className="mt-0.5 size-1.5 rounded-full bg-amber-400 shrink-0" />
+                    <div className="mt-0.5 size-1.5 rounded-full bg-studio-attention shrink-0" />
                     {w}
                   </li>
                 ))}

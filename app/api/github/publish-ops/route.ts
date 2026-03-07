@@ -3,7 +3,7 @@ import matter from "gray-matter"
 import { NextResponse } from "next/server"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
-import { getGitHubToken } from "@/lib/auth-server"
+import { fetchAuthQuery, getGitHubToken } from "@/lib/auth-server"
 import { prefixContentRoot } from "@/lib/explorer-tree-overlay"
 import type { BatchOperation } from "@/lib/github"
 import { batchCommit, createBranch, createGitHubClient, createPullRequest, getFile } from "@/lib/github"
@@ -18,9 +18,8 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json()
-    const { projectId, userId, title, description } = body as {
+    const { projectId, title, description } = body as {
       projectId: string
-      userId?: string
       title?: string
       description?: string
     }
@@ -36,7 +35,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 })
     }
 
-    if (!userId || project.userId !== userId) {
+    const oauthUserId = await resolveActingUserId()
+    const hasAccess = await verifyProjectAccess(token, project, oauthUserId)
+    if (!hasAccess) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
     }
 
@@ -195,6 +196,7 @@ export async function POST(request: Request) {
       await createBranch(token, owner, repo, baseBranch, branchName)
       await convex.mutation(api.publishBranches.create, {
         projectId: project._id,
+        userId: project.userId,
         branchName,
         baseBranch,
       })
@@ -233,6 +235,7 @@ export async function POST(request: Request) {
 
     await convex.mutation(api.publishBranches.updateAfterCommit, {
       id: publishBranch._id,
+      userId: project.userId,
       prNumber,
       prUrl,
       lastCommitSha: commitSha,
@@ -296,6 +299,41 @@ export async function POST(request: Request) {
     const message = error instanceof Error ? error.message : "Failed to publish"
     console.error("Error in publish-ops:", error)
     return NextResponse.json({ error: message }, { status: 500 })
+  }
+}
+
+async function resolveActingUserId(): Promise<string | null> {
+  if (fetchAuthQuery) {
+    try {
+      const authUser = await fetchAuthQuery(api.auth.getCurrentUser)
+      if (authUser?._id) {
+        return authUser._id as string
+      }
+    } catch {
+      // Not an OAuth session
+    }
+  }
+  return null
+}
+
+async function verifyProjectAccess(
+  token: string,
+  project: { userId: string; repoOwner: string; repoName: string },
+  oauthUserId: string | null,
+): Promise<boolean> {
+  if (oauthUserId) {
+    return project.userId === oauthUserId
+  }
+
+  try {
+    const octokit = createGitHubClient(token)
+    await octokit.repos.get({
+      owner: project.repoOwner,
+      repo: project.repoName,
+    })
+    return true
+  } catch {
+    return false
   }
 }
 

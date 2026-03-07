@@ -1,3 +1,5 @@
+"use client"
+
 import { formatDistanceToNow } from "date-fns"
 import { Check, Loader2 } from "lucide-react"
 import { useViewMode } from "./view-mode-context"

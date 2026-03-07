@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useMemo, useSyncExternalStore } from "react"
 import { fetchAdapterSourceAction } from "@/app/dashboard/[owner]/[repo]/adapter-actions"
 import { fetchPluginAction } from "@/app/dashboard/[owner]/[repo]/plugin-actions"
 import {
@@ -29,18 +29,92 @@ interface UsePreviewContextResult {
   diagnostics: string[]
 }
 
+interface PreviewStoreEntry {
+  adapter: RepoPressPreviewAdapter | null
+  plugins: Record<string, RepoPressPreviewAdapter>
+  loading: boolean
+  error: string | null
+  diagnostics: string[]
+  listeners: Set<() => void>
+  promise: Promise<void> | null
+}
+
 type AdapterSourceActionResult = Awaited<ReturnType<typeof fetchAdapterSourceAction>>
 type PluginSourceActionResult = Awaited<ReturnType<typeof fetchPluginAction>>
 
+const previewStore = new Map<string, PreviewStoreEntry>()
 const inFlightAdapterRequests = new Map<string, Promise<AdapterSourceActionResult>>()
 const inFlightPluginRequests = new Map<string, Promise<PluginSourceActionResult>>()
+
+let didPruneAdapterCache = false
+
+function buildMergedContext(
+  adapter: RepoPressPreviewAdapter | null,
+  plugins: Record<string, RepoPressPreviewAdapter>,
+): RepoPressPreviewAdapter {
+  const result: RepoPressPreviewAdapter = {
+    components: { ...standardComponents, ...(adapter?.components || {}) },
+    scope: { ...(adapter?.scope || {}) },
+    allowImports: { ...(adapter?.allowImports || {}) },
+  }
+
+  for (const plugin of Object.values(plugins)) {
+    if (plugin.components) {
+      result.components = { ...result.components, ...plugin.components }
+    }
+    if (plugin.scope) {
+      result.scope = { ...result.scope, ...plugin.scope }
+    }
+    if (plugin.allowImports) {
+      for (const [moduleName, exports] of Object.entries(plugin.allowImports)) {
+        result.allowImports![moduleName] = {
+          ...(result.allowImports![moduleName] || {}),
+          ...(exports as object),
+        }
+      }
+    }
+    if (plugin.resolveAssetUrl) {
+      result.resolveAssetUrl = plugin.resolveAssetUrl
+    }
+  }
+
+  return result
+}
+
+const EMPTY_RESULT: UsePreviewContextResult = {
+  context: buildMergedContext(null, {}),
+  loading: false,
+  error: null,
+  diagnostics: [],
+}
+
+function getStoreEntry(key: string) {
+  let entry = previewStore.get(key)
+  if (!entry) {
+    entry = {
+      adapter: null,
+      plugins: {},
+      loading: false,
+      error: null,
+      diagnostics: [],
+      listeners: new Set(),
+      promise: null,
+    }
+    previewStore.set(key, entry)
+  }
+  return entry
+}
+
+function emit(entry: PreviewStoreEntry) {
+  for (const listener of entry.listeners) {
+    listener()
+  }
+}
 
 function dedupedAdapterRequest(owner: string, repo: string, branch: string, adapterPath: string) {
   const key = `${owner}/${repo}@${branch}:${adapterPath}`
   const existing = inFlightAdapterRequests.get(key)
-  if (existing) {
-    return existing
-  }
+  if (existing) return existing
 
   const request = fetchAdapterSourceAction(owner, repo, branch, adapterPath).finally(() => {
     inFlightAdapterRequests.delete(key)
@@ -52,9 +126,7 @@ function dedupedAdapterRequest(owner: string, repo: string, branch: string, adap
 function dedupedPluginRequest(owner: string, repo: string, branch: string, pluginPath: string) {
   const key = `${owner}/${repo}@${branch}:${pluginPath}`
   const existing = inFlightPluginRequests.get(key)
-  if (existing) {
-    return existing
-  }
+  if (existing) return existing
 
   const request = fetchPluginAction(owner, repo, branch, pluginPath).finally(() => {
     inFlightPluginRequests.delete(key)
@@ -72,6 +144,135 @@ function hashSource(source: string) {
   return String(hash >>> 0)
 }
 
+async function loadPreviewContext(key: string, options: Required<UsePreviewContextOptions>) {
+  const entry = getStoreEntry(key)
+  if (entry.promise || entry.loading) return
+
+  entry.loading = true
+  entry.error = null
+  emit(entry)
+
+  entry.promise = (async () => {
+    const diagnostics: string[] = []
+
+    try {
+      if (!didPruneAdapterCache) {
+        didPruneAdapterCache = true
+        await pruneExpiredAdapterCache()
+      }
+
+      if (options.adapterPath) {
+        const result = await dedupedAdapterRequest(options.owner, options.repo, options.branch, options.adapterPath)
+        if (result.success && result.source) {
+          if (result.rateLimited) {
+            diagnostics.push(
+              `Adapter request for ${options.adapterPath} hit GitHub rate limits and retried ${result.retryCount} time(s).`,
+            )
+          }
+
+          const sourceSha = result.sha || hashSource(result.source)
+          const cacheKey = buildAdapterCacheKey(
+            options.owner,
+            options.repo,
+            options.branch,
+            options.adapterPath,
+            sourceSha,
+          )
+          let transpiled = await getCachedAdapter(cacheKey, sourceSha)
+          if (!transpiled) {
+            transpiled = await transpileAdapter(result.source)
+            await setCachedAdapter({
+              key: cacheKey,
+              sourceSha,
+              transpiledCode: transpiled,
+            })
+          }
+          entry.adapter = evaluateAdapter(transpiled)
+        } else {
+          diagnostics.push(`Adapter missing or failed at ${options.adapterPath}: ${result.error}`)
+          entry.adapter = null
+        }
+      } else {
+        entry.adapter = null
+      }
+
+      const nextPlugins: Record<string, RepoPressPreviewAdapter> = {}
+      if (options.enabledPlugins.length > 0) {
+        const pluginTasks = options.enabledPlugins
+          .map((id) => ({ id, path: options.pluginRegistry[id] }))
+          .filter((plugin) => Boolean(plugin.path))
+          .map(async ({ id, path }) => {
+            try {
+              const result = await dedupedPluginRequest(options.owner, options.repo, options.branch, path!)
+              if (result.success && result.source) {
+                if (result.rateLimited) {
+                  diagnostics.push(`Plugin "${id}" hit GitHub rate limits and retried ${result.retryCount} time(s).`)
+                }
+                const transpiled = await transpileAdapter(result.source)
+                return { id, adapter: evaluateAdapter(transpiled) }
+              }
+              return { id, error: result.error || "Unknown error" }
+            } catch (error: unknown) {
+              return {
+                id,
+                error: error instanceof Error ? error.message : "Unknown error",
+              }
+            }
+          })
+
+        const results = await Promise.all(pluginTasks)
+        for (const result of results) {
+          if ("adapter" in result && result.adapter) {
+            nextPlugins[result.id] = result.adapter
+          } else {
+            diagnostics.push(`Plugin "${result.id}" failed to load: ${result.error}`)
+          }
+        }
+      }
+
+      entry.plugins = nextPlugins
+      entry.diagnostics = diagnostics
+      entry.error = null
+    } catch (error: unknown) {
+      entry.adapter = null
+      entry.plugins = {}
+      entry.error = error instanceof Error ? error.message : "Failed to load preview context"
+      entry.diagnostics = diagnostics
+    } finally {
+      entry.loading = false
+      entry.promise = null
+      emit(entry)
+    }
+  })()
+}
+
+function subscribePreviewContext(
+  key: string | null,
+  options: Required<UsePreviewContextOptions> | null,
+  listener: () => void,
+) {
+  if (!key || !options) return () => {}
+
+  const entry = getStoreEntry(key)
+  entry.listeners.add(listener)
+  void loadPreviewContext(key, options)
+
+  return () => {
+    entry.listeners.delete(listener)
+  }
+}
+
+function getSnapshot(key: string | null): UsePreviewContextResult {
+  if (!key) return EMPTY_RESULT
+  const entry = getStoreEntry(key)
+  return {
+    context: buildMergedContext(entry.adapter, entry.plugins),
+    loading: entry.loading,
+    error: entry.error,
+    diagnostics: entry.diagnostics,
+  }
+}
+
 export function usePreviewContext({
   owner,
   repo,
@@ -80,175 +281,36 @@ export function usePreviewContext({
   enabledPlugins,
   pluginRegistry,
 }: UsePreviewContextOptions): UsePreviewContextResult {
-  const [adapter, setAdapter] = useState<RepoPressPreviewAdapter | null>(null)
-  const [plugins, setPlugins] = useState<Record<string, RepoPressPreviewAdapter>>({})
-  const [loading, setLoading] = useState<boolean>(false)
-  const [error, setError] = useState<string | null>(null)
-  const [diagnostics, setDiagnostics] = useState<string[]>([])
+  const normalizedPlugins = useMemo(() => [...(enabledPlugins || [])].sort(), [enabledPlugins])
+  const normalizedRegistry = useMemo(() => pluginRegistry || {}, [pluginRegistry])
+  const key = useMemo(
+    () =>
+      JSON.stringify({
+        owner,
+        repo,
+        branch,
+        adapterPath: adapterPath || null,
+        enabledPlugins: normalizedPlugins,
+        pluginRegistry: normalizedRegistry,
+      }),
+    [owner, repo, branch, adapterPath, normalizedPlugins, normalizedRegistry],
+  )
 
-  const lastAdapterSourceRef = useRef<string | null>(null)
-  const lastAdapterShaRef = useRef<string | null>(null)
-  const didPruneCacheRef = useRef(false)
-
-  useEffect(() => {
-    let isMounted = true
-
-    async function loadAll() {
-      setLoading(true)
-      setError(null)
-      const newDiagnostics: string[] = []
-
-      try {
-        if (!didPruneCacheRef.current) {
-          didPruneCacheRef.current = true
-          await pruneExpiredAdapterCache()
-        }
-
-        // 1. Load Main Adapter
-        if (adapterPath) {
-          const result = await dedupedAdapterRequest(owner, repo, branch, adapterPath)
-          if (isMounted) {
-            if (result.success && result.source) {
-              if (result.rateLimited) {
-                newDiagnostics.push(
-                  `Adapter request for ${adapterPath} hit GitHub rate limits and retried ${result.retryCount} time(s).`,
-                )
-              }
-              const sourceSha = result.sha || hashSource(result.source)
-              const cacheKey = buildAdapterCacheKey(owner, repo, branch, adapterPath, sourceSha)
-              const sourceChanged =
-                result.source !== lastAdapterSourceRef.current || sourceSha !== lastAdapterShaRef.current
-
-              if (sourceChanged) {
-                try {
-                  let transpiled = await getCachedAdapter(cacheKey, sourceSha)
-                  if (!transpiled) {
-                    transpiled = await transpileAdapter(result.source)
-                    await setCachedAdapter({
-                      key: cacheKey,
-                      sourceSha,
-                      transpiledCode: transpiled,
-                    })
-                  }
-                  setAdapter(evaluateAdapter(transpiled))
-                  lastAdapterSourceRef.current = result.source
-                  lastAdapterShaRef.current = sourceSha
-                } catch (e: any) {
-                  newDiagnostics.push(`Failed to evaluate adapter at ${adapterPath}: ${e.message}`)
-                  setAdapter(null)
-                }
-              }
-            } else if (!result.success) {
-              newDiagnostics.push(`Adapter missing or failed at ${adapterPath}: ${result.error}`)
-              setAdapter(null)
-              lastAdapterShaRef.current = null
-            }
-          }
-        } else {
-          setAdapter(null)
-          lastAdapterSourceRef.current = null
-          lastAdapterShaRef.current = null
-        }
-
-        // 2. Load Plugins
-        if (enabledPlugins && pluginRegistry) {
-          const pluginTasks = enabledPlugins
-            .map((id) => ({ id, path: pluginRegistry[id] }))
-            .filter((t) => t.path)
-            .map(async ({ id, path }) => {
-              try {
-                const res = await dedupedPluginRequest(owner, repo, branch, path!)
-                if (res.success && res.source) {
-                  if (res.rateLimited) {
-                    newDiagnostics.push(`Plugin "${id}" hit GitHub rate limits and retried ${res.retryCount} time(s).`)
-                  }
-                  const transpiled = await transpileAdapter(res.source)
-                  const evaluated = evaluateAdapter(transpiled)
-                  return { id, adapter: evaluated }
-                } else {
-                  return { id, error: res.error || "Unknown error" }
-                }
-              } catch (e: any) {
-                return { id, error: e.message }
-              }
-            })
-
-          const results = await Promise.all(pluginTasks)
-          if (isMounted) {
-            const newPlugins: Record<string, RepoPressPreviewAdapter> = {}
-            results.forEach((r) => {
-              if (r && "adapter" in r && r.adapter) {
-                newPlugins[r.id] = r.adapter
-              } else if (r && "error" in r) {
-                newDiagnostics.push(`Plugin "${r.id}" failed to load: ${r.error}`)
-              }
-            })
-            setPlugins(newPlugins)
-          }
-        } else {
-          setPlugins({})
-        }
-
-        if (isMounted) {
-          setDiagnostics(newDiagnostics)
-        }
-      } catch (err: any) {
-        if (isMounted) {
-          setError(err.message || "Failed to load preview context")
-        }
-      } finally {
-        if (isMounted) {
-          setLoading(false)
-        }
-      }
-    }
-
-    const debounceTimer = setTimeout(() => {
-      loadAll()
-    }, 500)
-
-    return () => {
-      isMounted = false
-      clearTimeout(debounceTimer)
-    }
-  }, [owner, repo, branch, adapterPath, enabledPlugins, pluginRegistry])
-
-  const mergedContext = useMemo(() => {
-    const result: RepoPressPreviewAdapter = {
-      components: { ...standardComponents, ...(adapter?.components || {}) },
-      scope: { ...(adapter?.scope || {}) },
-      allowImports: { ...(adapter?.allowImports || {}) },
-    }
-
-    // Merge plugins
-    Object.values(plugins).forEach((p) => {
-      if (p.components) {
-        result.components = { ...result.components, ...p.components }
-      }
-      if (p.scope) {
-        result.scope = { ...result.scope, ...p.scope }
-      }
-      if (p.allowImports) {
-        // Deep merge allowImports
-        for (const [module, exports] of Object.entries(p.allowImports)) {
-          result.allowImports![module] = {
-            ...(result.allowImports![module] || {}),
-            ...(exports as object),
-          }
-        }
-      }
-      if (p.resolveAssetUrl) {
-        result.resolveAssetUrl = p.resolveAssetUrl // Last one wins for now
-      }
-    })
-
-    return result
-  }, [adapter, plugins])
-
-  return {
-    context: mergedContext,
-    loading,
-    error,
-    diagnostics,
-  }
+  return useSyncExternalStore(
+    (listener) =>
+      subscribePreviewContext(
+        key,
+        {
+          owner,
+          repo,
+          branch,
+          adapterPath: adapterPath || null,
+          enabledPlugins: normalizedPlugins,
+          pluginRegistry: normalizedRegistry,
+        },
+        listener,
+      ),
+    () => getSnapshot(key),
+    () => EMPTY_RESULT,
+  )
 }

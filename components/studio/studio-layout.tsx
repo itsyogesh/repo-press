@@ -214,9 +214,9 @@ function StudioNoSelectionPreviewState() {
       <div className="flex-1 flex items-center justify-center px-6">
         <div className="max-w-[280px] text-center space-y-6">
           <div className="relative inline-flex items-center justify-center">
-            <div className="absolute inset-0 bg-blue-500/10 blur-2xl rounded-full scale-150 animate-pulse" />
-            <div className="relative size-16 rounded-2xl bg-gradient-to-br from-blue-500/20 to-indigo-500/20 border border-blue-500/20 flex items-center justify-center shadow-inner">
-              <FileText className="size-8 text-blue-500/60" />
+            <div className="absolute inset-0 rounded-full bg-studio-accent/10 blur-2xl scale-150 animate-pulse" />
+            <div className="relative flex size-16 items-center justify-center rounded-2xl border border-studio-accent/20 bg-studio-accent-muted shadow-inner">
+              <FileText className="size-8 text-studio-accent/70" />
             </div>
           </div>
 
@@ -229,8 +229,8 @@ function StudioNoSelectionPreviewState() {
 
           <div className="pt-4 grid gap-2">
             <div className="flex items-center gap-3 p-2 rounded-lg border border-transparent hover:border-studio-border hover:bg-studio-canvas-alt transition-colors group">
-              <div className="size-6 rounded bg-muted flex items-center justify-center group-hover:bg-blue-500/10 transition-colors">
-                <Search className="size-3.5 text-muted-foreground group-hover:text-blue-500" />
+              <div className="size-6 rounded bg-muted flex items-center justify-center group-hover:bg-studio-accent-muted transition-colors">
+                <Search className="size-3.5 text-muted-foreground group-hover:text-studio-accent" />
               </div>
               <div className="text-left">
                 <p className="text-[10px] font-bold text-studio-fg uppercase tracking-tight">Quick Search</p>
@@ -350,7 +350,7 @@ function StudioSidebarRail({
                 <Link href={historyHref}>
                   <History className="h-4 w-4" />
                   {pendingCount > 0 && (
-                    <span className="absolute -right-1 -top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-studio-accent px-1 text-[9px] font-semibold text-white">
+                    <span className="absolute -right-1 -top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-studio-accent px-1 text-[9px] font-semibold text-studio-accent-fg">
                       {pendingDisplay}
                     </span>
                   )}

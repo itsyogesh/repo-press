@@ -1,3 +1,5 @@
+"use client"
+
 import { useQuery } from "convex/react"
 import * as React from "react"
 import { api } from "@/convex/_generated/api"
@@ -7,6 +9,116 @@ import type { FieldVariantMap } from "@/lib/framework-adapters"
 import { getFrameworkConfig } from "@/lib/framework-adapters"
 import type { FileTreeNode } from "@/lib/github"
 import { useStudio } from "../studio-context"
+
+type TitleSyncSnapshot = {
+  status: "idle" | "loading" | "done" | "error"
+}
+
+type TitleSyncEntry = TitleSyncSnapshot & {
+  listeners: Set<() => void>
+  promise: Promise<void> | null
+}
+
+const EMPTY_TITLE_SYNC: TitleSyncSnapshot = { status: "idle" }
+const titleSyncStore = new Map<string, TitleSyncEntry>()
+
+function getTitleSyncEntry(key: string) {
+  let entry = titleSyncStore.get(key)
+  if (!entry) {
+    entry = {
+      status: "idle",
+      listeners: new Set(),
+      promise: null,
+    }
+    titleSyncStore.set(key, entry)
+  }
+  return entry
+}
+
+function emitTitleSync(entry: TitleSyncEntry) {
+  for (const listener of entry.listeners) {
+    listener()
+  }
+}
+
+function collectTreeFiles(tree: FileTreeNode[]) {
+  const files: { path: string; sha: string }[] = []
+
+  function visit(nodes: FileTreeNode[]) {
+    for (const node of nodes) {
+      if (node.type === "file") {
+        files.push({ path: node.path, sha: node.sha })
+      } else if (node.children) {
+        visit(node.children)
+      }
+    }
+  }
+
+  visit(tree)
+  return files
+}
+
+async function syncTitlesForTree(
+  key: string,
+  payload: {
+    projectId: string
+    owner: string
+    repo: string
+    branch: string
+    files: { path: string; sha: string }[]
+  },
+) {
+  const entry = getTitleSyncEntry(key)
+  if (entry.promise || entry.status === "done") return
+
+  entry.status = "loading"
+  emitTitleSync(entry)
+
+  entry.promise = fetch("/api/github/sync-titles", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  })
+    .then(() => {
+      entry.status = "done"
+    })
+    .catch((error) => {
+      entry.status = "error"
+      console.error("Failed to sync tree titles:", error)
+    })
+    .finally(() => {
+      entry.promise = null
+      emitTitleSync(entry)
+    })
+}
+
+function subscribeTitleSync(
+  key: string | null,
+  payload: {
+    projectId: string
+    owner: string
+    repo: string
+    branch: string
+    files: { path: string; sha: string }[]
+  } | null,
+  listener: () => void,
+) {
+  if (!key || !payload || payload.files.length === 0) return () => {}
+
+  const entry = getTitleSyncEntry(key)
+  entry.listeners.add(listener)
+  void syncTitlesForTree(key, payload)
+
+  return () => {
+    entry.listeners.delete(listener)
+  }
+}
+
+function getTitleSyncSnapshot(key: string | null): TitleSyncSnapshot {
+  if (!key) return EMPTY_TITLE_SYNC
+  const entry = getTitleSyncEntry(key)
+  return { status: entry.status }
+}
 
 export function useStudioQueries(selectedFilePath?: string) {
   const { projectId, tree, contentRoot, owner, repo, branch } = useStudio()
@@ -42,6 +154,37 @@ export function useStudioQueries(selectedFilePath?: string) {
     projectId ? { projectId: projectId as Id<"projects"> } : "skip",
   )
 
+  const treeFiles = React.useMemo(() => collectTreeFiles(tree), [tree])
+  const titleSyncKey = React.useMemo(() => {
+    if (!projectId || treeFiles.length === 0) return null
+    return JSON.stringify({
+      projectId,
+      owner,
+      repo,
+      branch,
+      files: treeFiles,
+    })
+  }, [projectId, owner, repo, branch, treeFiles])
+
+  React.useSyncExternalStore(
+    (listener) =>
+      subscribeTitleSync(
+        titleSyncKey,
+        projectId
+          ? {
+              projectId,
+              owner,
+              repo,
+              branch,
+              files: treeFiles,
+            }
+          : null,
+        listener,
+      ),
+    () => getTitleSyncSnapshot(titleSyncKey),
+    () => EMPTY_TITLE_SYNC,
+  )
+
   const titleMap = React.useMemo(() => {
     if (!titleEntries) return {}
     const map: Record<string, string> = {}
@@ -50,35 +193,6 @@ export function useStudioQueries(selectedFilePath?: string) {
     }
     return map
   }, [titleEntries])
-
-  // Trigger background sync of file tree titles via server-side API
-  const hasSynced = React.useRef(false)
-  React.useEffect(() => {
-    if (hasSynced.current || !projectId || tree.length === 0) return
-    hasSynced.current = true
-
-    const files: { path: string; sha: string }[] = []
-    function collectFiles(nodes: FileTreeNode[]) {
-      for (const node of nodes) {
-        if (node.type === "file") {
-          files.push({ path: node.path, sha: node.sha })
-        } else if (node.children) {
-          collectFiles(node.children)
-        }
-      }
-    }
-    collectFiles(tree)
-
-    if (files.length > 0) {
-      fetch("/api/github/sync-titles", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, owner, repo, branch, files }),
-      }).catch((err) => {
-        console.error("Failed to sync tree titles:", err)
-      })
-    }
-  }, [projectId, tree, owner, repo, branch])
 
   const overlayTree = React.useMemo(() => {
     if (!pendingOps || pendingOps.length === 0) return tree

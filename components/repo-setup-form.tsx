@@ -148,12 +148,12 @@ export function RepoSetupForm({
         <div className="flex items-center justify-between mb-2">
           <CardTitle>Configure Repository</CardTitle>
           {repoConfig ? (
-            <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-green-600 bg-green-50 px-2 py-0.5 rounded-full border border-green-200">
+            <div className="flex items-center gap-1 rounded-full border border-studio-success/20 bg-studio-success-muted px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-studio-success">
               <CheckCircle2 className="h-3 w-3" />
               Config Found
             </div>
           ) : (
-            <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+            <div className="flex items-center gap-1 rounded-full border border-studio-attention/20 bg-studio-attention-muted px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-studio-attention">
               <Sparkles className="h-3 w-3" />
               New Repo
             </div>
@@ -174,10 +174,10 @@ export function RepoSetupForm({
       <CardContent className="space-y-6">
         {repoConfig ? (
           <div className="space-y-4">
-            <Alert className="bg-green-50/50 border-green-200">
-              <Settings className="h-4 w-4 text-green-600" />
-              <AlertTitle className="text-green-800">Ready to Sync</AlertTitle>
-              <AlertDescription className="text-green-700 text-xs">
+            <Alert className="border-studio-success/20 bg-studio-success-muted/60">
+              <Settings className="h-4 w-4 text-studio-success" />
+              <AlertTitle className="text-studio-success">Ready to Sync</AlertTitle>
+              <AlertDescription className="text-xs text-studio-success">
                 This repository already has a configuration file. Syncing will automatically set up all projects defined
                 in it.
               </AlertDescription>
@@ -204,7 +204,7 @@ export function RepoSetupForm({
 
             <Button
               onClick={handleSyncFromConfig}
-              className="w-full bg-green-600 hover:bg-green-700"
+              className="w-full bg-studio-success text-background hover:bg-studio-success/90"
               disabled={isLoading}
             >
               {isLoading ? (
@@ -231,10 +231,10 @@ export function RepoSetupForm({
           </div>
         ) : (
           <div className="space-y-4">
-            <Alert className="bg-blue-50/50 border-blue-200">
-              <Sparkles className="h-4 w-4 text-blue-600" />
-              <AlertTitle className="text-blue-800">MDX Preview Support</AlertTitle>
-              <AlertDescription className="text-blue-700 text-xs text-pretty">
+            <Alert className="border-studio-accent/20 bg-studio-accent-muted/60">
+              <Sparkles className="h-4 w-4 text-studio-accent" />
+              <AlertTitle className="text-studio-accent">MDX Preview Support</AlertTitle>
+              <AlertDescription className="text-xs text-pretty text-studio-accent">
                 We recommend initializing RepoPress in this repo. This adds a config file and preview adapter to enable
                 live MDX editing.
               </AlertDescription>
@@ -334,7 +334,7 @@ export function RepoSetupForm({
               <Button
                 type="button"
                 variant="outline"
-                className="w-full border-blue-200 text-blue-700 hover:bg-blue-50"
+                className="w-full border-studio-accent/25 text-studio-accent hover:bg-studio-accent-muted/60"
                 onClick={handleInitRepoPress}
                 disabled={isInitializing || isLoading}
               >

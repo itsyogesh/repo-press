@@ -78,9 +78,9 @@ export const REAL_DOCS_SETUP_MEDIA: any = {
  */
 export const standardComponents: Record<string, React.ComponentType<any>> = {
   Callout: (props) => (
-    <div className="my-4 flex gap-3 rounded-lg border border-blue-200 bg-blue-50/50 p-4 text-sm text-blue-900 shadow-sm text-left font-sans">
+    <div className="my-4 flex gap-3 rounded-lg border border-studio-accent/20 bg-studio-accent-muted/60 p-4 text-left text-sm text-foreground shadow-sm font-sans">
       <div className="mt-0.5">
-        <Info className="h-4 w-4 text-blue-600" />
+        <Info className="h-4 w-4 text-studio-accent" />
       </div>
       <div className="flex-1">{props.children}</div>
     </div>
@@ -179,7 +179,7 @@ export const standardComponents: Record<string, React.ComponentType<any>> = {
     }
 
     return (
-      <div className="my-6 overflow-hidden rounded-xl border bg-slate-950 aspect-video flex items-center justify-center relative text-left font-sans shadow-lg">
+      <div className="my-6 relative aspect-video overflow-hidden rounded-xl border bg-foreground text-background flex items-center justify-center text-left font-sans shadow-lg">
         {src ? (
           <iframe
             src={src}
@@ -189,9 +189,9 @@ export const standardComponents: Record<string, React.ComponentType<any>> = {
             allowFullScreen
           />
         ) : (
-          <div className="text-white/50 flex flex-col items-center gap-2">
-            <div className="size-12 rounded-full border-2 border-white/20 flex items-center justify-center bg-white/5">
-              <div className="size-0 border-t-[8px] border-t-transparent border-l-[12px] border-l-white/60 border-b-[8px] border-b-transparent ml-1" />
+          <div className="flex flex-col items-center gap-2 text-background/60">
+            <div className="size-12 rounded-full border-2 border-background/20 bg-background/5 flex items-center justify-center">
+              <div className="ml-1 size-0 border-t-[8px] border-t-transparent border-l-[12px] border-l-background/70 border-b-[8px] border-b-transparent" />
             </div>
             <span className="text-[10px] uppercase font-bold tracking-widest opacity-50">
               Video: {props.title || "No Source"}

@@ -1,3 +1,5 @@
+"use client"
+
 import * as React from "react"
 import type { FileTreeNode } from "@/lib/github"
 import type { RepoPressPreviewAdapter } from "@/lib/repopress/evaluate-adapter"
