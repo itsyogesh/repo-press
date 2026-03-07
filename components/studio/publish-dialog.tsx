@@ -1,6 +1,6 @@
 "use client"
 
-import { AlertTriangle, ExternalLink, FilePlus, FileMinus, FileEdit, GitPullRequest } from "lucide-react"
+import { AlertTriangle, ExternalLink, FileEdit, FileMinus, FilePlus, GitPullRequest } from "lucide-react"
 import * as React from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -39,7 +39,7 @@ export function PublishDialog({
   const [description, setDescription] = React.useState("")
 
   const { creates, deletes, edits } = pendingCounts
-  const total = creates + deletes + edits
+  const _total = creates + deletes + edits
   const summaryParts: string[] = []
   if (creates > 0) summaryParts.push(`${creates} new`)
   if (edits > 0) summaryParts.push(`${edits} modified`)
@@ -53,9 +53,7 @@ export function PublishDialog({
             <GitPullRequest className="h-5 w-5 text-studio-accent" />
             {existingPrUrl ? "Push to PR" : "Publish Changes"}
           </DialogTitle>
-          <DialogDescription>
-            Review your changes before publishing to GitHub.
-          </DialogDescription>
+          <DialogDescription>Review your changes before publishing to GitHub.</DialogDescription>
         </DialogHeader>
 
         {/* Change Summary */}
@@ -121,7 +119,9 @@ export function PublishDialog({
         {!existingPrUrl && (
           <div className="space-y-4">
             <div>
-              <Label htmlFor="prTitle" className="text-sm font-medium">PR Title</Label>
+              <Label htmlFor="prTitle" className="text-sm font-medium">
+                PR Title
+              </Label>
               <Input
                 id="prTitle"
                 value={title}
@@ -131,7 +131,9 @@ export function PublishDialog({
               />
             </div>
             <div>
-              <Label htmlFor="prDescription" className="text-sm font-medium">Description (optional)</Label>
+              <Label htmlFor="prDescription" className="text-sm font-medium">
+                Description (optional)
+              </Label>
               <Textarea
                 id="prDescription"
                 value={description}
@@ -144,25 +146,15 @@ export function PublishDialog({
         )}
 
         <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={isPublishing}
-          >
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isPublishing}>
             Cancel
           </Button>
           <Button
-            onClick={() =>
-              onConfirm(title || undefined, description || undefined)
-            }
+            onClick={() => onConfirm(title || undefined, description || undefined)}
             disabled={isPublishing || (conflicts != null && conflicts.length > 0)}
             className="bg-studio-accent hover:bg-studio-accent/90"
           >
-            {isPublishing
-              ? "Publishing..."
-              : existingPrUrl
-                ? "Push to PR →"
-                : "Create PR →"}
+            {isPublishing ? "Publishing..." : existingPrUrl ? "Push to PR →" : "Create PR →"}
           </Button>
         </DialogFooter>
       </DialogContent>

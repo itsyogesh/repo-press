@@ -3,10 +3,10 @@ import matter from "gray-matter"
 import { NextResponse } from "next/server"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
-import { getGitHubToken } from "@/lib/auth-server"
+import { fetchAuthQuery, getGitHubToken } from "@/lib/auth-server"
 import { prefixContentRoot } from "@/lib/explorer-tree-overlay"
 import type { BatchOperation } from "@/lib/github"
-import { batchCommit, createBranch, createPullRequest, getFile } from "@/lib/github"
+import { batchCommit, createBranch, createGitHubClient, createPullRequest, getFile } from "@/lib/github"
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
 
@@ -29,7 +29,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Missing projectId" }, { status: 400 })
     }
 
-    // ── Fetch project details ──────────────────────────────────────────
     const project = await convex.query(api.projects.get, {
       id: projectId as Id<"projects">,
     })
@@ -37,31 +36,27 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 })
     }
 
-    // ── Verify ownership ───────────────────────────────────────────────
-    if (!userId || project.userId !== userId) {
+    const oauthUserId = await resolveActingUserId()
+    const hasAccess = await verifyProjectAccess(token, project, oauthUserId, userId)
+    if (!hasAccess) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
     }
 
     const { repoOwner: owner, repoName: repo, branch: baseBranch, contentRoot } = project
 
-    // ── Gather pending explorer ops + dirty documents ──────────────────
-    const [pendingOps, dirtyDocs] = await Promise.all([
-      convex.query(api.explorerOps.listPending, {
-        projectId: projectId as Id<"projects">,
-      }),
+    const [pendingOps, dirtyDocs, pendingMediaOps] = await Promise.all([
+      convex.query(api.explorerOps.listPending, { projectId: project._id }),
       convex.query(api.documents.listDirtyForProject, {
-        projectId: projectId as Id<"projects">,
+        projectId: project._id,
       }),
+      convex.query(api.mediaOps.listPending, { projectId: project._id }),
     ])
 
-    if (pendingOps.length === 0 && dirtyDocs.length === 0) {
+    if (pendingOps.length === 0 && dirtyDocs.length === 0 && pendingMediaOps.length === 0) {
       return NextResponse.json({ error: "No pending changes to publish" }, { status: 400 })
     }
 
-    // ── Pre-fetch all files needed for conflict detection in parallel ──
     const createOpPaths = new Set(pendingOps.filter((op) => op.opType === "create").map((op) => op.filePath))
-
-    // Collect all paths that need a getFile check
     const pathsToFetch: { key: string; fullPath: string }[] = []
 
     for (const op of pendingOps) {
@@ -75,10 +70,17 @@ export async function POST(request: Request) {
 
     for (const doc of dirtyDocs) {
       if (createOpPaths.has(doc.filePath)) continue
-      if (doc.githubSha) {
-        const fullPath = prefixContentRoot(doc.filePath, contentRoot)
-        pathsToFetch.push({ key: `doc:${doc.filePath}`, fullPath })
-      }
+      if (!doc.githubSha) continue
+      const fullPath = prefixContentRoot(doc.filePath, contentRoot)
+      pathsToFetch.push({ key: `doc:${doc.filePath}`, fullPath })
+    }
+
+    for (const mediaOp of pendingMediaOps) {
+      const normalizedPath = normalizeMediaPath(mediaOp.repoPath)
+      pathsToFetch.push({
+        key: `media:${normalizedPath}`,
+        fullPath: normalizedPath,
+      })
     }
 
     const prefetchResults = new Map<string, Awaited<ReturnType<typeof getFile>>>()
@@ -92,7 +94,6 @@ export async function POST(request: Request) {
       prefetchResults.set(key, result)
     }
 
-    // ── Build batch operations with conflict detection ─────────────────
     const operations: BatchOperation[] = []
     const conflicts: { path: string; reason: string }[] = []
 
@@ -117,9 +118,13 @@ export async function POST(request: Request) {
         operations.push({
           path: fullPath,
           content: fileContent,
+          contentEncoding: "utf-8",
           action: "create",
         })
-      } else if (op.opType === "delete") {
+        continue
+      }
+
+      if (op.opType === "delete") {
         if (op.previousSha) {
           const existing = prefetchResults.get(`op:${op.filePath}`)
           if (existing && existing.sha !== op.previousSha) {
@@ -130,13 +135,13 @@ export async function POST(request: Request) {
             continue
           }
         }
+
         operations.push({ path: fullPath, action: "delete" })
       }
     }
 
     for (const doc of dirtyDocs) {
       if (createOpPaths.has(doc.filePath)) continue
-
       const fullPath = prefixContentRoot(doc.filePath, contentRoot)
 
       if (doc.githubSha) {
@@ -154,11 +159,26 @@ export async function POST(request: Request) {
       operations.push({
         path: fullPath,
         content: fileContent,
+        contentEncoding: "utf-8",
         action: "update",
       })
     }
 
-    // ── Abort if any conflicts were detected ───────────────────────────
+    const contentCreateCount = operations.filter((o) => o.action === "create").length
+    const contentUpdateCount = operations.filter((o) => o.action === "update").length
+    const contentDeleteCount = operations.filter((o) => o.action === "delete").length
+
+    const mediaBatchOps = await buildMediaBatchOperations({
+      token,
+      owner,
+      repo,
+      baseBranch,
+      pendingMediaOps,
+      prefetchResults,
+      conflicts,
+    })
+    operations.push(...mediaBatchOps)
+
     if (conflicts.length > 0) {
       return NextResponse.json({ ok: false, conflicts }, { status: 409 })
     }
@@ -167,45 +187,41 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No valid operations to publish" }, { status: 400 })
     }
 
-    // ── Get or create the PR branch ────────────────────────────────────
     let publishBranch = await convex.query(api.publishBranches.getActiveForProject, {
-      projectId: projectId as Id<"projects">,
+      projectId: project._id,
     })
 
     const branchName = publishBranch?.branchName || `repopress/${baseBranch}/${Date.now()}`
 
     if (!publishBranch) {
-      // Create branch on GitHub first, then record in Convex
       await createBranch(token, owner, repo, baseBranch, branchName)
-
       await convex.mutation(api.publishBranches.create, {
-        projectId: projectId as Id<"projects">,
+        projectId: project._id,
+        userId: project.userId,
         branchName,
         baseBranch,
       })
-
       publishBranch = await convex.query(api.publishBranches.getActiveForProject, {
-        projectId: projectId as Id<"projects">,
+        projectId: project._id,
       })
       if (!publishBranch) {
         return NextResponse.json({ error: "Failed to create publish branch record" }, { status: 500 })
       }
     }
 
-    // ── Build a descriptive commit message ─────────────────────────────
-    const createCount = operations.filter((o) => o.action === "create").length
-    const updateCount = operations.filter((o) => o.action === "update").length
-    const deleteCount = operations.filter((o) => o.action === "delete").length
-    const parts: string[] = []
-    if (createCount > 0) parts.push(`${createCount} created`)
-    if (updateCount > 0) parts.push(`${updateCount} updated`)
-    if (deleteCount > 0) parts.push(`${deleteCount} deleted`)
-    const commitMessage = `chore(content): ${parts.join(", ")} via RepoPress`
+    const mediaCreateCount = mediaBatchOps.filter((o) => o.action === "create").length
+    const mediaUpdateCount = mediaBatchOps.filter((o) => o.action === "update").length
 
-    // ── Push batch commit to PR branch ─────────────────────────────────
+    const parts: string[] = []
+    if (contentCreateCount > 0) parts.push(`${contentCreateCount} created`)
+    if (contentUpdateCount > 0) parts.push(`${contentUpdateCount} updated`)
+    if (contentDeleteCount > 0) parts.push(`${contentDeleteCount} deleted`)
+    if (mediaCreateCount > 0) parts.push(`${mediaCreateCount} media created`)
+    if (mediaUpdateCount > 0) parts.push(`${mediaUpdateCount} media updated`)
+
+    const commitMessage = `chore(content): ${parts.join(", ")} via RepoPress`
     const { commitSha } = await batchCommit(token, owner, repo, branchName, operations, commitMessage)
 
-    // ── Create PR if this is the first push ────────────────────────────
     let prUrl = publishBranch.prUrl
     let prNumber = publishBranch.prNumber
 
@@ -213,32 +229,36 @@ export async function POST(request: Request) {
       const prTitle = title || `Content update via RepoPress (${parts.join(", ")})`
       const prBody =
         description || `Automated content update from RepoPress.\n\n${parts.map((p) => `- ${p}`).join("\n")}`
-
       const pr = await createPullRequest(token, owner, repo, branchName, baseBranch, prTitle, prBody)
       prNumber = pr.number
       prUrl = pr.htmlUrl
     }
 
-    // ── Update Convex records ──────────────────────────────────────────
-    const committedFilePaths = operations.map((op) => op.path)
     await convex.mutation(api.publishBranches.updateAfterCommit, {
       id: publishBranch._id,
+      userId: project.userId,
       prNumber,
       prUrl,
       lastCommitSha: commitSha,
-      newFilePaths: committedFilePaths,
+      newFilePaths: operations.map((op) => op.path),
     })
 
     if (pendingOps.length > 0) {
       await convex.mutation(api.explorerOps.markCommitted, {
         ids: pendingOps.map((op) => op._id),
         commitSha,
+        userId: project.userId,
       })
     }
 
-    // Update githubSha with actual blob SHAs from the PR branch (not the commit SHA).
-    // Blob SHAs are content-addressed and match across branches, so conflict detection
-    // against the base branch will still work correctly after the PR is merged.
+    if (pendingMediaOps.length > 0) {
+      await convex.mutation(api.mediaOps.markCommitted, {
+        ids: pendingMediaOps.map((op) => op._id),
+        commitSha,
+        userId: project.userId,
+      })
+    }
+
     const docsToUpdateSha = dirtyDocs.filter((d) => !createOpPaths.has(d.filePath))
     const shaFetches = await Promise.all(
       docsToUpdateSha.map(async (doc) => {
@@ -261,7 +281,7 @@ export async function POST(request: Request) {
           githubSha: blobSha,
         })
       } catch {
-        // Non-critical: conflict detection may be stale for this file on next publish
+        // Non-critical: conflict detection may be stale for this file on next publish.
       }
     }
 
@@ -271,10 +291,196 @@ export async function POST(request: Request) {
       prNumber,
       commitSha,
       summary: parts.join(", "),
+      media: {
+        created: mediaCreateCount,
+        updated: mediaUpdateCount,
+      },
     })
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to publish"
     console.error("Error in publish-ops:", error)
     return NextResponse.json({ error: message }, { status: 500 })
   }
+}
+
+async function resolveActingUserId(): Promise<string | null> {
+  if (fetchAuthQuery) {
+    try {
+      const authUser = await fetchAuthQuery(api.auth.getCurrentUser)
+      if (authUser?._id) {
+        return authUser._id as string
+      }
+    } catch {
+      // Not an OAuth session
+    }
+  }
+  return null
+}
+
+async function verifyProjectAccess(
+  _token: string,
+  project: { userId: string; repoOwner: string; repoName: string },
+  oauthUserId: string | null,
+  explicitUserId?: string,
+): Promise<boolean> {
+  if (oauthUserId) {
+    return project.userId === oauthUserId
+  }
+
+  return explicitUserId === project.userId
+}
+
+function normalizeMediaPath(repoPath: string) {
+  return repoPath.replace(/^\/+/, "")
+}
+
+async function buildMediaBatchOperations({
+  token,
+  owner,
+  repo,
+  baseBranch,
+  pendingMediaOps,
+  prefetchResults,
+  conflicts,
+}: {
+  token: string
+  owner: string
+  repo: string
+  baseBranch: string
+  pendingMediaOps: Array<any>
+  prefetchResults: Map<string, Awaited<ReturnType<typeof getFile>>>
+  conflicts: Array<{ path: string; reason: string }>
+}): Promise<BatchOperation[]> {
+  const operations: BatchOperation[] = []
+
+  for (const mediaOp of pendingMediaOps) {
+    const normalizedPath = normalizeMediaPath(mediaOp.repoPath)
+    const baseVersion = prefetchResults.get(`media:${normalizedPath}`)
+    const expectedBaseSha = mediaOp.githubSha ?? null
+
+    if (expectedBaseSha) {
+      if (!baseVersion || baseVersion.sha !== expectedBaseSha) {
+        conflicts.push({
+          path: mediaOp.repoPath,
+          reason: `Media has changed on ${baseBranch} since staging (expected sha: ${expectedBaseSha}, current: ${baseVersion?.sha ?? "missing"})`,
+        })
+        continue
+      }
+    } else if (baseVersion) {
+      conflicts.push({
+        path: mediaOp.repoPath,
+        reason: `Media already exists on ${baseBranch}; re-upload to stage an update instead of a create.`,
+      })
+      continue
+    }
+
+    const action: "create" | "update" = expectedBaseSha ? "update" : "create"
+
+    if (mediaOp.sourceType === "blob") {
+      if (!mediaOp.blobUrl) {
+        conflicts.push({
+          path: mediaOp.repoPath,
+          reason: "Missing staged Blob URL for media operation.",
+        })
+        continue
+      }
+
+      const bytes = await fetchBlobBytes(mediaOp.blobUrl)
+      operations.push({
+        path: normalizedPath,
+        action,
+        contentEncoding: "base64",
+        content: bytes.toString("base64"),
+      })
+      continue
+    }
+
+    if (mediaOp.sourceType === "githubBranch") {
+      if (!mediaOp.githubPath || !mediaOp.githubBranch) {
+        conflicts.push({
+          path: mediaOp.repoPath,
+          reason: "Missing staged GitHub branch metadata for media operation.",
+        })
+        continue
+      }
+
+      const bytes = await fetchGitHubBytes({
+        token,
+        owner,
+        repo,
+        path: mediaOp.githubPath,
+        branch: mediaOp.githubBranch,
+      })
+
+      operations.push({
+        path: normalizedPath,
+        action,
+        contentEncoding: "base64",
+        content: bytes.toString("base64"),
+      })
+    }
+  }
+
+  return operations
+}
+
+async function fetchBlobBytes(blobUrl: string): Promise<Buffer> {
+  const headers: Record<string, string> = {}
+  const blobToken = process.env.BLOB_READ_WRITE_TOKEN || process.env.VERCEL_BLOB_API_TOKEN
+  if (blobToken) {
+    headers.Authorization = `Bearer ${blobToken}`
+  }
+
+  const response = await fetch(blobUrl, {
+    headers,
+    cache: "no-store",
+  })
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch staged Blob media (${response.status})`)
+  }
+
+  return Buffer.from(await response.arrayBuffer())
+}
+
+async function fetchGitHubBytes({
+  token,
+  owner,
+  repo,
+  path,
+  branch,
+}: {
+  token: string
+  owner: string
+  repo: string
+  path: string
+  branch: string
+}) {
+  const octokit = createGitHubClient(token)
+  const { data } = await octokit.repos.getContent({
+    owner,
+    repo,
+    path,
+    ref: branch,
+  })
+
+  if (Array.isArray(data)) {
+    throw new Error(`Expected file for media path ${path}, received directory.`)
+  }
+
+  let base64 = "content" in data && typeof data.content === "string" ? data.content : ""
+  if (!base64 && data.sha) {
+    const blob = await octokit.git.getBlob({
+      owner,
+      repo,
+      file_sha: data.sha,
+    })
+    base64 = blob.data.content || ""
+  }
+
+  if (!base64) {
+    throw new Error(`No content returned for staged media path ${path}.`)
+  }
+
+  return Buffer.from(base64, "base64")
 }

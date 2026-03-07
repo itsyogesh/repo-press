@@ -84,10 +84,20 @@ export async function buildDetectionContext(
     }
   }
 
-  return { deps, packageJson, rootFileNames, readFile, contentRoot: contentRoot || "", contentRootFileNames }
+  return {
+    deps,
+    packageJson,
+    rootFileNames,
+    readFile,
+    contentRoot: contentRoot || "",
+    contentRootFileNames,
+  }
 }
 
-function adapterToConfig(adapter: FrameworkAdapter, result: { contentType: string; suggestedContentRoots?: string[] }): FrameworkConfig {
+function adapterToConfig(
+  adapter: FrameworkAdapter,
+  result: { contentType: string; suggestedContentRoots?: string[] },
+): FrameworkConfig {
   return {
     framework: adapter.id,
     displayName: adapter.displayName,
@@ -97,6 +107,7 @@ function adapterToConfig(adapter: FrameworkAdapter, result: { contentType: strin
     fieldVariants: adapter.fieldVariants,
     metaFilePattern: adapter.metaFilePattern,
     contentArchitecture: adapter.contentArchitecture,
+    previewEntry: adapter.previewEntry ?? null,
   }
 }
 
@@ -142,7 +153,11 @@ export async function detectFramework(
   )
 
   let bestAdapter: FrameworkAdapter | null = null
-  let bestResult: { score: number; contentType: string; suggestedContentRoots?: string[] } | null = null
+  let bestResult: {
+    score: number
+    contentType: string
+    suggestedContentRoots?: string[]
+  } | null = null
 
   for (const entry of results) {
     if (entry.status !== "fulfilled") continue

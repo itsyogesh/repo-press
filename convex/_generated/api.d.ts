@@ -19,6 +19,7 @@ import type * as folderMeta from "../folderMeta.js";
 import type * as githubWebhook from "../githubWebhook.js";
 import type * as http from "../http.js";
 import type * as mediaAssets from "../mediaAssets.js";
+import type * as mediaOps from "../mediaOps.js";
 import type * as projects from "../projects.js";
 import type * as publishBranches from "../publishBranches.js";
 import type * as tags from "../tags.js";
@@ -42,6 +43,7 @@ declare const fullApi: ApiFromModules<{
   githubWebhook: typeof githubWebhook;
   http: typeof http;
   mediaAssets: typeof mediaAssets;
+  mediaOps: typeof mediaOps;
   projects: typeof projects;
   publishBranches: typeof publishBranches;
   tags: typeof tags;

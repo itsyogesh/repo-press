@@ -1,17 +1,6 @@
 // Top-level barrel exports for the framework adapter system
 
-export type {
-  ContentArchitectureInfo,
-  ContentType,
-  DetectionContext,
-  DetectionResult,
-  FieldSemanticRole,
-  FieldVariantMap,
-  FrameworkAdapter,
-  FrameworkConfig,
-  FrontmatterFieldDef,
-  FrontmatterFieldType,
-} from "./types"
+export { allAdapters } from "./adapters"
 
 export { UNIVERSAL_FIELDS } from "./fields"
 
@@ -35,5 +24,15 @@ export {
   normalizeFrontmatterDates,
   resolveFieldValue,
 } from "./resolve"
-
-export { allAdapters } from "./adapters"
+export type {
+  ContentArchitectureInfo,
+  ContentType,
+  DetectionContext,
+  DetectionResult,
+  FieldSemanticRole,
+  FieldVariantMap,
+  FrameworkAdapter,
+  FrameworkConfig,
+  FrontmatterFieldDef,
+  FrontmatterFieldType,
+} from "./types"

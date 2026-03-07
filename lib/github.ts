@@ -180,7 +180,7 @@ export async function getContentTree(
     })
 
     // Filter tree to content files within contentRoot
-    const prefix = contentRoot ? contentRoot + "/" : ""
+    const prefix = contentRoot ? `${contentRoot}/` : ""
     const contentFiles = new Set<string>()
     const contentDirs = new Set<string>()
 
@@ -344,6 +344,8 @@ export async function createBranch(
 export type BatchOperation = {
   path: string
   content?: string
+  contentEncoding?: "utf-8" | "base64"
+  blobSha?: string
   action: "create" | "update" | "delete"
 }
 
@@ -373,22 +375,50 @@ export async function batchCommit(
   })
 
   // 3. Build tree entries
-  const treeEntries = operations.map((op) => {
-    if (op.action === "delete") {
+  const treeEntries = await Promise.all(
+    operations.map(async (op) => {
+      if (op.action === "delete") {
+        return {
+          path: op.path,
+          mode: "100644" as const,
+          type: "blob" as const,
+          sha: null,
+        }
+      }
+
+      if (op.blobSha) {
+        return {
+          path: op.path,
+          mode: "100644" as const,
+          type: "blob" as const,
+          sha: op.blobSha,
+        }
+      }
+
+      if (op.contentEncoding === "base64") {
+        const { data: blob } = await octokit.git.createBlob({
+          owner,
+          repo,
+          content: op.content || "",
+          encoding: "base64",
+        })
+
+        return {
+          path: op.path,
+          mode: "100644" as const,
+          type: "blob" as const,
+          sha: blob.sha,
+        }
+      }
+
       return {
         path: op.path,
         mode: "100644" as const,
         type: "blob" as const,
-        sha: null,
+        content: op.content || "",
       }
-    }
-    return {
-      path: op.path,
-      mode: "100644" as const,
-      type: "blob" as const,
-      content: op.content || "",
-    }
-  })
+    }),
+  )
 
   // 4. Create a new tree
   const { data: newTree } = await octokit.git.createTree({
@@ -457,4 +487,12 @@ export async function getPullRequest(
     merged: data.merged,
     mergeCommitSha: data.merge_commit_sha,
   }
+}
+
+export function getCommitUrl(owner: string, repo: string, sha: string): string {
+  return `https://github.com/${owner}/${repo}/commit/${sha}`
+}
+
+export function getFileAtCommitUrl(owner: string, repo: string, path: string, sha: string): string {
+  return `https://github.com/${owner}/${repo}/blob/${sha}/${path}`
 }

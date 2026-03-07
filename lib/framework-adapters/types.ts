@@ -2,15 +2,7 @@
 
 export type ContentType = "blog" | "docs" | "pages" | "changelog" | "custom"
 
-export type FrontmatterFieldType =
-  | "string"
-  | "string[]"
-  | "number"
-  | "boolean"
-  | "date"
-  | "image"
-  | "object"
-  | "enum"
+export type FrontmatterFieldType = "string" | "string[]" | "number" | "boolean" | "date" | "image" | "object" | "enum"
 
 export type FrontmatterFieldDef = {
   name: string
@@ -77,6 +69,8 @@ export type FrameworkAdapter = {
   fieldVariants: FieldVariantMap
   metaFilePattern: string | null
   contentArchitecture?: ContentArchitectureInfo
+  /** Path to the MDX preview adapter file (relative to repo root) */
+  previewEntry?: string | null
 }
 
 export type FrameworkConfig = {
@@ -88,4 +82,6 @@ export type FrameworkConfig = {
   fieldVariants: FieldVariantMap
   metaFilePattern: string | null
   contentArchitecture?: ContentArchitectureInfo
+  /** Path to the MDX preview adapter file (relative to repo root) */
+  previewEntry?: string | null
 }

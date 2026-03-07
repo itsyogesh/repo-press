@@ -1,15 +1,21 @@
 import { v } from "convex/values"
 import { mutation, query } from "./_generated/server"
 
+async function requireProjectOwnership(ctx: any, projectId: string, userId: string) {
+  const project = await ctx.db.get(projectId)
+  if (!project || project.userId !== userId) {
+    throw new Error("Unauthorized")
+  }
+  return project
+}
+
 /** Returns the active publish branch for a project (at most one). */
 export const getActiveForProject = query({
   args: { projectId: v.id("projects") },
   handler: async (ctx, args) => {
     return await ctx.db
       .query("publishBranches")
-      .withIndex("by_projectId_status", (q) =>
-        q.eq("projectId", args.projectId).eq("status", "active"),
-      )
+      .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", "active"))
       .first()
   },
 })
@@ -28,10 +34,13 @@ export const getByPRNumber = query({
 export const create = mutation({
   args: {
     projectId: v.id("projects"),
+    userId: v.string(),
     branchName: v.string(),
     baseBranch: v.string(),
   },
   handler: async (ctx, args) => {
+    await requireProjectOwnership(ctx, args.projectId, args.userId)
+
     const now = Date.now()
     return await ctx.db.insert("publishBranches", {
       projectId: args.projectId,
@@ -48,13 +57,18 @@ export const create = mutation({
 export const updateAfterCommit = mutation({
   args: {
     id: v.id("publishBranches"),
+    userId: v.string(),
     prNumber: v.optional(v.number()),
     prUrl: v.optional(v.string()),
     lastCommitSha: v.optional(v.string()),
     newFilePaths: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
-    const { id, newFilePaths, ...updates } = args
+    const publishBranch = await ctx.db.get(args.id)
+    if (!publishBranch) throw new Error("Publish branch not found")
+    await requireProjectOwnership(ctx, publishBranch.projectId, args.userId)
+
+    const { id, userId: _userId, newFilePaths, ...updates } = args
     // Remove undefined keys so we only patch provided values
     const patches: Record<string, unknown> = { updatedAt: Date.now() }
     if (updates.prNumber !== undefined) patches.prNumber = updates.prNumber
@@ -63,8 +77,7 @@ export const updateAfterCommit = mutation({
 
     // Merge new file paths into existing committedFilePaths
     if (newFilePaths && newFilePaths.length > 0) {
-      const existing = await ctx.db.get(id)
-      const existingPaths = existing?.committedFilePaths ?? []
+      const existingPaths = publishBranch.committedFilePaths ?? []
       const merged = [...new Set([...existingPaths, ...newFilePaths])]
       patches.committedFilePaths = merged
     }
@@ -75,8 +88,15 @@ export const updateAfterCommit = mutation({
 
 /** Mark a publish branch as merged (PR was merged). */
 export const markMerged = mutation({
-  args: { id: v.id("publishBranches") },
+  args: {
+    id: v.id("publishBranches"),
+    userId: v.string(),
+  },
   handler: async (ctx, args) => {
+    const publishBranch = await ctx.db.get(args.id)
+    if (!publishBranch) throw new Error("Publish branch not found")
+    await requireProjectOwnership(ctx, publishBranch.projectId, args.userId)
+
     await ctx.db.patch(args.id, {
       status: "merged",
       updatedAt: Date.now(),
@@ -86,8 +106,15 @@ export const markMerged = mutation({
 
 /** Mark a publish branch as closed (PR was closed without merging). */
 export const markClosed = mutation({
-  args: { id: v.id("publishBranches") },
+  args: {
+    id: v.id("publishBranches"),
+    userId: v.string(),
+  },
   handler: async (ctx, args) => {
+    const publishBranch = await ctx.db.get(args.id)
+    if (!publishBranch) throw new Error("Publish branch not found")
+    await requireProjectOwnership(ctx, publishBranch.projectId, args.userId)
+
     await ctx.db.patch(args.id, {
       status: "closed",
       updatedAt: Date.now(),

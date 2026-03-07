@@ -1,5 +1,44 @@
 import { v } from "convex/values"
+import { verifyProjectAccessToken } from "../lib/project-access-token"
 import { mutation, query } from "./_generated/server"
+import { authComponent } from "./auth"
+
+async function verifyCallerUserId(ctx: any, explicitUserId: string) {
+  const authUser = await authComponent.safeGetAuthUser(ctx)
+  if (authUser?._id && authUser._id !== explicitUserId) {
+    throw new Error("Unauthorized")
+  }
+  return explicitUserId
+}
+
+async function resolveProjectCaller(ctx: any, projectId: string, explicitUserId?: string, projectAccessToken?: string) {
+  const authUser = await authComponent.safeGetAuthUser(ctx)
+  if (authUser?._id) {
+    const authUserId = authUser._id as string
+    if (explicitUserId && authUserId !== explicitUserId) {
+      throw new Error("Unauthorized")
+    }
+    const project = await ctx.db.get(projectId)
+    if (!project || project.userId !== authUserId) {
+      throw new Error("Unauthorized")
+    }
+    return { userId: authUserId, project }
+  }
+
+  const payload = await verifyProjectAccessToken(projectAccessToken)
+  if (payload && payload.projectId === projectId) {
+    const project = await ctx.db.get(projectId)
+    if (!project || project.userId !== payload.userId) {
+      throw new Error("Unauthorized")
+    }
+    if (explicitUserId && explicitUserId !== payload.userId) {
+      throw new Error("Unauthorized")
+    }
+    return { userId: payload.userId, project }
+  }
+
+  throw new Error("Unauthorized")
+}
 
 /** Returns all pending explorer ops for a project. */
 export const listPending = query({
@@ -7,9 +46,7 @@ export const listPending = query({
   handler: async (ctx, args) => {
     return await ctx.db
       .query("explorerOps")
-      .withIndex("by_projectId_status", (q) =>
-        q.eq("projectId", args.projectId).eq("status", "pending"),
-      )
+      .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", "pending"))
       .collect()
   },
 })
@@ -23,9 +60,7 @@ export const getByFilePath = query({
   handler: async (ctx, args) => {
     return await ctx.db
       .query("explorerOps")
-      .withIndex("by_projectId_filePath", (q) =>
-        q.eq("projectId", args.projectId).eq("filePath", args.filePath),
-      )
+      .withIndex("by_projectId_filePath", (q) => q.eq("projectId", args.projectId).eq("filePath", args.filePath))
       .first()
   },
 })
@@ -37,25 +72,20 @@ export const getByFilePath = query({
 export const stageCreate = mutation({
   args: {
     projectId: v.id("projects"),
-    userId: v.string(),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
     filePath: v.string(),
     title: v.string(),
     initialBody: v.optional(v.string()),
     initialFrontmatter: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
-    // Verify ownership
-    const project = await ctx.db.get(args.projectId)
-    if (!project || project.userId !== args.userId) {
-      throw new Error("Unauthorized")
-    }
+    const { userId } = await resolveProjectCaller(ctx, args.projectId, args.userId, args.projectAccessToken)
 
     // Check for existing pending op at this filePath
     const existingOp = await ctx.db
       .query("explorerOps")
-      .withIndex("by_projectId_filePath", (q) =>
-        q.eq("projectId", args.projectId).eq("filePath", args.filePath),
-      )
+      .withIndex("by_projectId_filePath", (q) => q.eq("projectId", args.projectId).eq("filePath", args.filePath))
       .filter((q) => q.eq(q.field("status"), "pending"))
       .first()
     if (existingOp) {
@@ -65,9 +95,7 @@ export const stageCreate = mutation({
     // Check for existing document at this filePath
     const existingDoc = await ctx.db
       .query("documents")
-      .withIndex("by_projectId_filePath", (q) =>
-        q.eq("projectId", args.projectId).eq("filePath", args.filePath),
-      )
+      .withIndex("by_projectId_filePath", (q) => q.eq("projectId", args.projectId).eq("filePath", args.filePath))
       .first()
 
     const now = Date.now()
@@ -81,9 +109,7 @@ export const stageCreate = mutation({
           publishedAt: undefined,
           ...(args.title ? { title: args.title } : {}),
           ...(args.initialBody !== undefined ? { body: args.initialBody } : {}),
-          ...(args.initialFrontmatter !== undefined
-            ? { frontmatter: args.initialFrontmatter }
-            : {}),
+          ...(args.initialFrontmatter !== undefined ? { frontmatter: args.initialFrontmatter } : {}),
           updatedAt: now,
         })
       } else {
@@ -120,7 +146,7 @@ export const stageCreate = mutation({
     // Insert the explorerOp
     const opId = await ctx.db.insert("explorerOps", {
       projectId: args.projectId,
-      userId: args.userId,
+      userId,
       opType: "create",
       filePath: args.filePath,
       initialBody: args.initialBody,
@@ -141,23 +167,18 @@ export const stageCreate = mutation({
 export const stageDelete = mutation({
   args: {
     projectId: v.id("projects"),
-    userId: v.string(),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
     filePath: v.string(),
     previousSha: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    // Verify ownership
-    const project = await ctx.db.get(args.projectId)
-    if (!project || project.userId !== args.userId) {
-      throw new Error("Unauthorized")
-    }
+    const { userId } = await resolveProjectCaller(ctx, args.projectId, args.userId, args.projectAccessToken)
 
     // Check for existing pending op at this path
     const existingOp = await ctx.db
       .query("explorerOps")
-      .withIndex("by_projectId_filePath", (q) =>
-        q.eq("projectId", args.projectId).eq("filePath", args.filePath),
-      )
+      .withIndex("by_projectId_filePath", (q) => q.eq("projectId", args.projectId).eq("filePath", args.filePath))
       .filter((q) => q.eq(q.field("status"), "pending"))
       .first()
     if (existingOp) {
@@ -167,7 +188,7 @@ export const stageDelete = mutation({
     const now = Date.now()
     const opId = await ctx.db.insert("explorerOps", {
       projectId: args.projectId,
-      userId: args.userId,
+      userId,
       opType: "delete",
       filePath: args.filePath,
       previousSha: args.previousSha,
@@ -187,7 +208,8 @@ export const stageDelete = mutation({
 export const undoOp = mutation({
   args: {
     id: v.id("explorerOps"),
-    userId: v.string(),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const op = await ctx.db.get(args.id)
@@ -196,11 +218,7 @@ export const undoOp = mutation({
       throw new Error("Can only undo pending operations")
     }
 
-    // Verify ownership via project
-    const project = await ctx.db.get(op.projectId)
-    if (!project || project.userId !== args.userId) {
-      throw new Error("Unauthorized")
-    }
+    await resolveProjectCaller(ctx, op.projectId, args.userId, args.projectAccessToken)
 
     // Mark the op as undone
     await ctx.db.patch(args.id, {
@@ -212,9 +230,7 @@ export const undoOp = mutation({
     if (op.opType === "create") {
       const doc = await ctx.db
         .query("documents")
-        .withIndex("by_projectId_filePath", (q) =>
-          q.eq("projectId", op.projectId).eq("filePath", op.filePath),
-        )
+        .withIndex("by_projectId_filePath", (q) => q.eq("projectId", op.projectId).eq("filePath", op.filePath))
         .first()
       if (doc && doc.status === "draft") {
         await ctx.db.delete(doc._id)
@@ -230,13 +246,22 @@ export const markCommitted = mutation({
   args: {
     ids: v.array(v.id("explorerOps")),
     commitSha: v.string(),
+    userId: v.string(),
   },
   handler: async (ctx, args) => {
+    await verifyCallerUserId(ctx, args.userId)
+
     const now = Date.now()
     for (const id of args.ids) {
       const op = await ctx.db.get(id)
       // Only mark ops that are still pending (avoid overwriting concurrent undos)
       if (op && op.status === "pending") {
+        // Fix #4: Verify ownership before marking as committed
+        const project = await ctx.db.get(op.projectId)
+        if (!project || project.userId !== args.userId) {
+          throw new Error("Unauthorized")
+        }
+
         await ctx.db.patch(id, {
           status: "committed",
           commitSha: args.commitSha,
@@ -251,13 +276,22 @@ export const markCommitted = mutation({
  * Remove all committed explorer ops for a project (cleanup after publish).
  */
 export const clearCommittedForProject = mutation({
-  args: { projectId: v.id("projects") },
+  args: {
+    projectId: v.id("projects"),
+    userId: v.string(),
+  },
   handler: async (ctx, args) => {
+    await verifyCallerUserId(ctx, args.userId)
+
+    // Fix #4: Verify ownership before clearing committed records
+    const project = await ctx.db.get(args.projectId)
+    if (!project || project.userId !== args.userId) {
+      throw new Error("Unauthorized")
+    }
+
     const committed = await ctx.db
       .query("explorerOps")
-      .withIndex("by_projectId_status", (q) =>
-        q.eq("projectId", args.projectId).eq("status", "committed"),
-      )
+      .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", "committed"))
       .collect()
     for (const op of committed) {
       await ctx.db.delete(op._id)

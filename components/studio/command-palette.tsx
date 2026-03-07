@@ -1,9 +1,9 @@
 "use client"
 
-import * as React from "react"
+import { Code, FileText, History, Home, Moon, PanelLeft, Save, Split, Sun } from "lucide-react"
 import { useRouter } from "next/navigation"
-import { FileText, Home, Moon, PanelLeft, Save, Split, Sun, Code, History } from "lucide-react"
 import { useTheme } from "next-themes"
+import * as React from "react"
 
 import {
   CommandDialog,
@@ -16,6 +16,7 @@ import {
   CommandShortcut,
 } from "@/components/ui/command"
 import type { FileTreeNode } from "@/lib/github"
+import { buildHistoryHref } from "@/lib/studio/history-link"
 
 import { useStudio } from "./studio-context"
 import { useViewMode } from "./view-mode-context"
@@ -80,7 +81,7 @@ export function CommandPalette({
   onSaveDraft,
 }: CommandPaletteProps) {
   const [query, setQuery] = React.useState("")
-  const { owner, repo } = useStudio()
+  const { owner, repo, branch, projectId } = useStudio()
   const { viewMode, setViewMode, sidebarState, setSidebarState } = useViewMode()
   const { theme, setTheme } = useTheme()
   const router = useRouter()
@@ -174,7 +175,7 @@ export function CommandPalette({
         router.push("/dashboard")
         break
       case "history":
-        router.push(`/dashboard/${owner}/${repo}/history`)
+        router.push(buildHistoryHref({ owner, repo, branch, projectId }))
         break
       default:
         break
@@ -188,11 +189,7 @@ export function CommandPalette({
       title="Command Palette"
       description="Search files, actions, and navigation"
     >
-      <CommandInput
-        value={query}
-        onValueChange={setQuery}
-        placeholder="Search files, actions, and pages..."
-      />
+      <CommandInput value={query} onValueChange={setQuery} placeholder="Search files, actions, and pages..." />
       <CommandList>
         <CommandEmpty>{query.trim() ? "No results found." : "Type to search..."}</CommandEmpty>
 
