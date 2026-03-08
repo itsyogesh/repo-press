@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it } from "vitest"
-import { mintProjectAccessToken, verifyProjectAccessToken } from "../project-access-token"
+import {
+  mintGitHubAccountLookupToken,
+  mintProjectAccessToken,
+  verifyGitHubAccountLookupToken,
+  verifyProjectAccessToken,
+} from "../project-access-token"
 
 describe("project access token", () => {
   beforeEach(() => {
@@ -38,5 +43,12 @@ describe("project access token", () => {
     const tampered = token.replace("project_1", "project_2")
 
     await expect(verifyProjectAccessToken(tampered)).resolves.toBeNull()
+  })
+
+  it("round-trips a GitHub account lookup token", async () => {
+    const token = await mintGitHubAccountLookupToken("12345")
+
+    await expect(verifyGitHubAccountLookupToken(token, "12345")).resolves.toBe(true)
+    await expect(verifyGitHubAccountLookupToken(token, "54321")).resolves.toBe(false)
   })
 })

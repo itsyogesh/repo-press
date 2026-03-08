@@ -9,6 +9,11 @@ type ProjectAccessTokenPayload = {
   exp: number
 }
 
+type GitHubAccountLookupTokenPayload = {
+  githubAccountId: string
+  exp: number
+}
+
 function getSecret() {
   const secret = process.env.BETTER_AUTH_SECRET
   if (!secret) {
@@ -68,4 +73,30 @@ export async function verifyProjectAccessToken(token: string | undefined | null)
   }
 
   return payload
+}
+
+export async function mintGitHubAccountLookupToken(githubAccountId: string, ttlSeconds = 60) {
+  const body: GitHubAccountLookupTokenPayload = {
+    githubAccountId,
+    exp: Date.now() + ttlSeconds * 1000,
+  }
+  const serialized = JSON.stringify(body)
+  const signature = await signValue(serialized)
+  return `${encodeURIComponent(serialized)}.${signature}`
+}
+
+export async function verifyGitHubAccountLookupToken(token: string | undefined | null, githubAccountId: string) {
+  if (!token) return false
+
+  const separatorIndex = token.lastIndexOf(".")
+  if (separatorIndex <= 0) return false
+
+  const serialized = decodeURIComponent(token.slice(0, separatorIndex))
+  const signature = token.slice(separatorIndex + 1)
+  if (!(await verifyValue(serialized, signature))) {
+    return false
+  }
+
+  const payload = JSON.parse(serialized) as GitHubAccountLookupTokenPayload
+  return payload.githubAccountId === githubAccountId && payload.exp > Date.now()
 }

@@ -2,6 +2,7 @@ import { createClient, type GenericCtx } from "@convex-dev/better-auth"
 import { convex } from "@convex-dev/better-auth/plugins"
 import { betterAuth } from "better-auth/minimal"
 import { v } from "convex/values"
+import { verifyGitHubAccountLookupToken } from "../lib/project-access-token"
 import { components } from "./_generated/api"
 import type { DataModel } from "./_generated/dataModel"
 import { query } from "./_generated/server"
@@ -58,8 +59,16 @@ export const getGitHubAccessToken = query({
 })
 
 export const resolveUserIdByGitHubAccount = query({
-  args: { githubAccountId: v.string() },
+  args: {
+    githubAccountId: v.string(),
+    lookupToken: v.string(),
+  },
   handler: async (ctx, args) => {
+    const isValidLookup = await verifyGitHubAccountLookupToken(args.lookupToken, args.githubAccountId)
+    if (!isValidLookup) {
+      return null
+    }
+
     const account = (await ctx.runQuery(components.betterAuth.adapter.findOne, {
       model: "account",
       where: [
