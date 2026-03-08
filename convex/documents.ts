@@ -165,6 +165,38 @@ export const getOrCreate = mutation({
   },
 })
 
+export const getOrCreateInternal = internalMutation({
+  args: {
+    projectId: v.id("projects"),
+    filePath: v.string(),
+    title: v.string(),
+    body: v.optional(v.string()),
+    frontmatter: v.optional(v.any()),
+    githubSha: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("documents")
+      .withIndex("by_projectId_filePath", (q) => q.eq("projectId", args.projectId).eq("filePath", args.filePath))
+      .first()
+
+    if (existing) return existing._id
+
+    const now = Date.now()
+    return await ctx.db.insert("documents", {
+      projectId: args.projectId,
+      filePath: args.filePath,
+      title: args.title,
+      status: "draft",
+      body: args.body,
+      frontmatter: args.frontmatter,
+      githubSha: args.githubSha,
+      createdAt: now,
+      updatedAt: now,
+    })
+  },
+})
+
 // Generic update for document metadata. Status changes are NOT allowed here —
 // use `publish` or `transitionStatus` instead.
 export const update = mutation({
@@ -511,11 +543,10 @@ export const syncTreeTitles = action({
               if (titleMatch) title = titleMatch[1].trim()
             }
 
-            await ctx.runMutation(internal.documents.create, {
+            await ctx.runMutation(internal.documents.getOrCreateInternal, {
               projectId: args.projectId,
               filePath: file.path,
               title,
-              status: "draft",
               githubSha: file.sha,
             })
           } catch {

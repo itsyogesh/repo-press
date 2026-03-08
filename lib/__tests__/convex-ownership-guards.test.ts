@@ -19,7 +19,7 @@ vi.mock("@/convex/auth", () => ({
 }))
 
 import { restoreVersion as restoreDocumentHistoryVersion } from "@/convex/documentHistory"
-import { remove as removeDocument, saveDraft } from "@/convex/documents"
+import { getOrCreateInternal, remove as removeDocument, saveDraft } from "@/convex/documents"
 import { markCommitted as markExplorerOpsCommitted } from "@/convex/explorerOps"
 import { stage as stageMediaOp } from "@/convex/mediaOps"
 import { remove as removeProject, update as updateProject } from "@/convex/projects"
@@ -339,5 +339,32 @@ describe("Convex ownership guards", () => {
 
     expect(insert).toHaveBeenCalled()
     expect(patch).toHaveBeenCalled()
+  })
+
+  it("keeps internal document creation idempotent for repeated sync passes", async () => {
+    const insert = vi.fn()
+    const ctx = createCtx({
+      get: vi.fn(),
+      insert,
+    })
+    ctx.db.query = vi.fn(() => ({
+      withIndex: () => ({
+        first: vi.fn().mockResolvedValue({
+          _id: "doc_existing",
+          projectId: "project_1",
+          filePath: "posts/hello.mdx",
+        }),
+      }),
+    }))
+
+    const result = await (getOrCreateInternal as any).handler(ctx, {
+      projectId: "project_1",
+      filePath: "posts/hello.mdx",
+      title: "Hello",
+      githubSha: "sha_1",
+    })
+
+    expect(result).toBe("doc_existing")
+    expect(insert).not.toHaveBeenCalled()
   })
 })
