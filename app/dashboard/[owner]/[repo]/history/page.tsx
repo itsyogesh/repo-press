@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
-import { fetchAuthQuery, getGitHubToken } from "@/lib/auth-server"
+import { fetchAuthQuery, getGitHubToken, getPatAuthUserId } from "@/lib/auth-server"
+import { mintProjectAccessToken } from "@/lib/project-access-token"
 import { HistoryClient } from "./history-client"
 
 interface PageProps {
@@ -16,26 +17,56 @@ export default async function HistoryPage({ params, searchParams }: PageProps) {
   if (!token) {
     redirect("/login")
   }
-  if (!fetchAuthQuery) {
-    return <HistoryClient owner={owner} repo={repo} branch={branch} projectId={undefined} />
-  }
-
-  const authUser = await fetchAuthQuery(api.auth.getCurrentUser).catch(() => null)
-  if (!authUser?._id) {
-    return <HistoryClient owner={owner} repo={repo} branch={branch} projectId={undefined} />
-  }
+  const authUser = fetchAuthQuery ? await fetchAuthQuery(api.auth.getCurrentUser).catch(() => null) : null
+  const patUserId = !authUser ? await getPatAuthUserId(token) : null
 
   let validatedProjectId: string | undefined
+  let projectAccessToken: string | undefined
   if (projectId) {
-    const projects = await fetchAuthQuery(api.projects.listMyProjectsForRepo, {
-      repoOwner: owner,
-      repoName: repo,
-    })
-    const project = projects.find((entry) => entry._id === (projectId as Id<"projects">))
-    if (project && (!branch || project.branch === branch)) {
-      validatedProjectId = projectId
+    if (authUser && fetchAuthQuery) {
+      const projects = await fetchAuthQuery(api.projects.listMyProjectsForRepo, {
+        repoOwner: owner,
+        repoName: repo,
+      })
+      const project = projects.find((entry) => entry._id === (projectId as Id<"projects">))
+      if (project && (!branch || project.branch === branch)) {
+        validatedProjectId = projectId
+        projectAccessToken = await mintProjectAccessToken({
+          projectId: project._id,
+          userId: project.userId,
+          repoOwner: project.repoOwner,
+          repoName: project.repoName,
+          branch: project.branch,
+        })
+      }
+    } else if (patUserId) {
+      const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
+      const projects = await convex.query(api.projects.getByRepo, {
+        userId: patUserId,
+        repoOwner: owner,
+        repoName: repo,
+      })
+      const project = projects.find((entry) => entry._id === (projectId as Id<"projects">))
+      if (project && (!branch || project.branch === branch)) {
+        validatedProjectId = projectId
+        projectAccessToken = await mintProjectAccessToken({
+          projectId: project._id,
+          userId: project.userId,
+          repoOwner: project.repoOwner,
+          repoName: project.repoName,
+          branch: project.branch,
+        })
+      }
     }
   }
 
-  return <HistoryClient owner={owner} repo={repo} branch={branch} projectId={validatedProjectId} />
+  return (
+    <HistoryClient
+      owner={owner}
+      repo={repo}
+      branch={branch}
+      projectId={validatedProjectId}
+      projectAccessToken={projectAccessToken}
+    />
+  )
 }

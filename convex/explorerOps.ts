@@ -3,14 +3,6 @@ import { verifyProjectAccessToken } from "../lib/project-access-token"
 import { mutation, query } from "./_generated/server"
 import { authComponent } from "./auth"
 
-async function verifyCallerUserId(ctx: any, explicitUserId: string) {
-  const authUser = await authComponent.safeGetAuthUser(ctx)
-  if (authUser?._id && authUser._id !== explicitUserId) {
-    throw new Error("Unauthorized")
-  }
-  return explicitUserId
-}
-
 async function resolveProjectCaller(ctx: any, projectId: string, explicitUserId?: string, projectAccessToken?: string) {
   const authUser = await authComponent.safeGetAuthUser(ctx)
   if (authUser?._id) {
@@ -246,21 +238,16 @@ export const markCommitted = mutation({
   args: {
     ids: v.array(v.id("explorerOps")),
     commitSha: v.string(),
-    userId: v.string(),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await verifyCallerUserId(ctx, args.userId)
-
     const now = Date.now()
     for (const id of args.ids) {
       const op = await ctx.db.get(id)
       // Only mark ops that are still pending (avoid overwriting concurrent undos)
       if (op && op.status === "pending") {
-        // Fix #4: Verify ownership before marking as committed
-        const project = await ctx.db.get(op.projectId)
-        if (!project || project.userId !== args.userId) {
-          throw new Error("Unauthorized")
-        }
+        await resolveProjectCaller(ctx, op.projectId, args.userId, args.projectAccessToken)
 
         await ctx.db.patch(id, {
           status: "committed",
@@ -278,16 +265,11 @@ export const markCommitted = mutation({
 export const clearCommittedForProject = mutation({
   args: {
     projectId: v.id("projects"),
-    userId: v.string(),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await verifyCallerUserId(ctx, args.userId)
-
-    // Fix #4: Verify ownership before clearing committed records
-    const project = await ctx.db.get(args.projectId)
-    if (!project || project.userId !== args.userId) {
-      throw new Error("Unauthorized")
-    }
+    await resolveProjectCaller(ctx, args.projectId, args.userId, args.projectAccessToken)
 
     const committed = await ctx.db
       .query("explorerOps")

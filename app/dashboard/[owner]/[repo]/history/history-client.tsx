@@ -17,11 +17,12 @@ interface HistoryClientProps {
   repo: string
   branch?: string
   projectId?: string
+  projectAccessToken?: string
 }
 
 type ViewMode = "list" | "compare"
 
-export function HistoryClient({ owner, repo, branch: _branch, projectId }: HistoryClientProps) {
+export function HistoryClient({ owner, repo, branch: _branch, projectId, projectAccessToken }: HistoryClientProps) {
   const [selectedDoc, setSelectedDoc] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<ViewMode>("list")
   const [compareVersions, setCompareVersions] = useState<[string | null, string | null]>([null, null])
@@ -52,6 +53,7 @@ export function HistoryClient({ owner, repo, branch: _branch, projectId }: Histo
       await restoreMutation({
         historyId: historyId as Id<"documentHistory">,
         userId: (project?.userId as string | undefined) ?? undefined,
+        projectAccessToken: projectAccessToken ?? undefined,
       })
       toast.success("Version restored successfully")
     } catch (error) {

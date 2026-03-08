@@ -15,6 +15,7 @@ vi.mock("convex/browser", () => ({
 vi.mock("@/lib/auth-server", () => ({
   fetchAuthQuery: vi.fn(),
   getGitHubToken: vi.fn(),
+  getPatAuthUserId: vi.fn(),
 }))
 
 vi.mock("@/lib/github", () => ({
@@ -27,7 +28,7 @@ vi.mock("@/lib/github", () => ({
 
 process.env.NEXT_PUBLIC_CONVEX_URL = process.env.NEXT_PUBLIC_CONVEX_URL || "https://example.convex.cloud"
 
-import { fetchAuthQuery, getGitHubToken } from "@/lib/auth-server"
+import { fetchAuthQuery, getGitHubToken, getPatAuthUserId } from "@/lib/auth-server"
 import { batchCommit, createGitHubClient, getFile } from "@/lib/github"
 import { POST } from "../route"
 
@@ -44,8 +45,10 @@ describe("POST /api/github/publish-ops", () => {
     vi.clearAllMocks()
     convexQueryMock.mockReset()
     convexMutationMock.mockReset()
+    process.env.BETTER_AUTH_SECRET = "test-secret"
     vi.mocked(getGitHubToken).mockResolvedValue("gh-token")
     vi.mocked(fetchAuthQuery).mockResolvedValue({ _id: "user_owner" } as never)
+    vi.mocked(getPatAuthUserId).mockResolvedValue("user_owner")
     vi.mocked(createGitHubClient).mockReturnValue({
       repos: {
         get: vi.fn().mockResolvedValue({}),
@@ -126,13 +129,13 @@ describe("POST /api/github/publish-ops", () => {
     expect(batchCommit).not.toHaveBeenCalled()
   })
 
-  it("rejects PAT-mode publishing when the caller userId does not match the project owner", async () => {
+  it("rejects PAT-mode publishing when the PAT does not resolve to the project owner", async () => {
     vi.mocked(fetchAuthQuery).mockResolvedValue(null as never)
+    vi.mocked(getPatAuthUserId).mockResolvedValue("different_user")
 
     const response = await POST(
       buildRequest({
         projectId: "project_123",
-        userId: "different_user",
         title: "Publish docs",
       }),
     )
@@ -143,13 +146,13 @@ describe("POST /api/github/publish-ops", () => {
     expect(batchCommit).not.toHaveBeenCalled()
   })
 
-  it("allows PAT-mode publishing when the caller userId matches the project owner", async () => {
+  it("allows PAT-mode publishing when the PAT resolves to the project owner", async () => {
     vi.mocked(fetchAuthQuery).mockResolvedValue(null as never)
+    vi.mocked(getPatAuthUserId).mockResolvedValue("user_owner")
 
     const response = await POST(
       buildRequest({
         projectId: "project_123",
-        userId: "user_owner",
         title: "Publish docs",
       }),
     )

@@ -3,10 +3,11 @@ import matter from "gray-matter"
 import { NextResponse } from "next/server"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
-import { fetchAuthQuery, getGitHubToken } from "@/lib/auth-server"
+import { fetchAuthQuery, getGitHubToken, getPatAuthUserId } from "@/lib/auth-server"
 import { prefixContentRoot } from "@/lib/explorer-tree-overlay"
 import type { BatchOperation } from "@/lib/github"
 import { batchCommit, createBranch, createGitHubClient, createPullRequest, getFile } from "@/lib/github"
+import { mintProjectAccessToken } from "@/lib/project-access-token"
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
 
@@ -18,9 +19,8 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json()
-    const { projectId, userId, title, description } = body as {
+    const { projectId, title, description } = body as {
       projectId: string
-      userId?: string
       title?: string
       description?: string
     }
@@ -37,10 +37,22 @@ export async function POST(request: Request) {
     }
 
     const oauthUserId = await resolveActingUserId()
-    const hasAccess = await verifyProjectAccess(token, project, oauthUserId, userId)
+    const patUserId = !oauthUserId ? await getPatAuthUserId(token) : null
+    const actingUserId = oauthUserId ?? patUserId
+    const hasAccess = await verifyProjectAccess(project, actingUserId)
     if (!hasAccess) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
     }
+    const projectAccessToken =
+      actingUserId && !oauthUserId
+        ? await mintProjectAccessToken({
+            projectId: project._id,
+            userId: actingUserId,
+            repoOwner: project.repoOwner,
+            repoName: project.repoName,
+            branch: project.branch,
+          })
+        : undefined
 
     const { repoOwner: owner, repoName: repo, branch: baseBranch, contentRoot } = project
 
@@ -248,6 +260,7 @@ export async function POST(request: Request) {
         ids: pendingOps.map((op) => op._id),
         commitSha,
         userId: project.userId,
+        projectAccessToken,
       })
     }
 
@@ -256,6 +269,7 @@ export async function POST(request: Request) {
         ids: pendingMediaOps.map((op) => op._id),
         commitSha,
         userId: project.userId,
+        projectAccessToken,
       })
     }
 
@@ -278,6 +292,7 @@ export async function POST(request: Request) {
         await convex.mutation(api.documents.update, {
           id: doc._id,
           userId: project.userId,
+          projectAccessToken,
           githubSha: blobSha,
         })
       } catch {
@@ -318,16 +333,10 @@ async function resolveActingUserId(): Promise<string | null> {
 }
 
 async function verifyProjectAccess(
-  _token: string,
   project: { userId: string; repoOwner: string; repoName: string },
-  oauthUserId: string | null,
-  explicitUserId?: string,
+  actingUserId: string | null,
 ): Promise<boolean> {
-  if (oauthUserId) {
-    return project.userId === oauthUserId
-  }
-
-  return explicitUserId === project.userId
+  return !!actingUserId && project.userId === actingUserId
 }
 
 function normalizeMediaPath(repoPath: string) {

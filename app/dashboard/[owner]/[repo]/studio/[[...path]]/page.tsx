@@ -6,7 +6,7 @@ import { StudioPageThemeToggle } from "@/components/studio/studio-page-theme-tog
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { api } from "@/convex/_generated/api"
 import type { Doc, Id } from "@/convex/_generated/dataModel"
-import { fetchAuthQuery, getGitHubToken } from "@/lib/auth-server"
+import { fetchAuthQuery, getGitHubToken, getPatAuthUserId } from "@/lib/auth-server"
 import type { FileTreeNode } from "@/lib/github"
 import { getContentTree, getFile } from "@/lib/github"
 import { mintProjectAccessToken } from "@/lib/project-access-token"
@@ -37,6 +37,7 @@ export default async function StudioPage({ params, searchParams }: StudioPagePro
   const currentBranch = branch || "main"
   const currentPath = file || (path ? path.join("/") : "")
   const authUser = fetchAuthQuery ? await fetchAuthQuery(api.auth.getCurrentUser).catch(() => null) : null
+  const patUserId = !authUser ? await getPatAuthUserId(token) : null
 
   // Look up the project: prefer explicit projectId, fall back to repo+branch lookup
   const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
@@ -45,7 +46,11 @@ export default async function StudioPage({ params, searchParams }: StudioPagePro
     const requestedProject = await convex.query(api.projects.get, { id: projectIdParam as Id<"projects"> })
     if (
       projectMatchesRoute(requestedProject, owner, repo, currentBranch) &&
-      (authUser ? requestedProject?.userId === (authUser._id as string) : false)
+      (authUser
+        ? requestedProject?.userId === (authUser._id as string)
+        : patUserId
+          ? requestedProject?.userId === patUserId
+          : false)
     ) {
       project = requestedProject
     }
@@ -62,12 +67,17 @@ export default async function StudioPage({ params, searchParams }: StudioPagePro
     }
   }
   if (!project && !authUser) {
-    const repoProjects = await convex.query(api.projects.listByRepoAndBranch, {
-      repoOwner: owner,
-      repoName: repo,
-      branch: currentBranch,
-    })
-    project = selectStudioFallbackProject(repoProjects, currentBranch)
+    if (patUserId) {
+      const repoProjects = await convex.query(api.projects.getByRepo, {
+        userId: patUserId,
+        repoOwner: owner,
+        repoName: repo,
+      })
+      project = selectStudioFallbackProject(
+        repoProjects.filter((entry) => entry.branch === currentBranch),
+        currentBranch,
+      )
+    }
   }
 
   const projectAccessToken =

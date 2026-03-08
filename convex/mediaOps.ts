@@ -1,25 +1,49 @@
 import { v } from "convex/values"
+import { verifyProjectAccessToken } from "../lib/project-access-token"
 import type { Id } from "./_generated/dataModel"
 import type { MutationCtx } from "./_generated/server"
 import { mutation, query } from "./_generated/server"
 import { authComponent } from "./auth"
 
-async function requireProjectOwnership(ctx: MutationCtx, projectId: Id<"projects">, userId: string) {
+async function requireProjectOwnership(
+  ctx: MutationCtx,
+  projectId: Id<"projects">,
+  userId?: string,
+  projectAccessToken?: string,
+) {
   const authUser = await authComponent.safeGetAuthUser(ctx)
   const authUserId = authUser?._id ? (authUser._id as string) : null
-  if (authUserId && authUserId !== userId) {
-    throw new Error("Unauthorized: Not authenticated or identity mismatch")
+  if (authUserId) {
+    if (userId && authUserId !== userId) {
+      throw new Error("Unauthorized: Not authenticated or identity mismatch")
+    }
+    const project = await ctx.db.get(projectId)
+    if (!project || project.userId !== authUserId) {
+      throw new Error("Unauthorized")
+    }
+    return authUserId
   }
-  const project = await ctx.db.get(projectId)
-  if (!project || project.userId !== userId) {
-    throw new Error("Unauthorized")
+
+  const payload = await verifyProjectAccessToken(projectAccessToken)
+  if (payload && payload.projectId === projectId) {
+    const project = await ctx.db.get(projectId)
+    if (!project || project.userId !== payload.userId) {
+      throw new Error("Unauthorized")
+    }
+    if (userId && payload.userId !== userId) {
+      throw new Error("Unauthorized: Not authenticated or identity mismatch")
+    }
+    return payload.userId
   }
+
+  throw new Error("Unauthorized")
 }
 
 export const stage = mutation({
   args: {
     projectId: v.id("projects"),
-    userId: v.string(),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
     repoPath: v.string(),
     fileName: v.string(),
     mimeType: v.string(),
@@ -32,7 +56,7 @@ export const stage = mutation({
     githubSha: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await requireProjectOwnership(ctx, args.projectId, args.userId)
+    const userId = await requireProjectOwnership(ctx, args.projectId, args.userId, args.projectAccessToken)
 
     const now = Date.now()
     const existingPending = await ctx.db
@@ -59,8 +83,10 @@ export const stage = mutation({
       return existingPending._id
     }
 
+    const { projectAccessToken: _projectAccessToken, ...storableArgs } = args
     return await ctx.db.insert("mediaOps", {
-      ...args,
+      ...storableArgs,
+      userId,
       status: "pending",
       commitSha: undefined,
       createdAt: now,
@@ -97,7 +123,8 @@ export const markCommitted = mutation({
   args: {
     ids: v.array(v.id("mediaOps")),
     commitSha: v.string(),
-    userId: v.string(),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const now = Date.now()
@@ -105,8 +132,7 @@ export const markCommitted = mutation({
       const op = await ctx.db.get(id)
       if (!op || op.status !== "pending") continue
 
-      // Fix #4: Verify ownership before marking as committed
-      await requireProjectOwnership(ctx, op.projectId, args.userId)
+      await requireProjectOwnership(ctx, op.projectId, args.userId, args.projectAccessToken)
 
       await ctx.db.patch(id, {
         status: "committed",
@@ -120,11 +146,12 @@ export const markCommitted = mutation({
 export const undoByRepoPath = mutation({
   args: {
     projectId: v.id("projects"),
-    userId: v.string(),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
     repoPath: v.string(),
   },
   handler: async (ctx, args) => {
-    await requireProjectOwnership(ctx, args.projectId, args.userId)
+    await requireProjectOwnership(ctx, args.projectId, args.userId, args.projectAccessToken)
 
     const pending = await ctx.db
       .query("mediaOps")
@@ -146,11 +173,11 @@ export const undoByRepoPath = mutation({
 export const clearCommittedForProject = mutation({
   args: {
     projectId: v.id("projects"),
-    userId: v.string(),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    // Fix #4: Verify ownership before clearing committed records
-    await requireProjectOwnership(ctx, args.projectId, args.userId)
+    await requireProjectOwnership(ctx, args.projectId, args.userId, args.projectAccessToken)
 
     const committed = await ctx.db
       .query("mediaOps")

@@ -3,8 +3,9 @@ import { ConvexHttpClient } from "convex/browser"
 import { NextResponse } from "next/server"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
-import { fetchAuthQuery, getGitHubToken } from "@/lib/auth-server"
+import { fetchAuthQuery, getGitHubToken, getPatAuthUserId } from "@/lib/auth-server"
 import { createGitHubClient } from "@/lib/github"
+import { mintProjectAccessToken } from "@/lib/project-access-token"
 import { buildMediaResolveUrl, normalizeRepoMediaPath } from "@/lib/studio/media-resolve"
 
 export const runtime = "nodejs"
@@ -18,7 +19,6 @@ const MAX_UPLOAD_BASE64_LENGTH = Math.ceil(50 * 1024 * 1024 * (4 / 3))
 
 interface UploadRequest {
   projectId?: string
-  userId?: string
   owner: string
   repo: string
   branch: string
@@ -56,17 +56,7 @@ export async function POST(request: Request) {
 
   try {
     const body = (await request.json()) as UploadRequest
-    const {
-      projectId,
-      userId,
-      owner,
-      repo,
-      branch,
-      pathHint,
-      fileName,
-      contentBase64,
-      storagePreference = "auto",
-    } = body
+    const { projectId, owner, repo, branch, pathHint, fileName, contentBase64, storagePreference = "auto" } = body
 
     if (!owner || !repo || !branch || !fileName || !contentBase64) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
@@ -79,6 +69,7 @@ export async function POST(request: Request) {
 
     // Fix #1: Resolve userId server-side only, never from client input
     const oauthUserId = await resolveActingUserId()
+    const patUserId = !oauthUserId ? await getPatAuthUserId(token) : null
 
     const project = await resolveProject({ projectId, owner, repo, branch })
     if (!project) {
@@ -86,13 +77,24 @@ export async function POST(request: Request) {
     }
 
     // Fix #1: Verify access server-side (OAuth checks userId, PAT checks repo access)
-    const hasAccess = await verifyProjectAccess(token, project, oauthUserId, userId)
+    const actingUserId = oauthUserId ?? patUserId
+    const hasAccess = await verifyProjectAccess(project, actingUserId)
     if (!hasAccess) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
     }
 
     // Use the project's userId for downstream Convex calls (trusted, from DB)
-    const actingUserId = oauthUserId ?? userId ?? project.userId
+    const convexUserId = actingUserId ?? project.userId
+    const projectAccessToken =
+      convexUserId && !oauthUserId
+        ? await mintProjectAccessToken({
+            projectId: project._id,
+            userId: convexUserId,
+            repoOwner: project.repoOwner,
+            repoName: project.repoName,
+            branch: project.branch,
+          })
+        : undefined
 
     if (project.repoOwner !== owner || project.repoName !== repo || project.branch !== branch) {
       return NextResponse.json(
@@ -125,7 +127,8 @@ export async function POST(request: Request) {
       if (blobResult.ok) {
         const mediaOpId = await convex.mutation(api.mediaOps.stage, {
           projectId: project._id,
-          userId: actingUserId,
+          userId: convexUserId,
+          projectAccessToken,
           repoPath,
           fileName: sanitizeFileName(fileName),
           mimeType: contentType,
@@ -136,7 +139,7 @@ export async function POST(request: Request) {
           githubSha: baseShaAtStage ?? undefined,
         })
 
-        const previewUrl = buildMediaResolveUrl(project._id, repoPath, oauthUserId ? undefined : actingUserId)
+        const previewUrl = buildMediaResolveUrl(project._id, repoPath)
         return NextResponse.json({
           storage: "blob",
           repoPath,
@@ -185,7 +188,8 @@ export async function POST(request: Request) {
 
     const mediaOpId = await convex.mutation(api.mediaOps.stage, {
       projectId: project._id,
-      userId: actingUserId,
+      userId: convexUserId,
+      projectAccessToken,
       repoPath,
       fileName: sanitizeFileName(fileName),
       mimeType: contentType,
@@ -196,7 +200,7 @@ export async function POST(request: Request) {
       githubSha: baseShaAtStage ?? undefined,
     })
 
-    const previewUrl = buildMediaResolveUrl(project._id, repoPath, oauthUserId ? undefined : actingUserId)
+    const previewUrl = buildMediaResolveUrl(project._id, repoPath)
     return NextResponse.json({
       storage: "github",
       repoPath,
@@ -242,16 +246,10 @@ async function resolveActingUserId(): Promise<string | null> {
  * PAT users: verifies the token can access the project's GitHub repo.
  */
 async function verifyProjectAccess(
-  _token: string,
   project: { userId: string; repoOwner: string; repoName: string },
-  oauthUserId: string | null,
-  explicitUserId?: string,
+  actingUserId: string | null,
 ): Promise<boolean> {
-  if (oauthUserId) {
-    return project.userId === oauthUserId
-  }
-
-  return explicitUserId === project.userId
+  return !!actingUserId && project.userId === actingUserId
 }
 
 async function resolveProject({

@@ -19,6 +19,7 @@ vi.mock("@vercel/blob", () => ({
 vi.mock("@/lib/auth-server", () => ({
   fetchAuthQuery: vi.fn(),
   getGitHubToken: vi.fn(),
+  getPatAuthUserId: vi.fn(),
 }))
 
 vi.mock("@/lib/github", async () => {
@@ -32,7 +33,7 @@ vi.mock("@/lib/github", async () => {
 process.env.NEXT_PUBLIC_CONVEX_URL = process.env.NEXT_PUBLIC_CONVEX_URL || "https://example.convex.cloud"
 
 import { put } from "@vercel/blob"
-import { fetchAuthQuery, getGitHubToken } from "@/lib/auth-server"
+import { fetchAuthQuery, getGitHubToken, getPatAuthUserId } from "@/lib/auth-server"
 import { createGitHubClient } from "@/lib/github"
 import { POST } from "../route"
 
@@ -47,7 +48,6 @@ function buildRequest(body: Record<string, unknown>) {
 function baseBody() {
   return {
     projectId: "project_123",
-    userId: "user_1",
     owner: "acme",
     repo: "docs-site",
     branch: "main",
@@ -76,9 +76,11 @@ describe("POST /api/media/upload", () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    process.env.BETTER_AUTH_SECRET = "test-secret"
     process.env.BLOB_READ_WRITE_TOKEN = "blob-token"
     vi.mocked(getGitHubToken).mockResolvedValue("gh-token")
     vi.mocked(fetchAuthQuery!).mockResolvedValue({ _id: "user_1" })
+    vi.mocked(getPatAuthUserId).mockResolvedValue("user_1")
     vi.mocked(createGitHubClient).mockReturnValue(baseGithubClient as any)
     convexQueryMock.mockResolvedValue(projectRecord)
     convexMutationMock.mockResolvedValue("media-op-1")
@@ -122,15 +124,11 @@ describe("POST /api/media/upload", () => {
     expect(convexMutationMock).not.toHaveBeenCalled()
   })
 
-  it("rejects PAT-mode uploads when the caller userId does not match the project owner", async () => {
+  it("rejects PAT-mode uploads when the PAT does not resolve to the project owner", async () => {
     vi.mocked(fetchAuthQuery!).mockResolvedValue(null as never)
+    vi.mocked(getPatAuthUserId).mockResolvedValue("different_user")
 
-    const response = await POST(
-      buildRequest({
-        ...baseBody(),
-        userId: "different_user",
-      }),
-    )
+    const response = await POST(buildRequest(baseBody()))
     const payload = await response.json()
 
     expect(response.status).toBe(403)
@@ -138,16 +136,12 @@ describe("POST /api/media/upload", () => {
     expect(convexMutationMock).not.toHaveBeenCalled()
   })
 
-  it("allows PAT-mode uploads when the caller userId matches the project owner", async () => {
+  it("allows PAT-mode uploads when the PAT resolves to the project owner", async () => {
     vi.mocked(fetchAuthQuery!).mockResolvedValue(null as never)
+    vi.mocked(getPatAuthUserId).mockResolvedValue("user_1")
     vi.mocked(put).mockResolvedValue({ url: "https://blob.vercel-storage.com/repo-press/hero.png" } as any)
 
-    const response = await POST(
-      buildRequest({
-        ...baseBody(),
-        userId: "user_1",
-      }),
-    )
+    const response = await POST(buildRequest(baseBody()))
 
     expect(response.status).toBe(200)
     expect(convexMutationMock).toHaveBeenCalled()

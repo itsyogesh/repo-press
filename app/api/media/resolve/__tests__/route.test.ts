@@ -13,6 +13,7 @@ vi.mock("convex/browser", () => ({
 vi.mock("@/lib/auth-server", () => ({
   fetchAuthQuery: vi.fn(),
   getGitHubToken: vi.fn(),
+  getPatAuthUserId: vi.fn(),
 }))
 
 vi.mock("@/lib/github", async () => {
@@ -26,7 +27,7 @@ vi.mock("@/lib/github", async () => {
 process.env.NEXT_PUBLIC_CONVEX_URL = process.env.NEXT_PUBLIC_CONVEX_URL || "https://example.convex.cloud"
 process.env.BLOB_READ_WRITE_TOKEN = process.env.BLOB_READ_WRITE_TOKEN || "blob-secret-token"
 
-import { fetchAuthQuery, getGitHubToken } from "@/lib/auth-server"
+import { fetchAuthQuery, getGitHubToken, getPatAuthUserId } from "@/lib/auth-server"
 import { createGitHubClient } from "@/lib/github"
 import { GET } from "../route"
 
@@ -38,14 +39,11 @@ const projectRecord = {
   branch: "main",
 }
 
-function requestFor(path: string, userId?: string) {
+function requestFor(path: string) {
   const searchParams = new URLSearchParams({
     projectId: "project_123",
     path,
   })
-  if (userId) {
-    searchParams.set("userId", userId)
-  }
   return new Request(`http://localhost/api/media/resolve?${searchParams.toString()}`, {
     method: "GET",
   })
@@ -57,6 +55,7 @@ describe("GET /api/media/resolve", () => {
     convexQueryMock.mockReset()
     vi.mocked(getGitHubToken).mockResolvedValue("gh-token")
     vi.mocked(fetchAuthQuery!).mockResolvedValue({ _id: "user_1" })
+    vi.mocked(getPatAuthUserId).mockResolvedValue("user_1")
   })
 
   afterEach(() => {
@@ -71,19 +70,21 @@ describe("GET /api/media/resolve", () => {
     expect(response.status).toBe(401)
   })
 
-  it("rejects PAT-mode media access when the caller userId does not match the project owner", async () => {
+  it("rejects PAT-mode media access when the PAT does not resolve to the project owner", async () => {
     vi.mocked(fetchAuthQuery!).mockResolvedValue(null as never)
+    vi.mocked(getPatAuthUserId).mockResolvedValue("different_user")
     convexQueryMock.mockResolvedValueOnce(projectRecord)
 
-    const response = await GET(requestFor("/public/images/hero.png", "different_user"))
+    const response = await GET(requestFor("/public/images/hero.png"))
     const payload = await response.json()
 
     expect(response.status).toBe(403)
     expect(payload.error).toBe("Forbidden")
   })
 
-  it("allows PAT-mode media access when the caller userId matches the project owner", async () => {
+  it("allows PAT-mode media access when the PAT resolves to the project owner", async () => {
     vi.mocked(fetchAuthQuery!).mockResolvedValue(null as never)
+    vi.mocked(getPatAuthUserId).mockResolvedValue("user_1")
     convexQueryMock.mockResolvedValueOnce(projectRecord).mockResolvedValueOnce({
       _id: "media-op-1",
       sourceType: "blob",
@@ -102,7 +103,7 @@ describe("GET /api/media/resolve", () => {
       }),
     )
 
-    const response = await GET(requestFor("/public/images/hero.png", "user_1"))
+    const response = await GET(requestFor("/public/images/hero.png"))
 
     expect(response.status).toBe(200)
     expect(fetchSpy).toHaveBeenCalled()

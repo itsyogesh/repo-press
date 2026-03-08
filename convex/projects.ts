@@ -1,13 +1,13 @@
 import { v } from "convex/values"
 import { internal } from "./_generated/api"
 import type { MutationCtx } from "./_generated/server"
-import { internalMutation, mutation, query } from "./_generated/server"
+import { internalMutation, internalQuery, mutation, query } from "./_generated/server"
 import { authComponent } from "./auth"
 
 /**
  * Verify that the caller is the user they claim to be.
  * - OAuth users: checks auth identity from session token
- * - PAT users (no auth session): accepts the claimed userId
+ * - PAT users (no auth session): rejected
  */
 async function verifyCallerIdentity(ctx: MutationCtx, claimedUserId: string) {
   const authUser = await authComponent.safeGetAuthUser(ctx)
@@ -17,7 +17,7 @@ async function verifyCallerIdentity(ctx: MutationCtx, claimedUserId: string) {
     }
     return
   }
-  // No auth session (PAT user) — allow through
+  throw new Error("Unauthorized: Not authenticated")
 }
 
 export const list = query({
@@ -108,7 +108,7 @@ export const findByRepo = query({
   },
 })
 
-export const listByRepoAndBranch = query({
+export const listByRepoAndBranch = internalQuery({
   args: {
     repoOwner: v.string(),
     repoName: v.string(),

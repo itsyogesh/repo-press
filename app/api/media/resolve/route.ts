@@ -2,7 +2,7 @@ import { ConvexHttpClient } from "convex/browser"
 import { NextResponse } from "next/server"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
-import { fetchAuthQuery, getGitHubToken } from "@/lib/auth-server"
+import { fetchAuthQuery, getGitHubToken, getPatAuthUserId } from "@/lib/auth-server"
 import { createGitHubClient } from "@/lib/github"
 import { normalizeRepoMediaPath } from "@/lib/studio/media-resolve"
 
@@ -20,7 +20,6 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const projectId = searchParams.get("projectId")
     const rawPath = searchParams.get("path")
-    const explicitUserId = searchParams.get("userId")
     const branchOverride = searchParams.get("branch")
 
     if (!projectId || !rawPath) {
@@ -28,6 +27,7 @@ export async function GET(request: Request) {
     }
 
     const oauthUserId = await resolveActingUserId()
+    const patUserId = !oauthUserId ? await getPatAuthUserId(token) : null
 
     const project = await convex.query(api.projects.get, {
       id: projectId as Id<"projects">,
@@ -36,7 +36,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 })
     }
 
-    const hasAccess = await verifyProjectAccess(token, project, oauthUserId, explicitUserId)
+    const hasAccess = await verifyProjectAccess(project, oauthUserId ?? patUserId)
     if (!hasAccess) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
@@ -162,16 +162,10 @@ async function resolveActingUserId(): Promise<string | null> {
  * PAT users: verifies the token has access to the project's GitHub repo.
  */
 async function verifyProjectAccess(
-  _token: string,
   project: { userId: string; repoOwner: string; repoName: string },
-  oauthUserId: string | null,
-  explicitUserId?: string | null,
+  actingUserId: string | null,
 ): Promise<boolean> {
-  if (oauthUserId) {
-    return project.userId === oauthUserId
-  }
-
-  return explicitUserId === project.userId
+  return !!actingUserId && project.userId === actingUserId
 }
 
 async function fetchBlobContent(url: string) {

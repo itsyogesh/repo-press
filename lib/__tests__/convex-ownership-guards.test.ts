@@ -8,6 +8,7 @@ vi.mock("@/convex/_generated/server", () => ({
   mutation: (definition: unknown) => definition,
   query: (definition: unknown) => definition,
   internalMutation: (definition: unknown) => definition,
+  internalQuery: (definition: unknown) => definition,
   action: (definition: unknown) => definition,
 }))
 
@@ -224,8 +225,15 @@ describe("Convex ownership guards", () => {
     expect(patch).toHaveBeenCalled()
   })
 
-  it("allows media staging when PAT mode supplies an explicit owning userId", async () => {
+  it("allows media staging when PAT mode supplies a valid project access token", async () => {
     safeGetAuthUserMock.mockResolvedValue(null)
+    const projectAccessToken = await mintProjectAccessToken({
+      projectId: "project_1",
+      userId: "user_owner",
+      repoOwner: "acme",
+      repoName: "docs-site",
+      branch: "main",
+    })
     const insert = vi.fn().mockResolvedValue("media_op_1")
     const ctx = createCtx({
       get: vi.fn().mockResolvedValue({ _id: "project_1", userId: "user_owner" }),
@@ -242,6 +250,7 @@ describe("Convex ownership guards", () => {
     await (stageMediaOp as any).handler(ctx, {
       projectId: "project_1",
       userId: "user_owner",
+      projectAccessToken,
       repoPath: "/public/images/hero.png",
       fileName: "hero.png",
       mimeType: "image/png",
@@ -252,8 +261,15 @@ describe("Convex ownership guards", () => {
     expect(insert).toHaveBeenCalled()
   })
 
-  it("allows explorer op commit marking when PAT mode supplies an explicit owning userId", async () => {
+  it("allows explorer op commit marking when PAT mode supplies a valid project access token", async () => {
     safeGetAuthUserMock.mockResolvedValue(null)
+    const projectAccessToken = await mintProjectAccessToken({
+      projectId: "project_1",
+      userId: "user_owner",
+      repoOwner: "acme",
+      repoName: "docs-site",
+      branch: "main",
+    })
     const patch = vi.fn()
     const ctx = createCtx({
       get: vi
@@ -271,6 +287,7 @@ describe("Convex ownership guards", () => {
       ids: ["op_1"],
       commitSha: "commit_1",
       userId: "user_owner",
+      projectAccessToken,
     })
 
     expect(patch).toHaveBeenCalledWith(

@@ -170,7 +170,8 @@ export const getOrCreate = mutation({
 export const update = mutation({
   args: {
     id: v.id("documents"),
-    userId: v.string(),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
     title: v.optional(v.string()),
     description: v.optional(v.string()),
     slug: v.optional(v.string()),
@@ -188,15 +189,11 @@ export const update = mutation({
     expiresAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const { id, userId, ...updates } = args
+    const { id, userId, projectAccessToken, ...updates } = args
 
-    // Verify ownership
     const doc = await ctx.db.get(id)
     if (!doc) throw new Error("Document not found")
-    const project = await ctx.db.get(doc.projectId)
-    if (!project || project.userId !== userId) {
-      throw new Error("Unauthorized")
-    }
+    await resolveProjectCaller(ctx, doc.projectId, userId, projectAccessToken)
 
     await ctx.db.patch(id, {
       ...updates,
@@ -335,7 +332,8 @@ const ALLOWED_TRANSITIONS: Record<string, string[]> = {
 export const transitionStatus = mutation({
   args: {
     id: v.id("documents"),
-    userId: v.string(),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
     newStatus: v.union(
       v.literal("draft"),
       v.literal("in_review"),
@@ -351,11 +349,7 @@ export const transitionStatus = mutation({
     const doc = await ctx.db.get(args.id)
     if (!doc) throw new Error("Document not found")
 
-    // Verify ownership — always required
-    const project = await ctx.db.get(doc.projectId)
-    if (!project || project.userId !== args.userId) {
-      throw new Error("Unauthorized")
-    }
+    await resolveProjectCaller(ctx, doc.projectId, args.userId, args.projectAccessToken)
 
     const allowed = ALLOWED_TRANSITIONS[doc.status] || []
     if (!allowed.includes(args.newStatus)) {
