@@ -210,6 +210,7 @@ export async function POST(request: Request) {
       await convex.mutation(api.publishBranches.create, {
         projectId: project._id,
         userId: project.userId,
+        projectAccessToken,
         branchName,
         baseBranch,
       })
@@ -249,6 +250,7 @@ export async function POST(request: Request) {
     await convex.mutation(api.publishBranches.updateAfterCommit, {
       id: publishBranch._id,
       userId: project.userId,
+      projectAccessToken,
       prNumber,
       prUrl,
       lastCommitSha: commitSha,

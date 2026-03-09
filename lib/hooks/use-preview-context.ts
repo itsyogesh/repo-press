@@ -37,6 +37,7 @@ interface PreviewStoreEntry {
   diagnostics: string[]
   listeners: Set<() => void>
   promise: Promise<void> | null
+  cachedSnapshot: UsePreviewContextResult | null
 }
 
 type AdapterSourceActionResult = Awaited<ReturnType<typeof fetchAdapterSourceAction>>
@@ -66,6 +67,7 @@ function getStoreEntry(key: string) {
       diagnostics: [],
       listeners: new Set(),
       promise: null,
+      cachedSnapshot: null,
     }
     previewStore.set(key, entry)
   }
@@ -73,6 +75,7 @@ function getStoreEntry(key: string) {
 }
 
 function emit(entry: PreviewStoreEntry) {
+  entry.cachedSnapshot = null
   for (const listener of entry.listeners) {
     listener()
   }
@@ -149,7 +152,9 @@ async function loadPreviewContext(key: string, options: Required<UsePreviewConte
           if (!transpiled) {
             transpiled = await transpileAdapter({
               entryPath: result.entryPath || options.adapterPath,
-              sources: result.sources || { [options.adapterPath]: result.source },
+              sources: result.sources || {
+                [options.adapterPath]: result.source,
+              },
             })
             await setCachedAdapter({
               key: cacheKey,
@@ -238,12 +243,15 @@ function subscribePreviewContext(
 function getSnapshot(key: string | null): UsePreviewContextResult {
   if (!key) return EMPTY_RESULT
   const entry = getStoreEntry(key)
-  return {
+  if (entry.cachedSnapshot) return entry.cachedSnapshot
+  const snapshot: UsePreviewContextResult = {
     context: buildMergedContext(entry.adapter, entry.plugins),
     loading: entry.loading,
     error: entry.error,
     diagnostics: entry.diagnostics,
   }
+  entry.cachedSnapshot = snapshot
+  return snapshot
 }
 
 export function usePreviewContext({

@@ -3,7 +3,7 @@
 import { AlertCircle, Info, Settings } from "lucide-react"
 import React, { useEffect, useMemo, useRef, useState } from "react"
 import type { RepoPressPreviewAdapter } from "@/lib/repopress/evaluate-adapter"
-import { acquireEvalGuard, acquireFunctionConstructorGuard } from "@/lib/repopress/function-constructor-guard"
+
 import { cn } from "@/lib/utils"
 import { compileMdx } from "./compileMdx"
 import { ErrorBoundary } from "./ErrorBoundary"
@@ -130,8 +130,6 @@ export function PreviewRuntime({
 
   useEffect(() => {
     let active = true
-    const releaseConstructorGuard = acquireFunctionConstructorGuard()
-    const releaseEvalGuard = acquireEvalGuard()
     const timeout = setTimeout(async () => {
       setIsCompiling(true)
       setWarnings([])
@@ -528,8 +526,6 @@ export function PreviewRuntime({
     return () => {
       active = false
       clearTimeout(timeout)
-      releaseEvalGuard()
-      releaseConstructorGuard()
     }
   }, [source, frontmatter, adapter, resolveAssetUrl])
 

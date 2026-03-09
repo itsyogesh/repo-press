@@ -1,3 +1,5 @@
+import crypto from "node:crypto"
+
 const encoder = new TextEncoder()
 
 type ProjectAccessTokenPayload = {
@@ -42,7 +44,10 @@ async function signValue(value: string) {
 
 async function verifyValue(value: string, signature: string) {
   const expected = await signValue(value)
-  return expected === signature
+  const sigBuf = Buffer.from(signature)
+  const expBuf = Buffer.from(expected)
+  if (sigBuf.length !== expBuf.length) return false
+  return crypto.timingSafeEqual(sigBuf, expBuf)
 }
 
 export async function mintProjectAccessToken(payload: Omit<ProjectAccessTokenPayload, "exp">, ttlSeconds = 60 * 30) {
@@ -67,7 +72,12 @@ export async function verifyProjectAccessToken(token: string | undefined | null)
     return null
   }
 
-  const payload = JSON.parse(serialized) as ProjectAccessTokenPayload
+  let payload: ProjectAccessTokenPayload
+  try {
+    payload = JSON.parse(serialized) as ProjectAccessTokenPayload
+  } catch {
+    return null
+  }
   if (!payload?.projectId || !payload?.userId || payload.exp <= Date.now()) {
     return null
   }
@@ -97,6 +107,11 @@ export async function verifyGitHubAccountLookupToken(token: string | undefined |
     return false
   }
 
-  const payload = JSON.parse(serialized) as GitHubAccountLookupTokenPayload
+  let payload: GitHubAccountLookupTokenPayload
+  try {
+    payload = JSON.parse(serialized) as GitHubAccountLookupTokenPayload
+  } catch {
+    return false
+  }
   return payload.githubAccountId === githubAccountId && payload.exp > Date.now()
 }

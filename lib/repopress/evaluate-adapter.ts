@@ -74,7 +74,6 @@ export function evaluateAdapter(code: string): RepoPressPreviewAdapter {
     "eval",
     "Function",
   ]
-  const _blockedParams = blockedGlobals.join(",")
   const blockedValues = blockedGlobals.map(() => undefined)
 
   try {
