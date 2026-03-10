@@ -28,39 +28,55 @@ function bytesToHex(bytes: Uint8Array) {
     .join("")
 }
 
-function hexToBytes(hex: string) {
-  const bytes = new Uint8Array(hex.length / 2)
-  for (let i = 0; i < hex.length; i += 2) {
-    bytes[i / 2] = parseInt(hex.slice(i, i + 2), 16)
-  }
-  return bytes
-}
-
-async function getHmacKey(usage: KeyUsage[]) {
-  return crypto.subtle.importKey(
+async function signValue(value: string) {
+  const key = await crypto.subtle.importKey(
     "raw",
     encoder.encode(getSecret()),
     { name: "HMAC", hash: "SHA-256" },
     false,
-    usage,
+    ["sign"],
   )
-}
-
-async function signValue(value: string) {
-  const key = await getHmacKey(["sign"])
   const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(value))
   return bytesToHex(new Uint8Array(signature))
 }
 
 /**
- * Constant-time HMAC verification using Web Crypto API.
- * crypto.subtle.verify() is guaranteed constant-time by spec,
- * and works in all JS runtimes (Convex V8, Node.js, browsers).
+ * Timing-safe HMAC verification using the double-HMAC pattern.
+ *
+ * We re-sign both the expected and provided HMACs with a fresh random key,
+ * then compare the results. Even if `===` on the final hex strings leaks
+ * timing information, an attacker cannot exploit it because the HMAC output
+ * changes completely with each verification (different random key every time).
+ *
+ * This avoids node:crypto (unavailable in Convex's default V8 runtime) and
+ * doesn't rely on crypto.subtle.verify() being constant-time (the W3C spec
+ * doesn't explicitly mandate it, though implementations typically are).
+ *
+ * Reference: https://paragonie.com/blog/2015/11/preventing-timing-attacks-on-string-comparison-with-double-hmac-strategy
  */
 async function verifyValue(value: string, signatureHex: string) {
-  const key = await getHmacKey(["verify"])
-  const sigBytes = hexToBytes(signatureHex)
-  return crypto.subtle.verify("HMAC", key, sigBytes, encoder.encode(value))
+  const expected = await signValue(value)
+  if (expected.length !== signatureHex.length) return false
+
+  // Re-HMAC both values with a random ephemeral key
+  const ephemeralKey = await crypto.subtle.generateKey(
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  )
+  const [a, b] = await Promise.all([
+    crypto.subtle.sign("HMAC", ephemeralKey, encoder.encode(expected)),
+    crypto.subtle.sign("HMAC", ephemeralKey, encoder.encode(signatureHex)),
+  ])
+
+  // Compare the re-HMACed bytes — timing leaks here are unexploitable
+  const viewA = new Uint8Array(a)
+  const viewB = new Uint8Array(b)
+  let diff = 0
+  for (let i = 0; i < viewA.length; i++) {
+    diff |= viewA[i] ^ viewB[i]
+  }
+  return diff === 0
 }
 
 export async function mintProjectAccessToken(payload: Omit<ProjectAccessTokenPayload, "exp">, ttlSeconds = 60 * 30) {
