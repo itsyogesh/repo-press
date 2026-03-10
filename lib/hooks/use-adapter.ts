@@ -60,17 +60,19 @@ async function loadAdapterSource(key: string, options: Required<UseAdapterOption
 
   entry.promise = (async () => {
     try {
-      const result = await fetchAdapterSourceAction(options.owner, options.repo, options.branch, options.adapterPath)
+      const result = await fetchAdapterSourceAction(options.owner, options.repo, options.branch, options.adapterPath!)
 
-      if (!result.success || !result.source) {
+      if (!result.success || !("source" in result) || !result.source) {
         entry.adapter = null
-        entry.error = result.error ?? "Failed to fetch adapter"
+        entry.error = ("error" in result ? result.error : null) ?? "Failed to fetch adapter"
         return
       }
 
+      const successResult = result as { source: string; entryPath?: string; sources?: Record<string, string> }
+      const entryPath: string = successResult.entryPath || options.adapterPath!
       const transpiled = await transpileAdapter({
-        entryPath: result.entryPath || options.adapterPath,
-        sources: result.sources || { [options.adapterPath]: result.source },
+        entryPath,
+        sources: successResult.sources || { [entryPath]: successResult.source },
       })
       entry.adapter = evaluateAdapter(transpiled)
       entry.error = null

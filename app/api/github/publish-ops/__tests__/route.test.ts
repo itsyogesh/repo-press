@@ -47,7 +47,7 @@ describe("POST /api/github/publish-ops", () => {
     convexMutationMock.mockReset()
     process.env.BETTER_AUTH_SECRET = "test-secret"
     vi.mocked(getGitHubToken).mockResolvedValue("gh-token")
-    vi.mocked(fetchAuthQuery).mockResolvedValue({ _id: "user_owner" } as never)
+    vi.mocked(fetchAuthQuery!).mockResolvedValue({ _id: "user_owner" } as never)
     vi.mocked(getPatAuthUserId).mockResolvedValue("user_owner")
     vi.mocked(createGitHubClient).mockReturnValue({
       repos: {
@@ -105,7 +105,7 @@ describe("POST /api/github/publish-ops", () => {
   })
 
   it("rejects publishing when the authenticated user does not own the project", async () => {
-    vi.mocked(fetchAuthQuery).mockResolvedValue({ _id: "different_user" } as never)
+    vi.mocked(fetchAuthQuery!).mockResolvedValue({ _id: "different_user" } as never)
     convexQueryMock.mockReset()
     convexQueryMock.mockResolvedValue({
       _id: "project_123",
@@ -130,7 +130,7 @@ describe("POST /api/github/publish-ops", () => {
   })
 
   it("rejects PAT-mode publishing when the PAT does not resolve to the project owner", async () => {
-    vi.mocked(fetchAuthQuery).mockResolvedValue(null as never)
+    vi.mocked(fetchAuthQuery!).mockResolvedValue(null as never)
     vi.mocked(getPatAuthUserId).mockResolvedValue("different_user")
 
     const response = await POST(
@@ -147,7 +147,7 @@ describe("POST /api/github/publish-ops", () => {
   })
 
   it("allows PAT-mode publishing when the PAT resolves to the project owner", async () => {
-    vi.mocked(fetchAuthQuery).mockResolvedValue(null as never)
+    vi.mocked(fetchAuthQuery!).mockResolvedValue(null as never)
     vi.mocked(getPatAuthUserId).mockResolvedValue("user_owner")
 
     const response = await POST(

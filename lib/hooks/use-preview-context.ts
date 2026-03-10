@@ -133,14 +133,14 @@ async function loadPreviewContext(key: string, options: Required<UsePreviewConte
 
       if (options.adapterPath) {
         const result = await dedupedAdapterRequest(options.owner, options.repo, options.branch, options.adapterPath)
-        if (result.success && result.source) {
-          if (result.rateLimited) {
+        if (result.success && "source" in result && result.source) {
+          if ("rateLimited" in result && result.rateLimited) {
             diagnostics.push(
               `Adapter request for ${options.adapterPath} hit GitHub rate limits and retried ${result.retryCount} time(s).`,
             )
           }
 
-          const sourceSha = result.sha || hashSource(result.source)
+          const sourceSha = ("sha" in result ? result.sha : null) || hashSource(result.source)
           const cacheKey = buildAdapterCacheKey(
             options.owner,
             options.repo,
@@ -150,9 +150,10 @@ async function loadPreviewContext(key: string, options: Required<UsePreviewConte
           )
           let transpiled = await getCachedAdapter(cacheKey, sourceSha)
           if (!transpiled) {
+            const entryPath = ("entryPath" in result ? result.entryPath : null) || options.adapterPath
             transpiled = await transpileAdapter({
-              entryPath: result.entryPath || options.adapterPath,
-              sources: result.sources || {
+              entryPath,
+              sources: ("sources" in result ? result.sources : null) || {
                 [options.adapterPath]: result.source,
               },
             })
@@ -172,20 +173,23 @@ async function loadPreviewContext(key: string, options: Required<UsePreviewConte
       }
 
       const nextPlugins: Record<string, RepoPressPreviewAdapter> = {}
-      if (options.enabledPlugins.length > 0) {
-        const pluginTasks = options.enabledPlugins
-          .map((id) => ({ id, path: options.pluginRegistry[id] }))
+      const enabledPlugins = options.enabledPlugins ?? []
+      const pluginRegistry = options.pluginRegistry ?? {}
+      if (enabledPlugins.length > 0) {
+        const pluginTasks = enabledPlugins
+          .map((id) => ({ id, path: pluginRegistry[id] }))
           .filter((plugin) => Boolean(plugin.path))
           .map(async ({ id, path }) => {
             try {
               const result = await dedupedPluginRequest(options.owner, options.repo, options.branch, path!)
-              if (result.success && result.source) {
-                if (result.rateLimited) {
+              if (result.success && "source" in result && result.source) {
+                if ("rateLimited" in result && result.rateLimited) {
                   diagnostics.push(`Plugin "${id}" hit GitHub rate limits and retried ${result.retryCount} time(s).`)
                 }
+                const pluginEntryPath = ("entryPath" in result ? result.entryPath : null) || path!
                 const transpiled = await transpileAdapter({
-                  entryPath: result.entryPath || path!,
-                  sources: result.sources || { [path!]: result.source },
+                  entryPath: pluginEntryPath,
+                  sources: ("sources" in result ? result.sources : null) || { [path!]: result.source },
                 })
                 return { id, adapter: evaluateAdapter(transpiled) }
               }

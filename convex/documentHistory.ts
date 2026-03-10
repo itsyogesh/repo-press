@@ -17,7 +17,7 @@ async function resolveProjectCaller(
     if (explicitUserId && explicitUserId !== authUserId) {
       throw new Error("Unauthorized: caller identity does not match userId")
     }
-    const project = await ctx.db.get(projectId as any)
+    const project = (await ctx.db.get(projectId as any)) as { userId: string } | null
     if (!project || project.userId !== authUserId) {
       throw new Error("Unauthorized")
     }
@@ -26,7 +26,7 @@ async function resolveProjectCaller(
 
   const payload = await verifyProjectAccessToken(projectAccessToken)
   if (payload && payload.projectId === projectId) {
-    const project = await ctx.db.get(projectId as any)
+    const project = (await ctx.db.get(projectId as any)) as { userId: string } | null
     if (!project || project.userId !== payload.userId) {
       throw new Error("Unauthorized")
     }
