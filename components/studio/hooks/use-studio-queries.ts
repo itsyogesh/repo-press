@@ -10,16 +10,15 @@ import { getFrameworkConfig } from "@/lib/framework-adapters"
 import type { FileTreeNode } from "@/lib/github"
 import { useStudio } from "../studio-context"
 
-type TitleSyncSnapshot = {
-  status: "idle" | "loading" | "done" | "error"
-}
+type TitleSyncSnapshot = "idle" | "loading" | "done" | "error"
 
-type TitleSyncEntry = TitleSyncSnapshot & {
+type TitleSyncEntry = {
+  status: TitleSyncSnapshot
   listeners: Set<() => void>
   promise: Promise<void> | null
 }
 
-const EMPTY_TITLE_SYNC: TitleSyncSnapshot = { status: "idle" }
+const EMPTY_TITLE_SYNC: TitleSyncSnapshot = "idle"
 const titleSyncStore = new Map<string, TitleSyncEntry>()
 
 function getTitleSyncEntry(key: string) {
@@ -117,7 +116,7 @@ function subscribeTitleSync(
 function getTitleSyncSnapshot(key: string | null): TitleSyncSnapshot {
   if (!key) return EMPTY_TITLE_SYNC
   const entry = getTitleSyncEntry(key)
-  return { status: entry.status }
+  return entry.status
 }
 
 export function useStudioQueries(selectedFilePath?: string) {

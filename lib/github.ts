@@ -151,7 +151,10 @@ export async function getFile(accessToken: string, owner: string, repo: string, 
       name: data.name,
       path: data.path,
     }
-  } catch (error) {
+  } catch (error: any) {
+    if (error.status === 404 || error.status === 404) {
+      return null
+    }
     console.error("Error fetching file:", error)
     return null
   }
