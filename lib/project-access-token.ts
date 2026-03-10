@@ -1,5 +1,3 @@
-import crypto from "node:crypto"
-
 const encoder = new TextEncoder()
 
 type ProjectAccessTokenPayload = {
@@ -30,24 +28,39 @@ function bytesToHex(bytes: Uint8Array) {
     .join("")
 }
 
-async function signValue(value: string) {
-  const key = await crypto.subtle.importKey(
+function hexToBytes(hex: string) {
+  const bytes = new Uint8Array(hex.length / 2)
+  for (let i = 0; i < hex.length; i += 2) {
+    bytes[i / 2] = parseInt(hex.slice(i, i + 2), 16)
+  }
+  return bytes
+}
+
+async function getHmacKey(usage: KeyUsage[]) {
+  return crypto.subtle.importKey(
     "raw",
     encoder.encode(getSecret()),
     { name: "HMAC", hash: "SHA-256" },
     false,
-    ["sign"],
+    usage,
   )
+}
+
+async function signValue(value: string) {
+  const key = await getHmacKey(["sign"])
   const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(value))
   return bytesToHex(new Uint8Array(signature))
 }
 
-async function verifyValue(value: string, signature: string) {
-  const expected = await signValue(value)
-  const sigBuf = Buffer.from(signature)
-  const expBuf = Buffer.from(expected)
-  if (sigBuf.length !== expBuf.length) return false
-  return crypto.timingSafeEqual(sigBuf, expBuf)
+/**
+ * Constant-time HMAC verification using Web Crypto API.
+ * crypto.subtle.verify() is guaranteed constant-time by spec,
+ * and works in all JS runtimes (Convex V8, Node.js, browsers).
+ */
+async function verifyValue(value: string, signatureHex: string) {
+  const key = await getHmacKey(["verify"])
+  const sigBytes = hexToBytes(signatureHex)
+  return crypto.subtle.verify("HMAC", key, sigBytes, encoder.encode(value))
 }
 
 export async function mintProjectAccessToken(payload: Omit<ProjectAccessTokenPayload, "exp">, ttlSeconds = 60 * 30) {
