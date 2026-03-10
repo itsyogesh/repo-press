@@ -1,11 +1,11 @@
 "use client"
 
-import * as React from "react"
 import { ChevronDown, ChevronRight } from "lucide-react"
+import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
-import { UNIVERSAL_FIELDS, buildMergedFieldList } from "@/lib/framework-adapters"
 import type { FieldVariantMap, FrontmatterFieldDef } from "@/lib/framework-adapters"
+import { buildMergedFieldList, UNIVERSAL_FIELDS } from "@/lib/framework-adapters"
 import { FrontmatterField } from "./frontmatter-field"
 import { IMAGE_EXTENSIONS } from "./shared-constants"
 
@@ -62,9 +62,7 @@ export function FrontmatterPanel({
         </CollapsibleTrigger>
       </div>
       <CollapsibleContent className="px-4 py-3 space-y-4">
-        {fieldsInFile.length === 0 ? (
-          <p className="text-xs text-studio-fg-muted text-center py-2">No frontmatter fields in this file.</p>
-        ) : (
+        {fieldsInFile.length > 0 ? (
           fieldsInFile.map((field) => (
             <FrontmatterField
               key={field.actualFieldName}
@@ -74,6 +72,12 @@ export function FrontmatterPanel({
               imagePaths={imagePaths}
             />
           ))
+        ) : (
+          <p className="text-xs text-studio-fg-muted text-center py-2">
+            {emptySchemaFields.length > 0
+              ? "No fields with values. Expand fields below to add."
+              : "No frontmatter fields in this file."}
+          </p>
         )}
 
         {emptySchemaFields.length > 0 && (
@@ -85,7 +89,7 @@ export function FrontmatterPanel({
               onClick={() => setShowEmptySchema(!showEmptySchema)}
             >
               {showEmptySchema ? <ChevronDown className="h-3 w-3 mr-1" /> : <ChevronRight className="h-3 w-3 mr-1" />}
-              Show {emptySchemaFields.length} more field
+              Show {emptySchemaFields.length} empty field
               {emptySchemaFields.length !== 1 ? "s" : ""}
               <span className="ml-1 text-studio-fg-muted/70 font-normal">
                 ({emptySchemaFields.map((f) => f.name).join(", ")})

@@ -17,9 +17,9 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-  DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu"
 import { Textarea } from "@/components/ui/textarea"
 import { api } from "@/convex/_generated/api"
@@ -125,7 +125,12 @@ export function StatusActions({ documentId, currentStatus }: StatusActionsProps)
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="sm" disabled={isLoading} className="h-7 px-2 gap-1 text-studio-fg-muted hover:text-studio-fg">
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={isLoading}
+            className="h-7 px-2 gap-1 text-studio-fg-muted hover:text-studio-fg"
+          >
             <ChevronDown className="h-3.5 w-3.5" />
           </Button>
         </DropdownMenuTrigger>

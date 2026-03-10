@@ -30,3 +30,6 @@ next-env.d.ts
 .DS_Store
 .commandcode
 .cursor
+.agents
+.gemini
+.claude

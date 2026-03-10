@@ -2,10 +2,12 @@
 
 import { useMutation } from "convex/react"
 import matter from "gray-matter"
-import { FileText, FolderOpen, History, Search, X } from "lucide-react"
+import { AlertCircle, FileText, FolderOpen, History, Search, Settings, X } from "lucide-react"
 import Link from "next/link"
 import * as React from "react"
 import { toast } from "sonner"
+import { syncProjectsFromConfigAction } from "@/app/dashboard/[owner]/[repo]/actions"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -15,6 +17,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
 import type { FileTreeNode } from "@/lib/github"
+import { usePreviewContext } from "@/lib/hooks/use-preview-context"
+import { buildHistoryHref } from "@/lib/studio/history-link"
 import { CommandPalette } from "./command-palette"
 import { CreateFileDialog } from "./create-file-dialog"
 import { Editor } from "./editor"
@@ -27,6 +31,7 @@ import { Preview } from "./preview"
 import { PublishDialog } from "./publish-dialog"
 import { PublishOpsBar } from "./publish-ops-bar"
 import { StatusActions } from "./status-actions"
+import { StudioAdapterProvider } from "./studio-adapter-context"
 import { StudioProvider, useStudio } from "./studio-context"
 import { StudioFooter } from "./studio-footer"
 import { StudioHeader } from "./studio-header"
@@ -44,6 +49,7 @@ export interface StudioLayoutProps {
   branch: string
   currentPath: string
   projectId?: string
+  projectAccessToken?: string
   contentRoot?: string
 }
 
@@ -122,10 +128,10 @@ function StudioSidebarLoading() {
 
       <div className="flex-1 overflow-hidden px-2 py-2">
         <div className="space-y-1.5">
-          {Array.from({ length: 12 }).map((_, idx) => (
-            <div key={`sidebar-skeleton-${idx}`} className="flex items-center gap-2 px-1 py-1">
+          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((i) => (
+            <div key={`sidebar-skeleton-${i}`} className="flex items-center gap-2 px-1 py-1">
               <Skeleton className="h-3.5 w-3.5 rounded" />
-              <Skeleton className={idx % 3 === 0 ? "h-3.5 w-40" : idx % 3 === 1 ? "h-3.5 w-32" : "h-3.5 w-48"} />
+              <Skeleton className={i % 3 === 0 ? "h-3.5 w-40" : i % 3 === 1 ? "h-3.5 w-32" : "h-3.5 w-48"} />
             </div>
           ))}
         </div>
@@ -146,16 +152,16 @@ function StudioSidebarLoading() {
 function StudioNoSelectionLoading() {
   return (
     <div className="h-full flex items-center justify-center px-6">
-      <div className="w-full max-w-2xl space-y-5">
-        <div className="space-y-2 text-center">
+      <div className="w-full max-w-2xl space-y-5 text-center">
+        <div className="space-y-2">
           <Skeleton className="h-8 w-52 mx-auto" />
           <Skeleton className="h-4 w-96 mx-auto max-w-full" />
         </div>
         <div className="mx-auto max-w-xl space-y-3">
           <Skeleton className="h-11 w-full rounded-md" />
           <div className="space-y-1 rounded-lg border border-studio-border bg-studio-canvas-inset/30 p-2">
-            {Array.from({ length: 6 }).map((_, idx) => (
-              <div key={`empty-search-skeleton-${idx}`} className="flex items-start gap-2 rounded-md px-2 py-2">
+            {[1, 2].map((i) => (
+              <div key={`empty-search-skeleton-${i}`} className="flex items-start gap-2 rounded-md px-2 py-2">
                 <Skeleton className="h-3.5 w-3.5 mt-0.5 rounded" />
                 <div className="min-w-0 flex-1 space-y-1">
                   <Skeleton className="h-4 w-2/3" />
@@ -203,16 +209,40 @@ function StudioPreviewLoading() {
 
 function StudioNoSelectionPreviewState() {
   return (
-    <div className="h-full flex flex-col bg-studio-canvas">
+    <div className="h-full flex flex-col bg-studio-canvas select-none">
       <div className="flex items-center justify-between px-3 py-1.5 border-b border-studio-border shrink-0">
-        <span className="text-xs font-semibold text-studio-fg uppercase tracking-wider">Preview</span>
+        <span className="text-[10px] font-bold text-studio-fg uppercase tracking-widest opacity-50">Preview</span>
       </div>
       <div className="flex-1 flex items-center justify-center px-6">
-        <div className="max-w-sm text-center space-y-2">
-          <h3 className="text-base font-semibold text-studio-fg">Nothing to preview yet</h3>
-          <p className="text-sm text-studio-fg-muted">
-            Select a file from the explorer or search results to render live preview content.
-          </p>
+        <div className="max-w-[280px] text-center space-y-6">
+          <div className="relative inline-flex items-center justify-center">
+            <div className="absolute inset-0 rounded-full bg-studio-accent/10 blur-2xl scale-150 animate-pulse" />
+            <div className="relative flex size-16 items-center justify-center rounded-2xl border border-studio-accent/20 bg-studio-accent-muted shadow-inner">
+              <FileText className="size-8 text-studio-accent/70" />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <h3 className="text-sm font-bold text-studio-fg tracking-tight">Ready to Render</h3>
+            <p className="text-xs leading-relaxed text-studio-fg-muted/80 text-balance">
+              Select any MDX or Markdown file from the explorer to see your content come to life.
+            </p>
+          </div>
+
+          <div className="pt-4 grid gap-2">
+            <div className="flex items-center gap-3 p-2 rounded-lg border border-transparent hover:border-studio-border hover:bg-studio-canvas-alt transition-colors group">
+              <div className="size-6 rounded bg-muted flex items-center justify-center group-hover:bg-studio-accent-muted transition-colors">
+                <Search className="size-3.5 text-muted-foreground group-hover:text-studio-accent" />
+              </div>
+              <div className="text-left">
+                <p className="text-[10px] font-bold text-studio-fg uppercase tracking-tight">Quick Search</p>
+                <p className="text-[10px] text-studio-fg-muted">
+                  Press <kbd className="font-sans text-[9px] bg-muted px-1 rounded border shadow-sm">⌘ K</kbd> to find
+                  files
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -247,8 +277,8 @@ function StudioEditorLoading({ showTabs = true }: { showTabs?: boolean }) {
 
           <div className="border-b border-studio-border px-4 py-2">
             <div className="flex items-center gap-2">
-              {Array.from({ length: 8 }).map((_, idx) => (
-                <Skeleton key={`editor-toolbar-skeleton-${idx}`} className="h-6 w-6 rounded-md" />
+              {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+                <Skeleton key={`editor-toolbar-skeleton-${i}`} className="h-6 w-6 rounded-md" />
               ))}
             </div>
           </div>
@@ -274,10 +304,12 @@ function StudioSidebarRail({
   onExpand,
   pendingCount,
   historyHref,
+  settingsHref,
 }: {
   onExpand: () => void
   pendingCount: number
   historyHref: string
+  settingsHref: string
 }) {
   const pendingDisplay = pendingCount > 99 ? "99+" : String(pendingCount)
 
@@ -320,7 +352,7 @@ function StudioSidebarRail({
                 <Link href={historyHref}>
                   <History className="h-4 w-4" />
                   {pendingCount > 0 && (
-                    <span className="absolute -right-1 -top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-studio-accent px-1 text-[9px] font-semibold text-white">
+                    <span className="absolute -right-1 -top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-studio-accent px-1 text-[9px] font-semibold text-studio-accent-fg">
                       {pendingDisplay}
                     </span>
                   )}
@@ -329,6 +361,26 @@ function StudioSidebarRail({
             </TooltipTrigger>
             <TooltipContent side="right" sideOffset={8}>
               Project history
+            </TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                asChild
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 rounded-lg border border-studio-border bg-studio-canvas hover:bg-studio-canvas-inset"
+                title="Settings"
+                aria-label="Project settings"
+              >
+                <Link href={settingsHref}>
+                  <Settings className="h-4 w-4 text-studio-fg" />
+                </Link>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="right" sideOffset={8}>
+              Settings
             </TooltipContent>
           </Tooltip>
 
@@ -346,7 +398,9 @@ function StudioSidebarRail({
               </Badge>
             </TooltipTrigger>
             <TooltipContent side="right" sideOffset={8}>
-              {pendingCount > 0 ? `${pendingCount} pending change${pendingCount === 1 ? "" : "s"}` : "No pending changes"}
+              {pendingCount > 0
+                ? `${pendingCount} pending change${pendingCount === 1 ? "" : "s"}`
+                : "No pending changes"}
             </TooltipContent>
           </Tooltip>
         </div>
@@ -356,13 +410,24 @@ function StudioSidebarRail({
 }
 
 function StudioLayoutInner({
-  initialFile,
-  currentPath,
+  studioFile,
+  studioQueries,
 }: {
-  initialFile?: StudioLayoutProps["initialFile"]
-  currentPath: string
+  studioFile: ReturnType<typeof useStudioFile>
+  studioQueries: ReturnType<typeof useStudioQueries>
 }) {
-  const { projectId, contentRoot, owner, repo, branch } = useStudio()
+  const {
+    projectId,
+    projectAccessToken,
+    contentRoot,
+    owner,
+    repo,
+    branch,
+    adapter,
+    adapterLoading,
+    adapterError,
+    adapterDiagnostics,
+  } = useStudio()
   const {
     viewMode,
     setViewMode,
@@ -376,7 +441,7 @@ function StudioLayoutInner({
     setPreviewPanelSize,
   } = useViewMode()
 
-  // 1. File state
+  // Destructure studioFile
   const {
     selectedFile,
     openFiles,
@@ -386,16 +451,15 @@ function StudioLayoutInner({
     sha,
     isFileLoading,
     navigateToFile,
-    clearSelection,
     closeFile,
     discardFileFromClientState,
     primeFileSnapshot,
     setContent,
     setFrontmatterKey,
     hydrateFromDocument,
-  } = useStudioFile(initialFile, currentPath)
+  } = studioFile
 
-  // 2. Queries
+  // Destructure studioQueries
   const {
     userId,
     document,
@@ -408,39 +472,29 @@ function StudioLayoutInner({
     editCount,
     frontmatterSchema,
     fieldVariants,
-  } = useStudioQueries(selectedFile?.path)
+  } = studioQueries
 
-  // Hydrate file content from document draft if applicable
   const hydratedForPath = React.useRef<string | null>(null)
+
   React.useEffect(() => {
-    if (!document || hydratedForPath.current === selectedFile?.path) return
-    const draftStatuses = ["draft", "in_review", "approved"]
-    if (draftStatuses.includes(document.status)) {
-      hydrateFromDocument(document)
-      hydratedForPath.current = selectedFile?.path ?? null
-    } else {
-      hydratedForPath.current = selectedFile?.path ?? null
+    const selectedPath = selectedFile?.path ?? null
+    if (!selectedPath) {
+      hydratedForPath.current = null
+      return
     }
+    if (!document || hydratedForPath.current === selectedPath) return
+
+    const draftStatuses = new Set(["draft", "in_review", "approved"])
+    if (draftStatuses.has(document.status)) {
+      hydrateFromDocument(document)
+    }
+    hydratedForPath.current = selectedPath
   }, [document, selectedFile?.path, hydrateFromDocument])
 
-  // 3. Save
-  const { isSaving, saveDraft, ensureDocumentRecord } = useStudioSave({
-    userId,
-    documentId: document?._id,
-    selectedFile,
-    content,
-    frontmatter,
-    sha,
-  })
-
-  // 4. Publish
-  const { isPublishing, publishDialogOpen, publishConflicts, openPublishDialog, setPublishDialogOpen, handlePublish } = useStudioPublish({
-    userId,
-    ensureDocumentRecord,
-    selectedFile,
-    content,
-    frontmatter,
-  })
+  // Explorer mutations
+  const stageCreate = useMutation(api.explorerOps.stageCreate)
+  const stageDelete = useMutation(api.explorerOps.stageDelete)
+  const undoOp = useMutation(api.explorerOps.undoOp)
 
   // Dialog state
   const [createDialogOpen, setCreateDialogOpen] = React.useState(false)
@@ -448,76 +502,30 @@ function StudioLayoutInner({
   const [commandPaletteOpen, setCommandPaletteOpen] = React.useState(false)
   const [emptySearch, setEmptySearch] = React.useState("")
   const [isMobile, setIsMobile] = React.useState(false)
-  const wasMobileRef = React.useRef(false)
 
-  React.useEffect(() => {
-    if (typeof window === "undefined") return
-    const media = window.matchMedia("(max-width: 767px)")
-    const update = () => setIsMobile(media.matches)
-    update()
-    media.addEventListener("change", update)
-    return () => media.removeEventListener("change", update)
-  }, [])
+  // 3. Save logic
+  const { isSaving, saveDraft, ensureDocumentRecord } = useStudioSave({
+    userId,
+    projectAccessToken,
+    documentId: document?._id,
+    documentUpdatedAt: document?.updatedAt,
+    selectedFile,
+    content,
+    frontmatter,
+    sha,
+  })
 
-  React.useEffect(() => {
-    // On entering mobile viewport, start collapsed so content stays readable.
-    if (isMobile && !wasMobileRef.current && sidebarState === "expanded") {
-      setSidebarState("collapsed")
-    }
-    wasMobileRef.current = isMobile
-  }, [isMobile, sidebarState, setSidebarState])
-
-  // Explorer mutations
-  const stageCreate = useMutation(api.explorerOps.stageCreate)
-  const stageDelete = useMutation(api.explorerOps.stageDelete)
-  const undoOp = useMutation(api.explorerOps.undoOp)
-
-  // Keyboard shortcuts
-  React.useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const isEditableTarget =
-        e.target instanceof HTMLInputElement ||
-        e.target instanceof HTMLTextAreaElement ||
-        (e.target as HTMLElement).isContentEditable
-
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault()
-        setCommandPaletteOpen(true)
-        return
-      }
-
-      if (e.key === "Escape" && commandPaletteOpen) {
-        e.preventDefault()
-        setCommandPaletteOpen(false)
-        return
-      }
-
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "s") {
-        e.preventDefault()
-        setViewMode("editor")
-        return
-      }
-
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
-        e.preventDefault()
-        saveDraft()
-        return
-      }
-
-      if (isEditableTarget) return
-
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "b") {
-        e.preventDefault()
-        setSidebarState(sidebarState === "expanded" ? "collapsed" : "expanded")
-      } else if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "p") {
-        e.preventDefault()
-        setViewMode(viewMode === "split" ? "editor" : "split")
-      }
-    }
-
-    window.addEventListener("keydown", handleKeyDown)
-    return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [sidebarState, viewMode, setSidebarState, setViewMode, saveDraft, commandPaletteOpen])
+  // 4. Publish logic
+  const { isPublishing, publishDialogOpen, publishConflicts, openPublishDialog, setPublishDialogOpen, handlePublish } =
+    useStudioPublish({
+      userId,
+      projectAccessToken,
+      documentUpdatedAt: document?.updatedAt,
+      ensureDocumentRecord,
+      selectedFile,
+      content,
+      frontmatter,
+    })
 
   // Explorer handlers
   const handleCreateFile = React.useCallback((parentPath: string) => {
@@ -542,6 +550,7 @@ function StudioLayoutInner({
         await stageCreate({
           projectId: projectId as Id<"projects">,
           userId,
+          projectAccessToken,
           filePath,
           title: initialTitle,
           initialBody: "",
@@ -561,7 +570,7 @@ function StudioLayoutInner({
         toast.error(error.message || "Failed to create file")
       }
     },
-    [projectId, userId, contentRoot, stageCreate, primeFileSnapshot, navigateToFile],
+    [projectId, userId, projectAccessToken, contentRoot, stageCreate, primeFileSnapshot, navigateToFile],
   )
 
   const handleDeleteFile = React.useCallback(
@@ -569,26 +578,19 @@ function StudioLayoutInner({
       if (!projectId || !userId) return
       try {
         const pendingCreateOp = pendingOps?.find(
-          (op) => op.filePath === filePath && op.opType === "create" && op.status === "pending",
+          (op: any) => op.filePath === filePath && op.opType === "create" && op.status === "pending",
         )
         if (pendingCreateOp) {
-          await undoOp({ id: pendingCreateOp._id, userId })
+          await undoOp({ id: pendingCreateOp._id, userId, projectAccessToken })
           discardFileFromClientState(filePath)
           toast.success("Removed staged new file")
-          return
-        }
-
-        const pendingDeleteOp = pendingOps?.find(
-          (op) => op.filePath === filePath && op.opType === "delete" && op.status === "pending",
-        )
-        if (pendingDeleteOp) {
-          toast("File is already staged for deletion")
           return
         }
 
         const opId = await stageDelete({
           projectId: projectId as Id<"projects">,
           userId,
+          projectAccessToken,
           filePath,
           previousSha: fileSha || undefined,
         })
@@ -597,7 +599,7 @@ function StudioLayoutInner({
             label: "Undo",
             onClick: async () => {
               try {
-                await undoOp({ id: opId, userId })
+                await undoOp({ id: opId, userId, projectAccessToken })
                 toast.success("Delete undone")
               } catch {
                 toast.error("Failed to undo")
@@ -610,23 +612,23 @@ function StudioLayoutInner({
         toast.error(error.message || "Failed to delete file")
       }
     },
-    [projectId, userId, pendingOps, undoOp, discardFileFromClientState, stageDelete],
+    [projectId, userId, projectAccessToken, pendingOps, undoOp, discardFileFromClientState, stageDelete],
   )
 
   const handleUndoDelete = React.useCallback(
     async (filePath: string) => {
       if (!projectId || !userId || !pendingOps) return
-      const op = pendingOps.find((o) => o.filePath === filePath && o.opType === "delete" && o.status === "pending")
+      const op = pendingOps.find((o: any) => o.filePath === filePath && o.opType === "delete" && o.status === "pending")
       if (!op) return
       try {
-        await undoOp({ id: op._id, userId })
+        await undoOp({ id: op._id, userId, projectAccessToken })
         toast.success("Delete undone")
       } catch (error: any) {
         console.error("Error undoing delete:", error)
         toast.error(error.message || "Failed to undo")
       }
     },
-    [projectId, userId, pendingOps, undoOp],
+    [projectId, userId, projectAccessToken, pendingOps, undoOp],
   )
 
   const handleDiscardAll = React.useCallback(async () => {
@@ -634,14 +636,14 @@ function StudioLayoutInner({
     try {
       for (const op of pendingOps) {
         if (op.status === "pending") {
-          await undoOp({ id: op._id, userId })
+          await undoOp({ id: op._id, userId, projectAccessToken })
         }
       }
       toast.success("All pending changes discarded")
     } catch (error: any) {
       toast.error(error.message || "Failed to discard changes")
     }
-  }, [pendingOps, userId, undoOp])
+  }, [pendingOps, userId, projectAccessToken, undoOp])
 
   const resolveRelocatePayload = React.useCallback(
     async (oldPath: string) => {
@@ -664,7 +666,7 @@ function StudioLayoutInner({
       }
 
       const pendingCreateOp = pendingOps?.find(
-        (op) => op.filePath === oldPath && op.opType === "create" && op.status === "pending",
+        (op: any) => op.filePath === oldPath && op.opType === "create" && op.status === "pending",
       )
       if (pendingCreateOp) {
         const pendingFrontmatter = (pendingCreateOp.initialFrontmatter || {}) as Record<string, unknown>
@@ -679,7 +681,7 @@ function StudioLayoutInner({
           title,
           previousSha: undefined,
           isFromPendingCreate: true,
-          pendingCreateOpId: pendingCreateOp._id,
+          pendingCreateOpId: pendingCreateOp._id as Id<"explorerOps">,
         }
       }
 
@@ -729,6 +731,7 @@ function StudioLayoutInner({
         const createOpId = await stageCreate({
           projectId: projectId as Id<"projects">,
           userId,
+          projectAccessToken,
           filePath: newPath,
           title: payload.title || inferTitleFromPath(newPath),
           initialBody: payload.body,
@@ -737,9 +740,9 @@ function StudioLayoutInner({
 
         if (payload.isFromPendingCreate && payload.pendingCreateOpId) {
           try {
-            await undoOp({ id: payload.pendingCreateOpId, userId })
+            await undoOp({ id: payload.pendingCreateOpId, userId, projectAccessToken })
           } catch (error) {
-            await undoOp({ id: createOpId, userId }).catch(() => {})
+            await undoOp({ id: createOpId, userId, projectAccessToken }).catch(() => {})
             throw error
           }
         } else {
@@ -748,11 +751,12 @@ function StudioLayoutInner({
             deleteOpId = await stageDelete({
               projectId: projectId as Id<"projects">,
               userId,
+              projectAccessToken,
               filePath: oldPath,
               previousSha: oldNode?.sha || payload.previousSha,
             })
           } catch (error) {
-            await undoOp({ id: createOpId, userId }).catch(() => {})
+            await undoOp({ id: createOpId, userId, projectAccessToken }).catch(() => {})
             throw error
           }
 
@@ -761,8 +765,8 @@ function StudioLayoutInner({
               label: "Undo",
               onClick: async () => {
                 try {
-                  await undoOp({ id: deleteOpId, userId })
-                  await undoOp({ id: createOpId, userId })
+                  await undoOp({ id: deleteOpId, userId, projectAccessToken })
+                  await undoOp({ id: createOpId, userId, projectAccessToken })
                   toast.success(`${actionLabel === "renamed" ? "Rename" : "Move"} undone`)
                 } catch {
                   toast.error("Failed to undo file operation")
@@ -791,6 +795,7 @@ function StudioLayoutInner({
     [
       projectId,
       userId,
+      projectAccessToken,
       overlayTree,
       resolveRelocatePayload,
       stageCreate,
@@ -819,38 +824,133 @@ function StudioLayoutInner({
     [stageRelocateFile],
   )
 
-  const currentStatus = document?.status || "draft"
-  const statusInfo = STATUS_LABELS[currentStatus] || STATUS_LABELS.draft
-  const canPublish = ["draft", "approved"].includes(currentStatus)
+  React.useEffect(() => {
+    if (typeof window === "undefined") return
+    const media = window.matchMedia("(max-width: 767px)")
+    const update = () => setIsMobile(media.matches)
+    update()
+    media.addEventListener("change", update)
+    return () => media.removeEventListener("change", update)
+  }, [])
 
-  // Scroll sync
+  // Sync scroll
   const editorScrollRef = React.useRef<HTMLDivElement>(null)
   const previewScrollRef = React.useRef<HTMLDivElement>(null)
   const isSyncingScroll = React.useRef(false)
 
-  const syncScroll = React.useCallback((source: "editor" | "preview") => {
-    if (isSyncingScroll.current) return
-    isSyncingScroll.current = true
+  const getScrollSyncMetrics = React.useCallback((container: HTMLDivElement) => {
+    const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight)
+    const root = container.querySelector<HTMLElement>("[data-scroll-sync-root]")
 
-    const sourceEl = source === "editor" ? editorScrollRef.current : previewScrollRef.current
-    const targetEl = source === "editor" ? previewScrollRef.current : editorScrollRef.current
-
-    if (sourceEl && targetEl) {
-      const maxScroll = sourceEl.scrollHeight - sourceEl.clientHeight
-      const pct = maxScroll > 0 ? sourceEl.scrollTop / maxScroll : 0
-      const targetMax = targetEl.scrollHeight - targetEl.clientHeight
-      targetEl.scrollTop = pct * targetMax
+    if (!root) {
+      return {
+        start: 0,
+        scrollable: maxScroll,
+        maxScroll,
+      }
     }
 
-    requestAnimationFrame(() => {
-      isSyncingScroll.current = false
-    })
+    const containerRect = container.getBoundingClientRect()
+    const rootRect = root.getBoundingClientRect()
+    const start = Math.max(0, rootRect.top - containerRect.top + container.scrollTop)
+    const end = Math.max(start, start + root.scrollHeight - container.clientHeight)
+
+    return {
+      start,
+      scrollable: Math.max(0, end - start),
+      maxScroll,
+    }
   }, [])
+
+  const syncScroll = React.useCallback(
+    (source: "editor" | "preview") => {
+      if (isSyncingScroll.current) return
+      isSyncingScroll.current = true
+
+      const sourceEl = source === "editor" ? editorScrollRef.current : previewScrollRef.current
+      const targetEl = source === "editor" ? previewScrollRef.current : editorScrollRef.current
+
+      if (sourceEl && targetEl) {
+        const sourceMetrics = getScrollSyncMetrics(sourceEl)
+        const targetMetrics = getScrollSyncMetrics(targetEl)
+
+        const rawProgress =
+          sourceMetrics.scrollable > 0
+            ? (sourceEl.scrollTop - sourceMetrics.start) / sourceMetrics.scrollable
+            : sourceMetrics.maxScroll > 0
+              ? sourceEl.scrollTop / sourceMetrics.maxScroll
+              : 0
+
+        const progress = Math.min(1, Math.max(0, rawProgress))
+        const desiredTargetTop =
+          targetMetrics.scrollable > 0
+            ? targetMetrics.start + progress * targetMetrics.scrollable
+            : progress * targetMetrics.maxScroll
+
+        const clampedTargetTop = Math.min(targetMetrics.maxScroll, Math.max(0, desiredTargetTop))
+
+        if (Math.abs(targetEl.scrollTop - clampedTargetTop) > 1) {
+          targetEl.scrollTop = clampedTargetTop
+        }
+      }
+
+      requestAnimationFrame(() => {
+        isSyncingScroll.current = false
+      })
+    },
+    [getScrollSyncMetrics],
+  )
 
   const handleEditorScroll = React.useCallback(() => syncScroll("editor"), [syncScroll])
   const handlePreviewScroll = React.useCallback(() => syncScroll("preview"), [syncScroll])
 
-  const showSidebar = !isMobile || sidebarState === "expanded"
+  // Keyboard shortcuts
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const isEditableTarget =
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        (e.target as HTMLElement).isContentEditable
+
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault()
+        setCommandPaletteOpen(true)
+        return
+      }
+
+      if (e.key === "Escape" && commandPaletteOpen) {
+        e.preventDefault()
+        setCommandPaletteOpen(false)
+        return
+      }
+
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "s") {
+        e.preventDefault()
+        setViewMode("editor")
+        return
+      }
+
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault()
+        saveDraft()
+        return
+      }
+
+      if (isEditableTarget) return
+
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "b") {
+        e.preventDefault()
+        setSidebarState(sidebarState === "expanded" ? "collapsed" : "expanded")
+      } else if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "p") {
+        e.preventDefault()
+        setViewMode(viewMode === "split" ? "editor" : "split")
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [sidebarState, viewMode, setSidebarState, setViewMode, saveDraft, commandPaletteOpen])
+
   const isSidebarCollapsed = !isMobile && sidebarState === "collapsed"
   const showPreview = viewMode === "split" && !isMobile
   const [resolvedProjectDataId, setResolvedProjectDataId] = React.useState<string | null>(null)
@@ -866,7 +966,8 @@ function StudioLayoutInner({
   }, [projectId, pendingOps, dirtyDocs])
 
   const isProjectDataLoading = Boolean(projectId) && (pendingOps === undefined || dirtyDocs === undefined)
-  const shouldShowProjectDataSkeleton = Boolean(projectId) && resolvedProjectDataId !== projectId && isProjectDataLoading
+  const shouldShowProjectDataSkeleton =
+    Boolean(projectId) && resolvedProjectDataId !== projectId && isProjectDataLoading
   const isSelectedDocumentLoading = isFileLoading
   const totalPendingCount = opCounts.creates + opCounts.deletes + editCount
   const flatFiles = React.useMemo(() => flattenFiles(overlayTree, titleMap), [overlayTree, titleMap])
@@ -888,7 +989,7 @@ function StudioLayoutInner({
     for (const path of recentFiles) {
       const match = flatFilesByPath.get(path)
       if (match) results.push(match)
-      if (results.length >= 8) break
+      if (results.length >= 2) break
     }
     return results
   }, [recentFiles, flatFilesByPath])
@@ -896,13 +997,17 @@ function StudioLayoutInner({
   const showSidebarPanel = isMobile ? sidebarState === "expanded" : !isSidebarCollapsed
   const showSidebarRail = !isMobile && isSidebarCollapsed
 
+  const currentStatus = document?.status || "draft"
+  const statusInfo = STATUS_LABELS[currentStatus] || STATUS_LABELS.draft
+  const canPublish = ["draft", "approved"].includes(currentStatus)
+  const historyHref = buildHistoryHref({ owner, repo, branch, projectId })
+
   return (
     <div
       className="h-full w-full flex flex-col overflow-hidden bg-studio-canvas text-studio-fg"
       role="application"
       aria-label="RepoPress Studio"
     >
-      {/* Live region for status announcements */}
       <div aria-live="polite" aria-atomic="true" className="sr-only">
         {document ? `Editing ${selectedFile?.name || "file"}, status: ${currentStatus}` : "No file selected"}
       </div>
@@ -924,88 +1029,103 @@ function StudioLayoutInner({
             <StudioSidebarRail
               pendingCount={totalPendingCount}
               onExpand={() => setSidebarState("expanded")}
-              historyHref={`/dashboard/${owner}/${repo}/history`}
+              historyHref={historyHref}
+              settingsHref={`/dashboard/${owner}/${repo}/settings`}
             />
           </div>
         )}
 
         <ResizablePanelGroup orientation="horizontal" className="flex-1 min-h-0">
           {showSidebarPanel && (
-          <>
-            <ResizablePanel
-              id="sidebar"
-              defaultSize={isMobile ? "35%" : `${Math.max(20, Math.min(40, sidebarPanelSize))}%`}
-              minSize={isMobile ? "240px" : "20%"}
-              maxSize={isMobile ? "70%" : "40%"}
-              onResize={(size) => {
-                if (isSidebarCollapsed || isMobile) return
-                setSidebarPanelSize(Math.round(size.asPercentage))
-              }}
-              className="bg-studio-canvas-inset border-r border-studio-border flex flex-col h-full overflow-hidden"
-            >
-              {projectId && shouldShowProjectDataSkeleton ? (
-                <StudioSidebarLoading />
-              ) : (
-                <>
-                  <div className="flex-1 min-h-0 overflow-hidden">
-                    <FileTree
-                      tree={overlayTree}
-                      onSelect={(node) => {
-                        if (node.type === "file") navigateToFile(node.path)
-                      }}
-                      selectedPath={selectedFile?.path}
-                      titleMap={titleMap}
-                      onCreateFile={projectId ? handleCreateFile : undefined}
-                      onDeleteFile={projectId ? handleDeleteFile : undefined}
-                      onUndoDelete={projectId ? handleUndoDelete : undefined}
-                      onRenameFile={projectId ? handleRenameFile : undefined}
-                      onMoveFile={projectId ? handleMoveFile : undefined}
-                      owner={owner}
-                      repo={repo}
-                    />
-                  </div>
-                  <div className="shrink-0 border-t border-studio-border bg-studio-canvas/95 backdrop-blur supports-[backdrop-filter]:bg-studio-canvas/80">
-                    <div className="px-2 py-1.5">
-                      <Button
-                        asChild
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 w-full justify-between rounded-md border border-studio-border bg-studio-canvas px-2 text-xs hover:bg-studio-canvas-inset"
-                      >
-                        <Link href={`/dashboard/${owner}/${repo}/history`}>
-                          <span className="inline-flex items-center gap-2">
-                            <History className="h-3.5 w-3.5" />
-                            History
-                          </span>
-                          <Badge variant="secondary" className="h-5 min-w-5 justify-center px-1 text-[10px]">
-                            {totalPendingCount}
-                          </Badge>
-                        </Link>
-                      </Button>
-                    </div>
-                    {projectId && (
-                      <PublishOpsBar
-                        creates={opCounts.creates}
-                        deletes={opCounts.deletes}
-                        edits={editCount}
-                        pendingOps={pendingOps}
-                        dirtyDocs={dirtyDocs}
-                        prUrl={activeBranch?.prUrl}
-                        onPublish={() => {
-                          openPublishDialog()
+            <>
+              <ResizablePanel
+                id="sidebar"
+                defaultSize={isMobile ? "35%" : `${Math.max(20, Math.min(40, sidebarPanelSize))}%`}
+                minSize={isMobile ? "240px" : "20%"}
+                maxSize={isMobile ? "70%" : "40%"}
+                onResize={(size) => {
+                  if (isSidebarCollapsed || isMobile) return
+                  setSidebarPanelSize(Math.round(size.asPercentage))
+                }}
+                className="bg-studio-canvas-inset border-r border-studio-border flex flex-col h-full overflow-hidden"
+              >
+                {projectId && shouldShowProjectDataSkeleton ? (
+                  <StudioSidebarLoading />
+                ) : (
+                  <>
+                    <div className="flex-1 min-h-0 overflow-hidden">
+                      <FileTree
+                        tree={overlayTree}
+                        onSelect={(node) => {
+                          if (node.type === "file") navigateToFile(node.path)
                         }}
-                        onDiscard={handleDiscardAll}
-                        onSelectFile={(path) => navigateToFile(path)}
+                        selectedPath={selectedFile?.path}
+                        titleMap={titleMap}
+                        onCreateFile={projectId ? handleCreateFile : undefined}
+                        onDeleteFile={projectId ? handleDeleteFile : undefined}
+                        onUndoDelete={projectId ? handleUndoDelete : undefined}
+                        onRenameFile={projectId ? handleRenameFile : undefined}
+                        onMoveFile={projectId ? handleMoveFile : undefined}
+                        owner={owner}
+                        repo={repo}
                       />
-                    )}
-                  </div>
-                </>
+                    </div>
+                    <div className="shrink-0 border-t border-studio-border bg-studio-canvas/95 backdrop-blur supports-[backdrop-filter]:bg-studio-canvas/80">
+                      <div className="px-2 py-1.5 flex flex-col gap-1.5">
+                        <Button
+                          asChild
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-full justify-between rounded-md border border-studio-border bg-studio-canvas px-2 text-xs hover:bg-studio-canvas-inset"
+                        >
+                          <Link href={historyHref}>
+                            <span className="inline-flex items-center gap-2">
+                              <History className="h-3.5 w-3.5" />
+                              History
+                            </span>
+                            <Badge variant="secondary" className="h-5 min-w-5 justify-center px-1 text-[10px]">
+                              {totalPendingCount}
+                            </Badge>
+                          </Link>
+                        </Button>
+
+                        <Button
+                          asChild
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-full justify-start rounded-md border border-studio-border bg-studio-canvas px-2 text-xs hover:bg-studio-canvas-inset"
+                        >
+                          <Link href={`/dashboard/${owner}/${repo}/settings`}>
+                            <span className="inline-flex items-center gap-2">
+                              <Settings className="h-3.5 w-3.5" />
+                              Settings
+                            </span>
+                          </Link>
+                        </Button>
+                      </div>
+                      {projectId && (
+                        <PublishOpsBar
+                          creates={opCounts.creates}
+                          deletes={opCounts.deletes}
+                          edits={editCount}
+                          pendingOps={pendingOps}
+                          dirtyDocs={dirtyDocs}
+                          prUrl={activeBranch?.prUrl}
+                          onPublish={() => {
+                            openPublishDialog()
+                          }}
+                          onDiscard={handleDiscardAll}
+                          onSelectFile={(path: string) => navigateToFile(path)}
+                        />
+                      )}
+                    </div>
+                  </>
+                )}
+              </ResizablePanel>
+              {!isSidebarCollapsed && !isMobile && (
+                <ResizableHandle className="w-1.5 bg-studio-border/50 hover:bg-studio-accent transition-colors" />
               )}
-            </ResizablePanel>
-            {!isSidebarCollapsed && !isMobile && (
-              <ResizableHandle className="w-1.5 bg-studio-border/50 hover:bg-studio-accent transition-colors" />
-            )}
-          </>
+            </>
           )}
 
           <ResizablePanel
@@ -1019,7 +1139,7 @@ function StudioLayoutInner({
               {openFiles.length > 0 && (
                 <div className="shrink-0 border-b border-studio-border bg-studio-canvas">
                   <div className="flex items-center gap-1 overflow-x-auto px-2 py-1.5">
-                    {openFiles.map((path) => {
+                    {openFiles.map((path: string) => {
                       const label = titleMap?.[path] || path.split("/").pop() || path
                       const isActive = selectedFile?.path === path
                       return (
@@ -1086,6 +1206,9 @@ function StudioLayoutInner({
                       owner={owner}
                       repo={repo}
                       branch={branch}
+                      projectId={projectId}
+                      userId={userId}
+                      filePath={selectedFile.path}
                       contentRoot={contentRoot}
                       tree={overlayTree}
                     />
@@ -1194,6 +1317,18 @@ function StudioLayoutInner({
                 <div className="h-full overflow-hidden">
                   {isSelectedDocumentLoading || (!selectedFile && shouldShowProjectDataSkeleton) ? (
                     <StudioPreviewLoading />
+                  ) : adapterLoading ? (
+                    <div className="h-full flex items-center justify-center">
+                      <div className="text-sm text-studio-fg-muted">Loading preview adapter...</div>
+                    </div>
+                  ) : adapterError ? (
+                    <div className="h-full flex items-center justify-center p-4">
+                      <Alert variant="destructive">
+                        <AlertCircle className="h-4 w-4" />
+                        <AlertTitle>Adapter Error</AlertTitle>
+                        <AlertDescription>{adapterError}</AlertDescription>
+                      </Alert>
+                    </div>
                   ) : !selectedFile ? (
                     <StudioNoSelectionPreviewState />
                   ) : (
@@ -1201,11 +1336,13 @@ function StudioLayoutInner({
                       content={content}
                       frontmatter={frontmatter}
                       fieldVariants={fieldVariants}
-                      owner={owner}
-                      repo={repo}
-                      branch={branch}
+                      projectId={projectId}
+                      userId={userId}
+                      filePath={selectedFile.path}
                       scrollContainerRef={previewScrollRef}
                       onScroll={handlePreviewScroll}
+                      adapter={adapter}
+                      adapterDiagnostics={adapterDiagnostics}
                     />
                   )}
                 </div>
@@ -1260,25 +1397,111 @@ function StudioLayoutInner({
   )
 }
 
-export function StudioLayout(props: StudioLayoutProps) {
-  const { owner, repo, branch, projectId, contentRoot = "", tree, initialFile, currentPath } = props
+function StudioProviderWrapper(props: StudioLayoutProps) {
+  const { owner, repo, branch, projectId, projectAccessToken, contentRoot = "", tree, initialFile, currentPath } = props
 
+  // 1. File state hook
+  const studioFile = useStudioFile(initialFile, currentPath)
+  const { selectedFile } = studioFile
+
+  // 2. Queries hook
+  const studioQueries = useStudioQueries(selectedFile?.path)
+  const {
+    previewEntry,
+    enabledPlugins,
+    pluginRegistry,
+    activeBranch,
+    userId,
+    components: componentSchema,
+  } = studioQueries
+
+  // 3. Preview Context hook
+  const previewContext = usePreviewContext({
+    owner,
+    repo,
+    branch: activeBranch?.branchName ?? branch,
+    adapterPath: previewEntry,
+    enabledPlugins,
+    pluginRegistry,
+  })
+
+  // 3. Auto-sync config logic
+  React.useEffect(() => {
+    if (!owner || !repo || !branch) return
+    syncProjectsFromConfigAction(owner, repo, branch).catch((err) => {
+      console.warn("Background config sync failed:", err)
+    })
+  }, [owner, repo, branch])
+
+  // 4. Memoize Context Value
   const contextValue = React.useMemo(
     () => ({
       owner,
       repo,
       branch,
       projectId,
+      projectAccessToken,
+      userId,
+      selectedFilePath: selectedFile?.path,
       contentRoot,
       tree,
+      adapter: previewContext.context,
+      adapterLoading: previewContext.loading,
+      adapterError: previewContext.error,
+      adapterDiagnostics: previewContext.diagnostics,
+      components: componentSchema,
     }),
-    [owner, repo, branch, projectId, contentRoot, tree],
+    [
+      owner,
+      repo,
+      branch,
+      projectId,
+      projectAccessToken,
+      userId,
+      selectedFile?.path,
+      contentRoot,
+      tree,
+      previewContext,
+      componentSchema,
+    ],
   )
 
   return (
     <StudioProvider value={contextValue}>
+      <StudioAdapterProvider value={contextValue}>
+        <StudioLayoutInner studioFile={studioFile} studioQueries={studioQueries} />
+      </StudioAdapterProvider>
+    </StudioProvider>
+  )
+}
+
+export function StudioLayout(props: StudioLayoutProps) {
+  const { owner, repo, branch, projectId, projectAccessToken, contentRoot = "", tree } = props
+
+  const baseContextValue = React.useMemo(
+    () => ({
+      owner,
+      repo,
+      branch,
+      projectId,
+      projectAccessToken,
+      userId: undefined,
+      selectedFilePath: undefined,
+      contentRoot,
+      tree,
+      adapter: null,
+      adapterLoading: false,
+      adapterError: null,
+      adapterDiagnostics: [],
+      components: undefined,
+    }),
+    [owner, repo, branch, projectId, projectAccessToken, contentRoot, tree],
+  )
+
+  return (
+    <StudioProvider value={baseContextValue}>
       <ViewModeProvider>
-        <StudioLayoutInner initialFile={initialFile} currentPath={currentPath} />
+        <StudioProviderWrapper {...props} />
       </ViewModeProvider>
     </StudioProvider>
   )

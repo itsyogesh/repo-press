@@ -1,6 +1,43 @@
 import { v } from "convex/values"
-import { api } from "./_generated/api"
+import { verifyProjectAccessToken } from "../lib/project-access-token"
+import { api, internal } from "./_generated/api"
+import type { MutationCtx } from "./_generated/server"
 import { action, internalMutation, mutation, query } from "./_generated/server"
+import { authComponent } from "./auth"
+
+async function resolveProjectCaller(
+  ctx: MutationCtx,
+  projectId: string,
+  explicitUserId?: string,
+  projectAccessToken?: string,
+) {
+  const authUser = await authComponent.safeGetAuthUser(ctx)
+  if (authUser?._id) {
+    const authUserId = authUser._id as string
+    if (explicitUserId && explicitUserId !== authUserId) {
+      throw new Error("Unauthorized: caller identity does not match userId")
+    }
+    const project = await ctx.db.get(projectId as any)
+    if (!project || project.userId !== authUserId) {
+      throw new Error("Unauthorized")
+    }
+    return { userId: authUserId, project }
+  }
+
+  const payload = await verifyProjectAccessToken(projectAccessToken)
+  if (payload && payload.projectId === projectId) {
+    const project = await ctx.db.get(projectId as any)
+    if (!project || project.userId !== payload.userId) {
+      throw new Error("Unauthorized")
+    }
+    if (explicitUserId && explicitUserId !== payload.userId) {
+      throw new Error("Unauthorized: caller identity does not match userId")
+    }
+    return { userId: payload.userId, project }
+  }
+
+  throw new Error("Unauthorized: Not authenticated")
+}
 
 export const listByProject = query({
   args: {
@@ -100,6 +137,42 @@ export const getOrCreate = mutation({
     body: v.optional(v.string()),
     frontmatter: v.optional(v.any()),
     githubSha: v.optional(v.string()),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await resolveProjectCaller(ctx, args.projectId, args.userId, args.projectAccessToken)
+
+    const existing = await ctx.db
+      .query("documents")
+      .withIndex("by_projectId_filePath", (q) => q.eq("projectId", args.projectId).eq("filePath", args.filePath))
+      .first()
+
+    if (existing) return existing._id
+
+    const now = Date.now()
+    return await ctx.db.insert("documents", {
+      projectId: args.projectId,
+      filePath: args.filePath,
+      title: args.title,
+      status: "draft",
+      body: args.body,
+      frontmatter: args.frontmatter,
+      githubSha: args.githubSha,
+      createdAt: now,
+      updatedAt: now,
+    })
+  },
+})
+
+export const getOrCreateInternal = internalMutation({
+  args: {
+    projectId: v.id("projects"),
+    filePath: v.string(),
+    title: v.string(),
+    body: v.optional(v.string()),
+    frontmatter: v.optional(v.any()),
+    githubSha: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const existing = await ctx.db
@@ -129,7 +202,8 @@ export const getOrCreate = mutation({
 export const update = mutation({
   args: {
     id: v.id("documents"),
-    userId: v.string(),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
     title: v.optional(v.string()),
     description: v.optional(v.string()),
     slug: v.optional(v.string()),
@@ -147,15 +221,11 @@ export const update = mutation({
     expiresAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const { id, userId, ...updates } = args
+    const { id, userId, projectAccessToken, ...updates } = args
 
-    // Verify ownership
     const doc = await ctx.db.get(id)
     if (!doc) throw new Error("Document not found")
-    const project = await ctx.db.get(doc.projectId)
-    if (!project || project.userId !== userId) {
-      throw new Error("Unauthorized")
-    }
+    await resolveProjectCaller(ctx, doc.projectId, userId, projectAccessToken)
 
     await ctx.db.patch(id, {
       ...updates,
@@ -165,8 +235,17 @@ export const update = mutation({
 })
 
 export const remove = mutation({
-  args: { id: v.id("documents") },
+  args: {
+    id: v.id("documents"),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
+    const doc = await ctx.db.get(args.id)
+    if (!doc) throw new Error("Document not found")
+
+    await resolveProjectCaller(ctx, doc.projectId, args.userId, args.projectAccessToken)
+
     await ctx.db.delete(args.id)
   },
 })
@@ -188,19 +267,21 @@ export const search = query({
 export const saveDraft = mutation({
   args: {
     id: v.id("documents"),
+    expectedUpdatedAt: v.optional(v.number()),
     body: v.string(),
     frontmatter: v.optional(v.any()),
-    editedBy: v.string(),
     message: v.optional(v.string()),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const doc = await ctx.db.get(args.id)
     if (!doc) throw new Error("Document not found")
 
-    // Verify ownership: editedBy must own the project
-    const project = await ctx.db.get(doc.projectId)
-    if (!project || project.userId !== args.editedBy) {
-      throw new Error("Unauthorized")
+    const { userId } = await resolveProjectCaller(ctx, doc.projectId, args.userId, args.projectAccessToken)
+
+    if (args.expectedUpdatedAt !== undefined && doc.updatedAt !== args.expectedUpdatedAt) {
+      throw new Error("Document was modified by another user. Please refresh and try again.")
     }
 
     // Auto-transition published->draft when editing (edge case #6)
@@ -208,23 +289,27 @@ export const saveDraft = mutation({
       await ctx.db.patch(args.id, { status: "draft" })
     }
 
-    // Create history entry with current content before overwriting
+    const now = Date.now()
+
+    // Fix #7: Create history entry with the PREVIOUS content before overwriting.
+    // This preserves the old content so restore/diff operations show what existed
+    // before each edit, not what was just saved.
     if (doc.body) {
       await ctx.db.insert("documentHistory", {
         documentId: args.id,
         body: doc.body,
         frontmatter: doc.frontmatter,
-        editedBy: args.editedBy,
-        message: args.message || "Auto-save",
-        createdAt: Date.now(),
+        editedBy: userId,
+        message: args.message || "Draft saved",
+        createdAt: now,
       })
     }
 
-    // Update the document
+    // Update the document with the new content
     await ctx.db.patch(args.id, {
       body: args.body,
       frontmatter: args.frontmatter,
-      updatedAt: Date.now(),
+      updatedAt: now,
     })
   },
 })
@@ -279,7 +364,8 @@ const ALLOWED_TRANSITIONS: Record<string, string[]> = {
 export const transitionStatus = mutation({
   args: {
     id: v.id("documents"),
-    userId: v.string(),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
     newStatus: v.union(
       v.literal("draft"),
       v.literal("in_review"),
@@ -295,11 +381,7 @@ export const transitionStatus = mutation({
     const doc = await ctx.db.get(args.id)
     if (!doc) throw new Error("Document not found")
 
-    // Verify ownership — always required
-    const project = await ctx.db.get(doc.projectId)
-    if (!project || project.userId !== args.userId) {
-      throw new Error("Unauthorized")
-    }
+    await resolveProjectCaller(ctx, doc.projectId, args.userId, args.projectAccessToken)
 
     const allowed = ALLOWED_TRANSITIONS[doc.status] || []
     if (!allowed.includes(args.newStatus)) {
@@ -461,7 +543,7 @@ export const syncTreeTitles = action({
               if (titleMatch) title = titleMatch[1].trim()
             }
 
-            await ctx.runMutation(api.documents.getOrCreate, {
+            await ctx.runMutation(internal.documents.getOrCreateInternal, {
               projectId: args.projectId,
               filePath: file.path,
               title,

@@ -1,12 +1,14 @@
 "use client"
 
+import { Eye, FolderOpen, ImageIcon } from "lucide-react"
 import * as React from "react"
-import { Eye, ImageIcon, FolderOpen } from "lucide-react"
-import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { resolveStudioAssetUrl } from "@/lib/studio/media-resolve"
 import { cn } from "@/lib/utils"
+import { useStudio } from "./studio-context"
 
 /** Allow relative paths and http(s) URLs. Block javascript: and other protocol URIs. */
 function isSafeSrc(src: string): boolean {
@@ -38,8 +40,10 @@ export function ImageField({
   className,
   imagePaths = [],
 }: ImageFieldProps) {
+  const { projectId, userId, selectedFilePath } = useStudio()
   const [showPreview, setShowPreview] = React.useState(!!value)
   const [browserOpen, setBrowserOpen] = React.useState(false)
+  const resolvedValuePreview = value ? resolveStudioAssetUrl(value, projectId, userId, selectedFilePath) : value
 
   const handleSelectImage = (path: string) => {
     onChange(path)
@@ -90,7 +94,7 @@ export function ImageField({
           <div className="rounded-md border border-studio-border overflow-hidden bg-studio-canvas-inset">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={value}
+              src={resolvedValuePreview}
               alt="Cover preview"
               className="max-h-32 w-full object-cover"
               onError={(e) => {
@@ -123,7 +127,7 @@ export function ImageField({
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={path}
+                    src={resolveStudioAssetUrl(path, projectId, userId, selectedFilePath)}
                     alt={path.split("/").pop()}
                     className="w-full h-full object-cover"
                     onError={(e) => {
@@ -131,8 +135,8 @@ export function ImageField({
                         "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Crect x='3' y='3' width='18' height='18' rx='2'/%3E%3Ccircle cx='8.5' cy='8.5' r='1.5'/%3E%3Cpath d='m21 15-5-5L5 21'/%3E%3C/svg%3E"
                     }}
                   />
-                  <div className="absolute bottom-0 left-0 right-0 bg-black/60 px-1 py-0.5">
-                    <p className="text-[8px] text-white truncate">{path.split("/").pop()}</p>
+                  <div className="absolute bottom-0 left-0 right-0 bg-background/80 px-1 py-0.5 backdrop-blur-sm">
+                    <p className="text-[8px] text-foreground truncate">{path.split("/").pop()}</p>
                   </div>
                 </button>
               ))}

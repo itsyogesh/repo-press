@@ -1,3 +1,5 @@
+"use client"
+
 import { useDraggable, useDroppable } from "@dnd-kit/core"
 import { CSS } from "@dnd-kit/utilities"
 import { ChevronDown, ChevronRight, File, Folder, FolderOpen, Plus, Undo2 } from "lucide-react"
@@ -123,9 +125,8 @@ export function TreeItem({
           disabled={isDeleted}
         >
           <div className="group relative">
-            <div
-              role="button"
-              tabIndex={0}
+            <button
+              type="button"
               className={cn(
                 "relative flex h-8 w-full select-none items-center justify-start gap-1 rounded-md px-1 py-1 pr-8 font-normal text-studio-fg transition-[background-color,box-shadow,color] duration-150 hover:bg-studio-canvas-inset focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-studio-accent/60",
                 isDeleted && "opacity-50",
@@ -134,13 +135,6 @@ export function TreeItem({
               )}
               style={{ paddingLeft: `${depth * TREE_INDENT_PX + TREE_BASE_OFFSET_PX}px` }}
               onClick={(e) => {
-                e.stopPropagation()
-                onFocusPath(node.path)
-                onToggleDir(node.path)
-              }}
-              onKeyDown={(e) => {
-                if (e.key !== "Enter" && e.key !== " ") return
-                e.preventDefault()
                 e.stopPropagation()
                 onFocusPath(node.path)
                 onToggleDir(node.path)
@@ -171,7 +165,10 @@ export function TreeItem({
                   <FileRenameInput initialValue={node.name} onSubmit={handleRenameSubmit} onCancel={onCancelRename} />
                 ) : (
                   <span
-                    className={cn("truncate text-[13px] leading-tight", isDeleted && "line-through text-studio-fg-muted")}
+                    className={cn(
+                      "truncate text-[13px] leading-tight",
+                      isDeleted && "line-through text-studio-fg-muted",
+                    )}
                   >
                     {node.name}
                   </span>
@@ -186,7 +183,7 @@ export function TreeItem({
                   </Badge>
                 )}
               </div>
-            </div>
+            </button>
             {onCreateFile && !isDeleted && (
               <button
                 type="button"
@@ -328,7 +325,10 @@ export function TreeItem({
                   </span>
                   {displayTitle && (
                     <span
-                      className={cn("w-full truncate text-left text-[10px] text-studio-fg-muted", isDeleted && "line-through")}
+                      className={cn(
+                        "w-full truncate text-left text-[10px] text-studio-fg-muted",
+                        isDeleted && "line-through",
+                      )}
                     >
                       {node.name}
                     </span>

@@ -20,15 +20,28 @@ export const hugoAdapter: FrameworkAdapter = {
   },
   contentArchitecture: {
     hasTaxonomySystem: true,
-    architectureNote: "Hugo has first-class taxonomy support (tags, categories, custom). Uses weight for ordering and cover for images.",
+    architectureNote:
+      "Hugo has first-class taxonomy support (tags, categories, custom). Uses weight for ordering and cover for images.",
   },
   fields: [
     ...UNIVERSAL_FIELDS,
     { name: "date", type: "date", required: true, description: "Publication date", semanticRole: "date" },
-    { name: "lastmod", type: "date", required: false, description: "Last modification date", semanticRole: "lastModified" },
+    {
+      name: "lastmod",
+      type: "date",
+      required: false,
+      description: "Last modification date",
+      semanticRole: "lastModified",
+    },
     { name: "authors", type: "string[]", required: false, description: "List of authors", semanticRole: "authors" },
     { name: "tags", type: "string[]", required: false, description: "Post tags", semanticRole: "tags" },
-    { name: "categories", type: "string[]", required: false, description: "Post categories", semanticRole: "categories" },
+    {
+      name: "categories",
+      type: "string[]",
+      required: false,
+      description: "Post categories",
+      semanticRole: "categories",
+    },
     { name: "weight", type: "number", required: false, description: "Sort order weight", semanticRole: "order" },
     { name: "type", type: "string", required: false, description: "Content type (post, page, etc)" },
     { name: "summary", type: "string", required: false, description: "Post summary/excerpt", semanticRole: "excerpt" },

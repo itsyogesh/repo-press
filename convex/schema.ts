@@ -74,6 +74,17 @@ export default defineSchema({
     ),
     // Framework-specific frontmatter field config
     frontmatterSchema: v.optional(v.any()), // JSON: field definitions for the editor
+
+    // Config properties (RepoPress Multi-Project MDX Runtime)
+    configProjectId: v.optional(v.string()),
+    configVersion: v.optional(v.number()),
+    configPath: v.optional(v.string()), // default: repopress.config.json
+    previewEntry: v.optional(v.string()),
+    enabledPlugins: v.optional(v.array(v.string())),
+    pluginRegistry: v.optional(v.any()), // Map of pluginId -> manifestPath
+    components: v.optional(v.any()), // Map of componentName -> { props, hasChildren, kind }
+    frameworkSource: v.optional(v.union(v.literal("config"), v.literal("detected"))),
+
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -182,7 +193,10 @@ export default defineSchema({
     .index("by_projectId_status", ["projectId", "status"])
     .index("by_projectId_filePath", ["projectId", "filePath"])
     .index("by_collectionId", ["collectionId"])
-    .searchIndex("search_title", { searchField: "title", filterFields: ["projectId"] }),
+    .searchIndex("search_title", {
+      searchField: "title",
+      filterFields: ["projectId"],
+    }),
 
   // ─── Document History (version snapshots) ──────────────────
   documentHistory: defineTable({
@@ -192,6 +206,9 @@ export default defineSchema({
     editedBy: v.string(),
     commitSha: v.optional(v.string()),
     message: v.optional(v.string()),
+    changeType: v.optional(v.union(v.literal("minor"), v.literal("major"), v.literal("patch"))),
+    diffHash: v.optional(v.string()),
+    githubCommitUrl: v.optional(v.string()),
     createdAt: v.number(),
   })
     .index("by_documentId", ["documentId"])
@@ -263,17 +280,37 @@ export default defineSchema({
     initialBody: v.optional(v.string()),
     initialFrontmatter: v.optional(v.any()),
     previousSha: v.optional(v.string()),
-    status: v.union(
-      v.literal("pending"),
-      v.literal("committed"),
-      v.literal("undone"),
-    ),
+    status: v.union(v.literal("pending"), v.literal("committed"), v.literal("undone")),
     commitSha: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
+    .index("by_projectId", ["projectId"])
     .index("by_projectId_status", ["projectId", "status"])
     .index("by_projectId_filePath", ["projectId", "filePath"]),
+
+  // ─── Media Ops (staged media writes for PR-based publish) ──────────────
+  mediaOps: defineTable({
+    projectId: v.id("projects"),
+    userId: v.string(),
+    repoPath: v.string(),
+    fileName: v.string(),
+    mimeType: v.string(),
+    sizeBytes: v.optional(v.number()),
+    sourceType: v.union(v.literal("blob"), v.literal("githubBranch")),
+    blobUrl: v.optional(v.string()),
+    blobAccess: v.optional(v.union(v.literal("public"), v.literal("private"))),
+    githubBranch: v.optional(v.string()),
+    githubPath: v.optional(v.string()),
+    githubSha: v.optional(v.string()),
+    status: v.union(v.literal("pending"), v.literal("committed"), v.literal("undone"), v.literal("failed")),
+    commitSha: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_projectId", ["projectId"])
+    .index("by_projectId_status", ["projectId", "status"])
+    .index("by_projectId_repoPath", ["projectId", "repoPath"]),
 
   // ─── Publish Branches (PR-based publish workflow) ─────────────────
   publishBranches: defineTable({
@@ -282,16 +319,13 @@ export default defineSchema({
     baseBranch: v.string(),
     prNumber: v.optional(v.number()),
     prUrl: v.optional(v.string()),
-    status: v.union(
-      v.literal("active"),
-      v.literal("merged"),
-      v.literal("closed"),
-    ),
+    status: v.union(v.literal("active"), v.literal("merged"), v.literal("closed")),
     lastCommitSha: v.optional(v.string()),
     committedFilePaths: v.optional(v.array(v.string())),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
+    .index("by_projectId", ["projectId"])
     .index("by_projectId_status", ["projectId", "status"])
     .index("by_prNumber", ["prNumber"]),
 })

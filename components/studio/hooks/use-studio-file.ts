@@ -1,5 +1,7 @@
-import * as React from "react"
+"use client"
+
 import matter from "gray-matter"
+import * as React from "react"
 import { normalizeFrontmatterDates } from "@/lib/framework-adapters"
 import type { FileTreeNode } from "@/lib/github"
 import { useStudio } from "../studio-context"
@@ -404,7 +406,7 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
     const snapshot = fileCacheRef.current.get(path)
     if (!snapshot) return
     setSelectedFile(resolveFileNode(path, snapshot.sha))
-  }, [tree, selectedFile?.path, resolveFileNode])
+  }, [selectedFile?.path, resolveFileNode])
 
   React.useEffect(() => {
     if (typeof window === "undefined") return

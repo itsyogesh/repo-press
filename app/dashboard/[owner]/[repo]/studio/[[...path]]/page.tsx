@@ -1,14 +1,16 @@
 import { ConvexHttpClient } from "convex/browser"
-import type { Id } from "@/convex/_generated/dataModel"
 import { AlertCircle } from "lucide-react"
 import { redirect } from "next/navigation"
-import { StudioPageThemeToggle } from "@/components/studio/studio-page-theme-toggle"
 import { StudioLayout } from "@/components/studio/studio-layout"
+import { StudioPageThemeToggle } from "@/components/studio/studio-page-theme-toggle"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { api } from "@/convex/_generated/api"
-import { getGitHubToken } from "@/lib/auth-server"
+import type { Doc, Id } from "@/convex/_generated/dataModel"
+import { fetchAuthQuery, getGitHubToken, getPatAuthUserId } from "@/lib/auth-server"
 import type { FileTreeNode } from "@/lib/github"
 import { getContentTree, getFile } from "@/lib/github"
+import { mintProjectAccessToken } from "@/lib/project-access-token"
+import { projectMatchesRoute, selectStudioFallbackProject } from "@/lib/studio/project-route"
 
 interface StudioPageProps {
   params: Promise<{
@@ -34,20 +36,60 @@ export default async function StudioPage({ params, searchParams }: StudioPagePro
   const { branch, projectId: projectIdParam, file } = await searchParams
   const currentBranch = branch || "main"
   const currentPath = file || (path ? path.join("/") : "")
+  const authUser = fetchAuthQuery ? await fetchAuthQuery(api.auth.getCurrentUser).catch(() => null) : null
+  const patUserId = !authUser ? await getPatAuthUserId(token) : null
 
   // Look up the project: prefer explicit projectId, fall back to repo+branch lookup
   const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
-  let project = null
+  let project: Doc<"projects"> | null = null
   if (projectIdParam) {
-    project = await convex.query(api.projects.get, { id: projectIdParam as Id<"projects"> })
+    const requestedProject = await convex.query(api.projects.get, { id: projectIdParam as Id<"projects"> })
+    if (
+      projectMatchesRoute(requestedProject, owner, repo, currentBranch) &&
+      (authUser
+        ? requestedProject?.userId === (authUser._id as string)
+        : patUserId
+          ? requestedProject?.userId === patUserId
+          : false)
+    ) {
+      project = requestedProject
+    }
   }
-  if (!project) {
-    project = await convex.query(api.projects.findByRepo, {
-      repoOwner: owner,
-      repoName: repo,
-      branch: currentBranch,
-    })
+  if (!project && authUser && fetchAuthQuery) {
+    try {
+      const repoProjects = await fetchAuthQuery(api.projects.listMyProjectsForRepo, {
+        repoOwner: owner,
+        repoName: repo,
+      })
+      project = selectStudioFallbackProject(repoProjects, currentBranch)
+    } catch {
+      project = null
+    }
   }
+  if (!project && !authUser) {
+    if (patUserId) {
+      const repoProjects = await convex.query(api.projects.getByRepo, {
+        userId: patUserId,
+        repoOwner: owner,
+        repoName: repo,
+      })
+      project = selectStudioFallbackProject(
+        repoProjects.filter((entry) => entry.branch === currentBranch),
+        currentBranch,
+      )
+    }
+  }
+
+  const projectAccessToken =
+    project && !authUser
+      ? await mintProjectAccessToken({
+          projectId: project._id,
+          userId: project.userId,
+          repoOwner: project.repoOwner,
+          repoName: project.repoName,
+          branch: project.branch,
+        })
+      : undefined
 
   // Use project's contentRoot to scope file listing (falls back to repo root)
   const contentRoot = project?.contentRoot || ""
@@ -102,6 +144,7 @@ export default async function StudioPage({ params, searchParams }: StudioPagePro
             branch={currentBranch}
             currentPath={currentPath}
             projectId={project?._id}
+            projectAccessToken={projectAccessToken}
             contentRoot={contentRoot}
           />
         </div>

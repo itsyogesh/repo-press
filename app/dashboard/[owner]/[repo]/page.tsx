@@ -1,4 +1,4 @@
-import { AlertCircle, GitBranch } from "lucide-react"
+import { AlertCircle, GitBranch, Settings } from "lucide-react"
 import Link from "next/link"
 import { redirect } from "next/navigation"
 import { FileBrowser } from "@/components/file-browser"
@@ -47,6 +47,11 @@ export default async function RepoPage({ params, searchParams }: RepoPageProps) 
         <div className="flex items-center justify-between">
           <RepoBreadcrumb owner={owner} repo={repo} path={currentPath ? [currentPath] : []} />
           <div className="flex gap-2">
+            <Button variant="outline" size="icon" asChild title="Project Settings">
+              <Link href={`/dashboard/${owner}/${repo}/settings`}>
+                <Settings className="h-4 w-4" />
+              </Link>
+            </Button>
             <Button asChild>
               <Link href={`/dashboard/${owner}/${repo}/studio/${currentPath}?branch=${currentBranch}`}>
                 Open Studio

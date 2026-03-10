@@ -1,6 +1,6 @@
 "use client"
 
-import { Monitor, Tablet, Smartphone } from "lucide-react"
+import { Monitor, Smartphone, Tablet } from "lucide-react"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 
 export type Viewport = "desktop" | "tablet" | "mobile"

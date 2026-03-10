@@ -1,7 +1,7 @@
 "use client"
 
+import { ChevronDown, ChevronRight, ExternalLink, FileEdit, FilePlus, FileX, GitPullRequest, X } from "lucide-react"
 import { useState } from "react"
-import { ExternalLink, GitPullRequest, X, FilePlus, FileEdit, FileX, ChevronDown, ChevronRight } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 
@@ -57,22 +57,24 @@ export function PublishOpsBar({
 
   return (
     <div className="shrink-0 border-t border-studio-border bg-studio-canvas-inset px-3 py-2 space-y-2">
-      <div
-        className="flex items-center gap-2 text-xs text-studio-fg cursor-pointer hover:opacity-80"
-        onClick={() => setIsExpanded(!isExpanded)}
-      >
-        <GitPullRequest className="h-3.5 w-3.5 shrink-0 text-studio-accent" />
-        <span className="font-medium">
-          {total} pending change{total !== 1 ? "s" : ""}
-        </span>
-        {isExpanded ? <ChevronDown className="h-3 w-3 ml-auto" /> : <ChevronRight className="h-3 w-3 ml-auto" />}
+      <div className="flex items-center gap-2 text-xs text-studio-fg">
+        <button
+          type="button"
+          className="flex min-w-0 flex-1 items-center gap-2 text-left hover:opacity-80"
+          onClick={() => setIsExpanded(!isExpanded)}
+        >
+          <GitPullRequest className="h-3.5 w-3.5 shrink-0 text-studio-accent" />
+          <span className="font-medium">
+            {total} pending change{total !== 1 ? "s" : ""}
+          </span>
+          {isExpanded ? <ChevronDown className="ml-auto h-3 w-3" /> : <ChevronRight className="ml-auto h-3 w-3" />}
+        </button>
         {prUrl && (
           <a
             href={prUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="shrink-0 text-studio-accent hover:underline inline-flex items-center gap-1 ml-auto"
-            onClick={(e) => e.stopPropagation()}
+            className="shrink-0 text-studio-accent hover:underline inline-flex items-center gap-1"
           >
             <ExternalLink className="h-3 w-3" />
             PR

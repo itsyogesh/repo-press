@@ -1,6 +1,8 @@
 import { Skeleton } from "@/components/ui/skeleton"
 
 export default function StudioLoading() {
+  const emptySearchRows = Array.from({ length: 8 }, (_, idx) => ({ id: `empty-search-row-${idx}`, idx }))
+
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-studio-canvas text-studio-fg">
       <div className="shrink-0 border-b bg-background">
@@ -47,12 +49,12 @@ export default function StudioLoading() {
               <div className="mx-auto max-w-xl space-y-3">
                 <Skeleton className="h-11 w-full rounded-md" />
                 <div className="space-y-1 rounded-lg border border-studio-border bg-studio-canvas-inset/30 p-2">
-                  {Array.from({ length: 8 }).map((_, idx) => (
-                    <div key={`empty-search-row-${idx}`} className="flex items-start gap-2 rounded-md px-2 py-2">
+                  {emptySearchRows.map((row) => (
+                    <div key={row.id} className="flex items-start gap-2 rounded-md px-2 py-2">
                       <Skeleton className="h-3.5 w-3.5 mt-0.5 rounded" />
                       <div className="min-w-0 flex-1 space-y-1">
-                        <Skeleton className={idx % 2 === 0 ? "h-4 w-2/3" : "h-4 w-3/4"} />
-                        <Skeleton className={idx % 2 === 0 ? "h-3 w-full" : "h-3 w-11/12"} />
+                        <Skeleton className={row.idx % 2 === 0 ? "h-4 w-2/3" : "h-4 w-3/4"} />
+                        <Skeleton className={row.idx % 2 === 0 ? "h-3 w-full" : "h-3 w-11/12"} />
                       </div>
                     </div>
                   ))}

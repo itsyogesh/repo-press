@@ -1,16 +1,20 @@
-import * as React from "react"
-import Link from "next/link"
+"use client"
+
 import {
-  Home,
-  MoreVertical,
-  History,
-  Keyboard,
   HelpCircle,
+  History,
+  Home,
+  Keyboard,
+  MoreVertical,
   PanelLeftClose,
   PanelLeftOpen,
+  RefreshCw,
 } from "lucide-react"
-
-import { Button } from "@/components/ui/button"
+import Link from "next/link"
+import * as React from "react"
+import { toast } from "sonner"
+import { syncProjectsFromConfigAction } from "@/app/dashboard/[owner]/[repo]/actions"
+import { Badge } from "@/components/ui/badge"
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -18,15 +22,16 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb"
-import { Badge } from "@/components/ui/badge"
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import type { FileTreeNode } from "@/lib/github"
+import { buildHistoryHref } from "@/lib/studio/history-link"
+import { ProjectSwitcher } from "./project-switcher"
+import { StatusActions } from "./status-actions"
 import { useStudio } from "./studio-context"
 import { useViewMode } from "./view-mode-context"
-import { StatusActions } from "./status-actions"
-import type { FileTreeNode } from "@/lib/github"
 
 interface StudioHeaderProps {
   selectedFile: FileTreeNode | null
@@ -50,10 +55,27 @@ export function StudioHeader({
   onSave,
   isSaving,
 }: StudioHeaderProps) {
-  const { owner, repo } = useStudio()
+  const { owner, repo, branch, projectId } = useStudio()
   const { viewMode, setViewMode, sidebarState, setSidebarState } = useViewMode()
+  const [isPending, startTransition] = React.useTransition()
 
   const [showShortcuts, setShowShortcuts] = React.useState(false)
+  const historyHref = buildHistoryHref({ owner, repo, branch, projectId })
+
+  const handleSyncConfig = () => {
+    startTransition(async () => {
+      try {
+        const res = await syncProjectsFromConfigAction(owner, repo, branch)
+        if (res.success) {
+          toast.success("Project configuration synced from repository")
+        } else {
+          toast.error(res.error || "Failed to sync configuration")
+        }
+      } catch (err: any) {
+        toast.error(err.message || "An unexpected error occurred")
+      }
+    })
+  }
 
   // Build breadcrumbs from content path only.
   let pathSegments = selectedFile ? selectedFile.path.split("/") : []
@@ -90,8 +112,8 @@ export function StudioHeader({
         <div className="min-w-0 flex-1 overflow-x-auto">
           <Breadcrumb className="text-sm min-w-max">
             <BreadcrumbList className="flex-nowrap whitespace-nowrap">
-              {pathSegments.map((seg, i) => (
-                <React.Fragment key={`${seg}-${i}`}>
+              {pathSegments.map((seg) => (
+                <React.Fragment key={`breadcrumb-${seg}`}>
                   <BreadcrumbItem>
                     <span className="text-muted-foreground">{seg}</span>
                   </BreadcrumbItem>
@@ -118,9 +140,7 @@ export function StudioHeader({
           onClick={onSave}
           disabled={!selectedFile || isSaving}
         >
-          <span className="hidden lg:inline">
-            {isSaving ? "Saving..." : "Save"}
-          </span>
+          <span className="hidden lg:inline">{isSaving ? "Saving..." : "Save"}</span>
           <span className="lg:hidden">{isSaving ? "Saving..." : "Save"}</span>
         </Button>
 
@@ -132,6 +152,8 @@ export function StudioHeader({
             {documentId && <StatusActions documentId={documentId} currentStatus={currentStatus as any} />}
           </div>
         )}
+
+        {projectId ? <ProjectSwitcher currentProjectId={projectId} owner={owner} repo={repo} branch={branch} /> : null}
 
         <ToggleGroup
           type="single"
@@ -179,8 +201,12 @@ export function StudioHeader({
               <Keyboard className="h-4 w-4 mr-2" />
               Keyboard Shortcuts
             </DropdownMenuItem>
+            <DropdownMenuItem onClick={handleSyncConfig} disabled={isPending}>
+              <RefreshCw className={`h-4 w-4 mr-2 ${isPending ? "animate-spin" : ""}`} />
+              Sync Config
+            </DropdownMenuItem>
             <DropdownMenuItem asChild>
-              <Link href={`/dashboard/${owner}/${repo}/history`}>
+              <Link href={historyHref}>
                 <History className="h-4 w-4 mr-2" />
                 History
               </Link>
