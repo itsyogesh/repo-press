@@ -1317,11 +1317,11 @@ function StudioLayoutInner({
                 <div className="h-full overflow-hidden">
                   {isSelectedDocumentLoading || (!selectedFile && shouldShowProjectDataSkeleton) ? (
                     <StudioPreviewLoading />
-                  ) : adapterLoading ? (
+                  ) : adapterLoading && !adapter ? (
                     <div className="h-full flex items-center justify-center">
                       <div className="text-sm text-studio-fg-muted">Loading preview adapter...</div>
                     </div>
-                  ) : adapterError ? (
+                  ) : adapterError && !adapter ? (
                     <div className="h-full flex items-center justify-center p-4">
                       <Alert variant="destructive">
                         <AlertCircle className="h-4 w-4" />
