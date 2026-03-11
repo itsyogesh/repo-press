@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { buildRestoreVersionMutation } from "@/convex/documentHistory-restore"
+import { buildRestoreVersionMutation } from "@/convex/documentHistory_restore"
 
 describe("buildRestoreVersionMutation", () => {
   it("snapshots current document content and patches to target history content", () => {

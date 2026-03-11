@@ -13,6 +13,7 @@ import type * as authors from "../authors.js";
 import type * as categories from "../categories.js";
 import type * as collections from "../collections.js";
 import type * as documentHistory from "../documentHistory.js";
+import type * as documentHistory_restore from "../documentHistory_restore.js";
 import type * as documents from "../documents.js";
 import type * as explorerOps from "../explorerOps.js";
 import type * as folderMeta from "../folderMeta.js";
@@ -37,6 +38,7 @@ declare const fullApi: ApiFromModules<{
   categories: typeof categories;
   collections: typeof collections;
   documentHistory: typeof documentHistory;
+  documentHistory_restore: typeof documentHistory_restore;
   documents: typeof documents;
   explorerOps: typeof explorerOps;
   folderMeta: typeof folderMeta;

@@ -38,7 +38,7 @@ describe("buildMergedContext", () => {
 
     expect(merged.scope?.greeting).toBe("adapter")
     expect(merged.allowImports?.demo?.Button).toBe("adapter-button")
-    expect(merged.resolveAssetUrl?.("hero.png")).toBe("adapter:hero.png")
+    expect(merged.resolveAssetUrl?.("hero.png", { owner: "acme", repo: "docs", branch: "main", filePath: "test.mdx" })).toBe("adapter:hero.png")
     expect(typeof merged.components?.Callout).toBe("function")
   })
 })
