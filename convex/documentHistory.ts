@@ -3,7 +3,7 @@ import { verifyProjectAccessToken } from "../lib/project-access-token"
 import type { MutationCtx } from "./_generated/server"
 import { mutation, query } from "./_generated/server"
 import { authComponent } from "./auth"
-import { buildRestoreVersionMutation } from "./documentHistory-restore"
+import { buildRestoreVersionMutation } from "./documentHistory_restore"
 
 async function resolveProjectCaller(
   ctx: MutationCtx,
