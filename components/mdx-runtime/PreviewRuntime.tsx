@@ -110,6 +110,23 @@ export function PreviewRuntime({
   const [isCompiling, setIsCompiling] = useState(false)
   const [warnings, setWarnings] = useState<string[]>([])
 
+  // Stabilize deps: use content-based keys so the compilation effect only
+  // re-fires when the actual content changes, not on referential inequality.
+  const frontmatterRef = useRef(frontmatter)
+  frontmatterRef.current = frontmatter
+  const adapterRef = useRef(adapter)
+  adapterRef.current = adapter
+
+  const frontmatterKey = useMemo(() => JSON.stringify(frontmatter ?? null), [frontmatter])
+  const adapterKey = useMemo(() => {
+    if (!adapter) return "null"
+    return JSON.stringify({
+      c: Object.keys(adapter.components || {}).sort(),
+      s: Object.keys(adapter.scope || {}).sort(),
+      i: Object.keys(adapter.allowImports || {}).sort(),
+    })
+  }, [adapter])
+
   const allWarnings = useMemo(() => {
     return Array.from(new Set([...externalDiagnostics, ...warnings])).sort()
   }, [externalDiagnostics, warnings])
@@ -129,6 +146,10 @@ export function PreviewRuntime({
   }, [isCompiling, onStatusChange])
 
   useEffect(() => {
+    // Read latest values from refs (deps use content-based keys for stability)
+    const currentAdapter = adapterRef.current
+    const currentFrontmatter = frontmatterRef.current
+
     let active = true
     const timeout = setTimeout(async () => {
       setIsCompiling(true)
@@ -147,7 +168,7 @@ export function PreviewRuntime({
           "@/components/ui/8bit/card": ["Card"],
         }
 
-        const allowImports = adapter?.allowImports || {}
+        const allowImports = currentAdapter?.allowImports || {}
         for (const [key, val] of Object.entries(allowImports)) {
           if (!allowedConfig[key]) {
             allowedConfig[key] = Object.keys(val as object)
@@ -293,8 +314,9 @@ export function PreviewRuntime({
             </div>
           ),
           DynamicImage: (props) => {
-            const fallbackImage = typeof frontmatter?.image === "string" ? frontmatter.image : undefined
-            const fallbackSlug = typeof frontmatter?.slug === "string" ? frontmatter.slug : undefined
+            const fm = currentFrontmatter
+            const fallbackImage = typeof fm?.image === "string" ? fm.image : undefined
+            const fallbackSlug = typeof fm?.slug === "string" ? fm.slug : undefined
 
             let src: string | undefined =
               props.src || props.image || props.path || props.url || props.fileName || fallbackImage
@@ -315,7 +337,7 @@ export function PreviewRuntime({
             return (
               <img
                 src={resolvedSrc}
-                alt={props.alt || (typeof frontmatter?.title === "string" ? frontmatter.title : "")}
+                alt={props.alt || (typeof fm?.title === "string" ? fm.title : "")}
                 className="my-6 rounded-xl border shadow-sm w-full h-auto object-cover"
                 loading="lazy"
               />
@@ -353,14 +375,14 @@ export function PreviewRuntime({
         // and provided via imports above (FALLBACK_DOCS_SETUP_MEDIA, etc.)
 
         const adapterComponents: Record<string, React.ComponentType<any>> = {}
-        for (const [name, component] of Object.entries(adapter?.components || {})) {
+        for (const [name, component] of Object.entries(currentAdapter?.components || {})) {
           if (isRenderableComponent(component)) {
             adapterComponents[name] = withAssetResolver(component, resolveAssetUrl)
           }
         }
 
         const scopeComponents: Record<string, unknown> = {}
-        for (const [name, value] of Object.entries(adapter?.scope || {})) {
+        for (const [name, value] of Object.entries(currentAdapter?.scope || {})) {
           if (/^[A-Z]/.test(name) && isRenderableComponent(value)) {
             scopeComponents[name] = withAssetResolver(value, resolveAssetUrl)
           } else {
@@ -370,7 +392,7 @@ export function PreviewRuntime({
 
         const importBindings: Record<string, unknown> = {}
         for (const imported of imports || []) {
-          const exportMap = adapter?.allowImports?.[imported.source]
+          const exportMap = currentAdapter?.allowImports?.[imported.source]
           if (!exportMap) continue
 
           const importedValue = exportMap[imported.imported]
@@ -531,7 +553,10 @@ export function PreviewRuntime({
       // The next effect invocation will set it back to true if needed.
       setIsCompiling(false)
     }
-  }, [source, frontmatter, adapter, resolveAssetUrl])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- frontmatterKey and adapterKey
+    // are content-based stable keys; actual values read from refs to avoid re-compilation
+    // on every referential change from parent re-renders.
+  }, [source, frontmatterKey, adapterKey, resolveAssetUrl])
 
   return (
     <>
