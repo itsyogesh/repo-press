@@ -526,6 +526,10 @@ export function PreviewRuntime({
     return () => {
       active = false
       clearTimeout(timeout)
+      // Reset compiling state on cleanup to prevent stuck "Compiling" indicator
+      // when deps change during an in-flight server action (compileMdx).
+      // The next effect invocation will set it back to true if needed.
+      setIsCompiling(false)
     }
   }, [source, frontmatter, adapter, resolveAssetUrl])
 
