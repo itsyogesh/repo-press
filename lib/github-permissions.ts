@@ -28,3 +28,25 @@ export async function getRepoRole(token: string, owner: string, repo: string): P
     throw error
   }
 }
+
+/**
+ * Lightweight fallback: probe whether the token can read repo content.
+ *
+ * `repos.get()` can return 403 for org repos when the OAuth app hasn't been
+ * granted org access, but the token may still work for content reads (e.g.
+ * public repos, or fine-grained PATs with contents:read scope).
+ *
+ * If the probe succeeds we return "viewer" as a safe lower bound — we can
+ * confirm read access but not push access from a content read alone.
+ */
+export async function probeRepoReadAccess(token: string, owner: string, repo: string): Promise<Role | null> {
+  try {
+    const octokit = createGitHubClient(token)
+    // List branches (1 result) — lightweight and available on both public and
+    // private repos where the token has contents:read.
+    await octokit.repos.listBranches({ owner, repo, per_page: 1 })
+    return "viewer"
+  } catch {
+    return null
+  }
+}

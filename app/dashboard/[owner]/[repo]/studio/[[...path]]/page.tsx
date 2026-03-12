@@ -9,7 +9,7 @@ import type { Doc, Id } from "@/convex/_generated/dataModel"
 import { fetchAuthQuery, getGitHubToken, getPatAuthUserId } from "@/lib/auth-server"
 import type { FileTreeNode } from "@/lib/github"
 import { createGitHubClient, getContentTree, getFile } from "@/lib/github"
-import { getRepoRole } from "@/lib/github-permissions"
+import { getRepoRole, probeRepoReadAccess } from "@/lib/github-permissions"
 import { mintProjectAccessToken, mintServerQueryToken } from "@/lib/project-access-token"
 import { projectMatchesRoute, selectStudioFallbackProject } from "@/lib/studio/project-route"
 
@@ -66,13 +66,14 @@ export default async function StudioPage({ params, searchParams }: StudioPagePro
     project = selectStudioFallbackProject(repoProjects, currentBranch)
   }
 
-  // Resolve role: try GitHub API, fall back to project ownership, then cache
+  // Resolve role: GitHub API → ownership → cache → content probe
   const githubRole = await getRepoRole(token, owner, repo)
   const isProjectOwner = !!(project && actingUserId && project.userId === actingUserId)
   let repoRole: Role | null = githubRole ?? (isProjectOwner ? "owner" : null)
 
-  // Cache fallback for org-repo collaborators where getRepoRole returns null
+  // Fallback chain for org-repo collaborators where getRepoRole returns null
   if (!repoRole && actingUserId) {
+    // 1. Check access cache (seeded by prior visits)
     try {
       const cached = await convex.query(api.repoAccessCache.getForUserPublic, {
         repoOwner: owner,
@@ -82,7 +83,11 @@ export default async function StudioPage({ params, searchParams }: StudioPagePro
       })
       if (cached) repoRole = cached.role as Role
     } catch {
-      // Cache lookup failed — fall through to redirect
+      // Cache lookup failed
+    }
+    // 2. Probe: can the token actually read repo content?
+    if (!repoRole) {
+      repoRole = await probeRepoReadAccess(token, owner, repo)
     }
   }
 

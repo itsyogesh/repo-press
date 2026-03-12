@@ -11,7 +11,7 @@ import { Separator } from "@/components/ui/separator"
 import { api } from "@/convex/_generated/api"
 import type { Doc } from "@/convex/_generated/dataModel"
 import { fetchAuthQuery, getGitHubToken, getPatAuthUserId } from "@/lib/auth-server"
-import { getRepoRole } from "@/lib/github-permissions"
+import { getRepoRole, probeRepoReadAccess } from "@/lib/github-permissions"
 import { mintProjectAccessToken, mintServerQueryToken } from "@/lib/project-access-token"
 
 interface SettingsPageProps {
@@ -48,7 +48,7 @@ export default async function SettingsPage({ params }: SettingsPageProps) {
       serverQueryToken,
     })
 
-    // Resolve role: try GitHub API, fall back to project ownership, then cache
+    // Resolve role: GitHub API → ownership → cache → content probe
     const githubRole = await getRepoRole(token, owner, repo)
     const isProjectOwner = actingUserId && projects.some((p) => p.userId === actingUserId)
     repoRole = githubRole ?? (isProjectOwner ? "owner" : null)
@@ -63,6 +63,9 @@ export default async function SettingsPage({ params }: SettingsPageProps) {
         if (cached) repoRole = cached.role as "owner" | "editor" | "viewer"
       } catch {
         // Cache lookup failed
+      }
+      if (!repoRole) {
+        repoRole = await probeRepoReadAccess(token, owner, repo)
       }
     }
     if (!repoRole) {

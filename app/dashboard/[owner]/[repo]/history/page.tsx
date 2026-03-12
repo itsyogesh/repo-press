@@ -3,7 +3,7 @@ import { redirect } from "next/navigation"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
 import { fetchAuthQuery, getGitHubToken, getPatAuthUserId } from "@/lib/auth-server"
-import { getRepoRole } from "@/lib/github-permissions"
+import { getRepoRole, probeRepoReadAccess } from "@/lib/github-permissions"
 import { mintProjectAccessToken, mintServerQueryToken } from "@/lib/project-access-token"
 import { HistoryClient } from "./history-client"
 
@@ -36,7 +36,7 @@ export default async function HistoryPage({ params, searchParams }: PageProps) {
     })
     const project = projects.find((entry) => entry._id === (projectId as Id<"projects">))
     if (project && (!branch || project.branch === branch)) {
-      // Resolve role: try GitHub API, fall back to project ownership, then cache
+      // Resolve role: GitHub API → ownership → cache → content probe
       const githubRole = await getRepoRole(token, owner, repo)
       let repoRole: "owner" | "editor" | "viewer" | null = githubRole ?? (project.userId === actingUserId ? "owner" : null)
       if (!repoRole) {
@@ -50,6 +50,9 @@ export default async function HistoryPage({ params, searchParams }: PageProps) {
           if (cached) repoRole = cached.role as "owner" | "editor" | "viewer"
         } catch {
           // Cache lookup failed
+        }
+        if (!repoRole) {
+          repoRole = await probeRepoReadAccess(token, owner, repo)
         }
       }
       if (!repoRole) {

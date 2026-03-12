@@ -2,7 +2,7 @@ import { ConvexHttpClient } from "convex/browser"
 import { api } from "@/convex/_generated/api"
 import type { Doc } from "@/convex/_generated/dataModel"
 import { fetchAuthQuery, getGitHubToken, getPatAuthUserId } from "@/lib/auth-server"
-import { getRepoRole } from "@/lib/github-permissions"
+import { getRepoRole, probeRepoReadAccess } from "@/lib/github-permissions"
 import { mintProjectAccessToken, mintServerQueryToken } from "@/lib/project-access-token"
 
 type Role = "owner" | "editor" | "viewer"
@@ -49,10 +49,9 @@ export async function resolveRouteAuth(
   const isProjectOwner = project.userId === actingUserId
   let role: Role | null = githubRole ?? (isProjectOwner ? "owner" : null)
 
-  // If getRepoRole returned null (e.g. OAuth app lacks org access) and user is
-  // not the project owner, check the access cache. The studio page seeds the
-  // cache on load, so valid collaborators will have a cached role.
+  // Fallback chain when getRepoRole returns null (e.g. OAuth app lacks org access)
   if (!role) {
+    // 1. Check the access cache (seeded by prior studio page visits)
     try {
       const sqt = await mintServerQueryToken()
       const cached = await convex.query(api.repoAccessCache.getForUserPublic, {
@@ -65,7 +64,11 @@ export async function resolveRouteAuth(
         role = cached.role as Role
       }
     } catch {
-      // Cache lookup failed — fall through to forbidden
+      // Cache lookup failed
+    }
+    // 2. Probe: can the token actually read repo content?
+    if (!role) {
+      role = await probeRepoReadAccess(githubToken, project.repoOwner, project.repoName)
     }
   }
 
