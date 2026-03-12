@@ -10,14 +10,8 @@ import type { RepoComponentDef } from "@/lib/studio/component-registry"
 import { ComponentInsertModal } from "./component-insert-modal"
 import { useStudioAdapter } from "./studio-adapter-context"
 
-/** Feature flag: set NEXT_PUBLIC_COMPONENT_AUTHORING_V2=true to enable. */
-const COMPONENT_AUTHORING_V2 = process.env.NEXT_PUBLIC_COMPONENT_AUTHORING_V2 === "true"
-
 /**
  * Toolbar button that opens the component insert modal.
- *
- * Gated behind `NEXT_PUBLIC_COMPONENT_AUTHORING_V2` feature flag.
- * When the flag is off, the button is hidden entirely (safe rollback).
  *
  * In source mode, shows a message asking the user to switch to rich-text
  * mode (source-cursor insertion is deferred per plan).
@@ -76,9 +70,6 @@ export function InsertRepoComponent({
     },
     [insertJsx],
   )
-
-  // Feature flag gate: hide entirely when flag is off (safe rollback)
-  if (!COMPONENT_AUTHORING_V2) return null
 
   if (!hasComponents) return null
 
