@@ -43,17 +43,10 @@ export default async function StudioPage({ params, searchParams }: StudioPagePro
   const patUserId = !authUser ? await getPatAuthUserId(token) : null
   const actingUserId = (authUser?._id as string | undefined) ?? patUserId
 
-  // Check GitHub permissions on the repo
-  const repoRole = await getRepoRole(token, owner, repo)
-  if (!repoRole) {
-    redirect("/dashboard")
-  }
-
   const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
   const serverQueryToken = await mintServerQueryToken()
 
-  // Look up the project: prefer explicit projectId, fall back to repo+branch lookup.
-  // Uses serverQueryToken for all paths (server already verified repoRole above).
+  // Look up the project first (needed for ownership fallback)
   let project: Doc<"projects"> | null = null
   if (projectIdParam) {
     const requestedProject = await convex.query(api.projects.get, {
@@ -65,13 +58,20 @@ export default async function StudioPage({ params, searchParams }: StudioPagePro
     }
   }
   if (!project) {
-    // Repo-scoped lookup: returns ALL projects for this repo (OAuth + PAT alike)
     const repoProjects = await convex.query(api.projects.listProjectsForRepo, {
       repoOwner: owner,
       repoName: repo,
       serverQueryToken,
     })
     project = selectStudioFallbackProject(repoProjects, currentBranch)
+  }
+
+  // Resolve role: try GitHub API, fall back to project ownership
+  const githubRole = await getRepoRole(token, owner, repo)
+  const isProjectOwner = !!(project && actingUserId && project.userId === actingUserId)
+  const repoRole: Role = githubRole ?? (isProjectOwner ? "owner" : null!)
+  if (!repoRole) {
+    redirect("/dashboard")
   }
 
   // Always mint projectAccessToken with role (fixes OAuth bug)

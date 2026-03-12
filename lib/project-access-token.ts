@@ -44,40 +44,23 @@ async function signValue(value: string) {
 }
 
 /**
- * Timing-safe HMAC verification using the double-HMAC pattern.
+ * Constant-time HMAC verification.
  *
- * We re-sign both the expected and provided HMACs with a fresh random key,
- * then compare the results. Even if `===` on the final hex strings leaks
- * timing information, an attacker cannot exploit it because the HMAC output
- * changes completely with each verification (different random key every time).
+ * Recomputes the expected HMAC and compares it against the provided signature
+ * using XOR-based constant-time comparison. This is safe because we're
+ * comparing two hex-encoded HMAC outputs — even a timing leak would only
+ * reveal the HMAC, not the secret key needed to forge tokens.
  *
- * This avoids node:crypto (unavailable in Convex's default V8 runtime) and
- * doesn't rely on crypto.subtle.verify() being constant-time (the W3C spec
- * doesn't explicitly mandate it, though implementations typically are).
- *
- * Reference: https://paragonie.com/blog/2015/11/preventing-timing-attacks-on-string-comparison-with-double-hmac-strategy
+ * Avoids crypto.subtle.generateKey() (requires randomness, forbidden in
+ * Convex queries) and node:crypto (unavailable in Convex's V8 runtime).
  */
 async function verifyValue(value: string, signatureHex: string) {
   const expected = await signValue(value)
   if (expected.length !== signatureHex.length) return false
 
-  // Re-HMAC both values with a random ephemeral key
-  const ephemeralKey = await crypto.subtle.generateKey(
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  )
-  const [a, b] = await Promise.all([
-    crypto.subtle.sign("HMAC", ephemeralKey, encoder.encode(expected)),
-    crypto.subtle.sign("HMAC", ephemeralKey, encoder.encode(signatureHex)),
-  ])
-
-  // Compare the re-HMACed bytes — timing leaks here are unexploitable
-  const viewA = new Uint8Array(a)
-  const viewB = new Uint8Array(b)
   let diff = 0
-  for (let i = 0; i < viewA.length; i++) {
-    diff |= viewA[i] ^ viewB[i]
+  for (let i = 0; i < expected.length; i++) {
+    diff |= expected.charCodeAt(i) ^ signatureHex.charCodeAt(i)
   }
   return diff === 0
 }
