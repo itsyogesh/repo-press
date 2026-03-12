@@ -51,6 +51,7 @@ export interface StudioLayoutProps {
   projectId?: string
   projectAccessToken?: string
   contentRoot?: string
+  role?: "owner" | "editor" | "viewer"
 }
 
 const STATUS_LABELS: Record<
@@ -1398,7 +1399,7 @@ function StudioLayoutInner({
 }
 
 function StudioProviderWrapper(props: StudioLayoutProps) {
-  const { owner, repo, branch, projectId, projectAccessToken, contentRoot = "", tree, initialFile, currentPath } = props
+  const { owner, repo, branch, projectId, projectAccessToken, contentRoot = "", tree, initialFile, currentPath, role = "owner" } = props
 
   // 1. File state hook
   const studioFile = useStudioFile(initialFile, currentPath)
@@ -1445,6 +1446,7 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
       selectedFilePath: selectedFile?.path,
       contentRoot,
       tree,
+      role,
       adapter: previewContext.context,
       adapterLoading: previewContext.loading,
       adapterError: previewContext.error,
@@ -1461,6 +1463,7 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
       selectedFile?.path,
       contentRoot,
       tree,
+      role,
       previewContext,
       componentSchema,
     ],
@@ -1476,7 +1479,7 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
 }
 
 export function StudioLayout(props: StudioLayoutProps) {
-  const { owner, repo, branch, projectId, projectAccessToken, contentRoot = "", tree } = props
+  const { owner, repo, branch, projectId, projectAccessToken, contentRoot = "", tree, role = "owner" } = props
 
   const baseContextValue = React.useMemo(
     () => ({
@@ -1489,13 +1492,14 @@ export function StudioLayout(props: StudioLayoutProps) {
       selectedFilePath: undefined,
       contentRoot,
       tree,
+      role,
       adapter: null,
       adapterLoading: false,
       adapterError: null,
       adapterDiagnostics: [],
       components: undefined,
     }),
-    [owner, repo, branch, projectId, projectAccessToken, contentRoot, tree],
+    [owner, repo, branch, projectId, projectAccessToken, contentRoot, tree, role],
   )
 
   return (

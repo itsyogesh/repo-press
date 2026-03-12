@@ -15,10 +15,9 @@ interface ProjectSwitcherProps {
 
 export function ProjectSwitcher({ currentProjectId, owner, repo, branch }: ProjectSwitcherProps) {
   const router = useRouter()
-  const user = useQuery(api.auth.getCurrentUser)
-  const userId = user?._id as string | undefined
 
-  const projects = useQuery(api.projects.getByRepo, userId ? { userId, repoOwner: owner, repoName: repo } : "skip")
+  // Repo-scoped: returns all projects for this repo the user can access (own + shared)
+  const projects = useQuery(api.projects.listProjectsForRepo, { repoOwner: owner, repoName: repo })
 
   // Don't render if there are no sibling projects (or still loading)
   if (!projects || projects.length <= 1) return null

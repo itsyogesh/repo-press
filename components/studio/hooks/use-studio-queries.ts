@@ -120,37 +120,51 @@ function getTitleSyncSnapshot(key: string | null): TitleSyncSnapshot {
 }
 
 export function useStudioQueries(selectedFilePath?: string) {
-  const { projectId, tree, contentRoot, owner, repo, branch } = useStudio()
+  const { projectId, tree, contentRoot, owner, repo, branch, projectAccessToken } = useStudio()
 
   const user = useQuery(api.auth.getCurrentUser)
   const authUserId = user?._id as string | undefined
 
-  const project = useQuery(api.projects.get, projectId ? { id: projectId as Id<"projects"> } : "skip")
-  const userId = authUserId ?? (project?.userId as string | undefined) ?? undefined
+  // P2 fix: Use the authenticated user's ID, not the project owner's.
+  // For collaborators, authUserId differs from project.userId.
+  const userId = authUserId ?? undefined
+
+  // Auth args for query-level access checks
+  const queryAuth = React.useMemo(
+    () => ({
+      userId: userId || undefined,
+      projectAccessToken: projectAccessToken || undefined,
+    }),
+    [userId, projectAccessToken],
+  )
+
+  const project = useQuery(api.projects.get, projectId ? { id: projectId as Id<"projects">, ...queryAuth } : "skip")
 
   const document = useQuery(
     api.documents.getByFilePath,
-    projectId && selectedFilePath ? { projectId: projectId as Id<"projects">, filePath: selectedFilePath } : "skip",
+    projectId && selectedFilePath
+      ? { projectId: projectId as Id<"projects">, filePath: selectedFilePath, ...queryAuth }
+      : "skip",
   )
 
   const titleEntries = useQuery(
     api.documents.listTitlesForProject,
-    projectId ? { projectId: projectId as Id<"projects"> } : "skip",
+    projectId ? { projectId: projectId as Id<"projects">, ...queryAuth } : "skip",
   )
 
   const pendingOps = useQuery(
     api.explorerOps.listPending,
-    projectId ? { projectId: projectId as Id<"projects"> } : "skip",
+    projectId ? { projectId: projectId as Id<"projects">, ...queryAuth } : "skip",
   )
 
   const activeBranch = useQuery(
     api.publishBranches.getActiveForProject,
-    projectId ? { projectId: projectId as Id<"projects"> } : "skip",
+    projectId ? { projectId: projectId as Id<"projects">, ...queryAuth } : "skip",
   )
 
   const dirtyDocs = useQuery(
     api.documents.listDirtyForProject,
-    projectId ? { projectId: projectId as Id<"projects"> } : "skip",
+    projectId ? { projectId: projectId as Id<"projects">, ...queryAuth } : "skip",
   )
 
   const treeFiles = React.useMemo(() => collectTreeFiles(tree), [tree])

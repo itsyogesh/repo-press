@@ -5,7 +5,7 @@ import { api } from "@/convex/_generated/api"
 import { ProjectCard } from "./project-card"
 
 export function ProjectList() {
-  const projects = useQuery(api.projects.listMyProjects)
+  const projects = useQuery(api.projects.listAccessibleProjects)
 
   if (projects === undefined) {
     return null

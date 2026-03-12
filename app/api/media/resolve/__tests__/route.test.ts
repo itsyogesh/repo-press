@@ -24,11 +24,16 @@ vi.mock("@/lib/github", async () => {
   }
 })
 
+vi.mock("@/lib/github-permissions", () => ({
+  getRepoRole: vi.fn(),
+}))
+
 process.env.NEXT_PUBLIC_CONVEX_URL = process.env.NEXT_PUBLIC_CONVEX_URL || "https://example.convex.cloud"
 process.env.BLOB_READ_WRITE_TOKEN = process.env.BLOB_READ_WRITE_TOKEN || "blob-secret-token"
 
 import { fetchAuthQuery, getGitHubToken, getPatAuthUserId } from "@/lib/auth-server"
 import { createGitHubClient } from "@/lib/github"
+import { getRepoRole } from "@/lib/github-permissions"
 import { GET } from "../route"
 
 const projectRecord = {
@@ -53,9 +58,18 @@ describe("GET /api/media/resolve", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     convexQueryMock.mockReset()
+    process.env.BETTER_AUTH_SECRET = "test-secret"
     vi.mocked(getGitHubToken).mockResolvedValue("gh-token")
     vi.mocked(fetchAuthQuery!).mockResolvedValue({ _id: "user_1" })
     vi.mocked(getPatAuthUserId).mockResolvedValue("user_1")
+    vi.mocked(getRepoRole).mockResolvedValue("owner")
+    vi.mocked(createGitHubClient).mockReturnValue({
+      repos: { getContent: vi.fn() },
+      users: {
+        getAuthenticated: vi.fn().mockResolvedValue({ data: { login: "user_1" } }),
+      },
+      git: { getBlob: vi.fn() },
+    } as any)
   })
 
   afterEach(() => {
@@ -64,22 +78,24 @@ describe("GET /api/media/resolve", () => {
 
   it("rejects unauthorized requests", async () => {
     vi.mocked(getGitHubToken).mockResolvedValue(null)
+    convexQueryMock.mockResolvedValueOnce(projectRecord)
 
     const response = await GET(requestFor("/public/images/hero.png"))
 
     expect(response.status).toBe(401)
   })
 
-  it("rejects PAT-mode media access when the PAT does not resolve to the project owner", async () => {
+  it("rejects PAT-mode media access when the PAT user has no repo access", async () => {
     vi.mocked(fetchAuthQuery!).mockResolvedValue(null as never)
     vi.mocked(getPatAuthUserId).mockResolvedValue("different_user")
+    vi.mocked(getRepoRole).mockResolvedValue(null)
     convexQueryMock.mockResolvedValueOnce(projectRecord)
 
     const response = await GET(requestFor("/public/images/hero.png"))
     const payload = await response.json()
 
     expect(response.status).toBe(403)
-    expect(payload.error).toBe("Forbidden")
+    expect(payload.error).toContain("no access")
   })
 
   it("allows PAT-mode media access when the PAT resolves to the project owner", async () => {

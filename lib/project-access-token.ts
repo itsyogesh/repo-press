@@ -1,11 +1,14 @@
 const encoder = new TextEncoder()
 
+type Role = "owner" | "editor" | "viewer"
+
 type ProjectAccessTokenPayload = {
   projectId: string
   userId: string
   repoOwner: string
   repoName: string
   branch: string
+  role?: Role // Added for collaborative access; defaults to "owner" for backward compat
   exp: number
 }
 
@@ -111,7 +114,51 @@ export async function verifyProjectAccessToken(token: string | undefined | null)
     return null
   }
 
-  return payload
+  // Backward compat: old tokens without role default to "owner"
+  return { ...payload, role: payload.role ?? ("owner" as Role) }
+}
+
+/**
+ * Lightweight server-to-Convex query token. Proves the caller is the Next.js
+ * server (has access to BETTER_AUTH_SECRET) without requiring a project or user.
+ * Used by route handlers and server components that need to read project data
+ * before minting a full projectAccessToken.
+ */
+type ServerQueryTokenPayload = {
+  type: "server-query"
+  ts: number
+}
+
+const SERVER_QUERY_TOKEN_TTL_MS = 60_000 // 60 seconds
+
+export async function mintServerQueryToken() {
+  const payload: ServerQueryTokenPayload = {
+    type: "server-query",
+    ts: Date.now(),
+  }
+  const serialized = JSON.stringify(payload)
+  const signature = await signValue(serialized)
+  return `${encodeURIComponent(serialized)}.${signature}`
+}
+
+export async function verifyServerQueryToken(token: string | undefined | null): Promise<boolean> {
+  if (!token) return false
+
+  const separatorIndex = token.lastIndexOf(".")
+  if (separatorIndex <= 0) return false
+
+  const serialized = decodeURIComponent(token.slice(0, separatorIndex))
+  const signature = token.slice(separatorIndex + 1)
+  if (!(await verifyValue(serialized, signature))) return false
+
+  let payload: ServerQueryTokenPayload
+  try {
+    payload = JSON.parse(serialized)
+  } catch {
+    return false
+  }
+
+  return payload.type === "server-query" && Date.now() - payload.ts < SERVER_QUERY_TOKEN_TTL_MS
 }
 
 export async function mintGitHubAccountLookupToken(githubAccountId: string, ttlSeconds = 60) {

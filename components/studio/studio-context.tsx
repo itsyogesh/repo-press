@@ -14,6 +14,7 @@ interface StudioContextValue {
   selectedFilePath?: string
   contentRoot: string
   tree: FileTreeNode[]
+  role: "owner" | "editor" | "viewer"
   // Dynamic Adapter state
   adapter: RepoPressPreviewAdapter | null
   adapterLoading: boolean

@@ -1,3 +1,4 @@
+import { ConvexHttpClient } from "convex/browser"
 import { ChevronLeft, Settings } from "lucide-react"
 import Link from "next/link"
 import { redirect } from "next/navigation"
@@ -9,7 +10,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Separator } from "@/components/ui/separator"
 import { api } from "@/convex/_generated/api"
 import type { Doc } from "@/convex/_generated/dataModel"
-import { fetchAuthQuery, getGitHubToken } from "@/lib/auth-server"
+import { fetchAuthQuery, getGitHubToken, getPatAuthUserId } from "@/lib/auth-server"
+import { getRepoRole } from "@/lib/github-permissions"
+import { mintProjectAccessToken, mintServerQueryToken } from "@/lib/project-access-token"
 
 interface SettingsPageProps {
   params: Promise<{
@@ -27,22 +30,45 @@ export default async function SettingsPage({ params }: SettingsPageProps) {
 
   const { owner, repo } = await params
 
+  // Verify GitHub permissions
+  const repoRole = await getRepoRole(token, owner, repo)
+  if (!repoRole) {
+    redirect("/dashboard")
+  }
+
+  const authUser = fetchAuthQuery ? await fetchAuthQuery(api.auth.getCurrentUser).catch(() => null) : null
+  const patUserId = !authUser ? await getPatAuthUserId(token) : null
+  const actingUserId = (authUser?._id as string | undefined) ?? patUserId
+
   let projects: Doc<"projects">[] = []
   let settingsLoadError: string | null = null
+  const projectTokens: Record<string, string> = {}
 
-  if (!fetchAuthQuery) {
-    settingsLoadError =
-      "Settings requires Better Auth server helpers. PAT-only mode can still edit and publish in Studio, but project settings are unavailable in this deployment."
-  } else {
-    try {
-      projects = await fetchAuthQuery(api.projects.listMyProjectsForRepo, {
-        repoOwner: owner,
-        repoName: repo,
-      })
-    } catch (error) {
-      console.error("Failed to load repository settings projects:", error)
-      settingsLoadError = "Failed to load project settings. Please refresh or re-authenticate and try again."
+  try {
+    const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
+    const serverQueryToken = await mintServerQueryToken()
+    projects = await convex.query(api.projects.listProjectsForRepo, {
+      repoOwner: owner,
+      repoName: repo,
+      serverQueryToken,
+    })
+
+    // Mint projectAccessToken for each project (needed for deletion)
+    if (actingUserId) {
+      for (const p of projects) {
+        projectTokens[p._id] = await mintProjectAccessToken({
+          projectId: p._id,
+          userId: actingUserId,
+          repoOwner: p.repoOwner,
+          repoName: p.repoName,
+          branch: p.branch,
+          role: repoRole,
+        })
+      }
     }
+  } catch (error) {
+    console.error("Failed to load repository settings projects:", error)
+    settingsLoadError = "Failed to load project settings. Please refresh or re-authenticate and try again."
   }
 
   return (
@@ -124,9 +150,14 @@ export default async function SettingsPage({ params }: SettingsPageProps) {
 
                   <Separator className="bg-studio-border/50" />
 
-                  <div className="pt-2">
-                    <DeleteProjectZone project={project} />
-                  </div>
+                  {repoRole === "owner" && (
+                    <div className="pt-2">
+                      <DeleteProjectZone
+                        project={project}
+                        projectAccessToken={projectTokens[project._id]}
+                      />
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             ))

@@ -58,6 +58,7 @@ export default defineSchema({
   // ─── Core Project Layer ────────────────────────────────────
   projects: defineTable({
     userId: v.string(), // Auth component user ID (not app's "users" table)
+    createdBy: v.optional(v.string()), // Convex user ID of original creator (audit trail)
     name: v.string(),
     description: v.optional(v.string()),
     repoOwner: v.string(),
@@ -270,6 +271,21 @@ export default defineSchema({
   })
     .index("by_projectId", ["projectId"])
     .index("by_projectId_isActive", ["projectId", "isActive"]),
+
+  // ─── Repo Access Cache (collaborative access) ──────────────────
+  repoAccessCache: defineTable({
+    repoOwner: v.string(),
+    repoName: v.string(),
+    userId: v.string(), // Convex auth user ID
+    githubUsername: v.string(),
+    role: v.union(v.literal("owner"), v.literal("editor"), v.literal("viewer")),
+    checkedAt: v.number(),
+    expiresAt: v.number(), // TTL: 15 minutes from checkedAt
+  })
+    .index("by_repo_userId", ["repoOwner", "repoName", "userId"])
+    .index("by_repo", ["repoOwner", "repoName"])
+    .index("by_userId", ["userId"])
+    .index("by_expiresAt", ["expiresAt"]),
 
   // ─── Explorer Ops (staged file create/delete for PR-based publish) ─
   explorerOps: defineTable({

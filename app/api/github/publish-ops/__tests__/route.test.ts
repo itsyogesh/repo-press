@@ -26,10 +26,15 @@ vi.mock("@/lib/github", () => ({
   getFile: vi.fn(),
 }))
 
+vi.mock("@/lib/github-permissions", () => ({
+  getRepoRole: vi.fn(),
+}))
+
 process.env.NEXT_PUBLIC_CONVEX_URL = process.env.NEXT_PUBLIC_CONVEX_URL || "https://example.convex.cloud"
 
 import { fetchAuthQuery, getGitHubToken, getPatAuthUserId } from "@/lib/auth-server"
 import { batchCommit, createGitHubClient, getFile } from "@/lib/github"
+import { getRepoRole } from "@/lib/github-permissions"
 import { POST } from "../route"
 
 function buildRequest(body: Record<string, unknown>) {
@@ -49,9 +54,13 @@ describe("POST /api/github/publish-ops", () => {
     vi.mocked(getGitHubToken).mockResolvedValue("gh-token")
     vi.mocked(fetchAuthQuery!).mockResolvedValue({ _id: "user_owner" } as never)
     vi.mocked(getPatAuthUserId).mockResolvedValue("user_owner")
+    vi.mocked(getRepoRole).mockResolvedValue("owner")
     vi.mocked(createGitHubClient).mockReturnValue({
       repos: {
         get: vi.fn().mockResolvedValue({}),
+      },
+      users: {
+        getAuthenticated: vi.fn().mockResolvedValue({ data: { login: "user_owner" } }),
       },
     } as never)
     vi.mocked(batchCommit).mockResolvedValue({ commitSha: "commit-sha-1" } as never)
@@ -104,8 +113,9 @@ describe("POST /api/github/publish-ops", () => {
     expect(batchCommit).toHaveBeenCalled()
   })
 
-  it("rejects publishing when the authenticated user does not own the project", async () => {
+  it("rejects publishing when the authenticated user has no repo access", async () => {
     vi.mocked(fetchAuthQuery!).mockResolvedValue({ _id: "different_user" } as never)
+    vi.mocked(getRepoRole).mockResolvedValue(null)
     convexQueryMock.mockReset()
     convexQueryMock.mockResolvedValue({
       _id: "project_123",
@@ -125,13 +135,14 @@ describe("POST /api/github/publish-ops", () => {
     const payload = await response.json()
 
     expect(response.status).toBe(403)
-    expect(payload.error).toBe("Unauthorized")
+    expect(payload.error).toContain("no access")
     expect(batchCommit).not.toHaveBeenCalled()
   })
 
-  it("rejects PAT-mode publishing when the PAT does not resolve to the project owner", async () => {
+  it("rejects PAT-mode publishing when the PAT user has no repo access", async () => {
     vi.mocked(fetchAuthQuery!).mockResolvedValue(null as never)
     vi.mocked(getPatAuthUserId).mockResolvedValue("different_user")
+    vi.mocked(getRepoRole).mockResolvedValue(null)
 
     const response = await POST(
       buildRequest({
@@ -142,7 +153,7 @@ describe("POST /api/github/publish-ops", () => {
     const payload = await response.json()
 
     expect(response.status).toBe(403)
-    expect(payload.error).toBe("Unauthorized")
+    expect(payload.error).toContain("no access")
     expect(batchCommit).not.toHaveBeenCalled()
   })
 
