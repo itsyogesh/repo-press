@@ -1,5 +1,5 @@
 import { v } from "convex/values"
-import { verifyServerQueryToken } from "../lib/project-access-token"
+import { verifyProjectAccessToken, verifyServerQueryToken } from "../lib/project-access-token"
 import { internal } from "./_generated/api"
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server"
 import { authComponent } from "./auth"
@@ -194,6 +194,7 @@ export const listProjectsForRepo = query({
     repoOwner: v.string(),
     repoName: v.string(),
     serverQueryToken: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const allProjects = await ctx.db
@@ -208,7 +209,15 @@ export const listProjectsForRepo = query({
       return allProjects
     }
 
-    // 2. OAuth session (client-side)
+    // 2. Project access token (PAT users — token proves they passed the studio page gate)
+    if (args.projectAccessToken) {
+      const payload = await verifyProjectAccessToken(args.projectAccessToken)
+      if (payload && payload.repoOwner === args.repoOwner && payload.repoName === args.repoName) {
+        return allProjects
+      }
+    }
+
+    // 3. OAuth session (client-side)
     const authUser = await authComponent.safeGetAuthUser(ctx)
     if (!authUser) return []
 

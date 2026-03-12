@@ -48,10 +48,23 @@ export default async function SettingsPage({ params }: SettingsPageProps) {
       serverQueryToken,
     })
 
-    // Resolve role: try GitHub API, fall back to project ownership
+    // Resolve role: try GitHub API, fall back to project ownership, then cache
     const githubRole = await getRepoRole(token, owner, repo)
     const isProjectOwner = actingUserId && projects.some((p) => p.userId === actingUserId)
     repoRole = githubRole ?? (isProjectOwner ? "owner" : null)
+    if (!repoRole && actingUserId) {
+      try {
+        const cached = await convex.query(api.repoAccessCache.getForUserPublic, {
+          repoOwner: owner,
+          repoName: repo,
+          userId: actingUserId,
+          serverQueryToken,
+        })
+        if (cached) repoRole = cached.role as "owner" | "editor" | "viewer"
+      } catch {
+        // Cache lookup failed
+      }
+    }
     if (!repoRole) {
       redirect("/dashboard")
     }
