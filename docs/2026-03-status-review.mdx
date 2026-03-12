@@ -1,0 +1,67 @@
+---
+title: "RepoPress Status Review & End-to-End Readiness"
+description: "A comprehensive review of the current implementation status, missing features, and readiness for end-to-end testing of the MDX creation and PR publishing flow."
+date: "2026-03-03"
+draft: false
+---
+
+# RepoPress Implementation Status & E2E Readiness
+
+After a thorough review of the architectural plans and progress documentation (`@docs/`, `@ARCHITECTURE-STUDIO-V2.md`, `@STUDIO-REDESIGN-FINAL-PLAN.md`), here is the consolidated status of the RepoPress project.
+
+## What is Done (Implemented & Validated)
+
+The core architecture for RepoPress is overwhelmingly complete and functional:
+
+1. **Studio V2 Core UI**:
+   - Layout refactor, Explorer operations, and the **PR publish bar** are fully functional.
+   - Command palette, responsive states, and view modes (Editor/Split) are shipped.
+2. **MDX Runtime & Component Authoring (Phase 2)**:
+   - Full two-way component authoring is shipped (Registry → Catalog → Node → Serializer).
+   - Blob-primary media upload with GitHub fallback is integrated.
+   - The new MDX Runtime Preview replacement is complete.
+3. **Data & Versioning**:
+   - Project deletion flows are designed and implemented.
+   - The History revamp (DiffViewer, pagination, restore) is complete.
+4. **Publish Flow**:
+   - PR-based publish orchestration exists in `app/api/github/publish-ops/route.ts`.
+   - The status state machine (Draft → Review → Approved → Published) is active and enforced.
+5. **Runtime Hardening (Tasks 1-2)**:
+   - Persistent adapter cache via IndexedDB is done.
+   - GitHub API rate limiting and debounce controls are successfully implemented.
+
+## What is Missing (In Progress or Planned)
+
+The remaining work is largely focused on hardening, edge-case security, and automation:
+
+1. **MDX Runtime Hardening (Tasks 3-6)** *(In Progress)*:
+   - **Task 3: Private Asset URL Signing:** Needed for resolving images securely in private repos without breaking the preview.
+   - **Task 4: Expression Sandbox:** Securing evaluated MDX props from arbitrary code execution.
+   - **Task 5: Compile Cache:** Optimizing preview rendering performance.
+   - **Task 6: Plugin Merge Determinism:** Standardizing how adapter plugins merge with standard components.
+2. **Automation Backbone & Daily Flow** *(Planned)*:
+   - Extracting a shared `publish-service.ts` to allow background operations.
+   - Background GitHub credential resolution (decoupled from browser session).
+   - Scheduled publisher jobs via Convex Cron.
+   - **Daily Draft Seeder:** Automatically creating new draft documents based on templates/schedules.
+
+## How far are we to test End-to-End?
+
+**(Update/Create .mdx file → Save Draft → Publish via PR)**
+
+We are **ready to test the core E2E flow right now.** 
+
+The fundamental orchestration for creating a file, saving it as a draft to Convex, and pushing the final commit to a GitHub Pull Request is marked as functional. 
+
+**Exceptions / Blockers for E2E:**
+- The flow will work perfectly for standard text and public media.
+- If testing on a **private repository**, media asset previews might fail until Hardening Task 3 (Private Asset URL Signing) is completed.
+- Full automation (daily draft generation) cannot be tested yet as the Automation Backbone is only in the planning stage.
+
+## Next Steps: Automation (Daily New Blog)
+
+Once the manual E2E flow is validated through testing, the immediate next milestone is to execute the **Automation Backbone Plan**. 
+
+1. **Service Extraction**: Abstract the current publish API route into a session-less service.
+2. **Credentials**: Implement the background identity resolver (App Token or Bot Token).
+3. **Cron Job**: Set up the Convex cron to trigger the Daily Draft Seeder, which will automatically instantiate a new `.mdx` file every day, paving the way for a fully automated daily blog pipeline.
