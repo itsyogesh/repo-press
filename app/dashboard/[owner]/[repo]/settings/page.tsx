@@ -30,12 +30,6 @@ export default async function SettingsPage({ params }: SettingsPageProps) {
 
   const { owner, repo } = await params
 
-  // Verify GitHub permissions
-  const repoRole = await getRepoRole(token, owner, repo)
-  if (!repoRole) {
-    redirect("/dashboard")
-  }
-
   const authUser = fetchAuthQuery ? await fetchAuthQuery(api.auth.getCurrentUser).catch(() => null) : null
   const patUserId = !authUser ? await getPatAuthUserId(token) : null
   const actingUserId = (authUser?._id as string | undefined) ?? patUserId
@@ -43,6 +37,7 @@ export default async function SettingsPage({ params }: SettingsPageProps) {
   let projects: Doc<"projects">[] = []
   let settingsLoadError: string | null = null
   const projectTokens: Record<string, string> = {}
+  let repoRole: "owner" | "editor" | "viewer" | null = null
 
   try {
     const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
@@ -52,6 +47,14 @@ export default async function SettingsPage({ params }: SettingsPageProps) {
       repoName: repo,
       serverQueryToken,
     })
+
+    // Resolve role: try GitHub API, fall back to project ownership
+    const githubRole = await getRepoRole(token, owner, repo)
+    const isProjectOwner = actingUserId && projects.some((p) => p.userId === actingUserId)
+    repoRole = githubRole ?? (isProjectOwner ? "owner" : null)
+    if (!repoRole) {
+      redirect("/dashboard")
+    }
 
     // Mint projectAccessToken for each project (needed for deletion)
     if (actingUserId) {

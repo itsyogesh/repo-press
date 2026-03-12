@@ -44,8 +44,10 @@ export async function resolveRouteAuth(
     throw new RouteAuthError("Unauthorized", 401)
   }
 
-  // 2. Check GitHub permissions
-  const role = await getRepoRole(githubToken, project.repoOwner, project.repoName)
+  // 2. Check GitHub permissions, fall back to project ownership
+  const githubRole = await getRepoRole(githubToken, project.repoOwner, project.repoName)
+  const isProjectOwner = project.userId === actingUserId
+  const role: Role | null = githubRole ?? (isProjectOwner ? "owner" : null)
   if (!role) {
     throw new RouteAuthError("Forbidden: no access to repository", 403)
   }

@@ -23,12 +23,6 @@ export default async function HistoryPage({ params, searchParams }: PageProps) {
   const patUserId = !authUser ? await getPatAuthUserId(token) : null
   const actingUserId = (authUser?._id as string | undefined) ?? patUserId
 
-  // Check GitHub permissions
-  const repoRole = await getRepoRole(token, owner, repo)
-  if (!repoRole) {
-    redirect("/dashboard")
-  }
-
   let validatedProjectId: string | undefined
   let projectAccessToken: string | undefined
   if (projectId && actingUserId) {
@@ -42,6 +36,12 @@ export default async function HistoryPage({ params, searchParams }: PageProps) {
     })
     const project = projects.find((entry) => entry._id === (projectId as Id<"projects">))
     if (project && (!branch || project.branch === branch)) {
+      // Resolve role: try GitHub API, fall back to project ownership
+      const githubRole = await getRepoRole(token, owner, repo)
+      const repoRole = githubRole ?? (project.userId === actingUserId ? "owner" as const : null)
+      if (!repoRole) {
+        redirect("/dashboard")
+      }
       validatedProjectId = projectId
       projectAccessToken = await mintProjectAccessToken({
         projectId: project._id,
