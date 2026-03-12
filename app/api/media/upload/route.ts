@@ -3,9 +3,9 @@ import { ConvexHttpClient } from "convex/browser"
 import { NextResponse } from "next/server"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
-import { fetchAuthQuery, getGitHubToken, getPatAuthUserId } from "@/lib/auth-server"
 import { createGitHubClient } from "@/lib/github"
-import { mintProjectAccessToken } from "@/lib/project-access-token"
+import { mintServerQueryToken } from "@/lib/project-access-token"
+import { RouteAuthError, getContentType as sharedGetContentType, resolveRouteAuth } from "@/lib/route-auth"
 import { buildMediaResolveUrl, normalizeRepoMediaPath } from "@/lib/studio/media-resolve"
 
 export const runtime = "nodejs"
@@ -49,11 +49,6 @@ interface GitHubUploadResult {
 }
 
 export async function POST(request: Request) {
-  const token = await getGitHubToken()
-  if (!token) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  }
-
   try {
     const body = (await request.json()) as UploadRequest
     const { projectId, owner, repo, branch, pathHint, fileName, contentBase64, storagePreference = "auto" } = body
@@ -67,34 +62,21 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Upload exceeds maximum file size of 50MB" }, { status: 413 })
     }
 
-    // Fix #1: Resolve userId server-side only, never from client input
-    const oauthUserId = await resolveActingUserId()
-    const patUserId = !oauthUserId ? await getPatAuthUserId(token) : null
-
     const project = await resolveProject({ projectId, owner, repo, branch })
     if (!project) {
       return NextResponse.json({ error: "Project not found. Pass a valid projectId for uploads." }, { status: 404 })
     }
 
-    // Fix #1: Verify access server-side (OAuth checks userId, PAT checks repo access)
-    const actingUserId = oauthUserId ?? patUserId
-    const hasAccess = await verifyProjectAccess(project, actingUserId)
-    if (!hasAccess) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
+    let auth: Awaited<ReturnType<typeof resolveRouteAuth>>
+    try {
+      auth = await resolveRouteAuth(project, "editor")
+    } catch (e) {
+      if (e instanceof RouteAuthError) {
+        return NextResponse.json({ error: e.message }, { status: e.status })
+      }
+      throw e
     }
-
-    // Use the project's userId for downstream Convex calls (trusted, from DB)
-    const convexUserId = actingUserId ?? project.userId
-    const projectAccessToken =
-      convexUserId && !oauthUserId
-        ? await mintProjectAccessToken({
-            projectId: project._id,
-            userId: convexUserId,
-            repoOwner: project.repoOwner,
-            repoName: project.repoName,
-            branch: project.branch,
-          })
-        : undefined
+    const { actingUserId: convexUserId, projectAccessToken, githubToken: token } = auth
 
     if (project.repoOwner !== owner || project.repoName !== repo || project.branch !== branch) {
       return NextResponse.json(
@@ -164,6 +146,8 @@ export async function POST(request: Request) {
 
     const activePublishBranch = await convex.query(api.publishBranches.getActiveForProject, {
       projectId: project._id,
+      userId: convexUserId,
+      projectAccessToken,
     })
 
     if (!activePublishBranch?.branchName) {
@@ -220,38 +204,6 @@ export async function POST(request: Request) {
   }
 }
 
-/**
- * Fix #1: Resolve the acting user ID server-side only.
- * OAuth users: derived from the auth session (trusted).
- * PAT users: returns null — access is verified via GitHub API instead.
- * Never accepts a client-supplied userId to prevent auth bypass.
- */
-async function resolveActingUserId(): Promise<string | null> {
-  if (fetchAuthQuery) {
-    try {
-      const authUser = await fetchAuthQuery(api.auth.getCurrentUser)
-      if (authUser?._id) {
-        return authUser._id as string
-      }
-    } catch {
-      // Not an OAuth session
-    }
-  }
-  return null
-}
-
-/**
- * Fix #1: Verify the caller has access to the project.
- * OAuth users: checks project.userId matches auth session.
- * PAT users: verifies the token can access the project's GitHub repo.
- */
-async function verifyProjectAccess(
-  project: { userId: string; repoOwner: string; repoName: string },
-  actingUserId: string | null,
-): Promise<boolean> {
-  return !!actingUserId && project.userId === actingUserId
-}
-
 async function resolveProject({
   projectId,
   owner,
@@ -263,9 +215,12 @@ async function resolveProject({
   repo: string
   branch: string
 }) {
+  const serverQueryToken = await mintServerQueryToken()
+
   if (projectId) {
     return await convex.query(api.projects.get, {
       id: projectId as Id<"projects">,
+      serverQueryToken,
     })
   }
 
@@ -274,6 +229,7 @@ async function resolveProject({
     repoOwner: owner,
     repoName: repo,
     branch,
+    serverQueryToken,
   })
   return project || null
 }
@@ -515,17 +471,5 @@ async function getExistingFileShaSafe(
 }
 
 function getContentType(fileName: string): string {
-  const ext = fileName.toLowerCase().split(".").pop()
-  const types: Record<string, string> = {
-    jpg: "image/jpeg",
-    jpeg: "image/jpeg",
-    png: "image/png",
-    gif: "image/gif",
-    webp: "image/webp",
-    svg: "image/svg+xml",
-    webm: "video/webm",
-    mp4: "video/mp4",
-    pdf: "application/pdf",
-  }
-  return types[ext || ""] || "application/octet-stream"
+  return sharedGetContentType(fileName)
 }

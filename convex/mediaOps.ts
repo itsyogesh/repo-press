@@ -1,43 +1,6 @@
 import { v } from "convex/values"
-import { verifyProjectAccessToken } from "../lib/project-access-token"
-import type { Id } from "./_generated/dataModel"
-import type { MutationCtx } from "./_generated/server"
 import { mutation, query } from "./_generated/server"
-import { authComponent } from "./auth"
-
-async function requireProjectOwnership(
-  ctx: MutationCtx,
-  projectId: Id<"projects">,
-  userId?: string,
-  projectAccessToken?: string,
-) {
-  const authUser = await authComponent.safeGetAuthUser(ctx)
-  const authUserId = authUser?._id ? (authUser._id as string) : null
-  if (authUserId) {
-    if (userId && authUserId !== userId) {
-      throw new Error("Unauthorized: Not authenticated or identity mismatch")
-    }
-    const project = await ctx.db.get(projectId)
-    if (!project || project.userId !== authUserId) {
-      throw new Error("Unauthorized")
-    }
-    return authUserId
-  }
-
-  const payload = await verifyProjectAccessToken(projectAccessToken)
-  if (payload && payload.projectId === projectId) {
-    const project = await ctx.db.get(projectId)
-    if (!project || project.userId !== payload.userId) {
-      throw new Error("Unauthorized")
-    }
-    if (userId && payload.userId !== userId) {
-      throw new Error("Unauthorized: Not authenticated or identity mismatch")
-    }
-    return payload.userId
-  }
-
-  throw new Error("Unauthorized")
-}
+import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
 
 export const stage = mutation({
   args: {
@@ -56,7 +19,7 @@ export const stage = mutation({
     githubSha: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const userId = await requireProjectOwnership(ctx, args.projectId, args.userId, args.projectAccessToken)
+    const { userId } = await resolveProjectAccess(ctx, args, "editor")
 
     const now = Date.now()
     const existingPending = await ctx.db
@@ -96,8 +59,15 @@ export const stage = mutation({
 })
 
 export const listPending = query({
-  args: { projectId: v.id("projects") },
+  args: {
+    projectId: v.id("projects"),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
+    const access = await resolveProjectReader(ctx, args)
+    if (!access) return []
+
     return await ctx.db
       .query("mediaOps")
       .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", "pending"))
@@ -109,8 +79,13 @@ export const getPendingByRepoPath = query({
   args: {
     projectId: v.id("projects"),
     repoPath: v.string(),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const access = await resolveProjectReader(ctx, args)
+    if (!access) return null
+
     return await ctx.db
       .query("mediaOps")
       .withIndex("by_projectId_repoPath", (q) => q.eq("projectId", args.projectId).eq("repoPath", args.repoPath))
@@ -132,7 +107,7 @@ export const markCommitted = mutation({
       const op = await ctx.db.get(id)
       if (!op || op.status !== "pending") continue
 
-      await requireProjectOwnership(ctx, op.projectId, args.userId, args.projectAccessToken)
+      await resolveProjectAccess(ctx, { projectId: op.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken }, "editor")
 
       await ctx.db.patch(id, {
         status: "committed",
@@ -151,7 +126,7 @@ export const undoByRepoPath = mutation({
     repoPath: v.string(),
   },
   handler: async (ctx, args) => {
-    await requireProjectOwnership(ctx, args.projectId, args.userId, args.projectAccessToken)
+    await resolveProjectAccess(ctx, args, "editor")
 
     const pending = await ctx.db
       .query("mediaOps")
@@ -177,7 +152,7 @@ export const clearCommittedForProject = mutation({
     projectAccessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await requireProjectOwnership(ctx, args.projectId, args.userId, args.projectAccessToken)
+    await resolveProjectAccess(ctx, args, "editor")
 
     const committed = await ctx.db
       .query("mediaOps")

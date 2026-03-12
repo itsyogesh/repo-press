@@ -1,6 +1,6 @@
 "use client"
 
-import { useMutation } from "convex/react"
+import { useMutation, useQuery } from "convex/react"
 import { AlertCircle, AlertTriangle, Trash2 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
@@ -25,10 +25,12 @@ import type { Doc } from "@/convex/_generated/dataModel"
 
 interface DeleteProjectZoneProps {
   project: Doc<"projects">
+  projectAccessToken?: string
 }
 
-export function DeleteProjectZone({ project }: DeleteProjectZoneProps) {
+export function DeleteProjectZone({ project, projectAccessToken }: DeleteProjectZoneProps) {
   const router = useRouter()
+  const user = useQuery(api.auth.getCurrentUser)
   const [confirmName, setConfirmName] = useState("")
   const [isDeleting, setIsDeleting] = useState(false)
   const removeFull = useMutation(api.projects.removeFull)
@@ -40,7 +42,11 @@ export function DeleteProjectZone({ project }: DeleteProjectZoneProps) {
 
     setIsDeleting(true)
     try {
-      await removeFull({ projectId: project._id })
+      await removeFull({
+        projectId: project._id,
+        userId: (user?._id as string | undefined) ?? undefined,
+        projectAccessToken: projectAccessToken || undefined,
+      })
       toast.success("Project deleted successfully")
       router.push(`/dashboard/${project.repoOwner}/${project.repoName}`)
       router.refresh()

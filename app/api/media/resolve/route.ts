@@ -2,8 +2,9 @@ import { ConvexHttpClient } from "convex/browser"
 import { NextResponse } from "next/server"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
-import { fetchAuthQuery, getGitHubToken, getPatAuthUserId } from "@/lib/auth-server"
 import { createGitHubClient } from "@/lib/github"
+import { mintServerQueryToken } from "@/lib/project-access-token"
+import { RouteAuthError, resolveRouteAuth } from "@/lib/route-auth"
 import { normalizeRepoMediaPath } from "@/lib/studio/media-resolve"
 
 export const runtime = "nodejs"
@@ -11,11 +12,6 @@ export const runtime = "nodejs"
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
 
 export async function GET(request: Request) {
-  const token = await getGitHubToken()
-  if (!token) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  }
-
   try {
     const { searchParams } = new URL(request.url)
     const projectId = searchParams.get("projectId")
@@ -26,20 +22,27 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Missing required query params: projectId, path" }, { status: 400 })
     }
 
-    const oauthUserId = await resolveActingUserId()
-    const patUserId = !oauthUserId ? await getPatAuthUserId(token) : null
-
+    const serverQueryToken = await mintServerQueryToken()
     const project = await convex.query(api.projects.get, {
       id: projectId as Id<"projects">,
+      serverQueryToken,
     })
     if (!project) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 })
     }
 
-    const hasAccess = await verifyProjectAccess(project, oauthUserId ?? patUserId)
-    if (!hasAccess) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    // Check GitHub permissions (read-only route — viewer is sufficient)
+    let auth: Awaited<ReturnType<typeof resolveRouteAuth>>
+    try {
+      auth = await resolveRouteAuth(project, "viewer")
+    } catch (e) {
+      if (e instanceof RouteAuthError) {
+        return NextResponse.json({ error: e.message }, { status: e.status })
+      }
+      throw e
     }
+    const { actingUserId, projectAccessToken, githubToken: token } = auth
+    const queryAuth = { userId: actingUserId, projectAccessToken }
 
     const repoPath = normalizeRepoMediaPath(rawPath)
     const githubPath = repoPath.replace(/^\/+/, "")
@@ -48,6 +51,7 @@ export async function GET(request: Request) {
     const pendingOp = await convex.query(api.mediaOps.getPendingByRepoPath, {
       projectId: project._id,
       repoPath,
+      ...queryAuth,
     })
 
     if (pendingOp?.sourceType === "blob" && pendingOp.blobUrl) {
@@ -91,6 +95,7 @@ export async function GET(request: Request) {
 
     const activePublishBranch = await convex.query(api.publishBranches.getActiveForProject, {
       projectId: project._id,
+      ...queryAuth,
     })
     const refsToTry = Array.from(
       new Set([branchOverride, activePublishBranch?.branchName, project.branch].filter((ref): ref is string => !!ref)),
@@ -134,38 +139,6 @@ export async function GET(request: Request) {
     console.error("[media-resolve] failed", error)
     return NextResponse.json({ error: "Failed to resolve media" }, { status: 500 })
   }
-}
-
-/**
- * Resolve the acting user ID server-side only.
- * OAuth users: derived from the auth session (trusted).
- * PAT users: returns null — access is verified via GitHub API instead.
- * Never accepts a client-supplied userId to prevent auth bypass.
- */
-async function resolveActingUserId(): Promise<string | null> {
-  if (fetchAuthQuery) {
-    try {
-      const authUser = await fetchAuthQuery(api.auth.getCurrentUser)
-      if (authUser?._id) {
-        return authUser._id as string
-      }
-    } catch {
-      // Not an OAuth session
-    }
-  }
-  return null
-}
-
-/**
- * Verify the caller has access to the project.
- * OAuth users: checks project.userId matches auth session.
- * PAT users: verifies the token has access to the project's GitHub repo.
- */
-async function verifyProjectAccess(
-  project: { userId: string; repoOwner: string; repoName: string },
-  actingUserId: string | null,
-): Promise<boolean> {
-  return !!actingUserId && project.userId === actingUserId
 }
 
 async function fetchBlobContent(url: string) {

@@ -1,47 +1,25 @@
 import { v } from "convex/values"
-import { verifyProjectAccessToken } from "../lib/project-access-token"
-import type { MutationCtx } from "./_generated/server"
 import { mutation, query } from "./_generated/server"
-import { authComponent } from "./auth"
 import { buildRestoreVersionMutation } from "./documentHistory_restore"
-
-async function resolveProjectCaller(
-  ctx: MutationCtx,
-  projectId: string,
-  explicitUserId?: string,
-  projectAccessToken?: string,
-) {
-  const authUser = await authComponent.safeGetAuthUser(ctx)
-  if (authUser?._id) {
-    const authUserId = authUser._id as string
-    if (explicitUserId && explicitUserId !== authUserId) {
-      throw new Error("Unauthorized: caller identity does not match userId")
-    }
-    const project = (await ctx.db.get(projectId as any)) as { userId: string } | null
-    if (!project || project.userId !== authUserId) {
-      throw new Error("Unauthorized")
-    }
-    return { userId: authUserId, project }
-  }
-
-  const payload = await verifyProjectAccessToken(projectAccessToken)
-  if (payload && payload.projectId === projectId) {
-    const project = (await ctx.db.get(projectId as any)) as { userId: string } | null
-    if (!project || project.userId !== payload.userId) {
-      throw new Error("Unauthorized")
-    }
-    if (explicitUserId && explicitUserId !== payload.userId) {
-      throw new Error("Unauthorized: caller identity does not match userId")
-    }
-    return { userId: payload.userId, project }
-  }
-
-  throw new Error("Unauthorized: Not authenticated")
-}
+import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
 
 export const listByDocument = query({
-  args: { documentId: v.id("documents") },
+  args: {
+    documentId: v.id("documents"),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
+    const doc = await ctx.db.get(args.documentId)
+    if (!doc) return []
+
+    const access = await resolveProjectReader(ctx, {
+      projectId: doc.projectId,
+      userId: args.userId,
+      projectAccessToken: args.projectAccessToken,
+    })
+    if (!access) return []
+
     return await ctx.db
       .query("documentHistory")
       .withIndex("by_documentId_createdAt", (q) => q.eq("documentId", args.documentId))
@@ -55,10 +33,21 @@ export const listByDocumentPaginated = query({
     documentId: v.id("documents"),
     limit: v.optional(v.number()),
     cursor: v.optional(v.string()),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const limit = args.limit ?? 20
+    const doc = await ctx.db.get(args.documentId)
+    if (!doc) return { page: [], isDone: true, continueCursor: "" }
 
+    const access = await resolveProjectReader(ctx, {
+      projectId: doc.projectId,
+      userId: args.userId,
+      projectAccessToken: args.projectAccessToken,
+    })
+    if (!access) return { page: [], isDone: true, continueCursor: "" }
+
+    const limit = args.limit ?? 20
     return await ctx.db
       .query("documentHistory")
       .withIndex("by_documentId_createdAt", (q) => q.eq("documentId", args.documentId))
@@ -68,8 +57,22 @@ export const listByDocumentPaginated = query({
 })
 
 export const getVersionCount = query({
-  args: { documentId: v.id("documents") },
+  args: {
+    documentId: v.id("documents"),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
+    const doc = await ctx.db.get(args.documentId)
+    if (!doc) return 0
+
+    const access = await resolveProjectReader(ctx, {
+      projectId: doc.projectId,
+      userId: args.userId,
+      projectAccessToken: args.projectAccessToken,
+    })
+    if (!access) return 0
+
     const history = await ctx.db
       .query("documentHistory")
       .withIndex("by_documentId", (q) => q.eq("documentId", args.documentId))
@@ -79,9 +82,26 @@ export const getVersionCount = query({
 })
 
 export const get = query({
-  args: { id: v.id("documentHistory") },
+  args: {
+    id: v.id("documentHistory"),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.id)
+    const entry = await ctx.db.get(args.id)
+    if (!entry) return null
+
+    const doc = await ctx.db.get(entry.documentId)
+    if (!doc) return null
+
+    const access = await resolveProjectReader(ctx, {
+      projectId: doc.projectId,
+      userId: args.userId,
+      projectAccessToken: args.projectAccessToken,
+    })
+    if (!access) return null
+
+    return entry
   },
 })
 
@@ -102,7 +122,7 @@ export const restoreVersion = mutation({
       throw new Error("Document not found")
     }
 
-    const { userId } = await resolveProjectCaller(ctx, document.projectId, args.userId, args.projectAccessToken)
+    const { userId } = await resolveProjectAccess(ctx, { projectId: document.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken }, "editor")
 
     const now = Date.now()
     const restoreMutation = buildRestoreVersionMutation({
