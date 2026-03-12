@@ -36,9 +36,22 @@ export default async function HistoryPage({ params, searchParams }: PageProps) {
     })
     const project = projects.find((entry) => entry._id === (projectId as Id<"projects">))
     if (project && (!branch || project.branch === branch)) {
-      // Resolve role: try GitHub API, fall back to project ownership
+      // Resolve role: try GitHub API, fall back to project ownership, then cache
       const githubRole = await getRepoRole(token, owner, repo)
-      const repoRole = githubRole ?? (project.userId === actingUserId ? "owner" as const : null)
+      let repoRole: "owner" | "editor" | "viewer" | null = githubRole ?? (project.userId === actingUserId ? "owner" : null)
+      if (!repoRole) {
+        try {
+          const cached = await convex.query(api.repoAccessCache.getForUserPublic, {
+            repoOwner: owner,
+            repoName: repo,
+            userId: actingUserId,
+            serverQueryToken,
+          })
+          if (cached) repoRole = cached.role as "owner" | "editor" | "viewer"
+        } catch {
+          // Cache lookup failed
+        }
+      }
       if (!repoRole) {
         redirect("/dashboard")
       }

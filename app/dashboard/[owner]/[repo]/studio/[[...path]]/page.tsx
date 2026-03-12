@@ -66,10 +66,26 @@ export default async function StudioPage({ params, searchParams }: StudioPagePro
     project = selectStudioFallbackProject(repoProjects, currentBranch)
   }
 
-  // Resolve role: try GitHub API, fall back to project ownership
+  // Resolve role: try GitHub API, fall back to project ownership, then cache
   const githubRole = await getRepoRole(token, owner, repo)
   const isProjectOwner = !!(project && actingUserId && project.userId === actingUserId)
-  const repoRole: Role = githubRole ?? (isProjectOwner ? "owner" : null!)
+  let repoRole: Role | null = githubRole ?? (isProjectOwner ? "owner" : null)
+
+  // Cache fallback for org-repo collaborators where getRepoRole returns null
+  if (!repoRole && actingUserId) {
+    try {
+      const cached = await convex.query(api.repoAccessCache.getForUserPublic, {
+        repoOwner: owner,
+        repoName: repo,
+        userId: actingUserId,
+        serverQueryToken,
+      })
+      if (cached) repoRole = cached.role as Role
+    } catch {
+      // Cache lookup failed — fall through to redirect
+    }
+  }
+
   if (!repoRole) {
     redirect("/dashboard")
   }

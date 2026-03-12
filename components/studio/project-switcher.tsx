@@ -5,6 +5,7 @@ import { Plus } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { api } from "@/convex/_generated/api"
+import { useStudio } from "./studio-context"
 
 interface ProjectSwitcherProps {
   currentProjectId: string
@@ -15,9 +16,15 @@ interface ProjectSwitcherProps {
 
 export function ProjectSwitcher({ currentProjectId, owner, repo, branch }: ProjectSwitcherProps) {
   const router = useRouter()
+  const { projectAccessToken } = useStudio()
 
-  // Repo-scoped: returns all projects for this repo the user can access (own + shared)
-  const projects = useQuery(api.projects.listProjectsForRepo, { repoOwner: owner, repoName: repo })
+  // Repo-scoped: returns all projects for this repo the user can access.
+  // Passes projectAccessToken so PAT users (no OAuth session) can also query.
+  const projects = useQuery(api.projects.listProjectsForRepo, {
+    repoOwner: owner,
+    repoName: repo,
+    projectAccessToken: projectAccessToken || undefined,
+  })
 
   // Don't render if there are no sibling projects (or still loading)
   if (!projects || projects.length <= 1) return null

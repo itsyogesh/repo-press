@@ -1,6 +1,6 @@
 import { v } from "convex/values"
-import { verifyProjectAccessToken } from "../lib/project-access-token"
-import { internalMutation, internalQuery, mutation } from "./_generated/server"
+import { verifyProjectAccessToken, verifyServerQueryToken } from "../lib/project-access-token"
+import { internalMutation, internalQuery, mutation, query } from "./_generated/server"
 
 const CACHE_TTL_MS = 15 * 60 * 1000 // 15 minutes
 
@@ -79,6 +79,32 @@ export const upsert = mutation({
       checkedAt: now,
       expiresAt: now + CACHE_TTL_MS,
     })
+  },
+})
+
+/**
+ * Public read for route handlers via ConvexHttpClient.
+ * Requires serverQueryToken to prevent unauthorized cache reads.
+ */
+export const getForUserPublic = query({
+  args: {
+    repoOwner: v.string(),
+    repoName: v.string(),
+    userId: v.string(),
+    serverQueryToken: v.string(),
+  },
+  handler: async (ctx, args) => {
+    if (!(await verifyServerQueryToken(args.serverQueryToken))) {
+      return null
+    }
+    const entry = await ctx.db
+      .query("repoAccessCache")
+      .withIndex("by_repo_userId", (q) =>
+        q.eq("repoOwner", args.repoOwner).eq("repoName", args.repoName).eq("userId", args.userId),
+      )
+      .first()
+    if (!entry || entry.expiresAt <= Date.now()) return null
+    return { role: entry.role }
   },
 })
 
