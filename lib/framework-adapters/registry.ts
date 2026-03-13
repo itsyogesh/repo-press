@@ -178,6 +178,14 @@ export async function detectFramework(
 }
 
 /**
+ * Get the FrameworkAdapter instance for a known adapter ID.
+ * Falls back to the custom adapter if the ID is not found.
+ */
+export function getFrameworkAdapter(frameworkId: string): FrameworkAdapter {
+  return registry.find((a) => a.id === frameworkId) ?? registry.find((a) => a.id === "custom")!
+}
+
+/**
  * Get the config for a known adapter ID without running detection.
  * Used when loading stored projects.
  */

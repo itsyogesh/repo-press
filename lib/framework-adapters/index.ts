@@ -6,6 +6,7 @@ export { UNIVERSAL_FIELDS } from "./fields"
 
 export {
   detectFramework,
+  getFrameworkAdapter,
   getFrameworkConfig,
   getRegisteredAdapters,
   registerAdapter,
@@ -35,4 +36,5 @@ export type {
   FrameworkConfig,
   FrontmatterFieldDef,
   FrontmatterFieldType,
+  NamingStrategy,
 } from "./types"
