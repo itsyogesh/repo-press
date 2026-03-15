@@ -7,6 +7,16 @@ import Link from "next/link"
 import * as React from "react"
 import { toast } from "sonner"
 import { syncProjectsFromConfigAction } from "@/app/dashboard/[owner]/[repo]/actions"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -506,6 +516,7 @@ function StudioLayoutInner({
   // Dialog state
   const [createDialogOpen, setCreateDialogOpen] = React.useState(false)
   const [createDialogParent, setCreateDialogParent] = React.useState("")
+  const [discardDialogOpen, setDiscardDialogOpen] = React.useState(false)
   const [commandPaletteOpen, setCommandPaletteOpen] = React.useState(false)
   const [emptySearch, setEmptySearch] = React.useState("")
   const [isMobile, setIsMobile] = React.useState(false)
@@ -1179,7 +1190,7 @@ function StudioLayoutInner({
                           onPublish={() => {
                             openPublishDialog()
                           }}
-                          onDiscard={handleDiscardAll}
+                          onDiscard={() => setDiscardDialogOpen(true)}
                           onSelectFile={(path: string) => navigateToFile(path)}
                         />
                       )}
@@ -1484,6 +1495,29 @@ function StudioLayoutInner({
         onNavigateToFile={navigateToFile}
         onSaveDraft={saveDraft}
       />
+
+      <AlertDialog open={discardDialogOpen} onOpenChange={setDiscardDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Discard all pending changes?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will revert all your staged creations, deletions, and edits. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-studio-danger text-white hover:bg-studio-danger/90"
+              onClick={() => {
+                handleDiscardAll()
+                setDiscardDialogOpen(false)
+              }}
+            >
+              Discard Changes
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

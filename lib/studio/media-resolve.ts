@@ -74,3 +74,31 @@ export function resolveStudioAssetUrl(
   if (!projectId) return path
   return buildMediaResolveUrl(projectId, path, userId, baseFilePath)
 }
+
+/**
+ * Derives a suggested media folder based on the document path.
+ * e.g. content/blog/my-post.mdx -> public/images/blog/my-post
+ */
+export function getSuggestedImagePath(documentPath: string): string {
+  const normalized = documentPath.trim().replace(/^\/+/, "").replace(/\\/g, "/")
+
+  // Blog pattern: content/blog/some-post.mdx
+  const blogMatch = normalized.match(/^content\/blog\/([^/]+)\.(?:md|mdx|markdown)$/i)
+  if (blogMatch?.[1]) {
+    return `public/images/blog/${blogMatch[1]}`
+  }
+
+  // Author pattern: content/authors/nitesh.mdx
+  const authorMatch = normalized.match(/^content\/authors\/([^/]+)\.(?:md|mdx|markdown)$/i)
+  if (authorMatch?.[1]) {
+    return `public/images/authors/${authorMatch[1]}`
+  }
+
+  // Pages pattern: content/pages/about.mdx
+  const pageMatch = normalized.match(/^content\/pages\/([^/]+)\.(?:md|mdx|markdown)$/i)
+  if (pageMatch?.[1]) {
+    return `public/images/pages/${pageMatch[1]}`
+  }
+
+  return "public/images"
+}

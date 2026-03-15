@@ -222,8 +222,17 @@ export function SmartCreateFileDialog({
   // Skeleton field count: show 2 placeholder rows while loading
   const skeletonFieldCount = 2
 
+  const handleOpenChange = (newOpen: boolean) => {
+    onOpenChange(newOpen)
+    if (!newOpen) {
+      // Force immediate restoration of interaction on close
+      document.body.style.pointerEvents = "auto"
+      document.body.style.overflow = ""
+    }
+  }
+
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetContent className="relative overflow-hidden flex flex-col w-full sm:max-w-lg p-0">
         <DraftingCompass
           className="absolute bottom-[-10%] right-[-10%] w-96 h-96 text-foreground opacity-[0.03] pointer-events-none transition-opacity duration-1000"

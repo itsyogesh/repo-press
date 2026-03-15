@@ -418,24 +418,34 @@ export function FileTree({
         </div>
       </div>
       <div className="p-2 border-b border-studio-border bg-studio-canvas z-10 sticky top-10">
-        <div className="relative">
-          <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-studio-fg-muted" />
+        <div className="relative group">
+          <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-studio-fg-muted group-focus-within:text-studio-accent transition-colors" />
           <Input
             ref={searchInputRef}
-            placeholder="Search files... [/]"
+            placeholder="Search files..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="h-7 w-full pl-8 pr-7 text-xs bg-studio-canvas border-studio-border focus-visible:ring-1 focus-visible:ring-studio-accent rounded-md shadow-sm"
+            className="h-7 w-full pl-8 pr-12 text-xs bg-studio-canvas border-studio-border focus-visible:ring-1 focus-visible:ring-studio-accent rounded-md shadow-sm transition-all"
           />
-          {searchQuery && (
-            <button
-              type="button"
-              onClick={() => setSearchQuery("")}
-              className="absolute right-2 top-2 text-studio-fg-muted hover:text-studio-fg"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
+          <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-1">
+            {searchQuery ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery("")
+                  searchInputRef.current?.focus()
+                }}
+                className="h-5 w-5 flex items-center justify-center rounded-md hover:bg-studio-canvas-inset text-studio-fg-muted hover:text-studio-fg transition-colors"
+                title="Clear search"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            ) : (
+              <kbd className="pointer-events-none hidden sm:inline-flex h-4 select-none items-center gap-1 rounded border border-studio-border-muted bg-studio-canvas-inset px-1.5 font-mono text-[9px] font-medium text-studio-fg-muted opacity-60 group-focus-within:opacity-0 transition-opacity">
+                /
+              </kbd>
+            )}
+          </div>
         </div>
       </div>
       <div className="flex-1 overflow-y-auto">

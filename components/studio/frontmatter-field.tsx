@@ -15,9 +15,10 @@ interface FrontmatterFieldProps {
   value: any
   onChange: (value: any) => void
   imagePaths?: string[]
+  selectedFilePath?: string
 }
 
-export function FrontmatterField({ field, value, onChange, imagePaths = [] }: FrontmatterFieldProps) {
+export function FrontmatterField({ field, value, onChange, imagePaths = [], selectedFilePath }: FrontmatterFieldProps) {
   const id = field.actualFieldName
 
   const labelEl = (
@@ -94,7 +95,12 @@ export function FrontmatterField({ field, value, onChange, imagePaths = [] }: Fr
         <div className="grid gap-1">
           {labelEl}
           {helperEl}
-          <ImageField value={value || ""} onChange={onChange} imagePaths={imagePaths} />
+          <ImageField
+            value={value || ""}
+            onChange={onChange}
+            imagePaths={imagePaths}
+            selectedFilePath={selectedFilePath}
+          />
         </div>
       )
 

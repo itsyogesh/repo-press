@@ -259,7 +259,7 @@ export function ComponentInsertModal({
                       onClick={handleInsert}
                       className="h-8 px-5 rounded-md text-[11px] font-bold uppercase tracking-wider shadow-sm"
                     >
-                      Insert Component
+                      Insert
                     </Button>
                   </div>
                 </div>
