@@ -1507,7 +1507,7 @@ function StudioLayoutInner({
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-studio-danger text-white hover:bg-studio-danger/90"
+              variant="destructive"
               onClick={() => {
                 handleDiscardAll()
                 setDiscardDialogOpen(false)
