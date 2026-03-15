@@ -976,6 +976,12 @@ function StudioLayoutInner({
         return
       }
 
+      if (e.key === "/" && !isEditableTarget) {
+        e.preventDefault()
+        searchInputRef.current?.focus()
+        return
+      }
+
       if (e.key === "Escape" && commandPaletteOpen) {
         e.preventDefault()
         setCommandPaletteOpen(false)
@@ -1284,7 +1290,7 @@ function StudioLayoutInner({
                         </p>
                       </div>
                       <div className="mx-auto max-w-xl space-y-3">
-                        <div className="relative">
+                        <div className="relative group">
                           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-studio-fg-muted" />
                           <Input
                             ref={searchInputRef}
@@ -1297,9 +1303,28 @@ function StudioLayoutInner({
                                 navigateToFile(firstResult.path)
                               }
                             }}
-                            className="h-11 pl-10 pr-4"
-                            placeholder="Search docs and open with Enter"
+                            className="h-11 pl-10 pr-10"
+                            placeholder="Search docs..."
                           />
+                          <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+                            {hasEmptySearchQuery ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEmptySearch("")
+                                  searchInputRef.current?.focus()
+                                }}
+                                className="rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none"
+                                aria-label="Clear search"
+                              >
+                                <X className="h-4 w-4 text-studio-fg-muted" />
+                              </button>
+                            ) : (
+                              <kbd className="pointer-events-none hidden h-5 select-none items-center gap-1 rounded border border-studio-border bg-studio-canvas-inset px-1.5 font-mono text-[10px] font-medium text-studio-fg-muted opacity-60 sm:flex">
+                                <span className="text-xs">/</span>
+                              </kbd>
+                            )}
+                          </div>
                         </div>
                         <div className="rounded-lg border border-studio-border bg-studio-canvas-inset/30 p-2 text-left">
                           {!hasEmptySearchQuery && recentFileResults.length === 0 ? (
