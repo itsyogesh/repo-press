@@ -509,6 +509,7 @@ function StudioLayoutInner({
   const [commandPaletteOpen, setCommandPaletteOpen] = React.useState(false)
   const [emptySearch, setEmptySearch] = React.useState("")
   const [isMobile, setIsMobile] = React.useState(false)
+  const searchInputRef = React.useRef<HTMLInputElement>(null)
 
   // 3. Save logic
   const { isSaving, saveDraft, ensureDocumentRecord } = useStudioSave({
@@ -1286,6 +1287,7 @@ function StudioLayoutInner({
                         <div className="relative">
                           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-studio-fg-muted" />
                           <Input
+                            ref={searchInputRef}
                             value={emptySearch}
                             onChange={(e) => setEmptySearch(e.target.value)}
                             onKeyDown={(e) => {
