@@ -1,6 +1,7 @@
 "use client"
 
 import matter from "gray-matter"
+import { DraftingCompass } from "lucide-react"
 import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -223,7 +224,11 @@ export function SmartCreateFileDialog({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="flex flex-col w-full sm:max-w-lg p-0">
+      <SheetContent className="relative overflow-hidden flex flex-col w-full sm:max-w-lg p-0">
+        <DraftingCompass
+          className="absolute bottom-[-10%] right-[-10%] w-96 h-96 text-foreground opacity-[0.03] pointer-events-none transition-opacity duration-1000"
+          aria-hidden="true"
+        />
         <form onSubmit={handleSubmit} className="flex flex-col h-full">
           <SheetHeader className="px-6 pt-6 pb-4">
             <SheetTitle>New {contentLabel}</SheetTitle>
