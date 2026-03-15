@@ -19,8 +19,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Input } from "@/components/ui/input"
 import type { OverlayTreeNode } from "@/lib/explorer-tree-overlay"
 import { filterTree } from "@/lib/explorer-tree-overlay"
-import type { FrameworkAdapter } from "@/lib/framework-adapters/types"
 import { getFolderContext } from "@/lib/framework-adapters/folder-context"
+import type { FrameworkAdapter } from "@/lib/framework-adapters/types"
 import type { FileTreeNode } from "@/lib/github"
 import { FileContextMenu } from "./file-context-menu"
 import { TreeItem } from "./file-tree-item"
@@ -396,15 +396,20 @@ export function FileTree({
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
                 {folderMenuItems.map((item) => (
-                  <DropdownMenuItem key={item.path} onClick={() => onCreateFile!(item.path)}>
+                  <DropdownMenuItem key={item.path} onClick={() => onCreateFile(item.path)}>
                     <item.Icon className="mr-2 h-4 w-4" />
                     {item.label}
                   </DropdownMenuItem>
                 ))}
-                {folderMenuItems.length === 0 && (
+                {folderMenuItems.length === 0 ? (
                   <DropdownMenuItem onClick={handleCreateRootFile}>
                     <File className="mr-2 h-4 w-4" />
                     New File
+                  </DropdownMenuItem>
+                ) : (
+                  <DropdownMenuItem onClick={handleCreateRootFile}>
+                    <File className="mr-2 h-4 w-4" />
+                    New file at root
                   </DropdownMenuItem>
                 )}
               </DropdownMenuContent>

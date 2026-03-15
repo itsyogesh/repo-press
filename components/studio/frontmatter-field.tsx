@@ -113,6 +113,23 @@ export function FrontmatterField({ field, value, onChange, imagePaths = [] }: Fr
       )
 
     case "enum":
+      if (!field.options || field.options.length === 0) {
+        // Defensive fallback: if no options are defined, render a plain text input
+        // to prevent an empty Select from being presented to the user.
+        return (
+          <div className="grid gap-1">
+            {labelEl}
+            {helperEl}
+            <Input
+              id={id}
+              value={String(value || "")}
+              onChange={(e) => onChange(e.target.value)}
+              placeholder={field.description}
+              className="border-studio-border"
+            />
+          </div>
+        )
+      }
       return (
         <div className="grid gap-1">
           {labelEl}
@@ -122,7 +139,7 @@ export function FrontmatterField({ field, value, onChange, imagePaths = [] }: Fr
               <SelectValue placeholder="Select..." />
             </SelectTrigger>
             <SelectContent>
-              {field.options?.map((opt) => (
+              {field.options.map((opt) => (
                 <SelectItem key={opt} value={opt}>
                   {opt}
                 </SelectItem>

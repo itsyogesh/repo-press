@@ -4,84 +4,11 @@ import { ChevronDown, ChevronRight } from "lucide-react"
 import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
-import type {
-  FieldGroup,
-  FieldVariantMap,
-  FrontmatterFieldDef,
-  GroupedField,
-  MergedFieldDef,
-} from "@/lib/framework-adapters"
+import type { FieldVariantMap, FrontmatterFieldDef } from "@/lib/framework-adapters"
 import { buildMergedFieldList, UNIVERSAL_FIELDS } from "@/lib/framework-adapters"
+import { groupMergedFields } from "@/lib/framework-adapters/field-groups"
 import { FrontmatterField } from "./frontmatter-field"
 import { IMAGE_EXTENSIONS } from "./shared-constants"
-
-const FIELD_GROUP_MAP: Record<string, FieldGroup> = {
-  title: "basic",
-  heading: "basic",
-  date: "basic",
-  description: "basic",
-  excerpt: "basic",
-  draft: "basic",
-  author: "basic",
-  authors: "basic",
-  tags: "basic",
-  categories: "basic",
-  slug: "basic",
-  order: "basic",
-  metaTitle: "seo",
-  metaDescription: "seo",
-  focusKeyword: "seo",
-  canonicalUrl: "seo",
-  metaRobots: "seo",
-  lastUpdatedDate: "seo",
-  lastUpdated: "seo",
-  image: "coverImage",
-  imageLink: "coverImage",
-  imageAltText: "coverImage",
-  ogTitle: "openGraph",
-  ogDescription: "openGraph",
-  ogImage: "openGraph",
-  twitterTitle: "twitter",
-  twitterDescription: "twitter",
-  twitterImage: "twitter",
-  schemaType: "schema",
-}
-
-const GROUP_LABELS: Record<FieldGroup, string> = {
-  basic: "Basic",
-  seo: "SEO",
-  coverImage: "Cover Image",
-  openGraph: "Open Graph",
-  twitter: "Twitter",
-  schema: "Schema",
-  other: "Other",
-}
-
-function groupMergedFields(fields: MergedFieldDef[]): GroupedField<MergedFieldDef>[] {
-  const groups: Record<FieldGroup, MergedFieldDef[]> = {
-    basic: [],
-    seo: [],
-    coverImage: [],
-    openGraph: [],
-    twitter: [],
-    schema: [],
-    other: [],
-  }
-
-  for (const field of fields) {
-    const group = FIELD_GROUP_MAP[field.actualFieldName] || FIELD_GROUP_MAP[field.name] || "other"
-    groups[group].push(field)
-  }
-
-  const order: FieldGroup[] = ["basic", "seo", "coverImage", "openGraph", "twitter", "schema", "other"]
-  return order
-    .filter((g) => groups[g].length > 0)
-    .map((g) => ({
-      group: g,
-      groupLabel: GROUP_LABELS[g],
-      fields: groups[g],
-    }))
-}
 
 interface FrontmatterPanelProps {
   frontmatter: Record<string, any>

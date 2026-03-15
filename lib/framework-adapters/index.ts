@@ -1,9 +1,8 @@
 // Top-level barrel exports for the framework adapter system
 
 export { allAdapters } from "./adapters"
-
+export { FIELD_GROUP_MAP, GROUP_LABELS, groupFields, groupMergedFields } from "./field-groups"
 export { UNIVERSAL_FIELDS } from "./fields"
-
 export {
   detectFramework,
   getFrameworkAdapter,
@@ -12,9 +11,7 @@ export {
   registerAdapter,
   unregisterAdapter,
 } from "./registry"
-
 export type { MergedFieldDef } from "./resolve"
-
 export {
   buildGitHubRawUrl,
   buildMergedFieldList,

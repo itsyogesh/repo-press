@@ -1,8 +1,8 @@
 "use client"
 
+import { insertJsx$, usePublisher } from "@mdxeditor/editor"
 import { Box, Plus } from "lucide-react"
 import * as React from "react"
-import { usePublisher } from "@mdxeditor/editor"
 import { buildEditorInsertOperation } from "@/lib/studio/component-insert-operation"
 import type { ComponentNode } from "@/lib/studio/component-node"
 import type { RepoComponentDef } from "@/lib/studio/component-registry"
@@ -59,6 +59,3 @@ export function InsertJsxButton({ owner, repo, branch, projectId, userId }: Inse
     </>
   )
 }
-
-// Need to import insertJsx$ - this works because InsertJsxButton is rendered inside MDXEditor's toolbar
-import { insertJsx$ } from "@mdxeditor/editor"

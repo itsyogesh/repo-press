@@ -1,18 +1,19 @@
 "use client"
 
-import * as React from "react"
 import matter from "gray-matter"
+import * as React from "react"
 import { Button } from "@/components/ui/button"
-import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Skeleton } from "@/components/ui/skeleton"
-import type { FrameworkAdapter, FrontmatterFieldDef, FieldGroup, GroupedField } from "@/lib/framework-adapters/types"
 import type { MergedFieldDef } from "@/lib/framework-adapters"
-import { getFolderContext } from "@/lib/framework-adapters/folder-context"
-import { deriveFilename } from "@/lib/framework-adapters/derive-filename"
 import { inferFieldDef, normalizeDate } from "@/lib/framework-adapters"
+import { deriveFilename } from "@/lib/framework-adapters/derive-filename"
+import { groupFields } from "@/lib/framework-adapters/field-groups"
+import { getFolderContext } from "@/lib/framework-adapters/folder-context"
+import type { FrameworkAdapter, FrontmatterFieldDef } from "@/lib/framework-adapters/types"
 import type { FileTreeNode } from "@/lib/github"
 import { FrontmatterField } from "./frontmatter-field"
 
@@ -114,84 +115,6 @@ function buildSiblingFields(fm: Record<string, unknown>): FrontmatterFieldDef[] 
     .map(([key, value]) => inferFieldDef(key, value))
 }
 
-const FIELD_GROUP_MAP: Record<string, FieldGroup> = {
-  // Basic fields
-  title: "basic",
-  heading: "basic",
-  date: "basic",
-  description: "basic",
-  excerpt: "basic",
-  draft: "basic",
-  author: "basic",
-  authors: "basic",
-  tags: "basic",
-  categories: "basic",
-  slug: "basic",
-  order: "basic",
-  // SEO fields
-  metaTitle: "seo",
-  metaDescription: "seo",
-  focusKeyword: "seo",
-  canonicalUrl: "seo",
-  metaRobots: "seo",
-  lastUpdatedDate: "seo",
-  lastUpdated: "seo",
-  // Cover image
-  image: "coverImage",
-  imageLink: "coverImage",
-  imageAltText: "coverImage",
-  // Open Graph
-  ogTitle: "openGraph",
-  ogDescription: "openGraph",
-  ogImage: "openGraph",
-  // Twitter
-  twitterTitle: "twitter",
-  twitterDescription: "twitter",
-  twitterImage: "twitter",
-  // Schema
-  schemaType: "schema",
-}
-
-const GROUP_LABELS: Record<FieldGroup, string> = {
-  basic: "Basic",
-  seo: "SEO",
-  coverImage: "Cover Image",
-  openGraph: "Open Graph",
-  twitter: "Twitter",
-  schema: "Schema",
-  other: "Other",
-}
-
-/**
- * Group fields by category for organized display in the dialog.
- */
-function groupFields(fields: FrontmatterFieldDef[]): GroupedField<FrontmatterFieldDef>[] {
-  const groups: Record<FieldGroup, FrontmatterFieldDef[]> = {
-    basic: [],
-    seo: [],
-    coverImage: [],
-    openGraph: [],
-    twitter: [],
-    schema: [],
-    other: [],
-  }
-
-  for (const field of fields) {
-    const group = FIELD_GROUP_MAP[field.name] || "other"
-    groups[group].push(field)
-  }
-
-  // Return only groups that have fields, in fixed order
-  const order: FieldGroup[] = ["basic", "seo", "coverImage", "openGraph", "twitter", "schema", "other"]
-  return order
-    .filter((g) => groups[g].length > 0)
-    .map((g) => ({
-      group: g,
-      groupLabel: GROUP_LABELS[g],
-      fields: groups[g],
-    }))
-}
-
 // ─── Component ───────────────────────────────────────────────────────────────
 
 const MIN_SKELETON_MS = 120
@@ -219,7 +142,6 @@ export function SmartCreateFileDialog({
 
   // Context derived from folder path + adapter (synchronous)
   const context = React.useMemo(() => {
-    if (!adapter) return null
     return getFolderContext(parentPath, adapter)
   }, [parentPath, adapter])
 
@@ -270,11 +192,11 @@ export function SmartCreateFileDialog({
     return () => {
       cancelled = true
     }
-  }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [open, context, branch, folderChildNodes, owner, repo]) // context must be listed: effect reads context?.requiredFields
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!title.trim() || !context) return
+    if (!title.trim()) return
 
     const fileName = deriveFilename({
       title: title.trim(),
@@ -292,9 +214,9 @@ export function SmartCreateFileDialog({
     onOpenChange(false)
   }
 
-  const contentLabel = context?.contentLabel ?? "New File"
-  const primaryFieldLabel = context?.primaryFieldLabel ?? "Title"
-  const hint = context?.hint
+  const contentLabel = context.contentLabel
+  const primaryFieldLabel = context.primaryFieldLabel
+  const hint = context.hint
 
   // Skeleton field count: show 2 placeholder rows while loading
   const skeletonFieldCount = 2
@@ -323,6 +245,7 @@ export function SmartCreateFileDialog({
                 <Skeleton className="h-10 w-full" />
               </div>
               {Array.from({ length: skeletonFieldCount }).map((_, i) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: Skeletons are identical placeholders
                 <div key={`skeleton-field-placeholder-${i}`} className="grid gap-1.5">
                   <Skeleton className="h-4 w-20" />
                   <Skeleton className="h-10 w-full" />
