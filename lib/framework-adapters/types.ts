@@ -12,6 +12,8 @@ export type FrontmatterFieldDef = {
   defaultValue?: unknown
   options?: string[]
   semanticRole?: FieldSemanticRole
+  /** Character limit for string fields (e.g., 60 for metaTitle, 160 for metaDescription) */
+  charLimit?: number
 }
 
 export type FieldSemanticRole =
@@ -29,8 +31,30 @@ export type FieldSemanticRole =
   | "layout"
   | "order"
   | "excerpt"
+  // SEO-related semantic roles
+  | "metaTitle"
+  | "metaDescription"
+  | "focusKeyword"
+  | "canonicalUrl"
+  | "metaRobots"
+  | "ogTitle"
+  | "ogDescription"
+  | "ogImage"
+  | "twitterTitle"
+  | "twitterDescription"
+  | "twitterImage"
+  | "schemaType"
+  | "imageAltText"
 
 export type FieldVariantMap = Partial<Record<FieldSemanticRole, string>>
+
+export type FieldGroup = "basic" | "seo" | "coverImage" | "openGraph" | "twitter" | "schema" | "other"
+
+export type GroupedField<T> = {
+  group: FieldGroup
+  groupLabel: string
+  fields: T[]
+}
 
 export type DetectionContext = {
   deps: Record<string, string>

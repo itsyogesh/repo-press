@@ -3,22 +3,16 @@
 import * as React from "react"
 import matter from "gray-matter"
 import { Button } from "@/components/ui/button"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
+import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Skeleton } from "@/components/ui/skeleton"
-import type { FrameworkAdapter, FrontmatterFieldDef } from "@/lib/framework-adapters/types"
+import type { FrameworkAdapter, FrontmatterFieldDef, FieldGroup, GroupedField } from "@/lib/framework-adapters/types"
 import type { MergedFieldDef } from "@/lib/framework-adapters"
 import { getFolderContext } from "@/lib/framework-adapters/folder-context"
 import { deriveFilename } from "@/lib/framework-adapters/derive-filename"
-import { inferType, normalizeDate } from "@/lib/framework-adapters"
+import { inferFieldDef, normalizeDate } from "@/lib/framework-adapters"
 import type { FileTreeNode } from "@/lib/github"
 import { FrontmatterField } from "./frontmatter-field"
 
@@ -111,17 +105,90 @@ async function fetchSiblingFrontmatter(
 /**
  * Given raw frontmatter from a sibling file, build FrontmatterFieldDef entries
  * for every key that isn't title or draft — these become the template fields
- * shown blank in the dialog.
+ * shown blank in the dialog. Uses inferFieldDef for rich type inference (SEO fields, etc).
  */
 function buildSiblingFields(fm: Record<string, unknown>): FrontmatterFieldDef[] {
   const SKIP = new Set(["title", "draft"])
   return Object.entries(fm)
     .filter(([key]) => !SKIP.has(key))
-    .map(([key, value]) => ({
-      name: key,
-      type: inferType(value),
-      required: false,
-      description: key,
+    .map(([key, value]) => inferFieldDef(key, value))
+}
+
+const FIELD_GROUP_MAP: Record<string, FieldGroup> = {
+  // Basic fields
+  title: "basic",
+  heading: "basic",
+  date: "basic",
+  description: "basic",
+  excerpt: "basic",
+  draft: "basic",
+  author: "basic",
+  authors: "basic",
+  tags: "basic",
+  categories: "basic",
+  slug: "basic",
+  order: "basic",
+  // SEO fields
+  metaTitle: "seo",
+  metaDescription: "seo",
+  focusKeyword: "seo",
+  canonicalUrl: "seo",
+  metaRobots: "seo",
+  lastUpdatedDate: "seo",
+  lastUpdated: "seo",
+  // Cover image
+  image: "coverImage",
+  imageLink: "coverImage",
+  imageAltText: "coverImage",
+  // Open Graph
+  ogTitle: "openGraph",
+  ogDescription: "openGraph",
+  ogImage: "openGraph",
+  // Twitter
+  twitterTitle: "twitter",
+  twitterDescription: "twitter",
+  twitterImage: "twitter",
+  // Schema
+  schemaType: "schema",
+}
+
+const GROUP_LABELS: Record<FieldGroup, string> = {
+  basic: "Basic",
+  seo: "SEO",
+  coverImage: "Cover Image",
+  openGraph: "Open Graph",
+  twitter: "Twitter",
+  schema: "Schema",
+  other: "Other",
+}
+
+/**
+ * Group fields by category for organized display in the dialog.
+ */
+function groupFields(fields: FrontmatterFieldDef[]): GroupedField<FrontmatterFieldDef>[] {
+  const groups: Record<FieldGroup, FrontmatterFieldDef[]> = {
+    basic: [],
+    seo: [],
+    coverImage: [],
+    openGraph: [],
+    twitter: [],
+    schema: [],
+    other: [],
+  }
+
+  for (const field of fields) {
+    const group = FIELD_GROUP_MAP[field.name] || "other"
+    groups[group].push(field)
+  }
+
+  // Return only groups that have fields, in fixed order
+  const order: FieldGroup[] = ["basic", "seo", "coverImage", "openGraph", "twitter", "schema", "other"]
+  return order
+    .filter((g) => groups[g].length > 0)
+    .map((g) => ({
+      group: g,
+      groupLabel: GROUP_LABELS[g],
+      fields: groups[g],
     }))
 }
 
@@ -227,74 +294,99 @@ export function SmartCreateFileDialog({
 
   const contentLabel = context?.contentLabel ?? "New File"
   const primaryFieldLabel = context?.primaryFieldLabel ?? "Title"
+  const hint = context?.hint
 
   // Skeleton field count: show 2 placeholder rows while loading
   const skeletonFieldCount = 2
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <form onSubmit={handleSubmit}>
-          <DialogHeader>
-            <DialogTitle>New {contentLabel}</DialogTitle>
-            <DialogDescription>
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent className="flex flex-col w-full sm:max-w-lg p-0">
+        <form onSubmit={handleSubmit} className="flex flex-col h-full">
+          <SheetHeader className="px-6 pt-6 pb-4">
+            <SheetTitle>New {contentLabel}</SheetTitle>
+            <SheetDescription>
               {displayPath ? `Adding to ${displayPath}` : "Adding to the content root"}
-            </DialogDescription>
-          </DialogHeader>
+            </SheetDescription>
+            {hint && (
+              <p className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 rounded-md mt-2 border border-amber-200 dark:border-amber-800">
+                <span className="font-medium">Note:</span> {hint}
+              </p>
+            )}
+          </SheetHeader>
 
           {!ready ? (
             /* Skeleton phase — shown until sibling fetch + timer both resolve */
-            <div className="py-4 space-y-4">
+            <div className="px-6 py-4 space-y-4">
               <div className="grid gap-1.5">
                 <Skeleton className="h-4 w-28" />
-                <Skeleton className="h-9 w-full" />
+                <Skeleton className="h-10 w-full" />
               </div>
               {Array.from({ length: skeletonFieldCount }).map((_, i) => (
-                <div key={`skeleton-field-${i}`} className="grid gap-1.5">
+                <div key={`skeleton-field-placeholder-${i}`} className="grid gap-1.5">
                   <Skeleton className="h-4 w-20" />
-                  <Skeleton className="h-9 w-full" />
+                  <Skeleton className="h-10 w-full" />
                 </div>
               ))}
             </div>
           ) : (
-            <div className="py-4 space-y-4">
-              {/* Title — always first */}
-              <div className="grid gap-1.5">
-                <Label htmlFor="smart-create-title" className="font-semibold text-sm">
-                  {primaryFieldLabel}
-                  <span className="text-muted-foreground font-normal ml-1 text-xs">(required)</span>
-                </Label>
-                <Input
-                  id="smart-create-title"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder={`Enter ${primaryFieldLabel.toLowerCase()}…`}
-                  autoFocus
-                />
-              </div>
+            <ScrollArea className="flex-1 px-6">
+              <div className="py-4 space-y-6">
+                {/* Title — always first */}
+                <div className="grid gap-2">
+                  <Label htmlFor="smart-create-title" className="font-semibold text-sm">
+                    {primaryFieldLabel}
+                    <span className="text-muted-foreground font-normal ml-1 text-xs">(required)</span>
+                  </Label>
+                  <Input
+                    id="smart-create-title"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder={`Enter ${primaryFieldLabel.toLowerCase()}…`}
+                    className="h-10"
+                    autoFocus
+                  />
+                </div>
 
-              {/* Inferred + required fields — all blank */}
-              {siblingFields.map((field) => (
-                <FrontmatterField
-                  key={field.name}
-                  field={toMergedField(field)}
-                  value={fieldValues[field.name]}
-                  onChange={(val) => setFieldValues((prev) => ({ ...prev, [field.name]: val }))}
-                />
-              ))}
-            </div>
+                {/* Inferred + required fields — grouped with section headers */}
+                {groupFields(siblingFields).map((grouped) => (
+                  <div key={grouped.group}>
+                    {/* Section header */}
+                    <div className="text-xs font-semibold text-studio-fg-muted uppercase tracking-wider mb-3 pb-2 border-b border-studio-border">
+                      {grouped.groupLabel}
+                    </div>
+                    {/* Fields in this group */}
+                    <div className="space-y-4">
+                      {grouped.fields.map((field) => (
+                        <FrontmatterField
+                          key={field.name}
+                          field={toMergedField(field)}
+                          value={fieldValues[field.name]}
+                          onChange={(val) =>
+                            setFieldValues((prev) => ({
+                              ...prev,
+                              [field.name]: val,
+                            }))
+                          }
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </ScrollArea>
           )}
 
-          <DialogFooter>
+          <SheetFooter className="px-6 pb-6 pt-4">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
             <Button type="submit" disabled={!ready || !title.trim()}>
               Create
             </Button>
-          </DialogFooter>
+          </SheetFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </SheetContent>
+    </Sheet>
   )
 }

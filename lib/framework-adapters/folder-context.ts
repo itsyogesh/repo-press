@@ -28,6 +28,8 @@ export type FolderContext = {
   namingStrategy: NamingStrategy
   /** File extension for new files */
   fileExtension: ".mdx" | ".md"
+  /** Optional hint to show in the dialog */
+  hint?: string
 }
 
 type KeywordRule = {
@@ -104,21 +106,31 @@ function lastSegment(folderPath: string): string {
 /**
  * Returns a FolderContext for the given folder path and adapter.
  */
-export function getFolderContext(folderPath: string, adapter: FrameworkAdapter): FolderContext {
+export function getFolderContext(folderPath: string, adapter: FrameworkAdapter | null): FolderContext {
   const segment = lastSegment(folderPath)
 
-  const namingStrategy: NamingStrategy = adapter.namingStrategy ?? "slug"
-  const fileExtension: ".mdx" | ".md" = adapter.fileExtension ?? ".mdx"
+  const namingStrategy: NamingStrategy = adapter?.namingStrategy ?? "slug"
+  const fileExtension: ".mdx" | ".md" = adapter?.fileExtension ?? ".mdx"
 
   // Fields the user must fill in (excluding title and draft)
-  const requiredFields = adapter.fields.filter(
-    (f) =>
-      f.required &&
-      f.semanticRole !== "title" &&
-      f.semanticRole !== "draft" &&
-      f.name !== "title" &&
-      f.name !== "draft",
-  )
+  const requiredFields =
+    adapter?.fields.filter(
+      (f) =>
+        f.required &&
+        f.semanticRole !== "title" &&
+        f.semanticRole !== "draft" &&
+        f.name !== "title" &&
+        f.name !== "draft",
+    ) ?? []
+
+  // Check if this framework uses meta.json for visibility (e.g., Fumadocs)
+  const usesMetaJson = adapter?.metaFilePattern === "meta.json"
+
+  // Build hint based on framework - show for Fumadocs docs folders (including subfolders)
+  let hint: string | undefined
+  if (usesMetaJson && folderPath.includes("docs")) {
+    hint = "This page won't appear in the sidebar until you add it to meta.json"
+  }
 
   // Empty path = repo root
   if (!segment) {
@@ -128,6 +140,7 @@ export function getFolderContext(folderPath: string, adapter: FrameworkAdapter):
       requiredFields,
       namingStrategy,
       fileExtension,
+      hint,
     }
   }
 
@@ -140,6 +153,7 @@ export function getFolderContext(folderPath: string, adapter: FrameworkAdapter):
         requiredFields,
         namingStrategy,
         fileExtension,
+        hint,
       }
     }
   }
@@ -152,5 +166,6 @@ export function getFolderContext(folderPath: string, adapter: FrameworkAdapter):
     requiredFields,
     namingStrategy,
     fileExtension,
+    hint,
   }
 }
