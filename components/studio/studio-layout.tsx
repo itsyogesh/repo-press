@@ -20,13 +20,14 @@ import type { FileTreeNode } from "@/lib/github"
 import { usePreviewContext } from "@/lib/hooks/use-preview-context"
 import { buildHistoryHref } from "@/lib/studio/history-link"
 import { CommandPalette } from "./command-palette"
-import { CreateFileDialog } from "./create-file-dialog"
+import { SmartCreateFileDialog } from "./smart-create-file-dialog"
 import { Editor } from "./editor"
 import { FileTree } from "./file-tree"
 import { useStudioFile } from "./hooks/use-studio-file"
 import { useStudioPublish } from "./hooks/use-studio-publish"
 import { useStudioQueries } from "./hooks/use-studio-queries"
 import { useStudioSave } from "./hooks/use-studio-save"
+import { getFrameworkAdapter } from "@/lib/framework-adapters"
 import { Preview } from "./preview"
 import { PublishDialog } from "./publish-dialog"
 import { PublishOpsBar } from "./publish-ops-bar"
@@ -428,6 +429,12 @@ function StudioLayoutInner({
     adapterError,
     adapterDiagnostics,
   } = useStudio()
+
+  // Framework adapter for file naming / frontmatter — uses the project's detectedFramework string
+  const frameworkAdapter = React.useMemo(() => {
+    const fw = studioQueries.project?.detectedFramework as string | undefined
+    return fw ? getFrameworkAdapter(fw) : null
+  }, [studioQueries.project?.detectedFramework])
   const {
     viewMode,
     setViewMode,
@@ -533,8 +540,46 @@ function StudioLayoutInner({
     setCreateDialogOpen(true)
   }, [])
 
+  /** Children of the currently selected create-dialog parent folder (for conflict resolution) */
+  const folderChildren = React.useMemo(() => {
+    if (!createDialogParent) {
+      // Root: top-level names in the overlay tree
+      return overlayTree.map((n) => n.name)
+    }
+    // Find the folder node in the overlay tree
+    const findNode = (nodes: FileTreeNode[], path: string): FileTreeNode | null => {
+      for (const n of nodes) {
+        if (n.path === path) return n
+        if (n.children) {
+          const found = findNode(n.children, path)
+          if (found) return found
+        }
+      }
+      return null
+    }
+    const folderNode = findNode(overlayTree, createDialogParent)
+    return folderNode?.children?.map((n) => n.name) ?? []
+  }, [overlayTree, createDialogParent])
+
+  /** Full child nodes of the current create-dialog parent (for sibling frontmatter inference) */
+  const folderChildNodes = React.useMemo(() => {
+    if (!createDialogParent) return overlayTree
+    const findNode = (nodes: FileTreeNode[], path: string): FileTreeNode | null => {
+      for (const n of nodes) {
+        if (n.path === path) return n
+        if (n.children) {
+          const found = findNode(n.children, path)
+          if (found) return found
+        }
+      }
+      return null
+    }
+    const folderNode = findNode(overlayTree, createDialogParent)
+    return folderNode?.children ?? []
+  }, [overlayTree, createDialogParent])
+
   const handleConfirmCreate = React.useCallback(
-    async (fileName: string, parentPath: string) => {
+    async (fileName: string, parentPath: string, initialFrontmatter?: Record<string, unknown>) => {
       if (!projectId || !userId) return
       const isAlreadyPrefixed = contentRoot && (parentPath === contentRoot || parentPath.startsWith(`${contentRoot}/`))
       let filePath: string
@@ -545,25 +590,30 @@ function StudioLayoutInner({
       } else {
         filePath = parentPath ? `${parentPath}/${fileName}` : fileName
       }
+      // For index-if-empty: the actual file is at filePath (e.g. slug/index.mdx)
+      // but it may include a newly created subfolder — keep filePath as-is.
       try {
-        const initialTitle = fileName.replace(/\.(mdx?|markdown)$/i, "")
+        const fm = initialFrontmatter ?? {}
+        const title =
+          typeof fm.title === "string" && fm.title.trim()
+            ? fm.title.trim()
+            : fileName.replace(/\.(mdx?|markdown)$/i, "")
         await stageCreate({
           projectId: projectId as Id<"projects">,
           userId,
           projectAccessToken,
           filePath,
-          title: initialTitle,
+          title,
           initialBody: "",
-          initialFrontmatter: {
-            title: initialTitle,
-          },
+          initialFrontmatter: { title, ...fm },
         })
         primeFileSnapshot(filePath, {
           content: "",
-          frontmatter: { title: initialTitle },
+          frontmatter: { title, ...fm },
           sha: null,
         })
-        toast.success(`Created ${fileName}`)
+        const displayName = fileName.split("/").pop() ?? fileName
+        toast.success(`Created ${displayName}`)
         navigateToFile(filePath)
       } catch (error: any) {
         console.error("Error creating file:", error)
@@ -697,7 +747,10 @@ function StudioLayoutInner({
         throw new Error(payload.error || `Failed to load file content (${response.status})`)
       }
 
-      const payload = (await response.json()) as { content: string; sha: string }
+      const payload = (await response.json()) as {
+        content: string
+        sha: string
+      }
       const parsed = matter(payload.content || "")
       const parsedFrontmatter = (parsed.data || {}) as Record<string, unknown>
       const title =
@@ -740,7 +793,11 @@ function StudioLayoutInner({
 
         if (payload.isFromPendingCreate && payload.pendingCreateOpId) {
           try {
-            await undoOp({ id: payload.pendingCreateOpId, userId, projectAccessToken })
+            await undoOp({
+              id: payload.pendingCreateOpId,
+              userId,
+              projectAccessToken,
+            })
           } catch (error) {
             await undoOp({ id: createOpId, userId, projectAccessToken }).catch(() => {})
             throw error
@@ -1068,6 +1125,7 @@ function StudioLayoutInner({
                         onMoveFile={projectId ? handleMoveFile : undefined}
                         owner={owner}
                         repo={repo}
+                        adapter={frameworkAdapter}
                       />
                     </div>
                     <div className="shrink-0 border-t border-studio-border bg-studio-canvas/95 backdrop-blur supports-[backdrop-filter]:bg-studio-canvas/80">
@@ -1362,12 +1420,18 @@ function StudioLayoutInner({
         />
       </div>
 
-      <CreateFileDialog
+      <SmartCreateFileDialog
         open={createDialogOpen}
         onOpenChange={setCreateDialogOpen}
         parentPath={createDialogParent}
         contentRoot={contentRoot}
-        onConfirm={handleConfirmCreate}
+        adapter={frameworkAdapter}
+        folderChildren={folderChildren}
+        folderChildNodes={folderChildNodes}
+        owner={owner}
+        repo={repo}
+        branch={branch}
+        onConfirm={({ fileName, parentPath, frontmatter }) => handleConfirmCreate(fileName, parentPath, frontmatter)}
       />
 
       <PublishDialog

@@ -12,13 +12,15 @@ import {
   useSensors,
 } from "@dnd-kit/core"
 import { sortableKeyboardCoordinates } from "@dnd-kit/sortable"
-import { Plus, Search, X } from "lucide-react"
+import { BookOpen, File, PenLine, Plus, Search, Tag, User, X } from "lucide-react"
 import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import type { OverlayTreeNode } from "@/lib/explorer-tree-overlay"
 import { filterTree } from "@/lib/explorer-tree-overlay"
+import { getFolderContext } from "@/lib/framework-adapters/folder-context"
+import type { FrameworkAdapter } from "@/lib/framework-adapters/types"
 import type { FileTreeNode } from "@/lib/github"
 import { FileContextMenu } from "./file-context-menu"
 import { TreeItem } from "./file-tree-item"
@@ -35,6 +37,8 @@ interface FileTreeProps {
   onMoveFile?: (oldPath: string, newParentPath: string) => void
   owner?: string
   repo?: string
+  /** Framework adapter used to derive human-readable folder labels in the + menu */
+  adapter?: FrameworkAdapter | null
 }
 
 type VisibleTreeItem = {
@@ -97,6 +101,7 @@ export function FileTree({
   onMoveFile,
   owner,
   repo,
+  adapter,
 }: FileTreeProps) {
   const [searchQuery, setSearchQuery] = React.useState("")
   const [activeId, setActiveId] = React.useState<string | null>(null)
@@ -352,6 +357,26 @@ export function FileTree({
     [tree],
   )
 
+  /** Derive smart label + icon for each top-level folder using the framework adapter. */
+  const folderMenuItems = React.useMemo(() => {
+    return topLevelFolders.map((folder) => {
+      const ctx = adapter ? getFolderContext(folder.path, adapter) : null
+      const label = ctx ? `New ${ctx.contentLabel}` : `Create in ${folder.name}`
+
+      let Icon: React.ElementType = File
+      if (ctx) {
+        const cl = ctx.contentLabel.toLowerCase()
+        if (cl.includes("post") || cl.includes("blog")) Icon = PenLine
+        else if (cl.includes("doc") || cl.includes("page") || cl.includes("tutorial") || cl.includes("faq"))
+          Icon = BookOpen
+        else if (cl.includes("author") || cl.includes("people")) Icon = User
+        else if (cl.includes("release") || cl.includes("changelog")) Icon = Tag
+      }
+
+      return { path: folder.path, label, Icon }
+    })
+  }, [topLevelFolders, adapter])
+
   return (
     <div ref={treeRootRef} className="h-full flex flex-col bg-studio-canvas text-studio-fg text-sm">
       <div className="p-2 border-b border-studio-border text-xs font-semibold text-studio-fg uppercase tracking-wider flex items-center justify-between sticky top-0 bg-studio-canvas z-10">
@@ -370,12 +395,23 @@ export function FileTree({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuItem onClick={handleCreateRootFile}>Create in root</DropdownMenuItem>
-                {topLevelFolders.map((folder) => (
-                  <DropdownMenuItem key={folder.path} onClick={() => onCreateFile(folder.path)}>
-                    Create in {folder.name}
+                {folderMenuItems.map((item) => (
+                  <DropdownMenuItem key={item.path} onClick={() => onCreateFile(item.path)}>
+                    <item.Icon className="mr-2 h-4 w-4" />
+                    {item.label}
                   </DropdownMenuItem>
                 ))}
+                {folderMenuItems.length === 0 ? (
+                  <DropdownMenuItem onClick={handleCreateRootFile}>
+                    <File className="mr-2 h-4 w-4" />
+                    New File
+                  </DropdownMenuItem>
+                ) : (
+                  <DropdownMenuItem onClick={handleCreateRootFile}>
+                    <File className="mr-2 h-4 w-4" />
+                    New file at root
+                  </DropdownMenuItem>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           )}

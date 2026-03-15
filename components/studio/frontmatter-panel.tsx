@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import type { FieldVariantMap, FrontmatterFieldDef } from "@/lib/framework-adapters"
 import { buildMergedFieldList, UNIVERSAL_FIELDS } from "@/lib/framework-adapters"
+import { groupMergedFields } from "@/lib/framework-adapters/field-groups"
 import { FrontmatterField } from "./frontmatter-field"
 import { IMAGE_EXTENSIONS } from "./shared-constants"
 
@@ -63,14 +64,23 @@ export function FrontmatterPanel({
       </div>
       <CollapsibleContent className="px-4 py-3 space-y-4">
         {fieldsInFile.length > 0 ? (
-          fieldsInFile.map((field) => (
-            <FrontmatterField
-              key={field.actualFieldName}
-              field={field}
-              value={frontmatter[field.actualFieldName]}
-              onChange={(value) => onChangeFrontmatter(field.actualFieldName, value)}
-              imagePaths={imagePaths}
-            />
+          groupMergedFields(fieldsInFile).map((grouped) => (
+            <div key={grouped.group}>
+              <div className="text-xs font-semibold text-studio-fg-muted uppercase tracking-wider mb-2 pb-1 border-b border-studio-border">
+                {grouped.groupLabel}
+              </div>
+              <div className="space-y-4">
+                {grouped.fields.map((field) => (
+                  <FrontmatterField
+                    key={field.actualFieldName}
+                    field={field}
+                    value={frontmatter[field.actualFieldName]}
+                    onChange={(value) => onChangeFrontmatter(field.actualFieldName, value)}
+                    imagePaths={imagePaths}
+                  />
+                ))}
+              </div>
+            </div>
           ))
         ) : (
           <p className="text-xs text-studio-fg-muted text-center py-2">
@@ -97,14 +107,23 @@ export function FrontmatterPanel({
             </Button>
             {showEmptySchema && (
               <div className="mt-3 space-y-4">
-                {emptySchemaFields.map((field) => (
-                  <FrontmatterField
-                    key={field.actualFieldName}
-                    field={field}
-                    value={frontmatter[field.actualFieldName]}
-                    onChange={(value) => onChangeFrontmatter(field.actualFieldName, value)}
-                    imagePaths={imagePaths}
-                  />
+                {groupMergedFields(emptySchemaFields).map((grouped) => (
+                  <div key={`empty-${grouped.group}`}>
+                    <div className="text-xs font-semibold text-studio-fg-muted uppercase tracking-wider mb-2 pb-1 border-b border-studio-border">
+                      {grouped.groupLabel}
+                    </div>
+                    <div className="space-y-4">
+                      {grouped.fields.map((field) => (
+                        <FrontmatterField
+                          key={field.actualFieldName}
+                          field={field}
+                          value={frontmatter[field.actualFieldName]}
+                          onChange={(value) => onChangeFrontmatter(field.actualFieldName, value)}
+                          imagePaths={imagePaths}
+                        />
+                      ))}
+                    </div>
+                  </div>
                 ))}
               </div>
             )}
