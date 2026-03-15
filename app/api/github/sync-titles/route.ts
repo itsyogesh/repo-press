@@ -40,7 +40,7 @@ export async function POST(request: Request) {
     // Best-effort permission check — getRepoRole can return null for org repos
     // where the OAuth app lacks org-level access. The operation will fail naturally
     // if the token can't actually read repo content.
-    const role = await getRepoRole(token, owner, repo)
+    const { role } = await getRepoRole(token, owner, repo)
     if (!role) {
       console.warn(`[sync-titles] getRepoRole returned null for ${owner}/${repo}, proceeding with token-based access`)
     }

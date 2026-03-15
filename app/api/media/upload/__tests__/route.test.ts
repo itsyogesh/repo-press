@@ -32,6 +32,11 @@ vi.mock("@/lib/github", async () => {
 
 vi.mock("@/lib/github-permissions", () => ({
   getRepoRole: vi.fn(),
+  probeRepoReadAccess: vi.fn().mockResolvedValue(null),
+  roleAtLeast: (actual: string, minimum: string) => {
+    const h: Record<string, number> = { owner: 3, editor: 2, viewer: 1 }
+    return (h[actual] ?? 0) >= (h[minimum] ?? 0)
+  },
 }))
 
 process.env.NEXT_PUBLIC_CONVEX_URL = process.env.NEXT_PUBLIC_CONVEX_URL || "https://example.convex.cloud"
@@ -86,7 +91,7 @@ describe("POST /api/media/upload", () => {
     vi.mocked(getGitHubToken).mockResolvedValue("gh-token")
     vi.mocked(fetchAuthQuery!).mockResolvedValue({ _id: "user_1" })
     vi.mocked(getPatAuthUserId).mockResolvedValue("user_1")
-    vi.mocked(getRepoRole).mockResolvedValue("owner")
+    vi.mocked(getRepoRole).mockResolvedValue({ role: "owner", defaultBranch: "main", defaultBranchInferred: false })
     vi.mocked(createGitHubClient).mockReturnValue({
       ...baseGithubClient,
       users: {
@@ -143,7 +148,7 @@ describe("POST /api/media/upload", () => {
   it("rejects PAT-mode uploads when the PAT user has no repo access", async () => {
     vi.mocked(fetchAuthQuery!).mockResolvedValue(null as never)
     vi.mocked(getPatAuthUserId).mockResolvedValue("different_user")
-    vi.mocked(getRepoRole).mockResolvedValue(null)
+    vi.mocked(getRepoRole).mockResolvedValue({ role: null, defaultBranch: null, defaultBranchInferred: false })
 
     const response = await POST(buildRequest(baseBody()))
     const payload = await response.json()

@@ -296,6 +296,59 @@ export const listAccessibleProjects = query({
   },
 })
 
+/**
+ * Server-side accessible projects query for PAT users.
+ * Same logic as listAccessibleProjects but uses serverQueryToken + explicit userId
+ * instead of OAuth session. Returns own projects + shared projects via repoAccessCache.
+ */
+export const listAccessibleProjectsForUser = query({
+  args: {
+    userId: v.string(),
+    serverQueryToken: v.string(),
+  },
+  handler: async (ctx, args) => {
+    if (!(await verifyServerQueryToken(args.serverQueryToken))) {
+      return []
+    }
+
+    // Get own projects
+    const ownProjects = await ctx.db
+      .query("projects")
+      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
+      .order("desc")
+      .collect()
+
+    // Get repos where this user has cached access (non-expired)
+    const cachedAccess = await ctx.db
+      .query("repoAccessCache")
+      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
+      .collect()
+
+    const now = Date.now()
+    const validCache = cachedAccess.filter((c) => c.expiresAt > now)
+
+    // For each cached repo, find projects not already in ownProjects
+    const ownProjectIds = new Set(ownProjects.map((p) => p._id))
+    const sharedProjects = []
+
+    for (const cache of validCache) {
+      const repoProjects = await ctx.db
+        .query("projects")
+        .withIndex("by_repo", (q) => q.eq("repoOwner", cache.repoOwner).eq("repoName", cache.repoName))
+        .collect()
+
+      for (const p of repoProjects) {
+        if (!ownProjectIds.has(p._id)) {
+          sharedProjects.push(p)
+          ownProjectIds.add(p._id) // prevent dupes
+        }
+      }
+    }
+
+    return [...ownProjects, ...sharedProjects]
+  },
+})
+
 export const listByRepoAndBranch = internalQuery({
   args: {
     repoOwner: v.string(),
@@ -401,7 +454,10 @@ export const getOrCreate = mutation({
 
 export const syncProjectsFromConfig = mutation({
   args: {
-    userId: v.string(),
+    // Auth: either OAuth session (userId) or server query token
+    userId: v.optional(v.string()),
+    actingUserId: v.optional(v.string()),
+    serverQueryToken: v.optional(v.string()),
     repoOwner: v.string(),
     repoName: v.string(),
     branch: v.string(),
@@ -423,20 +479,45 @@ export const syncProjectsFromConfig = mutation({
     ),
   },
   handler: async (ctx, args) => {
-    await verifyCallerIdentity(ctx, args.userId)
+    // Resolve the acting user: OAuth session, explicit userId, or server query token
+    let callerUserId: string | null = null
 
-    const syncedProjectIds = []
+    const authUser = await authComponent.safeGetAuthUser(ctx)
+    if (authUser) {
+      callerUserId = authUser._id as string
+      // If userId was provided, verify it matches the session
+      if (args.userId && args.userId !== callerUserId) {
+        throw new Error("Unauthorized: caller identity does not match userId")
+      }
+    } else if (await verifyServerQueryToken(args.serverQueryToken)) {
+      // Server-side call — trust actingUserId or userId
+      callerUserId = args.actingUserId ?? args.userId ?? null
+    } else if (args.userId) {
+      // Legacy path: try to verify caller identity
+      await verifyCallerIdentity(ctx, args.userId)
+      callerUserId = args.userId
+    }
+
+    if (!callerUserId) {
+      throw new Error("Unauthorized: no valid authentication")
+    }
+
+    const synced: string[] = []
+    const created: string[] = []
+    const unchanged: string[] = []
+
+    // Repo-scoped lookup: find ALL projects for this repo, regardless of creator
     const repoProjects = await ctx.db
       .query("projects")
-      .withIndex("by_userId_repo", (q) =>
-        q.eq("userId", args.userId).eq("repoOwner", args.repoOwner).eq("repoName", args.repoName),
+      .withIndex("by_repo", (q) =>
+        q.eq("repoOwner", args.repoOwner).eq("repoName", args.repoName),
       )
       .collect()
 
     for (const p of args.projects) {
       const nextBranch = p.branch || args.branch
 
-      // 1) Preferred match: explicit config project ID.
+      // 1) Preferred match: explicit config project ID (across ALL projects for repo).
       // 2) Legacy migration match: repo + branch + contentRoot when configProjectId was never stored.
       const existing =
         repoProjects.find((project) => project.configProjectId === p.configProjectId) ??
@@ -446,28 +527,48 @@ export const syncProjectsFromConfig = mutation({
         )
 
       if (existing) {
-        await ctx.db.patch(existing._id, {
-          name: p.name,
-          contentRoot: p.contentRoot,
-          branch: nextBranch,
-          detectedFramework: p.framework,
-          contentType: p.contentType,
-          configProjectId: p.configProjectId,
-          configVersion: args.configVersion,
-          configPath: args.configPath,
-          previewEntry: p.previewEntry,
-          enabledPlugins: p.enabledPlugins,
-          pluginRegistry: args.pluginRegistry,
-          components: p.components,
-          frameworkSource: "config",
-          updatedAt: Date.now(),
-        })
-        syncedProjectIds.push(existing._id)
+        // Idempotency check: only patch if something actually changed
+        const needsUpdate =
+          existing.name !== p.name ||
+          existing.contentRoot !== p.contentRoot ||
+          existing.branch !== nextBranch ||
+          existing.detectedFramework !== p.framework ||
+          existing.contentType !== p.contentType ||
+          existing.configProjectId !== p.configProjectId ||
+          existing.configVersion !== args.configVersion ||
+          existing.configPath !== args.configPath ||
+          existing.previewEntry !== p.previewEntry ||
+          JSON.stringify(existing.enabledPlugins) !== JSON.stringify(p.enabledPlugins) ||
+          JSON.stringify(existing.pluginRegistry) !== JSON.stringify(args.pluginRegistry) ||
+          JSON.stringify(existing.components) !== JSON.stringify(p.components) ||
+          existing.frameworkSource !== "config"
+
+        if (needsUpdate) {
+          await ctx.db.patch(existing._id, {
+            name: p.name,
+            contentRoot: p.contentRoot,
+            branch: nextBranch,
+            detectedFramework: p.framework,
+            contentType: p.contentType,
+            configProjectId: p.configProjectId,
+            configVersion: args.configVersion,
+            configPath: args.configPath,
+            previewEntry: p.previewEntry,
+            enabledPlugins: p.enabledPlugins,
+            pluginRegistry: args.pluginRegistry,
+            components: p.components,
+            frameworkSource: "config",
+            updatedAt: Date.now(),
+          })
+          synced.push(existing._id)
+        } else {
+          unchanged.push(existing._id)
+        }
       } else {
         const now = Date.now()
         const id = await ctx.db.insert("projects", {
-          userId: args.userId,
-          createdBy: args.userId,
+          userId: callerUserId,
+          createdBy: callerUserId,
           name: p.name,
           repoOwner: args.repoOwner,
           repoName: args.repoName,
@@ -486,11 +587,11 @@ export const syncProjectsFromConfig = mutation({
           createdAt: now,
           updatedAt: now,
         })
-        syncedProjectIds.push(id)
+        created.push(id)
       }
     }
 
-    return syncedProjectIds
+    return { synced, created, unchanged }
   },
 })
 

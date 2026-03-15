@@ -49,7 +49,7 @@ export default async function SettingsPage({ params }: SettingsPageProps) {
     })
 
     // Resolve role: GitHub API → ownership → cache → content probe
-    const githubRole = await getRepoRole(token, owner, repo)
+    const { role: githubRole } = await getRepoRole(token, owner, repo)
     const isProjectOwner = actingUserId && projects.some((p) => p.userId === actingUserId)
     repoRole = githubRole ?? (isProjectOwner ? "owner" : null)
     if (!repoRole && actingUserId) {

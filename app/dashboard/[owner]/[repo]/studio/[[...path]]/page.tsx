@@ -67,7 +67,7 @@ export default async function StudioPage({ params, searchParams }: StudioPagePro
   }
 
   // Resolve role: GitHub API → ownership → cache → content probe
-  const githubRole = await getRepoRole(token, owner, repo)
+  const { role: githubRole } = await getRepoRole(token, owner, repo)
   const isProjectOwner = !!(project && actingUserId && project.userId === actingUserId)
   let repoRole: Role | null = githubRole ?? (isProjectOwner ? "owner" : null)
 
