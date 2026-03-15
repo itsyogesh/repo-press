@@ -1,21 +1,33 @@
 "use client"
 
 import { useMutation, useQuery } from "convex/react"
-import { CheckCircle2, Folder, GitBranch, Loader2, Settings, Sparkles } from "lucide-react"
+import {
+  AlertCircle,
+  CheckCircle2,
+  Folder,
+  GitBranch,
+  Loader2,
+
+  RefreshCw,
+  Settings,
+  Sparkles,
+} from "lucide-react"
 import { useRouter } from "next/navigation"
 import type React from "react"
-import { useState } from "react"
+import { useState, useTransition } from "react"
 import { toast } from "sonner"
-import { syncProjectsFromConfigAction } from "@/app/dashboard/[owner]/[repo]/actions"
 import { initRepoPressAction } from "@/app/dashboard/[owner]/[repo]/init-actions"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { api } from "@/convex/_generated/api"
 import type { RepoPressConfig } from "@/lib/config-schema"
+import type { ConfigErrorType } from "@/lib/repopress/config"
+import { retrySyncAction } from "@/lib/sync-projects"
 import { getFrameworkConfig, getRegisteredAdapters } from "@/lib/framework-adapters"
 
 interface RepoSetupFormProps {
@@ -23,6 +35,8 @@ interface RepoSetupFormProps {
   repo: string
   branches: any[]
   defaultBranch: string
+  /** True when the default branch was inferred heuristically, not from GitHub API */
+  defaultBranchInferred?: boolean
   frameworkConfig: {
     framework: string
     contentType: string
@@ -32,6 +46,9 @@ interface RepoSetupFormProps {
     contentArchitecture?: { architectureNote?: string }
   }
   repoConfig?: RepoPressConfig | null
+  configErrorType?: ConfigErrorType | null
+  configError?: string | null
+  isWriter?: boolean
 }
 
 export function RepoSetupForm({
@@ -39,8 +56,12 @@ export function RepoSetupForm({
   repo,
   branches,
   defaultBranch,
+  defaultBranchInferred,
   frameworkConfig,
   repoConfig,
+  configErrorType,
+  configError,
+  isWriter = true,
 }: RepoSetupFormProps) {
   const router = useRouter()
   const user = useQuery(api.auth.getCurrentUser)
@@ -51,9 +72,13 @@ export function RepoSetupForm({
   const [contentPath, setContentPath] = useState(frameworkConfig.suggestedContentRoots[0] || "")
   const [contentType, setContentType] = useState<string>(frameworkConfig.contentType)
   const [currentFields, setCurrentFields] = useState(frameworkConfig.frontmatterFields)
-  const [architectureNote, setArchitectureNote] = useState(frameworkConfig.contentArchitecture?.architectureNote || "")
+  const [architectureNote, setArchitectureNote] = useState(
+    frameworkConfig.contentArchitecture?.architectureNote || "",
+  )
   const [isLoading, setIsLoading] = useState(false)
   const [isInitializing, setIsInitializing] = useState(false)
+  const [showAdvanced, setShowAdvanced] = useState(false)
+  const [isSyncPending, startSyncTransition] = useTransition()
 
   const registeredAdapters = getRegisteredAdapters()
 
@@ -66,21 +91,16 @@ export function RepoSetupForm({
     setArchitectureNote(config.contentArchitecture?.architectureNote || "")
   }
 
-  const handleSyncFromConfig = async () => {
-    setIsLoading(true)
-    try {
-      const res = await syncProjectsFromConfigAction(owner, repo, selectedBranch)
-      if (res.success) {
-        toast.success(`Successfully synced ${res.count} projects from config!`)
+  const handleRetrySync = () => {
+    startSyncTransition(async () => {
+      try {
+        await retrySyncAction(owner, repo, selectedBranch)
+        toast.success("Projects synced successfully!")
         router.push(`/dashboard/${owner}/${repo}`)
-      } else {
-        toast.error(res.error || "Failed to sync projects")
+      } catch (err: any) {
+        toast.error(err.message || "Failed to sync")
       }
-    } catch (err: any) {
-      toast.error(err.message)
-    } finally {
-      setIsLoading(false)
-    }
+    })
   }
 
   const handleInitRepoPress = async () => {
@@ -95,10 +115,10 @@ export function RepoSetupForm({
       })
 
       if (res.success) {
-        toast.success("RepoPress initialized successfully! Committing config files...")
-        // Wait for GitHub to surface the config commit before syncing projects.
+        toast.success("RepoPress initialized successfully! Syncing projects...")
+        // Wait for GitHub to surface the config commit before syncing
         await new Promise((resolve) => setTimeout(resolve, 2000))
-        await handleSyncFromConfig()
+        handleRetrySync()
       } else {
         toast.error(res.error || "Failed to initialize RepoPress")
       }
@@ -142,109 +162,180 @@ export function RepoSetupForm({
     }
   }
 
+  // Config exists but sync failed (shouldn't reach here due to auto-redirect, but handle gracefully)
+  if (repoConfig) {
+    return (
+      <Card className="w-full max-w-md mx-auto">
+        <CardHeader>
+          <div className="flex items-center justify-between mb-2">
+            <CardTitle>Configure Repository</CardTitle>
+            <div className="flex items-center gap-1 rounded-full border border-studio-success/20 bg-studio-success-muted/60 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-studio-success">
+              <CheckCircle2 className="h-3 w-3" />
+              Config Found
+            </div>
+          </div>
+          <CardDescription>
+            A repopress.config.json was found. Sync projects from it.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {defaultBranchInferred && (
+            <Alert className="border-studio-attention/20 bg-studio-attention-muted/60">
+              <AlertCircle className="h-4 w-4 text-studio-attention" />
+              <AlertTitle className="text-studio-attention text-sm">Verify default branch</AlertTitle>
+              <AlertDescription className="text-xs text-studio-attention">
+                We couldn&apos;t confirm the default branch from GitHub and selected <span className="font-medium">{defaultBranch}</span> as
+                a best guess. If this is wrong, change it below before syncing.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          <Alert className="border-studio-success/20 bg-studio-success-muted/60">
+            <Settings className="h-4 w-4 text-studio-success" />
+            <AlertTitle className="text-studio-success">Ready to Sync</AlertTitle>
+            <AlertDescription className="text-xs text-studio-success">
+              Syncing will set up all projects defined in the config file.
+            </AlertDescription>
+          </Alert>
+
+          <div className="space-y-2">
+            <Label>Branch</Label>
+            <Select value={selectedBranch} onValueChange={setSelectedBranch}>
+              <SelectTrigger>
+                <div className="flex items-center gap-2">
+                  <GitBranch className="h-4 w-4 text-muted-foreground" />
+                  <SelectValue />
+                </div>
+              </SelectTrigger>
+              <SelectContent>
+                {branches.map((branch) => (
+                  <SelectItem key={branch.name} value={branch.name}>
+                    {branch.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <Button onClick={handleRetrySync} className="w-full" disabled={isSyncPending}>
+            {isSyncPending ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Syncing...
+              </>
+            ) : (
+              <>
+                <CheckCircle2 className="h-4 w-4 mr-2" />
+                Sync from Config
+              </>
+            )}
+          </Button>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  // Transient GitHub failure
+  if (configErrorType === "fetch-failed") {
+    return (
+      <Card className="w-full max-w-md mx-auto">
+        <CardHeader>
+          <CardTitle>Configure Repository</CardTitle>
+          <CardDescription>Could not reach GitHub to check for a config file.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Connection Error</AlertTitle>
+            <AlertDescription className="text-xs">
+              Could not reach GitHub. Please check your connection and try again.
+            </AlertDescription>
+          </Alert>
+          <Button onClick={() => router.refresh()} className="w-full mt-4" variant="outline">
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Retry
+          </Button>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  // Config invalid
+  if (configErrorType === "invalid") {
+    return (
+      <Card className="w-full max-w-md mx-auto">
+        <CardHeader>
+          <CardTitle>Configure Repository</CardTitle>
+          <CardDescription>The config file has validation errors.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Invalid Config</AlertTitle>
+            <AlertDescription className="text-xs">{configError}</AlertDescription>
+          </Alert>
+          <p className="text-sm text-muted-foreground">
+            Fix the errors in your <code className="px-1 py-0.5 bg-muted rounded text-xs">repopress.config.json</code>{" "}
+            and push the changes, then refresh this page.
+          </p>
+          <Button onClick={() => router.refresh()} className="w-full" variant="outline">
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Refresh
+          </Button>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  // No config found — show init form (primary case for this page)
   return (
     <Card className="w-full max-w-md mx-auto">
       <CardHeader>
         <div className="flex items-center justify-between mb-2">
-          <CardTitle>Configure Repository</CardTitle>
-          {repoConfig ? (
-            <div className="flex items-center gap-1 rounded-full border border-studio-success/20 bg-studio-success-muted px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-studio-success">
-              <CheckCircle2 className="h-3 w-3" />
-              Config Found
-            </div>
-          ) : (
-            <div className="flex items-center gap-1 rounded-full border border-studio-attention/20 bg-studio-attention-muted px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-studio-attention">
-              <Sparkles className="h-3 w-3" />
-              New Repo
-            </div>
-          )}
+          <CardTitle>Initialize RepoPress</CardTitle>
+          <div className="flex items-center gap-1 rounded-full border border-studio-attention/20 bg-studio-attention-muted px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-studio-attention">
+            <Sparkles className="h-3 w-3" />
+            New Repo
+          </div>
         </div>
         <CardDescription>
-          {repoConfig ? (
-            "A repopress.config.json was found. You can sync projects directly from it."
-          ) : selectedFramework !== "custom" ? (
+          {selectedFramework !== "custom" ? (
             <>
               Detected <span className="font-medium text-foreground">{selectedFramework}</span> framework.
+              Set up a config file to manage content.
             </>
           ) : (
-            "Select the branch and folder you want to manage."
+            "Set up a config file to manage content in this repository."
           )}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        {repoConfig ? (
-          <div className="space-y-4">
-            <Alert className="border-studio-success/20 bg-studio-success-muted/60">
-              <Settings className="h-4 w-4 text-studio-success" />
-              <AlertTitle className="text-studio-success">Ready to Sync</AlertTitle>
-              <AlertDescription className="text-xs text-studio-success">
-                This repository already has a configuration file. Syncing will automatically set up all projects defined
-                in it.
-              </AlertDescription>
-            </Alert>
+        {/* Framework detection summary */}
+        <Alert className="border-studio-accent/20 bg-studio-accent-muted/60">
+          <Sparkles className="h-4 w-4 text-studio-accent" />
+          <AlertTitle className="text-studio-accent">Initialize with Config (Recommended)</AlertTitle>
+          <AlertDescription className="text-xs text-pretty text-studio-accent">
+            This adds a config file and preview adapter to your repo, enabling live MDX editing and project management.
+          </AlertDescription>
+        </Alert>
 
-            <div className="space-y-2">
-              <Label>Sync Branch</Label>
-              <Select value={selectedBranch} onValueChange={setSelectedBranch}>
-                <SelectTrigger>
-                  <div className="flex items-center gap-2">
-                    <GitBranch className="h-4 w-4 text-muted-foreground" />
-                    <SelectValue />
-                  </div>
-                </SelectTrigger>
-                <SelectContent>
-                  {branches.map((branch) => (
-                    <SelectItem key={branch.name} value={branch.name}>
-                      {branch.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <Button
-              onClick={handleSyncFromConfig}
-              className="w-full bg-studio-success text-background hover:bg-studio-success/90"
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Syncing Projects...
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 className="h-4 w-4 mr-2" />
-                  Sync from Config
-                </>
-              )}
-            </Button>
-
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-background px-2 text-muted-foreground">Or setup manually</span>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            <Alert className="border-studio-accent/20 bg-studio-accent-muted/60">
-              <Sparkles className="h-4 w-4 text-studio-accent" />
-              <AlertTitle className="text-studio-accent">MDX Preview Support</AlertTitle>
-              <AlertDescription className="text-xs text-pretty text-studio-accent">
-                We recommend initializing RepoPress in this repo. This adds a config file and preview adapter to enable
-                live MDX editing.
-              </AlertDescription>
-            </Alert>
-          </div>
+        {/* Inferred branch warning */}
+        {defaultBranchInferred && (
+          <Alert className="border-studio-attention/20 bg-studio-attention-muted/60">
+            <AlertCircle className="h-4 w-4 text-studio-attention" />
+            <AlertTitle className="text-studio-attention text-sm">Verify default branch</AlertTitle>
+            <AlertDescription className="text-xs text-studio-attention">
+              We couldn&apos;t confirm the default branch from GitHub and selected <span className="font-medium">{defaultBranch}</span> as
+              a best guess. If this is wrong, change it below before initializing.
+              Framework detection and config lookup used this branch.
+            </AlertDescription>
+          </Alert>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-6">
+        {/* Init form fields */}
+        <div className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="branch">Branch</Label>
+            <Label>Branch</Label>
             <Select value={selectedBranch} onValueChange={setSelectedBranch}>
               <SelectTrigger>
                 <div className="flex items-center gap-2">
@@ -263,28 +354,10 @@ export function RepoSetupForm({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="framework">Framework</Label>
-            <Select value={selectedFramework} onValueChange={handleFrameworkChange}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {registeredAdapters.map((adapter) => (
-                  <SelectItem key={adapter.id} value={adapter.id}>
-                    {adapter.displayName}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {architectureNote && <p className="text-xs text-muted-foreground">{architectureNote}</p>}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="path">Content Root</Label>
+            <Label>Content Root</Label>
             <div className="relative">
               <Folder className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
               <Input
-                id="path"
                 placeholder="e.g. content/blog"
                 value={contentPath}
                 onChange={(e) => setContentPath(e.target.value)}
@@ -314,7 +387,24 @@ export function RepoSetupForm({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="contentType">Content Type</Label>
+            <Label>Framework</Label>
+            <Select value={selectedFramework} onValueChange={handleFrameworkChange}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {registeredAdapters.map((adapter) => (
+                  <SelectItem key={adapter.id} value={adapter.id}>
+                    {adapter.displayName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {architectureNote && <p className="text-xs text-muted-foreground">{architectureNote}</p>}
+          </div>
+
+          <div className="space-y-2">
+            <Label>Content Type</Label>
             <Select value={contentType} onValueChange={setContentType}>
               <SelectTrigger>
                 <SelectValue />
@@ -328,42 +418,66 @@ export function RepoSetupForm({
               </SelectContent>
             </Select>
           </div>
+        </div>
 
-          <div className="pt-2 space-y-3">
-            {!repoConfig && (
+        {/* Viewer warning: org editors with cold cache may be misidentified as viewers */}
+        {!isWriter && (
+          <Alert className="border-studio-attention/20 bg-studio-attention-muted/60">
+            <AlertCircle className="h-4 w-4 text-studio-attention" />
+            <AlertTitle className="text-studio-attention text-sm">Limited Access Detected</AlertTitle>
+            <AlertDescription className="text-xs text-studio-attention">
+              We could not confirm write access. If you have push permissions, you can still try — GitHub will verify your access.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* Primary CTA: Initialize */}
+        <Button
+          type="button"
+          className="w-full"
+          onClick={handleInitRepoPress}
+          disabled={isInitializing || isLoading || isSyncPending}
+        >
+          {isInitializing ? (
+            <>
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              Initializing...
+            </>
+          ) : (
+            <>
+              <Sparkles className="h-4 w-4 mr-2" />
+              Initialize RepoPress
+            </>
+          )}
+        </Button>
+
+        {/* Advanced: legacy manual path */}
+        <Collapsible open={showAdvanced} onOpenChange={setShowAdvanced}>
+          <CollapsibleTrigger asChild>
+            <Button variant="ghost" size="sm" className="w-full text-xs text-muted-foreground">
+              {showAdvanced ? "Hide advanced options" : "Advanced: Create without config file"}
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="pt-2">
+            <form onSubmit={handleSubmit}>
               <Button
-                type="button"
+                type="submit"
                 variant="outline"
-                className="w-full border-studio-accent/25 text-studio-accent hover:bg-studio-accent-muted/60"
-                onClick={handleInitRepoPress}
-                disabled={isInitializing || isLoading}
+                className="w-full"
+                disabled={isLoading || isInitializing || !user}
               >
-                {isInitializing ? (
+                {isLoading ? (
                   <>
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Initializing...
+                    Creating...
                   </>
                 ) : (
-                  <>
-                    <Sparkles className="h-4 w-4 mr-2" />
-                    Initialize with Config (Recommended)
-                  </>
+                  "Create without config file (advanced)"
                 )}
               </Button>
-            )}
-
-            <Button type="submit" className="w-full" disabled={isLoading || isInitializing || !user}>
-              {isLoading ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Creating project...
-                </>
-              ) : (
-                "Create Project (Legacy Mode)"
-              )}
-            </Button>
-          </div>
-        </form>
+            </form>
+          </CollapsibleContent>
+        </Collapsible>
       </CardContent>
     </Card>
   )

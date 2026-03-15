@@ -37,7 +37,7 @@ export default async function HistoryPage({ params, searchParams }: PageProps) {
     const project = projects.find((entry) => entry._id === (projectId as Id<"projects">))
     if (project && (!branch || project.branch === branch)) {
       // Resolve role: GitHub API → ownership → cache → content probe
-      const githubRole = await getRepoRole(token, owner, repo)
+      const { role: githubRole } = await getRepoRole(token, owner, repo)
       let repoRole: "owner" | "editor" | "viewer" | null = githubRole ?? (project.userId === actingUserId ? "owner" : null)
       if (!repoRole) {
         try {

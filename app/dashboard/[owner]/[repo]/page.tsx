@@ -1,25 +1,21 @@
-import { AlertCircle, GitBranch, Settings } from "lucide-react"
-import Link from "next/link"
+import { ConvexHttpClient } from "convex/browser"
 import { redirect } from "next/navigation"
-import { FileBrowser } from "@/components/file-browser"
-import { RepoBreadcrumb } from "@/components/repo-breadcrumb"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Button } from "@/components/ui/button"
-import { getGitHubToken } from "@/lib/auth-server"
-import { getRepoContents } from "@/lib/github"
+import { RepoProjectHub } from "@/components/repo-project-hub"
+import { api } from "@/convex/_generated/api"
+import { fetchAuthQuery, getGitHubToken, getPatAuthUserId } from "@/lib/auth-server"
+import { resolveRepoRole } from "@/lib/github-permissions"
+import { mintServerQueryToken } from "@/lib/project-access-token"
+import { fetchRepoConfig } from "@/lib/repopress/config"
+import { syncProjectsServerSide } from "@/lib/sync-projects"
 
 interface RepoPageProps {
   params: Promise<{
     owner: string
     repo: string
   }>
-  searchParams: Promise<{
-    path?: string
-    branch?: string
-  }>
 }
 
-export default async function RepoPage({ params, searchParams }: RepoPageProps) {
+export default async function RepoPage({ params }: RepoPageProps) {
   const token = await getGitHubToken()
 
   if (!token) {
@@ -27,71 +23,76 @@ export default async function RepoPage({ params, searchParams }: RepoPageProps) 
   }
 
   const { owner, repo } = await params
-  const { path, branch } = await searchParams
-  const currentPath = path || ""
-  const currentBranch = branch || "main"
 
-  let files: Awaited<ReturnType<typeof getRepoContents>> = []
-  let error = null
+  // Resolve acting user (OAuth or PAT)
+  const authUser = fetchAuthQuery ? await fetchAuthQuery(api.auth.getCurrentUser).catch(() => null) : null
+  const patUserId = !authUser ? await getPatAuthUserId(token) : null
+  const actingUserId = (authUser?._id as string | undefined) ?? patUserId
 
-  try {
-    files = await getRepoContents(token, owner, repo, currentPath, currentBranch)
-  } catch (e) {
-    console.error("Error fetching repo contents:", e)
-    error = "Failed to fetch repository contents. Please try again later."
+  // Resolve role + default branch via full 4-tier fallback (including repoAccessCache)
+  const {
+    role: repoRole,
+    defaultBranch: resolvedDefaultBranch,
+    defaultBranchInferred,
+  } = await resolveRepoRole(token, owner, repo, actingUserId)
+  const defaultBranch = resolvedDefaultBranch || "main"
+
+  if (!repoRole && !actingUserId) {
+    redirect("/login")
   }
+  if (!repoRole) {
+    redirect("/dashboard")
+  }
+
+  // Auto-sync from config if present
+  const { config, errorType } = await fetchRepoConfig(token, owner, repo, defaultBranch)
+  let syncError: string | null = null
+
+  if (config && actingUserId) {
+    try {
+      await syncProjectsServerSide(token, owner, repo, defaultBranch, actingUserId)
+    } catch (e: any) {
+      syncError = e.message || "Failed to sync projects from config"
+    }
+  }
+
+  // Fetch all projects for this repo (repo-scoped, not user-scoped)
+  const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
+  const serverQueryToken = await mintServerQueryToken()
+  const projects = await convex.query(api.projects.listProjectsForRepo, {
+    repoOwner: owner,
+    repoName: repo,
+    serverQueryToken,
+  })
+
+  const isWriter = repoRole === "owner" || repoRole === "editor"
+  const hasConfig = !!config
+  const configSynced = hasConfig && !syncError
 
   return (
     <div className="container mx-auto py-8 px-4">
-      <div className="flex flex-col gap-6">
-        <div className="flex items-center justify-between">
-          <RepoBreadcrumb owner={owner} repo={repo} path={currentPath ? [currentPath] : []} />
-          <div className="flex gap-2">
-            <Button variant="outline" size="icon" asChild title="Project Settings">
-              <Link href={`/dashboard/${owner}/${repo}/settings`}>
-                <Settings className="h-4 w-4" />
-              </Link>
-            </Button>
-            <Button asChild>
-              <Link href={`/dashboard/${owner}/${repo}/studio/${currentPath}?branch=${currentBranch}`}>
-                Open Studio
-              </Link>
-            </Button>
-            <Button variant="outline" asChild>
-              <Link href="/dashboard">Back to Dashboard</Link>
-            </Button>
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-4">
-            <h1 className="text-3xl font-bold tracking-tight">
-              {owner}/{repo}
-            </h1>
-            <div className="flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full bg-muted text-muted-foreground">
-              <GitBranch className="h-3 w-3" />
-              {currentBranch}
-            </div>
-          </div>
-          <p className="text-muted-foreground">Browse and manage your repository files</p>
-        </div>
-
-        {error && (
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Error</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
-
-        {!error && files.length === 0 ? (
-          <div className="text-center py-12 border rounded-lg bg-muted/10">
-            <p className="text-muted-foreground">No files found in this directory.</p>
-          </div>
-        ) : (
-          <FileBrowser files={files} currentPath={currentPath} owner={owner} repo={repo} branch={currentBranch} />
-        )}
-      </div>
+      <RepoProjectHub
+        owner={owner}
+        repo={repo}
+        defaultBranch={defaultBranch}
+        defaultBranchInferred={defaultBranchInferred || !resolvedDefaultBranch}
+        projects={projects.map((p) => ({
+          _id: p._id,
+          name: p.name,
+          branch: p.branch,
+          contentRoot: p.contentRoot,
+          detectedFramework: p.detectedFramework,
+          contentType: p.contentType,
+          frameworkSource: p.frameworkSource,
+          createdAt: p.createdAt,
+          updatedAt: p.updatedAt,
+        }))}
+        hasConfig={hasConfig}
+        configSynced={configSynced}
+        syncError={syncError}
+        isWriter={isWriter}
+        role={repoRole}
+      />
     </div>
   )
 }

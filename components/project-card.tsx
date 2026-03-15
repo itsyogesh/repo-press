@@ -2,6 +2,7 @@
 
 import { ArrowRight, Folder, GitBranch } from "lucide-react"
 import Link from "next/link"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 
@@ -15,7 +16,9 @@ interface ProjectCardProps {
     contentRoot: string
     detectedFramework?: string
     contentType: string
+    frameworkSource?: string
     createdAt: number
+    updatedAt: number
   }
 }
 
@@ -24,33 +27,45 @@ export function ProjectCard({ project }: ProjectCardProps) {
     <Card className="flex flex-col h-full">
       <CardHeader>
         <div className="flex items-start justify-between">
-          <div className="space-y-1">
-            <CardTitle className="text-lg">
-              {project.repoOwner}/{project.repoName}
-            </CardTitle>
-            <CardDescription className="flex items-center gap-2">
-              <GitBranch className="h-3 w-3" />
-              {project.branch}
+          <div className="space-y-1 min-w-0 flex-1">
+            <CardTitle className="text-lg truncate">{project.name}</CardTitle>
+            <CardDescription className="flex items-center gap-2 text-xs">
+              <span className="truncate">
+                {project.repoOwner}/{project.repoName}
+              </span>
               {project.contentRoot && (
-                <>
-                  <Folder className="h-3 w-3 ml-1" />
+                <span className="flex items-center gap-1 shrink-0">
+                  <Folder className="h-3 w-3" />
                   {project.contentRoot}
-                </>
+                </span>
               )}
             </CardDescription>
           </div>
-          {project.detectedFramework && project.detectedFramework !== "custom" && (
-            <span className="px-2 py-1 text-xs font-medium rounded-full bg-muted text-muted-foreground">
-              {project.detectedFramework}
-            </span>
-          )}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {project.detectedFramework && project.detectedFramework !== "custom" && (
+              <Badge variant="secondary" className="text-[10px]">
+                {project.detectedFramework}
+              </Badge>
+            )}
+          </div>
         </div>
       </CardHeader>
       <CardContent className="flex-1 flex flex-col gap-4">
         <div className="flex items-center gap-2 text-xs text-muted-foreground mt-auto">
+          <span className="flex items-center gap-1">
+            <GitBranch className="h-3 w-3" />
+            {project.branch}
+          </span>
+          <span>&middot;</span>
           <span className="capitalize">{project.contentType}</span>
           <span>&middot;</span>
-          <span>Created {new Date(project.createdAt).toLocaleDateString()}</span>
+          {project.frameworkSource === "config" ? (
+            <span className="text-studio-success font-medium">Config</span>
+          ) : (
+            <span>Manual</span>
+          )}
+          <span>&middot;</span>
+          <span>Updated {new Date(project.updatedAt).toLocaleDateString()}</span>
         </div>
 
         <Link

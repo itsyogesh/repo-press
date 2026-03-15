@@ -2,10 +2,8 @@ import { ConvexHttpClient } from "convex/browser"
 import { api } from "@/convex/_generated/api"
 import type { Doc } from "@/convex/_generated/dataModel"
 import { fetchAuthQuery, getGitHubToken, getPatAuthUserId } from "@/lib/auth-server"
-import { getRepoRole, probeRepoReadAccess } from "@/lib/github-permissions"
+import { getRepoRole, probeRepoReadAccess, roleAtLeast, type Role } from "@/lib/github-permissions"
 import { mintProjectAccessToken, mintServerQueryToken } from "@/lib/project-access-token"
-
-type Role = "owner" | "editor" | "viewer"
 
 interface RouteAuthResult {
   actingUserId: string
@@ -45,7 +43,7 @@ export async function resolveRouteAuth(
   }
 
   // 2. Check GitHub permissions, fall back to project ownership, then cache
-  const githubRole = await getRepoRole(githubToken, project.repoOwner, project.repoName)
+  const { role: githubRole } = await getRepoRole(githubToken, project.repoOwner, project.repoName)
   const isProjectOwner = project.userId === actingUserId
   let role: Role | null = githubRole ?? (isProjectOwner ? "owner" : null)
 
@@ -125,16 +123,6 @@ async function resolveActingUserId(): Promise<string | null> {
     }
   }
   return null
-}
-
-const ROLE_HIERARCHY: Record<Role, number> = {
-  owner: 3,
-  editor: 2,
-  viewer: 1,
-}
-
-function roleAtLeast(actual: Role, minimum: Role): boolean {
-  return ROLE_HIERARCHY[actual] >= ROLE_HIERARCHY[minimum]
 }
 
 export class RouteAuthError extends Error {
