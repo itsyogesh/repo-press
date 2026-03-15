@@ -1,0 +1,10 @@
+uid=26_0 RootWebArea "RepoPress - Git-native Headless CMS" url="http://localhost:3001/dashboard/droidsize/collective.domains/studio?branch=main&projectId=k57bkmzshvpx702cey0jfr69ax82m7r6&file=content%2Fblog%2Fhow-to-choose-the-best-domain-name.mdx"
+  uid=26_3 generic atomic live="polite" relevant="additions text"
+    uid=26_4 StaticText "Editing how-to-choose-the-best-domain-name.mdx, status: draft"
+  uid=26_125 status atomic live="assertive" relevant="additions text"
+  uid=26_520 region "Notifications alt+T" live="polite" relevant="additions text"
+  uid=27_0 alertdialog "Discard all pending changes?" description="This will revert all your staged creations, deletions, and edits. This action cannot be undone."
+    uid=27_1 heading "Discard all pending changes?" level="2"
+    uid=27_2 StaticText "This will revert all your staged creations, deletions, and edits. This action cannot be undone."
+    uid=27_3 button "Cancel" focusable focused
+    uid=27_4 button "Discard Changes"
