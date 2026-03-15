@@ -1,6 +1,7 @@
 "use client"
 
 import {
+  Files,
   HelpCircle,
   History,
   Home,
@@ -103,9 +104,9 @@ export function StudioHeader({
         </Button>
 
         <Button variant="ghost" size="icon" asChild className="h-8 w-8 shrink-0">
-          <Link href="/dashboard">
+          <Link href={`/dashboard/${owner}/${repo}`}>
             <Home className="h-4 w-4" />
-            <span className="sr-only">Back to dashboard</span>
+            <span className="sr-only">Back to project hub</span>
           </Link>
         </Button>
 
@@ -204,6 +205,12 @@ export function StudioHeader({
             <DropdownMenuItem onClick={handleSyncConfig} disabled={isPending}>
               <RefreshCw className={`h-4 w-4 mr-2 ${isPending ? "animate-spin" : ""}`} />
               Sync Config
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link href={`/dashboard/${owner}/${repo}/files?branch=${branch}`}>
+                <Files className="h-4 w-4 mr-2" />
+                Browse All Files
+              </Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
               <Link href={historyHref}>

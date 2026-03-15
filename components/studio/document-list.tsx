@@ -12,6 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
 import { cn } from "@/lib/utils"
+import { useStudio } from "./studio-context"
 
 type DocumentStatus = "draft" | "in_review" | "approved" | "published" | "scheduled" | "archived"
 
@@ -34,20 +35,26 @@ interface DocumentListProps {
 }
 
 export function DocumentList({ projectId, selectedFilePath, onSelectDocument }: DocumentListProps) {
+  const { projectAccessToken } = useStudio()
+  const user = useQuery(api.auth.getCurrentUser)
+  const userId = user?._id as string | undefined
+
   const [statusFilter, setStatusFilter] = React.useState<DocumentStatus | "all">("all")
   const [searchTerm, setSearchTerm] = React.useState("")
   const skeletonRows = React.useMemo(() => Array.from({ length: 8 }, (_, idx) => ({ id: `doc-skeleton-${idx}` })), [])
 
+  const queryAuth = { userId, projectAccessToken: projectAccessToken || undefined }
+
   const documents = useQuery(
     api.documents.listByProject,
     statusFilter === "all"
-      ? { projectId: projectId as Id<"projects"> }
-      : { projectId: projectId as Id<"projects">, status: statusFilter },
+      ? { projectId: projectId as Id<"projects">, ...queryAuth }
+      : { projectId: projectId as Id<"projects">, status: statusFilter, ...queryAuth },
   )
 
   const searchResults = useQuery(
     api.documents.search,
-    searchTerm.length >= 2 ? { projectId: projectId as Id<"projects">, searchTerm } : "skip",
+    searchTerm.length >= 2 ? { projectId: projectId as Id<"projects">, searchTerm, ...queryAuth } : "skip",
   )
 
   // When searching, apply the status filter client-side since the search index doesn't support it
