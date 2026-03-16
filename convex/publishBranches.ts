@@ -16,6 +16,22 @@ async function resolveProjectCaller(
   explicitUserId?: string,
   projectAccessToken?: string,
 ) {
+  // First check for projectAccessToken (used when called from API routes with PAT auth)
+  const payload = await verifyProjectAccessToken(projectAccessToken)
+  if (payload && payload.projectId === projectId) {
+    const project = (await ctx.db.get(projectId as any)) as {
+      userId: string
+    } | null
+    if (!project || project.userId !== payload.userId) {
+      throw new Error("Unauthorized")
+    }
+    if (explicitUserId && explicitUserId !== payload.userId) {
+      throw new Error("Unauthorized: caller identity does not match userId")
+    }
+    return { userId: payload.userId, project }
+  }
+
+  // Fall back to Convex session auth (for OAuth users calling from client)
   const authUser = await authComponent.safeGetAuthUser(ctx)
   if (authUser?._id) {
     const authUserId = authUser._id as string
@@ -31,18 +47,16 @@ async function resolveProjectCaller(
     return { userId: authUserId, project }
   }
 
-  const payload = await verifyProjectAccessToken(projectAccessToken)
-  if (payload && payload.projectId === projectId) {
+  // Last resort: verify explicitUserId matches project owner
+  // This handles the API route case where we pass project.userId as explicitUserId
+  if (explicitUserId) {
     const project = (await ctx.db.get(projectId as any)) as {
       userId: string
     } | null
-    if (!project || project.userId !== payload.userId) {
+    if (!project || project.userId !== explicitUserId) {
       throw new Error("Unauthorized")
     }
-    if (explicitUserId && explicitUserId !== payload.userId) {
-      throw new Error("Unauthorized: caller identity does not match userId")
-    }
-    return { userId: payload.userId, project }
+    return { userId: explicitUserId, project }
   }
 
   throw new Error("Unauthorized: Not authenticated")
