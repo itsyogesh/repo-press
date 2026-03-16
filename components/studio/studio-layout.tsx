@@ -492,6 +492,8 @@ function StudioLayoutInner({
     fieldVariants,
   } = studioQueries
 
+  const canMutateExplorer = Boolean(userId || projectAccessToken)
+
   const hydratedForPath = React.useRef<string | null>(null)
 
   React.useEffect(() => {
@@ -573,7 +575,7 @@ function StudioLayoutInner({
 
   const handleConfirmCreate = React.useCallback(
     async (fileName: string, parentPath: string, initialFrontmatter?: Record<string, unknown>) => {
-      if (!projectId || !userId) return
+      if (!projectId || !canMutateExplorer) return
       const isAlreadyPrefixed = contentRoot && (parentPath === contentRoot || parentPath.startsWith(`${contentRoot}/`))
       let filePath: string
       if (isAlreadyPrefixed) {
@@ -613,12 +615,12 @@ function StudioLayoutInner({
         toast.error(error.message || "Failed to create file")
       }
     },
-    [projectId, userId, projectAccessToken, contentRoot, stageCreate, primeFileSnapshot, navigateToFile],
+    [projectId, canMutateExplorer, userId, projectAccessToken, contentRoot, stageCreate, primeFileSnapshot, navigateToFile],
   )
 
   const handleDeleteFile = React.useCallback(
     async (filePath: string, fileSha: string) => {
-      if (!projectId || !userId) return
+      if (!projectId || !canMutateExplorer) return
       try {
         const pendingCreateOp = pendingOps?.find(
           (op: any) => op.filePath === filePath && op.opType === "create" && op.status === "pending",
@@ -655,12 +657,12 @@ function StudioLayoutInner({
         toast.error(error.message || "Failed to delete file")
       }
     },
-    [projectId, userId, projectAccessToken, pendingOps, undoOp, discardFileFromClientState, stageDelete],
+    [projectId, canMutateExplorer, userId, projectAccessToken, pendingOps, undoOp, discardFileFromClientState, stageDelete],
   )
 
   const handleUndoDelete = React.useCallback(
     async (filePath: string) => {
-      if (!projectId || !userId || !pendingOps) return
+      if (!projectId || !canMutateExplorer || !pendingOps) return
       const op = pendingOps.find((o: any) => o.filePath === filePath && o.opType === "delete" && o.status === "pending")
       if (!op) return
       try {
@@ -671,11 +673,11 @@ function StudioLayoutInner({
         toast.error(error.message || "Failed to undo")
       }
     },
-    [projectId, userId, projectAccessToken, pendingOps, undoOp],
+    [projectId, canMutateExplorer, userId, projectAccessToken, pendingOps, undoOp],
   )
 
   const handleDiscardAll = React.useCallback(async () => {
-    if (!pendingOps || !userId) return
+    if (!pendingOps || !canMutateExplorer) return
     try {
       for (const op of pendingOps) {
         if (op.status === "pending") {
@@ -686,7 +688,7 @@ function StudioLayoutInner({
     } catch (error: any) {
       toast.error(error.message || "Failed to discard changes")
     }
-  }, [pendingOps, userId, projectAccessToken, undoOp])
+  }, [pendingOps, canMutateExplorer, userId, projectAccessToken, undoOp])
 
   const resolveRelocatePayload = React.useCallback(
     async (oldPath: string) => {
@@ -765,7 +767,7 @@ function StudioLayoutInner({
 
   const stageRelocateFile = React.useCallback(
     async (oldPath: string, newPath: string, actionLabel: "renamed" | "moved") => {
-      if (!projectId || !userId) return
+      if (!projectId || !canMutateExplorer) return
       if (!oldPath || !newPath || oldPath === newPath) return
 
       const oldNode = findTreeNodeByPath(overlayTree, oldPath)
@@ -844,6 +846,7 @@ function StudioLayoutInner({
     },
     [
       projectId,
+      canMutateExplorer,
       userId,
       projectAccessToken,
       overlayTree,

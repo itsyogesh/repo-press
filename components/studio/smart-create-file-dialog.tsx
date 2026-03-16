@@ -10,12 +10,17 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Skeleton } from "@/components/ui/skeleton"
 import type { MergedFieldDef } from "@/lib/framework-adapters"
-import { inferFieldDef, normalizeDate } from "@/lib/framework-adapters"
 import { deriveFilename } from "@/lib/framework-adapters/derive-filename"
 import { groupFields } from "@/lib/framework-adapters/field-groups"
 import { getFolderContext } from "@/lib/framework-adapters/folder-context"
 import type { FrameworkAdapter, FrontmatterFieldDef } from "@/lib/framework-adapters/types"
 import type { FileTreeNode } from "@/lib/github"
+import {
+  blankSmartCreateValue,
+  buildSiblingFields,
+  findSiblingContentFile,
+  resolveSmartCreateExtension,
+} from "@/lib/studio/smart-create"
 import { FrontmatterField } from "./frontmatter-field"
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -58,30 +63,6 @@ function toMergedField(f: FrontmatterFieldDef): MergedFieldDef {
   return { ...f, actualFieldName: f.name, isInFile: false }
 }
 
-/** Returns a blank/default value for a field (pre-seeds dates with today). */
-function blankValue(f: FrontmatterFieldDef): unknown {
-  if (f.type === "date") return normalizeDate(new Date())
-  if (f.type === "boolean") return false
-  if (f.type === "number") return undefined
-  if (f.type === "string[]") return []
-  return ""
-}
-
-const CONTENT_EXTENSIONS = /\.(mdx?|markdown)$/i
-
-/**
- * Find the first non-directory .md/.mdx file among the given tree nodes.
- * Skips index files (index.mdx / index.md) as they're section landing pages.
- */
-function findSiblingFile(nodes: FileTreeNode[]): FileTreeNode | null {
-  for (const n of nodes) {
-    if (n.type === "file" && CONTENT_EXTENSIONS.test(n.name) && !/^index\./i.test(n.name)) {
-      return n
-    }
-  }
-  return null
-}
-
 /**
  * Fetch a file from GitHub via the internal API and return its parsed frontmatter.
  * Returns null if the fetch fails or the file has no frontmatter.
@@ -104,21 +85,93 @@ async function fetchSiblingFrontmatter(
   }
 }
 
-/**
- * Given raw frontmatter from a sibling file, build FrontmatterFieldDef entries
- * for every key that isn't title or draft — these become the template fields
- * shown blank in the dialog. Uses inferFieldDef for rich type inference (SEO fields, etc).
- */
-function buildSiblingFields(fm: Record<string, unknown>): FrontmatterFieldDef[] {
-  const SKIP = new Set(["title", "draft"])
-  return Object.entries(fm)
-    .filter(([key]) => !SKIP.has(key))
-    .map(([key, value]) => inferFieldDef(key, value))
-}
-
 // ─── Component ───────────────────────────────────────────────────────────────
 
 const MIN_SKELETON_MS = 120
+
+type SiblingInferenceSnapshot = {
+  status: "idle" | "loading" | "ready" | "error"
+  fields: FrontmatterFieldDef[]
+}
+
+type SiblingInferenceEntry = {
+  snapshot: SiblingInferenceSnapshot
+  listeners: Set<() => void>
+  promise: Promise<void> | null
+}
+
+const EMPTY_SIBLING_SNAPSHOT: SiblingInferenceSnapshot = {
+  status: "idle",
+  fields: [],
+}
+
+const siblingInferenceStore = new Map<string, SiblingInferenceEntry>()
+
+function getSiblingInferenceEntry(key: string) {
+  let entry = siblingInferenceStore.get(key)
+  if (!entry) {
+    entry = {
+      snapshot: EMPTY_SIBLING_SNAPSHOT,
+      listeners: new Set(),
+      promise: null,
+    }
+    siblingInferenceStore.set(key, entry)
+  }
+  return entry
+}
+
+function emitSiblingInference(entry: SiblingInferenceEntry) {
+  for (const listener of entry.listeners) {
+    listener()
+  }
+}
+
+async function loadSiblingInference(
+  key: string,
+  payload: { owner: string; repo: string; branch: string; path: string },
+) {
+  const entry = getSiblingInferenceEntry(key)
+  if (entry.promise || entry.snapshot.status === "ready") return
+
+  entry.snapshot = { status: "loading", fields: [] }
+  emitSiblingInference(entry)
+
+  entry.promise = fetchSiblingFrontmatter(payload.owner, payload.repo, payload.branch, payload.path)
+    .then((frontmatter) => {
+      entry.snapshot = {
+        status: "ready",
+        fields: frontmatter ? buildSiblingFields(frontmatter) : [],
+      }
+    })
+    .catch(() => {
+      entry.snapshot = { status: "error", fields: [] }
+    })
+    .finally(() => {
+      entry.promise = null
+      emitSiblingInference(entry)
+    })
+}
+
+function subscribeSiblingInference(
+  key: string | null,
+  payload: { owner: string; repo: string; branch: string; path: string } | null,
+  listener: () => void,
+) {
+  if (!key || !payload) return () => {}
+
+  const entry = getSiblingInferenceEntry(key)
+  entry.listeners.add(listener)
+  void loadSiblingInference(key, payload)
+
+  return () => {
+    entry.listeners.delete(listener)
+  }
+}
+
+function getSiblingInferenceSnapshot(key: string | null): SiblingInferenceSnapshot {
+  if (!key) return EMPTY_SIBLING_SNAPSHOT
+  return getSiblingInferenceEntry(key).snapshot
+}
 
 export function SmartCreateFileDialog({
   open,
@@ -146,6 +199,36 @@ export function SmartCreateFileDialog({
     return getFolderContext(parentPath, adapter)
   }, [parentPath, adapter])
 
+  const sibling = React.useMemo(() => findSiblingContentFile(folderChildNodes), [folderChildNodes])
+
+  const siblingInferenceKey = React.useMemo(() => {
+    if (!open || !sibling) return null
+    return JSON.stringify({
+      owner,
+      repo,
+      branch,
+      path: sibling.path,
+    })
+  }, [open, owner, repo, branch, sibling?.path])
+
+  const siblingSnapshot = React.useSyncExternalStore(
+    (listener) =>
+      subscribeSiblingInference(
+        siblingInferenceKey,
+        sibling
+          ? {
+              owner,
+              repo,
+              branch,
+              path: sibling.path,
+            }
+          : null,
+        listener,
+      ),
+    () => getSiblingInferenceSnapshot(siblingInferenceKey),
+    () => EMPTY_SIBLING_SNAPSHOT,
+  )
+
   // Compute display path (strip contentRoot prefix)
   const displayPath = React.useMemo(() => {
     if (contentRoot && parentPath.startsWith(contentRoot)) {
@@ -154,73 +237,61 @@ export function SmartCreateFileDialog({
     return parentPath
   }, [parentPath, contentRoot])
 
-  // Use refs for values the effect reads but shouldn't re-trigger on.
-  // This prevents unnecessary re-fetches when overlayTree updates cause
-  // folderChildNodes / context to get new references while the dialog is open.
-  const folderChildNodesRef = React.useRef(folderChildNodes)
-  folderChildNodesRef.current = folderChildNodes
-  const contextRef = React.useRef(context)
-  contextRef.current = context
-
-  // On dialog open: fetch sibling frontmatter + enforce minimum skeleton time
   React.useEffect(() => {
-    if (!open) return
-
+    if (!open) return undefined
     setTitle("")
     setSiblingFields([])
     setFieldValues({})
     setReady(false)
+    return undefined
+  }, [open, parentPath, owner, repo, branch])
 
-    let cancelled = false
+  React.useEffect(() => {
+    if (!open) return undefined
 
-    const sibling = findSiblingFile(folderChildNodesRef.current)
+    const siblingResolved = !sibling || siblingSnapshot.status === "ready" || siblingSnapshot.status === "error"
+    if (!siblingResolved) return undefined
 
-    const skeletonPromise = new Promise<void>((resolve) => setTimeout(resolve, MIN_SKELETON_MS))
+    const inferredFields = sibling ? siblingSnapshot.fields : []
+    const siblingKeys = new Set(inferredFields.map((field) => field.name))
+    const extraAdapterFields = context.requiredFields.filter((field) => !siblingKeys.has(field.name))
+    const allFields = [...inferredFields, ...extraAdapterFields]
 
-    const siblingPromise: Promise<FrontmatterFieldDef[]> = sibling
-      ? fetchSiblingFrontmatter(owner, repo, branch, sibling.path).then((fm) => {
-          if (!fm || cancelled) return []
-          return buildSiblingFields(fm)
-        })
-      : Promise.resolve([])
-
-    Promise.all([skeletonPromise, siblingPromise]).then(([, inferredFields]) => {
-      if (cancelled) return
-
-      // Merge: sibling fields first, then adapter required fields not already covered
-      const adapterRequired = contextRef.current?.requiredFields ?? []
-      const siblingKeys = new Set(inferredFields.map((f) => f.name))
-      const extraAdapterFields = adapterRequired.filter((f) => !siblingKeys.has(f.name))
-      const allFields = [...inferredFields, ...extraAdapterFields]
-
-      setSiblingFields(allFields)
-      setFieldValues(Object.fromEntries(allFields.map((f) => [f.name, blankValue(f)])))
-      setReady(true)
+    setSiblingFields(allFields)
+    setFieldValues((previous) => {
+      if (Object.keys(previous).length > 0) return previous
+      return Object.fromEntries(allFields.map((field) => [field.name, blankSmartCreateValue(field)]))
     })
 
+    const timer = window.setTimeout(() => {
+      setReady(true)
+    }, MIN_SKELETON_MS)
+
     return () => {
-      cancelled = true
+      window.clearTimeout(timer)
     }
-    // Stable deps only: effect fires when dialog opens or the target folder/repo changes.
-    // folderChildNodes and context are read via refs to avoid spurious re-fetches.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, branch, owner, repo])
+  }, [open, sibling?.path, siblingSnapshot.status, siblingSnapshot.fields, context.requiredFields])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!title.trim()) return
 
+    const extension = resolveSmartCreateExtension({
+      adapter,
+      siblingPath: sibling?.path,
+    })
+
     const fileName = deriveFilename({
       title: title.trim(),
       strategy: context.namingStrategy,
-      extension: context.fileExtension,
+      extension,
       existingNames: folderChildren,
     })
 
-    const frontmatter: Record<string, unknown> = {
-      title: title.trim(),
-      ...fieldValues,
-    }
+    const frontmatter = Object.fromEntries([
+      ["title", title.trim()],
+      ...Object.entries(fieldValues).filter(([, value]) => value !== undefined),
+    ])
 
     onConfirm({ fileName, parentPath, frontmatter })
     onOpenChange(false)
@@ -256,7 +327,7 @@ export function SmartCreateFileDialog({
               {displayPath ? `Adding to ${displayPath}` : "Adding to the content root"}
             </SheetDescription>
             {hint && (
-              <p className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 rounded-md mt-2 border border-amber-200 dark:border-amber-800">
+              <p className="mt-2 rounded-md border border-studio-attention/30 bg-studio-attention/10 px-3 py-2 text-xs text-studio-attention">
                 <span className="font-medium">Note:</span> {hint}
               </p>
             )}

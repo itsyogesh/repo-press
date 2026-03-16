@@ -22,8 +22,8 @@ export function ComponentPreview({ name, className }: PreviewProps) {
         <PreviewSwitch name={normalizedName} />
       </div>
 
-      {/* Subtle Grain Overlay */}
-      <div className="absolute inset-0 opacity-[0.02] pointer-events-none mix-blend-overlay bg-[url('https://grainy-gradients.vercel.app/noise.svg')]" />
+      {/* Subtle local texture overlay */}
+      <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_1px_1px,currentColor_1px,transparent_0)] bg-[size:12px_12px] opacity-[0.02] text-studio-fg mix-blend-overlay" />
     </div>
   )
 }

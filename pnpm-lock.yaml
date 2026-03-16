@@ -213,9 +213,6 @@ importers:
       '@biomejs/biome':
         specifier: 2.4.1
         version: 2.4.1
-      '@next/swc-darwin-arm64':
-        specifier: ^16.0.10
-        version: 16.0.10
       '@tailwindcss/postcss':
         specifier: ^4.1.9
         version: 4.1.18

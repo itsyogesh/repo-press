@@ -112,6 +112,11 @@ describe("getFolderContext", () => {
     expect(ctx.fileExtension).toBe(".md")
   })
 
+  it("defaults custom adapters to markdown when no explicit extension exists", () => {
+    const ctx = getFolderContext("content/blog", baseAdapter)
+    expect(ctx.fileExtension).toBe(".md")
+  })
+
   it("excludes title and draft from requiredFields, but includes date", () => {
     const ctx = getFolderContext("content/blog", adapterWithDate)
     expect(ctx.requiredFields.map((f) => f.name)).not.toContain("title")

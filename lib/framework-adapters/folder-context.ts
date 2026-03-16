@@ -7,7 +7,7 @@
  * - Human-readable primary field label (e.g. "Post Title")
  * - Required frontmatter fields (excluding title and draft)
  * - Naming strategy (from adapter, falling back to "slug")
- * - File extension (from adapter, falling back to ".mdx")
+ * - File extension (from adapter, falling back to ".md" for custom repos)
  *
  * All computation is synchronous — no async detection per folder.
  */
@@ -110,7 +110,7 @@ export function getFolderContext(folderPath: string, adapter: FrameworkAdapter |
   const segment = lastSegment(folderPath)
 
   const namingStrategy: NamingStrategy = adapter?.namingStrategy ?? "slug"
-  const fileExtension: ".mdx" | ".md" = adapter?.fileExtension ?? ".mdx"
+  const fileExtension: ".mdx" | ".md" = adapter?.fileExtension ?? (adapter?.id === "custom" ? ".md" : ".mdx")
 
   // Fields the user must fill in (excluding title and draft)
   const requiredFields =

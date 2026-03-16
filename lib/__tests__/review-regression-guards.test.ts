@@ -92,4 +92,19 @@ describe("review regression guards", () => {
     expect(source).toMatch(/normalizeExternalImageUrl/)
     expect(source).toMatch(/onSelect\(\s*normalizeExternalImageUrl\(/)
   })
+
+  it("keeps studio component previews self-hosted", () => {
+    const source = read("components/studio/component-preview.tsx")
+    expect(source).not.toContain("grainy-gradients.vercel.app")
+    expect(source).not.toContain("http://")
+    expect(source).not.toContain("https://")
+  })
+
+  it("does not pin platform-specific Next.js binaries in package.json", () => {
+    const manifest = JSON.parse(read("package.json")) as {
+      devDependencies?: Record<string, string>
+    }
+
+    expect(manifest.devDependencies?.["@next/swc-darwin-arm64"]).toBeUndefined()
+  })
 })
