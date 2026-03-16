@@ -6,6 +6,8 @@ export const fumadocsAdapter: FrameworkAdapter = {
   displayName: "Fumadocs",
   defaultContentRoots: ["content/docs", "content", "docs", "app/docs"],
   metaFilePattern: "meta.json",
+  namingStrategy: "index-if-empty",
+  fileExtension: ".mdx",
   fieldVariants: {},
   contentArchitecture: {
     hasConfigSchema: true,
@@ -14,8 +16,18 @@ export const fumadocsAdapter: FrameworkAdapter = {
   },
   fields: [
     ...UNIVERSAL_FIELDS,
-    { name: "icon", type: "string", required: false, description: "Fumadocs sidebar icon" },
-    { name: "full", type: "boolean", required: false, description: "Full-width page layout" },
+    {
+      name: "icon",
+      type: "string",
+      required: false,
+      description: "Fumadocs sidebar icon",
+    },
+    {
+      name: "full",
+      type: "boolean",
+      required: false,
+      description: "Full-width page layout",
+    },
   ],
   detect(ctx) {
     let score = 0

@@ -1,20 +1,23 @@
 import { v } from "convex/values"
 import { mutation } from "./_generated/server"
+import { verifyServerQueryToken } from "../lib/project-access-token"
 
 /**
  * Handle a GitHub PR merge event.
  * Looks up the publishBranch by PR number, marks it as merged,
  * clears committed explorer ops, and publishes all affected documents.
  */
-// These mutations are called from the webhook route handler which verifies
-// the GitHub webhook signature. The ConvexHttpClient cannot call internalMutation,
-// so these remain public but are effectively protected by the webhook secret.
 export const handlePRMerged = mutation({
   args: {
     prNumber: v.number(),
     mergeCommitSha: v.string(),
+    serverQueryToken: v.string(),
   },
   handler: async (ctx, args) => {
+    if (!(await verifyServerQueryToken(args.serverQueryToken))) {
+      throw new Error("Unauthorized")
+    }
+
     // 1. Look up publishBranch by PR number
     const publishBranch = await ctx.db
       .query("publishBranches")
@@ -158,8 +161,13 @@ export const handlePRMerged = mutation({
 export const handlePRClosed = mutation({
   args: {
     prNumber: v.number(),
+    serverQueryToken: v.string(),
   },
   handler: async (ctx, args) => {
+    if (!(await verifyServerQueryToken(args.serverQueryToken))) {
+      throw new Error("Unauthorized")
+    }
+
     const publishBranch = await ctx.db
       .query("publishBranches")
       .withIndex("by_prNumber", (q) => q.eq("prNumber", args.prNumber))

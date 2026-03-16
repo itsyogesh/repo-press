@@ -12,6 +12,8 @@ export type FrontmatterFieldDef = {
   defaultValue?: unknown
   options?: string[]
   semanticRole?: FieldSemanticRole
+  /** Character limit for string fields (e.g., 60 for metaTitle, 160 for metaDescription) */
+  charLimit?: number
 }
 
 export type FieldSemanticRole =
@@ -29,8 +31,30 @@ export type FieldSemanticRole =
   | "layout"
   | "order"
   | "excerpt"
+  // SEO-related semantic roles
+  | "metaTitle"
+  | "metaDescription"
+  | "focusKeyword"
+  | "canonicalUrl"
+  | "metaRobots"
+  | "ogTitle"
+  | "ogDescription"
+  | "ogImage"
+  | "twitterTitle"
+  | "twitterDescription"
+  | "twitterImage"
+  | "schemaType"
+  | "imageAltText"
 
 export type FieldVariantMap = Partial<Record<FieldSemanticRole, string>>
+
+export type FieldGroup = "basic" | "seo" | "coverImage" | "openGraph" | "twitter" | "schema" | "other"
+
+export type GroupedField<T> = {
+  group: FieldGroup
+  groupLabel: string
+  fields: T[]
+}
 
 export type DetectionContext = {
   deps: Record<string, string>
@@ -58,6 +82,16 @@ export type ContentArchitectureInfo = {
   architectureNote?: string
 }
 
+/**
+ * How filenames are derived from a user-supplied title.
+ *
+ * - "slug"           → `{slug}{ext}`  (e.g. my-post.mdx)
+ * - "index-if-empty" → `{slug}/index{ext}` when the folder has no children yet,
+ *                      otherwise `{slug}{ext}` (used by Fumadocs / Hugo page bundles)
+ * - "date-slug"      → `YYYY-MM-DD-{slug}{ext}` (Jekyll _posts convention)
+ */
+export type NamingStrategy = "slug" | "index-if-empty" | "date-slug"
+
 export type FrameworkAdapter = {
   id: string
   displayName: string
@@ -71,6 +105,10 @@ export type FrameworkAdapter = {
   contentArchitecture?: ContentArchitectureInfo
   /** Path to the MDX preview adapter file (relative to repo root) */
   previewEntry?: string | null
+  /** How filenames are derived from the user-supplied title. Defaults to "slug" when absent. */
+  namingStrategy?: NamingStrategy
+  /** Default file extension for new content files. Defaults to ".mdx" when absent. */
+  fileExtension?: ".mdx" | ".md"
 }
 
 export type FrameworkConfig = {

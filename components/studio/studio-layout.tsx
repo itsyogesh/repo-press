@@ -8,6 +8,16 @@ import * as React from "react"
 import { toast } from "sonner"
 import { syncProjectsFromConfigAction } from "@/app/dashboard/[owner]/[repo]/actions"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -16,11 +26,11 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
-import type { FileTreeNode } from "@/lib/github"
+import { getFrameworkAdapter } from "@/lib/framework-adapters"
+import { findTreeNode, type FileTreeNode } from "@/lib/github"
 import { usePreviewContext } from "@/lib/hooks/use-preview-context"
 import { buildHistoryHref } from "@/lib/studio/history-link"
 import { CommandPalette } from "./command-palette"
-import { CreateFileDialog } from "./create-file-dialog"
 import { Editor } from "./editor"
 import { FileTree } from "./file-tree"
 import { useStudioFile } from "./hooks/use-studio-file"
@@ -30,6 +40,7 @@ import { useStudioSave } from "./hooks/use-studio-save"
 import { Preview } from "./preview"
 import { PublishDialog } from "./publish-dialog"
 import { PublishOpsBar } from "./publish-ops-bar"
+import { SmartCreateFileDialog } from "./smart-create-file-dialog"
 import { StatusActions } from "./status-actions"
 import { StudioAdapterProvider } from "./studio-adapter-context"
 import { StudioProvider, useStudio } from "./studio-context"
@@ -429,6 +440,12 @@ function StudioLayoutInner({
     adapterError,
     adapterDiagnostics,
   } = useStudio()
+
+  // Framework adapter for file naming / frontmatter — uses the project's detectedFramework string
+  const frameworkAdapter = React.useMemo(() => {
+    const fw = studioQueries.project?.detectedFramework as string | undefined
+    return fw ? getFrameworkAdapter(fw) : null
+  }, [studioQueries.project?.detectedFramework])
   const {
     viewMode,
     setViewMode,
@@ -475,6 +492,8 @@ function StudioLayoutInner({
     fieldVariants,
   } = studioQueries
 
+  const canMutateExplorer = Boolean(userId || projectAccessToken)
+
   const hydratedForPath = React.useRef<string | null>(null)
 
   React.useEffect(() => {
@@ -500,9 +519,11 @@ function StudioLayoutInner({
   // Dialog state
   const [createDialogOpen, setCreateDialogOpen] = React.useState(false)
   const [createDialogParent, setCreateDialogParent] = React.useState("")
+  const [discardDialogOpen, setDiscardDialogOpen] = React.useState(false)
   const [commandPaletteOpen, setCommandPaletteOpen] = React.useState(false)
   const [emptySearch, setEmptySearch] = React.useState("")
   const [isMobile, setIsMobile] = React.useState(false)
+  const searchInputRef = React.useRef<HTMLInputElement>(null)
 
   // 3. Save logic
   const { isSaving, saveDraft, ensureDocumentRecord } = useStudioSave({
@@ -534,9 +555,27 @@ function StudioLayoutInner({
     setCreateDialogOpen(true)
   }, [])
 
+  /** Children of the currently selected create-dialog parent folder (for conflict resolution) */
+  const folderChildren = React.useMemo(() => {
+    if (!createDialogParent) {
+      // Root: top-level names in the overlay tree
+      return overlayTree.map((n) => n.name)
+    }
+    // Find the folder node in the overlay tree
+    const folderNode = findTreeNode(overlayTree, createDialogParent)
+    return folderNode?.children?.map((n) => n.name) ?? []
+  }, [overlayTree, createDialogParent])
+
+  /** Full child nodes of the current create-dialog parent (for sibling frontmatter inference) */
+  const folderChildNodes = React.useMemo(() => {
+    if (!createDialogParent) return overlayTree
+    const folderNode = findTreeNode(overlayTree, createDialogParent)
+    return folderNode?.children ?? []
+  }, [overlayTree, createDialogParent])
+
   const handleConfirmCreate = React.useCallback(
-    async (fileName: string, parentPath: string) => {
-      if (!projectId || !userId) return
+    async (fileName: string, parentPath: string, initialFrontmatter?: Record<string, unknown>) => {
+      if (!projectId || !canMutateExplorer) return
       const isAlreadyPrefixed = contentRoot && (parentPath === contentRoot || parentPath.startsWith(`${contentRoot}/`))
       let filePath: string
       if (isAlreadyPrefixed) {
@@ -546,37 +585,42 @@ function StudioLayoutInner({
       } else {
         filePath = parentPath ? `${parentPath}/${fileName}` : fileName
       }
+      // For index-if-empty: the actual file is at filePath (e.g. slug/index.mdx)
+      // but it may include a newly created subfolder — keep filePath as-is.
       try {
-        const initialTitle = fileName.replace(/\.(mdx?|markdown)$/i, "")
+        const fm = initialFrontmatter ?? {}
+        const title =
+          typeof fm.title === "string" && fm.title.trim()
+            ? fm.title.trim()
+            : fileName.replace(/\.(mdx?|markdown)$/i, "")
         await stageCreate({
           projectId: projectId as Id<"projects">,
           userId,
           projectAccessToken,
           filePath,
-          title: initialTitle,
+          title,
           initialBody: "",
-          initialFrontmatter: {
-            title: initialTitle,
-          },
+          initialFrontmatter: { title, ...fm },
         })
         primeFileSnapshot(filePath, {
           content: "",
-          frontmatter: { title: initialTitle },
+          frontmatter: { title, ...fm },
           sha: null,
         })
-        toast.success(`Created ${fileName}`)
+        const displayName = fileName.split("/").pop() ?? fileName
+        toast.success(`Created ${displayName}`)
         navigateToFile(filePath)
       } catch (error: any) {
         console.error("Error creating file:", error)
         toast.error(error.message || "Failed to create file")
       }
     },
-    [projectId, userId, projectAccessToken, contentRoot, stageCreate, primeFileSnapshot, navigateToFile],
+    [projectId, canMutateExplorer, userId, projectAccessToken, contentRoot, stageCreate, primeFileSnapshot, navigateToFile],
   )
 
   const handleDeleteFile = React.useCallback(
     async (filePath: string, fileSha: string) => {
-      if (!projectId || !userId) return
+      if (!projectId || !canMutateExplorer) return
       try {
         const pendingCreateOp = pendingOps?.find(
           (op: any) => op.filePath === filePath && op.opType === "create" && op.status === "pending",
@@ -613,12 +657,12 @@ function StudioLayoutInner({
         toast.error(error.message || "Failed to delete file")
       }
     },
-    [projectId, userId, projectAccessToken, pendingOps, undoOp, discardFileFromClientState, stageDelete],
+    [projectId, canMutateExplorer, userId, projectAccessToken, pendingOps, undoOp, discardFileFromClientState, stageDelete],
   )
 
   const handleUndoDelete = React.useCallback(
     async (filePath: string) => {
-      if (!projectId || !userId || !pendingOps) return
+      if (!projectId || !canMutateExplorer || !pendingOps) return
       const op = pendingOps.find((o: any) => o.filePath === filePath && o.opType === "delete" && o.status === "pending")
       if (!op) return
       try {
@@ -629,11 +673,11 @@ function StudioLayoutInner({
         toast.error(error.message || "Failed to undo")
       }
     },
-    [projectId, userId, projectAccessToken, pendingOps, undoOp],
+    [projectId, canMutateExplorer, userId, projectAccessToken, pendingOps, undoOp],
   )
 
   const handleDiscardAll = React.useCallback(async () => {
-    if (!pendingOps || !userId) return
+    if (!pendingOps || !canMutateExplorer) return
     try {
       for (const op of pendingOps) {
         if (op.status === "pending") {
@@ -644,7 +688,7 @@ function StudioLayoutInner({
     } catch (error: any) {
       toast.error(error.message || "Failed to discard changes")
     }
-  }, [pendingOps, userId, projectAccessToken, undoOp])
+  }, [pendingOps, canMutateExplorer, userId, projectAccessToken, undoOp])
 
   const resolveRelocatePayload = React.useCallback(
     async (oldPath: string) => {
@@ -698,7 +742,10 @@ function StudioLayoutInner({
         throw new Error(payload.error || `Failed to load file content (${response.status})`)
       }
 
-      const payload = (await response.json()) as { content: string; sha: string }
+      const payload = (await response.json()) as {
+        content: string
+        sha: string
+      }
       const parsed = matter(payload.content || "")
       const parsedFrontmatter = (parsed.data || {}) as Record<string, unknown>
       const title =
@@ -720,7 +767,7 @@ function StudioLayoutInner({
 
   const stageRelocateFile = React.useCallback(
     async (oldPath: string, newPath: string, actionLabel: "renamed" | "moved") => {
-      if (!projectId || !userId) return
+      if (!projectId || !canMutateExplorer) return
       if (!oldPath || !newPath || oldPath === newPath) return
 
       const oldNode = findTreeNodeByPath(overlayTree, oldPath)
@@ -741,7 +788,11 @@ function StudioLayoutInner({
 
         if (payload.isFromPendingCreate && payload.pendingCreateOpId) {
           try {
-            await undoOp({ id: payload.pendingCreateOpId, userId, projectAccessToken })
+            await undoOp({
+              id: payload.pendingCreateOpId,
+              userId,
+              projectAccessToken,
+            })
           } catch (error) {
             await undoOp({ id: createOpId, userId, projectAccessToken }).catch(() => {})
             throw error
@@ -795,6 +846,7 @@ function StudioLayoutInner({
     },
     [
       projectId,
+      canMutateExplorer,
       userId,
       projectAccessToken,
       overlayTree,
@@ -916,6 +968,12 @@ function StudioLayoutInner({
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault()
         setCommandPaletteOpen(true)
+        return
+      }
+
+      if (e.key === "/" && !isEditableTarget) {
+        e.preventDefault()
+        searchInputRef.current?.focus()
         return
       }
 
@@ -1069,6 +1127,7 @@ function StudioLayoutInner({
                         onMoveFile={projectId ? handleMoveFile : undefined}
                         owner={owner}
                         repo={repo}
+                        adapter={frameworkAdapter}
                       />
                     </div>
                     <div className="shrink-0 border-t border-studio-border bg-studio-canvas/95 backdrop-blur supports-[backdrop-filter]:bg-studio-canvas/80">
@@ -1115,7 +1174,7 @@ function StudioLayoutInner({
                           onPublish={() => {
                             openPublishDialog()
                           }}
-                          onDiscard={handleDiscardAll}
+                          onDiscard={() => setDiscardDialogOpen(true)}
                           onSelectFile={(path: string) => navigateToFile(path)}
                         />
                       )}
@@ -1226,9 +1285,10 @@ function StudioLayoutInner({
                         </p>
                       </div>
                       <div className="mx-auto max-w-xl space-y-3">
-                        <div className="relative">
+                        <div className="relative group">
                           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-studio-fg-muted" />
                           <Input
+                            ref={searchInputRef}
                             value={emptySearch}
                             onChange={(e) => setEmptySearch(e.target.value)}
                             onKeyDown={(e) => {
@@ -1238,9 +1298,28 @@ function StudioLayoutInner({
                                 navigateToFile(firstResult.path)
                               }
                             }}
-                            className="h-11 pl-10 pr-4"
-                            placeholder="Search docs and open with Enter"
+                            className="h-11 pl-10 pr-10"
+                            placeholder="Search docs..."
                           />
+                          <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+                            {hasEmptySearchQuery ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEmptySearch("")
+                                  searchInputRef.current?.focus()
+                                }}
+                                className="rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none"
+                                aria-label="Clear search"
+                              >
+                                <X className="h-4 w-4 text-studio-fg-muted" />
+                              </button>
+                            ) : (
+                              <kbd className="pointer-events-none hidden h-5 select-none items-center gap-1 rounded border border-studio-border bg-studio-canvas-inset px-1.5 font-mono text-[10px] font-medium text-studio-fg-muted opacity-60 sm:flex">
+                                <span className="text-xs">/</span>
+                              </kbd>
+                            )}
+                          </div>
                         </div>
                         <div className="rounded-lg border border-studio-border bg-studio-canvas-inset/30 p-2 text-left">
                           {!hasEmptySearchQuery && recentFileResults.length === 0 ? (
@@ -1363,12 +1442,18 @@ function StudioLayoutInner({
         />
       </div>
 
-      <CreateFileDialog
+      <SmartCreateFileDialog
         open={createDialogOpen}
         onOpenChange={setCreateDialogOpen}
         parentPath={createDialogParent}
         contentRoot={contentRoot}
-        onConfirm={handleConfirmCreate}
+        adapter={frameworkAdapter}
+        folderChildren={folderChildren}
+        folderChildNodes={folderChildNodes}
+        owner={owner}
+        repo={repo}
+        branch={branch}
+        onConfirm={({ fileName, parentPath, frontmatter }) => handleConfirmCreate(fileName, parentPath, frontmatter)}
       />
 
       <PublishDialog
@@ -1394,6 +1479,29 @@ function StudioLayoutInner({
         onNavigateToFile={navigateToFile}
         onSaveDraft={saveDraft}
       />
+
+      <AlertDialog open={discardDialogOpen} onOpenChange={setDiscardDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Discard all pending changes?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will revert all your staged creations, deletions, and edits. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                handleDiscardAll()
+                setDiscardDialogOpen(false)
+              }}
+            >
+              Discard Changes
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

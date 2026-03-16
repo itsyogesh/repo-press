@@ -44,7 +44,7 @@ export function buildComponentNode(def: RepoComponentDef, formState: Record<stri
 
   for (const propDef of def.props) {
     const value = resolveValue(propDef, formState[propDef.name])
-    if (value !== undefined && value !== "") {
+    if (value !== undefined) {
       props[propDef.name] = value
     }
   }
@@ -91,7 +91,7 @@ export function toJsxProperties(
   const sortedPropKeys = Object.keys(node.props).sort((a, b) => a.localeCompare(b))
   for (const key of sortedPropKeys) {
     const value = node.props[key]
-    if (value === undefined || value === "") continue
+    if (value === undefined) continue
     const type = propTypes.get(key) ?? "string"
 
     switch (type) {
@@ -126,7 +126,7 @@ export function toJsxProperties(
 
 function resolveValue(propDef: RepoComponentPropDef, formValue: unknown): unknown {
   // Form provided a value → use it
-  if (formValue !== undefined && formValue !== "") {
+  if (formValue !== undefined) {
     return coerce(propDef.type, formValue)
   }
   // Fall back to definition default

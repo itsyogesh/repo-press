@@ -81,4 +81,30 @@ describe("review regression guards", () => {
     expect(claude).toContain("proxy.ts")
     expect(claude).not.toContain("middleware.ts")
   })
+
+  it("cleans up the image upload progress timer on failures", () => {
+    const source = read("components/studio/image-upload-zone.tsx")
+    expect(source).toMatch(/finally\s*{[\s\S]*?clearInterval\(/)
+  })
+
+  it("normalizes external image URLs before saving", () => {
+    const source = read("components/studio/image-field.tsx")
+    expect(source).toMatch(/normalizeExternalImageUrl/)
+    expect(source).toMatch(/onSelect\(\s*normalizeExternalImageUrl\(/)
+  })
+
+  it("keeps studio component previews self-hosted", () => {
+    const source = read("components/studio/component-preview.tsx")
+    expect(source).not.toContain("grainy-gradients.vercel.app")
+    expect(source).not.toContain("http://")
+    expect(source).not.toContain("https://")
+  })
+
+  it("does not pin platform-specific Next.js binaries in package.json", () => {
+    const manifest = JSON.parse(read("package.json")) as {
+      devDependencies?: Record<string, string>
+    }
+
+    expect(manifest.devDependencies?.["@next/swc-darwin-arm64"]).toBeUndefined()
+  })
 })

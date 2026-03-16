@@ -2,6 +2,7 @@
 
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import type { MergedFieldDef } from "@/lib/framework-adapters"
@@ -14,11 +15,11 @@ interface FrontmatterFieldProps {
   value: any
   onChange: (value: any) => void
   imagePaths?: string[]
+  selectedFilePath?: string
 }
 
-export function FrontmatterField({ field, value, onChange, imagePaths = [] }: FrontmatterFieldProps) {
+export function FrontmatterField({ field, value, onChange, imagePaths = [], selectedFilePath }: FrontmatterFieldProps) {
   const id = field.actualFieldName
-  const hasSchemaHint = field.actualFieldName !== field.name && field.description !== field.actualFieldName
 
   const labelEl = (
     <div className="flex items-center gap-1.5">
@@ -34,8 +35,8 @@ export function FrontmatterField({ field, value, onChange, imagePaths = [] }: Fr
   )
 
   const helperEl =
-    hasSchemaHint || field.description ? (
-      <p className="text-[11px] text-studio-fg-muted mt-0.5 leading-tight">{field.description || `↳ ${field.name}`}</p>
+    field.description && field.description !== field.actualFieldName ? (
+      <p className="text-[11px] text-studio-fg-muted mt-0.5 leading-tight">{field.description}</p>
     ) : null
 
   switch (field.type) {
@@ -94,7 +95,12 @@ export function FrontmatterField({ field, value, onChange, imagePaths = [] }: Fr
         <div className="grid gap-1">
           {labelEl}
           {helperEl}
-          <ImageField value={value || ""} onChange={onChange} imagePaths={imagePaths} />
+          <ImageField
+            value={value || ""}
+            onChange={onChange}
+            imagePaths={imagePaths}
+            selectedFilePath={selectedFilePath}
+          />
         </div>
       )
 
@@ -112,6 +118,43 @@ export function FrontmatterField({ field, value, onChange, imagePaths = [] }: Fr
         </div>
       )
 
+    case "enum":
+      if (!field.options || field.options.length === 0) {
+        // Defensive fallback: if no options are defined, render a plain text input
+        // to prevent an empty Select from being presented to the user.
+        return (
+          <div className="grid gap-1">
+            {labelEl}
+            {helperEl}
+            <Input
+              id={id}
+              value={String(value || "")}
+              onChange={(e) => onChange(e.target.value)}
+              placeholder={field.description}
+              className="border-studio-border"
+            />
+          </div>
+        )
+      }
+      return (
+        <div className="grid gap-1">
+          {labelEl}
+          {helperEl}
+          <Select value={String(value || "")} onValueChange={onChange}>
+            <SelectTrigger id={id} className="border-studio-border">
+              <SelectValue placeholder="Select..." />
+            </SelectTrigger>
+            <SelectContent>
+              {field.options.map((opt) => (
+                <SelectItem key={opt} value={opt}>
+                  {opt}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )
+
     default: {
       const isLongText =
         field.actualFieldName === "description" ||
@@ -122,9 +165,12 @@ export function FrontmatterField({ field, value, onChange, imagePaths = [] }: Fr
         field.name === "summary" ||
         field.name === "excerpt"
 
-      if (isLongText) {
+      // Use field.charLimit if available, otherwise default to 160 for description fields
+      const charLimit = field.charLimit || (isLongText ? 160 : 0)
+
+      if (isLongText || charLimit > 0) {
         const charCount = (value || "").length
-        const isOverLimit = charCount > 160
+        const isOverLimit = charCount > charLimit
         return (
           <div className="grid gap-1">
             {labelEl}
@@ -136,9 +182,9 @@ export function FrontmatterField({ field, value, onChange, imagePaths = [] }: Fr
               placeholder={field.description}
               className="h-20 border-studio-border resize-none"
             />
-            {(field.actualFieldName === "description" || field.name === "description") && (
+            {charLimit > 0 && (
               <p className={`text-[10px] ${isOverLimit ? "text-studio-danger" : "text-studio-fg-muted"} text-right`}>
-                {charCount}/160 chars
+                {charCount}/{charLimit} chars
               </p>
             )}
           </div>

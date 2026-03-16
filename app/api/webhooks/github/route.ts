@@ -2,6 +2,7 @@ import crypto from "node:crypto"
 import { ConvexHttpClient } from "convex/browser"
 import { NextResponse } from "next/server"
 import { api } from "@/convex/_generated/api"
+import { mintServerQueryToken } from "@/lib/project-access-token"
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
 
@@ -37,6 +38,7 @@ export async function POST(request: Request) {
   try {
     const data = JSON.parse(payload)
     const { action, pull_request } = data
+    const serverQueryToken = await mintServerQueryToken()
 
     if (!pull_request) {
       return NextResponse.json({ ok: true, skipped: true })
@@ -51,6 +53,7 @@ export async function POST(request: Request) {
       await convex.mutation(api.githubWebhook.handlePRMerged, {
         prNumber,
         mergeCommitSha,
+        serverQueryToken,
       })
       return NextResponse.json({ ok: true, action: "merged" })
     }
@@ -59,6 +62,7 @@ export async function POST(request: Request) {
       // PR was closed without merge
       await convex.mutation(api.githubWebhook.handlePRClosed, {
         prNumber,
+        serverQueryToken,
       })
       return NextResponse.json({ ok: true, action: "closed" })
     }

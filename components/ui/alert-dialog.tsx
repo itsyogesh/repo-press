@@ -1,6 +1,7 @@
 "use client"
 
 import * as AlertDialogPrimitive from "@radix-ui/react-alert-dialog"
+import type { VariantProps } from "class-variance-authority"
 import type * as React from "react"
 import { buttonVariants } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -89,12 +90,22 @@ function AlertDialogDescription({
   )
 }
 
-function AlertDialogAction({ className, ...props }: React.ComponentProps<typeof AlertDialogPrimitive.Action>) {
-  return <AlertDialogPrimitive.Action className={cn(buttonVariants(), className)} {...props} />
+function AlertDialogAction({
+  className,
+  variant,
+  size,
+  ...props
+}: React.ComponentProps<typeof AlertDialogPrimitive.Action> & VariantProps<typeof buttonVariants>) {
+  return <AlertDialogPrimitive.Action className={cn(buttonVariants({ variant, size }), className)} {...props} />
 }
 
-function AlertDialogCancel({ className, ...props }: React.ComponentProps<typeof AlertDialogPrimitive.Cancel>) {
-  return <AlertDialogPrimitive.Cancel className={cn(buttonVariants({ variant: "outline" }), className)} {...props} />
+function AlertDialogCancel({
+  className,
+  variant = "outline",
+  size,
+  ...props
+}: React.ComponentProps<typeof AlertDialogPrimitive.Cancel> & VariantProps<typeof buttonVariants>) {
+  return <AlertDialogPrimitive.Cancel className={cn(buttonVariants({ variant, size }), className)} {...props} />
 }
 
 export {

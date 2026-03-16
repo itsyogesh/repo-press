@@ -133,7 +133,9 @@ export function TreeItem({
                 focusedPath === node.path && "ring-1 ring-studio-accent/50",
                 isOver && "bg-studio-accent/20 ring-1 ring-studio-accent",
               )}
-              style={{ paddingLeft: `${depth * TREE_INDENT_PX + TREE_BASE_OFFSET_PX}px` }}
+              style={{
+                paddingLeft: `${depth * TREE_INDENT_PX + TREE_BASE_OFFSET_PX}px`,
+              }}
               onClick={(e) => {
                 e.stopPropagation()
                 onFocusPath(node.path)
@@ -145,7 +147,9 @@ export function TreeItem({
                 <div
                   key={`${node.path}-folder-guide-${i}`}
                   className="absolute w-px h-full bg-studio-border-muted"
-                  style={{ left: `${i * TREE_INDENT_PX + TREE_GUIDE_OFFSET_PX}px` }}
+                  style={{
+                    left: `${i * TREE_INDENT_PX + TREE_GUIDE_OFFSET_PX}px`,
+                  }}
                 />
               ))}
 
@@ -258,12 +262,14 @@ export function TreeItem({
               "relative flex w-full select-none items-center justify-start gap-1 rounded-md p-1 pr-12 font-normal text-studio-fg transition-[background-color,box-shadow,color] duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-studio-accent/60",
               displayTitle ? "h-auto min-h-[32px] py-1" : "h-8",
               isSelected
-                ? "bg-studio-accent-muted ring-1 ring-inset ring-studio-accent/35"
+                ? "bg-studio-accent-muted ring-1 ring-inset ring-studio-accent/60"
                 : "hover:bg-studio-canvas-inset/90",
               isFocused && !isSelected && "ring-1 ring-studio-accent/50",
               isDeleted && "opacity-50",
             )}
-            style={{ paddingLeft: `${depth * TREE_INDENT_PX + TREE_BASE_OFFSET_PX}px` }}
+            style={{
+              paddingLeft: `${depth * TREE_INDENT_PX + TREE_BASE_OFFSET_PX}px`,
+            }}
             onClick={(e) => {
               e.stopPropagation()
               if (!isDeleted) {
@@ -288,12 +294,17 @@ export function TreeItem({
             }}
             title={node.name}
           >
+            {/* Active item accent line */}
+            {isSelected && <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-studio-accent" />}
+
             {/* Indentation guides */}
             {Array.from({ length: depth }).map((_, i) => (
               <div
                 key={`${node.path}-file-guide-${i}`}
                 className="absolute w-px h-full bg-studio-border-muted"
-                style={{ left: `${i * TREE_INDENT_PX + TREE_GUIDE_OFFSET_PX}px` }}
+                style={{
+                  left: `${i * TREE_INDENT_PX + TREE_GUIDE_OFFSET_PX}px`,
+                }}
               />
             ))}
 

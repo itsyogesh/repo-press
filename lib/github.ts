@@ -16,6 +16,18 @@ export type FileTreeNode = {
   children?: FileTreeNode[]
 }
 
+/** Recursively find a node by its full path in a tree of nodes with `path` and optional `children` fields. */
+export function findTreeNode<T extends { path: string; children?: T[] }>(nodes: T[], path: string): T | null {
+  for (const node of nodes) {
+    if (node.path === path) return node
+    if (node.children) {
+      const found = findTreeNode(node.children, path)
+      if (found) return found
+    }
+  }
+  return null
+}
+
 export type GitHubRepo = {
   id: number
   name: string

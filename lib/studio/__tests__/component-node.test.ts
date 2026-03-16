@@ -55,7 +55,7 @@ describe("buildComponentNode — basic", () => {
     expect(node.props.alt).toBe("Hero image")
   })
 
-  it("omits undefined and empty-string form values", () => {
+  it("omits undefined form values but keeps empty strings", () => {
     const def = makeDef({
       name: "DocsImage",
       props: [
@@ -68,7 +68,7 @@ describe("buildComponentNode — basic", () => {
     const node = buildComponentNode(def, { src: "/img/hero.png", alt: "" })
 
     expect(node.props.src).toBe("/img/hero.png")
-    expect(node.props.alt).toBeUndefined()
+    expect(node.props.alt).toBe("")
   })
 
   it("ignores form values not in the definition props", () => {

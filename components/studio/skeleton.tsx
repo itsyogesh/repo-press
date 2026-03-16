@@ -7,7 +7,7 @@ interface SkeletonProps {
 }
 
 export function Skeleton({ className }: SkeletonProps) {
-  return <div className={cn("skeleton bg-studio-border-muted rounded animate-pulse", className)} />
+  return <div className={cn("skeleton bg-studio-border-muted rounded animate-pulse bg-grid-small", className)} />
 }
 
 export function EditorSkeleton() {

@@ -76,6 +76,55 @@ const IMAGE_EXTENSIONS = /\.(jpg|jpeg|png|gif|webp|avif|svg|bmp|ico|tiff?)$/i
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}/
 
 /**
+ * Known SEO field configurations — maps field name to type, semantic role, char limit, and enum options.
+ */
+const SEO_FIELD_CONFIG: Record<
+  string,
+  {
+    type: FrontmatterFieldType
+    semanticRole: FieldSemanticRole
+    charLimit?: number
+    options?: string[]
+  }
+> = {
+  metaTitle: { type: "string", semanticRole: "metaTitle", charLimit: 60 },
+  metaDescription: {
+    type: "string",
+    semanticRole: "metaDescription",
+    charLimit: 160,
+  },
+  focusKeyword: { type: "string", semanticRole: "focusKeyword" },
+  canonicalUrl: { type: "string", semanticRole: "canonicalUrl" },
+  metaRobots: {
+    type: "enum",
+    semanticRole: "metaRobots",
+    options: ["index, follow", "noindex, nofollow", "noindex", "noarchive", "noindex, noarchive"],
+  },
+  ogTitle: { type: "string", semanticRole: "ogTitle", charLimit: 60 },
+  ogDescription: {
+    type: "string",
+    semanticRole: "ogDescription",
+    charLimit: 160,
+  },
+  ogImage: { type: "image", semanticRole: "ogImage" },
+  twitterTitle: { type: "string", semanticRole: "twitterTitle", charLimit: 60 },
+  twitterDescription: {
+    type: "string",
+    semanticRole: "twitterDescription",
+    charLimit: 160,
+  },
+  twitterImage: { type: "image", semanticRole: "twitterImage" },
+  schemaType: {
+    type: "enum",
+    semanticRole: "schemaType",
+    options: ["BlogPosting", "Article", "WebPage", "Person", "Organization", "FAQPage", "Product", "Review"],
+  },
+  imageLink: { type: "image", semanticRole: "image" },
+  imageAltText: { type: "string", semanticRole: "imageAltText" },
+  lastUpdatedDate: { type: "date", semanticRole: "lastModified" },
+}
+
+/**
  * Infer the FrontmatterFieldType from a runtime value.
  */
 export function inferType(value: unknown): FrontmatterFieldType {
@@ -89,6 +138,31 @@ export function inferType(value: unknown): FrontmatterFieldType {
     if (IMAGE_EXTENSIONS.test(value)) return "image"
   }
   return "string"
+}
+
+/**
+ * Build a FrontmatterFieldDef from a field name and value.
+ * Uses SEO_FIELD_CONFIG for known SEO fields, otherwise falls back to inferType().
+ */
+export function inferFieldDef(name: string, value: unknown): FrontmatterFieldDef {
+  const seoConfig = SEO_FIELD_CONFIG[name]
+  if (seoConfig) {
+    return {
+      name,
+      type: seoConfig.type,
+      required: false,
+      description: name,
+      semanticRole: seoConfig.semanticRole,
+      charLimit: seoConfig.charLimit,
+      options: seoConfig.options,
+    }
+  }
+  return {
+    name,
+    type: inferType(value),
+    required: false,
+    description: name,
+  }
 }
 
 /**
@@ -106,12 +180,7 @@ export function findExtraFields(
     if (schemaNames.has(key)) continue
     if (value == null) continue
 
-    extras.push({
-      name: key,
-      type: inferType(value),
-      required: false,
-      description: key,
-    })
+    extras.push(inferFieldDef(key, value))
   }
 
   return extras
