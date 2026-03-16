@@ -1,12 +1,12 @@
 "use client"
 
-import { useParams } from "next/navigation"
-import type * as React from "react"
-import { RepoBreadcrumb } from "@/components/repo-breadcrumb"
-import { SettingsSidebar } from "@/components/settings/settings-sidebar"
-import { Suspense } from "react"
 import { Home } from "lucide-react"
 import Link from "next/link"
+import { useParams } from "next/navigation"
+import type * as React from "react"
+import { Suspense } from "react"
+import { RepoBreadcrumb } from "@/components/repo-breadcrumb"
+import { SettingsSidebar } from "@/components/settings/settings-sidebar"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 

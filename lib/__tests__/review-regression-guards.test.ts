@@ -81,4 +81,15 @@ describe("review regression guards", () => {
     expect(claude).toContain("proxy.ts")
     expect(claude).not.toContain("middleware.ts")
   })
+
+  it("cleans up the image upload progress timer on failures", () => {
+    const source = read("components/studio/image-upload-zone.tsx")
+    expect(source).toMatch(/finally\s*{[^}]*clearInterval\(/s)
+  })
+
+  it("normalizes external image URLs before saving", () => {
+    const source = read("components/studio/image-field.tsx")
+    expect(source).toMatch(/normalizeExternalImageUrl/)
+    expect(source).toMatch(/onSelect\(\s*normalizeExternalImageUrl\(/)
+  })
 })

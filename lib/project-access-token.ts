@@ -59,11 +59,7 @@ async function verifyValue(value: string, signatureHex: string) {
   if (expected.length !== signatureHex.length) return false
 
   // Re-HMAC both values with a random ephemeral key
-  const ephemeralKey = await crypto.subtle.generateKey(
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  )
+  const ephemeralKey = await crypto.subtle.generateKey({ name: "HMAC", hash: "SHA-256" }, false, ["sign"])
   const [a, b] = await Promise.all([
     crypto.subtle.sign("HMAC", ephemeralKey, encoder.encode(expected)),
     crypto.subtle.sign("HMAC", ephemeralKey, encoder.encode(signatureHex)),

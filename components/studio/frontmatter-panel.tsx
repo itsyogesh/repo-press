@@ -32,6 +32,7 @@ export function FrontmatterPanel({
   const [userInteracted, setUserInteracted] = React.useState(false)
 
   // Reset user interaction guard when file path changes
+  // biome-ignore lint/correctness/useExhaustiveDependencies: filePath is a prop and needs to trigger this effect
   React.useEffect(() => {
     setUserInteracted(false)
   }, [filePath])

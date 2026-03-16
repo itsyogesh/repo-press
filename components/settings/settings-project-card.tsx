@@ -1,11 +1,11 @@
 "use client"
 
+import { Folder, GitBranch, Terminal } from "lucide-react"
+import { DeleteProjectZone } from "@/components/settings/delete-project-zone"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { DeleteProjectZone } from "@/components/settings/delete-project-zone"
 import type { Doc } from "@/convex/_generated/dataModel"
 import { cn } from "@/lib/utils"
-import { Folder, GitBranch, Terminal } from "lucide-react"
 
 interface SettingsProjectCardProps {
   project: Doc<"projects">

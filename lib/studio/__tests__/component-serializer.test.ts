@@ -212,13 +212,13 @@ describe("serializeComponentNode — omission", () => {
     expect(serializeComponentNode(node)).toBe('<Widget a="keep" />')
   })
 
-  it("omits empty string prop values", () => {
+  it("allows empty string prop values", () => {
     const node = makeNode({
       name: "Widget",
       props: { a: "keep", b: "" },
     })
 
-    expect(serializeComponentNode(node)).toBe('<Widget a="keep" />')
+    expect(serializeComponentNode(node)).toBe('<Widget a="keep" b="" />')
   })
 
   it("omits null prop values", () => {
@@ -242,7 +242,7 @@ describe("serializeComponentNode — escaping", () => {
       props: { label: 'say "hello"' },
     })
 
-    expect(serializeComponentNode(node)).toBe('<Tag label="say \\"hello\\"" />')
+    expect(serializeComponentNode(node)).toBe('<Tag label={"say \\"hello\\""} />')
   })
 
   it("escapes backslashes in string values", () => {
@@ -251,7 +251,7 @@ describe("serializeComponentNode — escaping", () => {
       props: { path: "C:\\Users\\file" },
     })
 
-    expect(serializeComponentNode(node)).toBe('<Tag path="C:\\\\Users\\\\file" />')
+    expect(serializeComponentNode(node)).toBe('<Tag path={"C:\\\\Users\\\\file"} />')
   })
 
   it("escapes newlines in string values", () => {
@@ -260,7 +260,7 @@ describe("serializeComponentNode — escaping", () => {
       props: { text: "line1\nline2" },
     })
 
-    expect(serializeComponentNode(node)).toBe('<Tag text="line1\\nline2" />')
+    expect(serializeComponentNode(node)).toBe('<Tag text={"line1\\nline2"} />')
   })
 })
 

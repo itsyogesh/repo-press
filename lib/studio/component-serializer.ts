@@ -49,7 +49,7 @@ function serializeProps(props: Record<string, unknown>): string {
 
   for (const key of keys) {
     const value = props[key]
-    if (value === undefined || value === "") continue
+    if (value === undefined) continue
     const formatted = formatPropValue(value)
     if (formatted !== null) {
       parts.push(`${key}=${formatted}`)
@@ -86,7 +86,11 @@ function formatPropValue(value: unknown): string | null {
     if (value.startsWith("{") && value.endsWith("}")) {
       return value
     }
-    return `"${escapeJsxString(value)}"`
+    // If string has quotes, newlines, or backslashes, serialize as a JSX expression
+    if (value.includes('"') || value.includes("\n") || value.includes("\\")) {
+      return `{${JSON.stringify(value)}}`
+    }
+    return `"${value}"`
   }
 
   // Arrays / objects → JSON expression
@@ -95,11 +99,4 @@ function formatPropValue(value: unknown): string | null {
   }
 
   return null
-}
-
-/**
- * Escape special characters for a JSX string attribute value.
- */
-function escapeJsxString(raw: string): string {
-  return raw.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n").replace(/\r/g, "\\r")
 }

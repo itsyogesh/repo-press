@@ -1,6 +1,8 @@
 "use server"
 
 import { compile } from "@mdx-js/mdx"
+import { parse } from "acorn"
+import MagicString from "magic-string"
 import { type ExtractedImport, remarkTransformImports } from "@/components/mdx-runtime/transformImports"
 
 export interface CompileMdxResult {
@@ -10,26 +12,30 @@ export interface CompileMdxResult {
 }
 
 /**
- * Replace top-level `const`/`var` declarations with `let`.
+ * Replace top-level `const`/`var` declarations with `let` safely using an AST.
  */
 function makeTopLevelDeclarationsMutable(code: string): string {
-  return code
-    .split("\n")
-    .map((line) => {
-      const trimmed = line.trimStart()
-      if (
-        trimmed.startsWith("//") ||
-        trimmed.startsWith("*") ||
-        trimmed.startsWith("/*") ||
-        trimmed.startsWith('"') ||
-        trimmed.startsWith("'") ||
-        trimmed.startsWith("`")
-      ) {
-        return line
+  try {
+    const ast = parse(code, {
+      ecmaVersion: "latest",
+      sourceType: "module",
+      allowReturnOutsideFunction: true,
+      allowAwaitOutsideFunction: true,
+    }) as any
+
+    const ms = new MagicString(code)
+
+    for (const node of ast.body) {
+      if (node.type === "VariableDeclaration" && (node.kind === "const" || node.kind === "var")) {
+        ms.overwrite(node.start, node.start + node.kind.length, "let")
       }
-      return line.replace(/^(\s*)(?:const|var)\s+/g, "$1let ")
-    })
-    .join("\n")
+    }
+
+    return ms.toString()
+  } catch (err) {
+    console.warn("[makeTopLevelDeclarationsMutable] failed to parse", err)
+    return code
+  }
 }
 
 /**

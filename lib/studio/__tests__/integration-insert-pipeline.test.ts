@@ -331,7 +331,7 @@ describe("Integration: full insert pipeline", () => {
     const node = buildComponentNode(def, formState)
     const jsx = serializeComponentNode(node)
 
-    expect(jsx).toBe('<Alert message="He said \\"hello\\" and\\\\goodbye" />')
+    expect(jsx).toBe('<Alert message={"He said \\"hello\\" and\\\\goodbye"} />')
   })
 
   it("empty registry produces empty catalog", () => {

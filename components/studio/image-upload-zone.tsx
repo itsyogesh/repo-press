@@ -34,47 +34,55 @@ export function ImageUploadZone({
   const [progress, setProgress] = React.useState(0)
   const fileInputRef = React.useRef<HTMLInputElement>(null)
 
-  const handleUpload = async (file: File) => {
-    if (!file.type.startsWith("image/")) {
-      toast.error("Please upload an image file")
-      return
-    }
+  const handleUpload = React.useCallback(
+    async (file: File) => {
+      if (!file.type.startsWith("image/")) {
+        toast.error("Please upload an image file")
+        return
+      }
 
-    setIsUploading(true)
-    setProgress(10) // Initial progress
+      setIsUploading(true)
+      setProgress(10) // Initial progress
 
-    try {
-      // Simulate some progress since uploadMedia doesn't provide fine-grained progress yet
-      const progressInterval = setInterval(() => {
-        setProgress((prev) => (prev < 90 ? prev + 10 : prev))
-      }, 500)
+      let progressInterval: ReturnType<typeof setInterval> | undefined
 
-      const result = await uploadMedia({
-        file,
-        projectId,
-        userId,
-        owner,
-        repo,
-        branch,
-        pathHint,
-      })
+      try {
+        // Simulate some progress since uploadMedia doesn't provide fine-grained progress yet
+        progressInterval = setInterval(() => {
+          setProgress((prev) => (prev < 90 ? prev + 10 : prev))
+        }, 500)
 
-      clearInterval(progressInterval)
-      setProgress(100)
+        const result = await uploadMedia({
+          file,
+          projectId,
+          userId,
+          owner,
+          repo,
+          branch,
+          pathHint,
+        })
 
-      setTimeout(() => {
-        onUploadComplete(result.repoPath)
+        setProgress(100)
+
+        setTimeout(() => {
+          onUploadComplete(result.repoPath)
+          setIsUploading(false)
+          setProgress(0)
+          toast.success(`Uploaded ${file.name}`)
+        }, 500)
+      } catch (error) {
+        console.error("Upload error:", error)
+        toast.error(error instanceof Error ? error.message : "Failed to upload image")
         setIsUploading(false)
         setProgress(0)
-        toast.success(`Uploaded ${file.name}`)
-      }, 500)
-    } catch (error) {
-      console.error("Upload error:", error)
-      toast.error(error instanceof Error ? error.message : "Failed to upload image")
-      setIsUploading(false)
-      setProgress(0)
-    }
-  }
+      } finally {
+        if (progressInterval) {
+          clearInterval(progressInterval)
+        }
+      }
+    },
+    [projectId, userId, owner, repo, branch, pathHint, onUploadComplete],
+  )
 
   const onDragOver = (e: React.DragEvent) => {
     e.preventDefault()

@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest"
+import { describe, expect, it } from "vitest"
 import { getFolderContext } from "../folder-context"
 import type { FrameworkAdapter } from "../types"
 

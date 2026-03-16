@@ -47,7 +47,10 @@ export default async function HistoryPage({ params, searchParams }: PageProps) {
         repoOwner: owner,
         repoName: repo,
       })
-      const project = projects.find((entry: { _id: string; branch: string; userId: string; repoOwner: string; repoName: string }) => entry._id === (projectId as Id<"projects">))
+      const project = projects.find(
+        (entry: { _id: string; branch: string; userId: string; repoOwner: string; repoName: string }) =>
+          entry._id === (projectId as Id<"projects">),
+      )
       if (project && (!branch || project.branch === branch)) {
         validatedProjectId = projectId
         projectAccessToken = await mintProjectAccessToken({

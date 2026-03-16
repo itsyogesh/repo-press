@@ -1,9 +1,9 @@
 "use client"
 
 import * as AlertDialogPrimitive from "@radix-ui/react-alert-dialog"
+import type { VariantProps } from "class-variance-authority"
 import type * as React from "react"
 import { buttonVariants } from "@/components/ui/button"
-import type { VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 
 function AlertDialog({ ...props }: React.ComponentProps<typeof AlertDialogPrimitive.Root>) {

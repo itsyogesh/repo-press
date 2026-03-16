@@ -9,6 +9,10 @@
  * - Collapse multiple consecutive hyphens into one
  * - Trim leading and trailing hyphens
  * - Returns "untitled" if the result is empty
+ *
+ * TODO: The current unicode normalization (NFD) and regex stripping is insufficient
+ * for non-Latin scripts (e.g., CJK, Cyrillic). Consider adopting a comprehensive
+ * library (like `github-slugger` or `slugify`) if broader localization is required.
  */
 export function slugify(input: string): string {
   return (

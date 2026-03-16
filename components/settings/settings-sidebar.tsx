@@ -3,7 +3,6 @@
 import { Package } from "lucide-react"
 import Link from "next/link"
 import { useParams, useSearchParams } from "next/navigation"
-import type * as React from "react"
 import { cn } from "@/lib/utils"
 
 const items = [

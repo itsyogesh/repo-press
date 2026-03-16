@@ -30,6 +30,14 @@ function isSafeSrc(src: string): boolean {
   }
 }
 
+function normalizeExternalImageUrl(src: string): string {
+  const trimmed = src.trim()
+  if (!trimmed) return ""
+  if (trimmed.startsWith("/") || trimmed.startsWith("./") || trimmed.startsWith("../")) return trimmed
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed)) return trimmed
+  return `https://${trimmed}`
+}
+
 interface ImageFieldProps {
   value: string
   onChange: (value: string) => void
@@ -198,6 +206,8 @@ function ImageSelectorDialog({
   selectedFilePath,
 }: ImageSelectorDialogProps) {
   const [urlValue, setUrlValue] = React.useState("")
+  const normalizedUrlValue = normalizeExternalImageUrl(urlValue)
+  const canUseUrl = Boolean(normalizedUrlValue) && isSafeSrc(normalizedUrlValue)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -303,18 +313,21 @@ function ImageSelectorDialog({
                         placeholder="https://example.com/image.jpg"
                         className="border-studio-border"
                       />
-                      <Button onClick={() => onSelect(urlValue)} disabled={!urlValue || !isSafeSrc(urlValue)}>
+                      <Button
+                        onClick={() => onSelect(normalizeExternalImageUrl(urlValue))}
+                        disabled={!canUseUrl}
+                      >
                         Use URL
                       </Button>
                     </div>
                     <p className="text-[10px] text-studio-fg-muted">Paste a direct link to an image.</p>
                   </div>
 
-                  {urlValue && isSafeSrc(urlValue) && (
+                  {canUseUrl && (
                     <div className="rounded-lg border border-studio-border overflow-hidden bg-studio-canvas-inset aspect-video">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
-                        src={urlValue}
+                        src={normalizedUrlValue}
                         alt="External preview"
                         className="w-full h-full object-contain"
                         onError={(e) => {
