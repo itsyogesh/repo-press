@@ -27,7 +27,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
 import { getFrameworkAdapter } from "@/lib/framework-adapters"
-import type { FileTreeNode } from "@/lib/github"
+import { findTreeNode, type FileTreeNode } from "@/lib/github"
 import { usePreviewContext } from "@/lib/hooks/use-preview-context"
 import { buildHistoryHref } from "@/lib/studio/history-link"
 import { CommandPalette } from "./command-palette"
@@ -559,34 +559,14 @@ function StudioLayoutInner({
       return overlayTree.map((n) => n.name)
     }
     // Find the folder node in the overlay tree
-    const findNode = (nodes: FileTreeNode[], path: string): FileTreeNode | null => {
-      for (const n of nodes) {
-        if (n.path === path) return n
-        if (n.children) {
-          const found = findNode(n.children, path)
-          if (found) return found
-        }
-      }
-      return null
-    }
-    const folderNode = findNode(overlayTree, createDialogParent)
+    const folderNode = findTreeNode(overlayTree, createDialogParent)
     return folderNode?.children?.map((n) => n.name) ?? []
   }, [overlayTree, createDialogParent])
 
   /** Full child nodes of the current create-dialog parent (for sibling frontmatter inference) */
   const folderChildNodes = React.useMemo(() => {
     if (!createDialogParent) return overlayTree
-    const findNode = (nodes: FileTreeNode[], path: string): FileTreeNode | null => {
-      for (const n of nodes) {
-        if (n.path === path) return n
-        if (n.children) {
-          const found = findNode(n.children, path)
-          if (found) return found
-        }
-      }
-      return null
-    }
-    const folderNode = findNode(overlayTree, createDialogParent)
+    const folderNode = findTreeNode(overlayTree, createDialogParent)
     return folderNode?.children ?? []
   }, [overlayTree, createDialogParent])
 

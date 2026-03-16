@@ -17,6 +17,8 @@ interface ImageUploadZoneProps {
   pathHint?: string
   onUploadComplete: (repoPath: string) => void
   className?: string
+  /** When false, the global paste listener is detached. Prevents capturing pastes site-wide. */
+  active?: boolean
 }
 
 export function ImageUploadZone({
@@ -28,6 +30,7 @@ export function ImageUploadZone({
   pathHint,
   onUploadComplete,
   className,
+  active = true,
 }: ImageUploadZoneProps) {
   const [isDragging, setIsDragging] = React.useState(false)
   const [isUploading, setIsUploading] = React.useState(false)
@@ -110,8 +113,10 @@ export function ImageUploadZone({
     if (file) handleUpload(file)
   }
 
-  // Handle paste from clipboard
+  // Handle paste from clipboard — only when the component is active (e.g. dialog open)
   React.useEffect(() => {
+    if (!active) return
+
     const handlePaste = (e: ClipboardEvent) => {
       const items = e.clipboardData?.items
       if (!items) return
@@ -127,7 +132,7 @@ export function ImageUploadZone({
 
     window.addEventListener("paste", handlePaste)
     return () => window.removeEventListener("paste", handlePaste)
-  }, [handleUpload]) // Re-bind if context changes
+  }, [handleUpload, active])
 
   return (
     <div

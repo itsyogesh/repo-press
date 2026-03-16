@@ -154,6 +154,14 @@ export function SmartCreateFileDialog({
     return parentPath
   }, [parentPath, contentRoot])
 
+  // Use refs for values the effect reads but shouldn't re-trigger on.
+  // This prevents unnecessary re-fetches when overlayTree updates cause
+  // folderChildNodes / context to get new references while the dialog is open.
+  const folderChildNodesRef = React.useRef(folderChildNodes)
+  folderChildNodesRef.current = folderChildNodes
+  const contextRef = React.useRef(context)
+  contextRef.current = context
+
   // On dialog open: fetch sibling frontmatter + enforce minimum skeleton time
   React.useEffect(() => {
     if (!open) return
@@ -165,7 +173,7 @@ export function SmartCreateFileDialog({
 
     let cancelled = false
 
-    const sibling = findSiblingFile(folderChildNodes)
+    const sibling = findSiblingFile(folderChildNodesRef.current)
 
     const skeletonPromise = new Promise<void>((resolve) => setTimeout(resolve, MIN_SKELETON_MS))
 
@@ -180,7 +188,7 @@ export function SmartCreateFileDialog({
       if (cancelled) return
 
       // Merge: sibling fields first, then adapter required fields not already covered
-      const adapterRequired = context?.requiredFields ?? []
+      const adapterRequired = contextRef.current?.requiredFields ?? []
       const siblingKeys = new Set(inferredFields.map((f) => f.name))
       const extraAdapterFields = adapterRequired.filter((f) => !siblingKeys.has(f.name))
       const allFields = [...inferredFields, ...extraAdapterFields]
@@ -193,7 +201,10 @@ export function SmartCreateFileDialog({
     return () => {
       cancelled = true
     }
-  }, [open, context, branch, folderChildNodes, owner, repo]) // context must be listed: effect reads context?.requiredFields
+    // Stable deps only: effect fires when dialog opens or the target folder/repo changes.
+    // folderChildNodes and context are read via refs to avoid spurious re-fetches.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, branch, owner, repo])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -314,7 +325,7 @@ export function SmartCreateFileDialog({
             </ScrollArea>
           )}
 
-          <SheetFooter className="px-6 pb-6 pt-4">
+          <SheetFooter className="flex-row px-6 pb-6 pt-4 border-t border-studio-border justify-end">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>

@@ -52,7 +52,6 @@ function buildBase(slug: string, strategy: NamingStrategy, ext: string, existing
       }
       return `${slug}${ext}`
 
-    case "slug":
     default:
       return `${slug}${ext}`
   }
@@ -97,12 +96,16 @@ export function deriveFilename(opts: DeriveFilenameOptions): string {
 
   if (!existingSet.has(conflictKey)) return base
 
-  // Find the next free suffix
+  // Find the next free suffix (cap at 1000 to prevent runaway loops)
+  const MAX_CONFLICT_SUFFIX = 1000
   let n = 2
-  while (true) {
+  while (n <= MAX_CONFLICT_SUFFIX) {
     const candidate = applyConflictSuffix(base, n, extension)
     const candidateKey = candidate.includes("/") ? candidate.split("/")[0] : candidate
     if (!existingSet.has(candidateKey)) return candidate
     n++
   }
+
+  // Fallback: return the last candidate (extremely unlikely to reach here)
+  return applyConflictSuffix(base, MAX_CONFLICT_SUFFIX + 1, extension)
 }

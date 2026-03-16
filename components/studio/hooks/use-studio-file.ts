@@ -3,7 +3,7 @@
 import matter from "gray-matter"
 import * as React from "react"
 import { normalizeFrontmatterDates } from "@/lib/framework-adapters"
-import type { FileTreeNode } from "@/lib/github"
+import { findTreeNode, type FileTreeNode } from "@/lib/github"
 import { useStudio } from "../studio-context"
 
 interface InitialFile {
@@ -29,17 +29,6 @@ interface GitHubFileResponse {
   name: string
   sha: string
   content: string
-}
-
-function findNode(nodes: FileTreeNode[], path: string): FileTreeNode | null {
-  for (const node of nodes) {
-    if (node.path === path) return node
-    if (node.children) {
-      const found = findNode(node.children, path)
-      if (found) return found
-    }
-  }
-  return null
 }
 
 function parseFileSnapshot(rawContent: string, sha: string | null): CachedFileSnapshot {
@@ -117,7 +106,7 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
 
   const resolveFileNode = React.useCallback(
     (filePath: string, fileSha?: string | null): FileTreeNode => {
-      const existingNode = findNode(tree, filePath)
+      const existingNode = findTreeNode(tree, filePath)
       if (existingNode) return existingNode
       return {
         name: filePath.split("/").pop() || filePath,
@@ -366,7 +355,7 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
     // Use functional updater to avoid including openFiles in deps (prevents double-execution)
     let restoreTarget: string | undefined
     setOpenFiles((prev) => {
-      const validOpenFiles = prev.filter((path) => findNode(tree, path)?.type === "file")
+      const validOpenFiles = prev.filter((path) => findTreeNode(tree, path)?.type === "file")
 
       const storedSelectedPath =
         typeof window !== "undefined" ? (localStorage.getItem(selectedFileStorageKey) ?? "") : ""

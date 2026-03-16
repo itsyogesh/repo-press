@@ -256,6 +256,7 @@ function ImageSelectorDialog({
                     branch={branch}
                     pathHint={pathHint}
                     onUploadComplete={onSelect}
+                    active={open}
                   />
                 ) : (
                   <div className="flex flex-col items-center justify-center h-48 text-studio-fg-muted">
@@ -313,10 +314,7 @@ function ImageSelectorDialog({
                         placeholder="https://example.com/image.jpg"
                         className="border-studio-border"
                       />
-                      <Button
-                        onClick={() => onSelect(normalizeExternalImageUrl(urlValue))}
-                        disabled={!canUseUrl}
-                      >
+                      <Button onClick={() => onSelect(normalizeExternalImageUrl(urlValue))} disabled={!canUseUrl}>
                         Use URL
                       </Button>
                     </div>

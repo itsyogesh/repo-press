@@ -63,6 +63,7 @@
     "diff": "^8.0.3",
     "embla-carousel-react": "8.5.1",
     "esbuild-wasm": "^0.27.3",
+    "framer-motion": "^12.36.0",
     "gray-matter": "latest",
     "input-otp": "1.4.1",
     "lucide-react": "^0.454.0",
