@@ -35,6 +35,25 @@ export const create = mutation({
   },
 })
 
+export const update = mutation({
+  args: {
+    id: v.id("tags"),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
+    name: v.optional(v.string()),
+    slug: v.optional(v.string()),
+    color: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const tag = await ctx.db.get(args.id)
+    if (!tag) throw new Error("Tag not found")
+    await resolveProjectCaller(ctx, tag.projectId, args.userId, args.projectAccessToken)
+
+    const { id, userId: _userId, projectAccessToken: _pat, ...updates } = args
+    await ctx.db.patch(id, updates)
+  },
+})
+
 export const remove = mutation({
   args: {
     id: v.id("tags"),

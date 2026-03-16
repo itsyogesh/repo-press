@@ -39,6 +39,26 @@ export const create = mutation({
   },
 })
 
+export const update = mutation({
+  args: {
+    id: v.id("categories"),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
+    name: v.optional(v.string()),
+    slug: v.optional(v.string()),
+    parentId: v.optional(v.id("categories")),
+    description: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const category = await ctx.db.get(args.id)
+    if (!category) throw new Error("Category not found")
+    await resolveProjectCaller(ctx, category.projectId, args.userId, args.projectAccessToken)
+
+    const { id, userId: _userId, projectAccessToken: _pat, ...updates } = args
+    await ctx.db.patch(id, updates)
+  },
+})
+
 export const remove = mutation({
   args: {
     id: v.id("categories"),

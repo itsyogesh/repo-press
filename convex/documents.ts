@@ -212,6 +212,18 @@ export const update = mutation({
       ...updates,
       updatedAt: Date.now(),
     })
+
+    // Trigger webhooks
+    await ctx.scheduler.runAfter(0, api.webhooks.triggerWebhooks, {
+      projectId: doc.projectId,
+      event: "document.updated",
+      payload: {
+        documentId: id,
+        updates,
+        filePath: doc.filePath,
+        title: doc.title,
+      },
+    })
   },
 })
 
@@ -228,6 +240,17 @@ export const remove = mutation({
     await resolveProjectCaller(ctx, doc.projectId, args.userId, args.projectAccessToken)
 
     await ctx.db.delete(args.id)
+
+    // Trigger webhooks
+    await ctx.scheduler.runAfter(0, api.webhooks.triggerWebhooks, {
+      projectId: doc.projectId,
+      event: "document.deleted",
+      payload: {
+        documentId: args.id,
+        filePath: doc.filePath,
+        title: doc.title,
+      },
+    })
   },
 })
 
@@ -325,6 +348,19 @@ export const publish = mutation({
       publishedAt: Date.now(),
       updatedAt: Date.now(),
     })
+
+    // Trigger webhooks
+    await ctx.scheduler.runAfter(0, api.webhooks.triggerWebhooks, {
+      projectId: doc.projectId,
+      event: "document.published",
+      payload: {
+        documentId: args.id,
+        status: "published",
+        githubSha: args.commitSha,
+        filePath: doc.filePath,
+        title: doc.title,
+      },
+    })
   },
 })
 
@@ -387,6 +423,19 @@ export const transitionStatus = mutation({
     }
 
     await ctx.db.patch(args.id, updates)
+
+    // Trigger webhooks
+    await ctx.scheduler.runAfter(0, api.webhooks.triggerWebhooks, {
+      projectId: doc.projectId,
+      event: "document.status_changed",
+      payload: {
+        documentId: args.id,
+        oldStatus: doc.status,
+        newStatus: args.newStatus,
+        filePath: doc.filePath,
+        title: doc.title,
+      },
+    })
   },
 })
 
