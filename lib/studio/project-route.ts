@@ -17,6 +17,15 @@ export function projectMatchesRoute(
   return true
 }
 
+export function selectRequestedStudioProject<T extends RouteProject>(
+  project: T | null | undefined,
+  owner: string,
+  repo: string,
+  branch?: string,
+): T | null {
+  return projectMatchesRoute(project, owner, repo, branch) ? project ?? null : null
+}
+
 export function selectStudioFallbackProject<T extends RouteProject>(projects: T[], branch?: string): T | null {
   if (projects.length === 0) return null
   const matchingBranch = branch ? projects.filter((project) => project.branch === branch) : projects

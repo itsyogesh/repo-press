@@ -2,8 +2,8 @@ import { ConvexHttpClient } from "convex/browser"
 import { NextResponse } from "next/server"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
-import { getGitHubToken } from "@/lib/auth-server"
-import { getRepoRole } from "@/lib/github-permissions"
+import { fetchAuthQuery, getGitHubToken, getPatAuthUserId } from "@/lib/auth-server"
+import { getRepoRole, probeRepoReadAccess, type Role } from "@/lib/github-permissions"
 import { mintServerQueryToken } from "@/lib/project-access-token"
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
@@ -37,7 +37,29 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Project does not match repo/branch" }, { status: 400 })
     }
 
-    const { role } = await getRepoRole(token, owner, repo)
+    const authUser = fetchAuthQuery ? await fetchAuthQuery(api.auth.getCurrentUser).catch(() => null) : null
+    const patUserId = !authUser ? await getPatAuthUserId(token) : null
+    const actingUserId = (authUser?._id as string | undefined) ?? patUserId
+
+    const { role: githubRole } = await getRepoRole(token, owner, repo)
+    let role: Role | null = githubRole
+
+    if (!role && actingUserId) {
+      const cached = await convex.query(api.repoAccessCache.getForUserPublic, {
+        repoOwner: owner,
+        repoName: repo,
+        userId: actingUserId,
+        serverQueryToken,
+      })
+      if (cached) {
+        role = cached.role as Role
+      }
+    }
+
+    if (!role) {
+      role = await probeRepoReadAccess(token, owner, repo)
+    }
+
     if (!role) {
       return NextResponse.json({ error: "Forbidden: no access to this repository" }, { status: 403 })
     }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { projectMatchesRoute, selectStudioFallbackProject } from "../project-route"
+import { projectMatchesRoute, selectRequestedStudioProject, selectStudioFallbackProject } from "../project-route"
 
 describe("projectMatchesRoute", () => {
   it("accepts a matching owner/repo/branch triplet", () => {
@@ -56,5 +56,18 @@ describe("selectStudioFallbackProject", () => {
         "main",
       ),
     ).toBeNull()
+  })
+})
+
+describe("selectRequestedStudioProject", () => {
+  it("accepts an explicit matching project even when fallback would be ambiguous", () => {
+    expect(
+      selectRequestedStudioProject(
+        { _id: "project_2", repoOwner: "acme", repoName: "docs-site", branch: "main" },
+        "acme",
+        "docs-site",
+        "main",
+      )?._id,
+    ).toBe("project_2")
   })
 })

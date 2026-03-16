@@ -11,7 +11,7 @@ import type { FileTreeNode } from "@/lib/github"
 import { createGitHubClient, getContentTree, getFile } from "@/lib/github"
 import { getRepoRole, probeRepoReadAccess } from "@/lib/github-permissions"
 import { mintProjectAccessToken, mintServerQueryToken } from "@/lib/project-access-token"
-import { projectMatchesRoute, selectStudioFallbackProject } from "@/lib/studio/project-route"
+import { selectRequestedStudioProject, selectStudioFallbackProject } from "@/lib/studio/project-route"
 
 type Role = "owner" | "editor" | "viewer"
 
@@ -53,14 +53,7 @@ export default async function StudioPage({ params, searchParams }: StudioPagePro
       id: projectIdParam as Id<"projects">,
       serverQueryToken,
     })
-    if (
-      projectMatchesRoute(requestedProject, owner, repo, currentBranch) &&
-      requestedProject &&
-      actingUserId &&
-      requestedProject.userId === actingUserId
-    ) {
-      project = requestedProject
-    }
+    project = selectRequestedStudioProject(requestedProject, owner, repo, currentBranch)
   }
   if (!project) {
     const repoProjects = await convex.query(api.projects.listProjectsForRepo, {
