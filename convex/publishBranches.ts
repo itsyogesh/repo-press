@@ -1,7 +1,6 @@
 import { v } from "convex/values"
-import type { MutationCtx, QueryCtx } from "./_generated/server"
 import { mutation, query } from "./_generated/server"
-import { resolveProjectCaller } from "./project_auth"
+import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
 
 /** Returns the active publish branch for a project (at most one). */
 export const getActiveForProject = query({
@@ -11,7 +10,8 @@ export const getActiveForProject = query({
     projectAccessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await resolveProjectCaller(ctx, args.projectId, args.userId, args.projectAccessToken)
+    const access = await resolveProjectReader(ctx, args)
+    if (!access) return null
 
     return await ctx.db
       .query("publishBranches")
@@ -40,7 +40,7 @@ export const create = mutation({
     baseBranch: v.string(),
   },
   handler: async (ctx, args) => {
-    await resolveProjectCaller(ctx, args.projectId, args.userId, args.projectAccessToken)
+    await resolveProjectAccess(ctx, args, "editor")
 
     const now = Date.now()
     return await ctx.db.insert("publishBranches", {
@@ -68,7 +68,7 @@ export const updateAfterCommit = mutation({
   handler: async (ctx, args) => {
     const publishBranch = await ctx.db.get(args.id)
     if (!publishBranch) throw new Error("Publish branch not found")
-    await resolveProjectCaller(ctx, publishBranch.projectId, args.userId, args.projectAccessToken)
+    await resolveProjectAccess(ctx, { projectId: publishBranch.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken }, "editor")
 
     const { id, userId: _userId, projectAccessToken: _pat, newFilePaths, ...updates } = args
     // Remove undefined keys so we only patch provided values
@@ -98,7 +98,7 @@ export const markMerged = mutation({
   handler: async (ctx, args) => {
     const publishBranch = await ctx.db.get(args.id)
     if (!publishBranch) throw new Error("Publish branch not found")
-    await resolveProjectCaller(ctx, publishBranch.projectId, args.userId, args.projectAccessToken)
+    await resolveProjectAccess(ctx, { projectId: publishBranch.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken }, "editor")
 
     await ctx.db.patch(args.id, {
       status: "merged",
@@ -117,7 +117,7 @@ export const markClosed = mutation({
   handler: async (ctx, args) => {
     const publishBranch = await ctx.db.get(args.id)
     if (!publishBranch) throw new Error("Publish branch not found")
-    await resolveProjectCaller(ctx, publishBranch.projectId, args.userId, args.projectAccessToken)
+    await resolveProjectAccess(ctx, { projectId: publishBranch.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken }, "editor")
 
     await ctx.db.patch(args.id, {
       status: "closed",

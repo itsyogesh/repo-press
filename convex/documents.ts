@@ -1,9 +1,7 @@
 import { v } from "convex/values"
 import { api, internal } from "./_generated/api"
-import type { MutationCtx, QueryCtx } from "./_generated/server"
 import { action, internalMutation, mutation, query } from "./_generated/server"
-import { authComponent } from "./auth"
-import { resolveProjectCaller } from "./project_auth"
+import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
 
 export const listByProject = query({
   args: {
@@ -22,7 +20,8 @@ export const listByProject = query({
     ),
   },
   handler: async (ctx, args) => {
-    await resolveProjectCaller(ctx, args.projectId, args.userId, args.projectAccessToken)
+    const access = await resolveProjectReader(ctx, args)
+    if (!access) return []
 
     if (args.status) {
       return await ctx.db
@@ -47,7 +46,8 @@ export const getByFilePath = query({
     projectAccessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await resolveProjectCaller(ctx, args.projectId, args.userId, args.projectAccessToken)
+    const access = await resolveProjectReader(ctx, args)
+    if (!access) return null
 
     return await ctx.db
       .query("documents")
@@ -57,15 +57,22 @@ export const getByFilePath = query({
 })
 
 export const get = query({
-  args: { id: v.id("documents") },
+  args: {
+    id: v.id("documents"),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
-    // This is a generic getter by ID. Ownership check could be added if needed,
-    // but usually internal IDs are hard to guess. However, for RepoPress,
-    // we should probably verify access to the document's project.
     const doc = await ctx.db.get(args.id)
     if (!doc) return null
 
-    // Optional: add auth check here if we want absolute privacy
+    const access = await resolveProjectReader(ctx, {
+      projectId: doc.projectId,
+      userId: args.userId,
+      projectAccessToken: args.projectAccessToken,
+    })
+    if (!access) return null
+
     return doc
   },
 })
@@ -122,7 +129,7 @@ export const getOrCreate = mutation({
     projectAccessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await resolveProjectCaller(ctx, args.projectId, args.userId, args.projectAccessToken)
+    await resolveProjectAccess(ctx, args, "editor")
 
     const existing = await ctx.db
       .query("documents")
@@ -206,23 +213,11 @@ export const update = mutation({
 
     const doc = await ctx.db.get(id)
     if (!doc) throw new Error("Document not found")
-    await resolveProjectCaller(ctx, doc.projectId, userId, projectAccessToken)
+    await resolveProjectAccess(ctx, { projectId: doc.projectId, userId, projectAccessToken }, "editor")
 
     await ctx.db.patch(id, {
       ...updates,
       updatedAt: Date.now(),
-    })
-
-    // Trigger webhooks
-    await ctx.scheduler.runAfter(0, api.webhooks.triggerWebhooks, {
-      projectId: doc.projectId,
-      event: "document.updated",
-      payload: {
-        documentId: id,
-        updates,
-        filePath: doc.filePath,
-        title: doc.title,
-      },
     })
   },
 })
@@ -237,20 +232,9 @@ export const remove = mutation({
     const doc = await ctx.db.get(args.id)
     if (!doc) throw new Error("Document not found")
 
-    await resolveProjectCaller(ctx, doc.projectId, args.userId, args.projectAccessToken)
+    await resolveProjectAccess(ctx, { projectId: doc.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken }, "editor")
 
     await ctx.db.delete(args.id)
-
-    // Trigger webhooks
-    await ctx.scheduler.runAfter(0, api.webhooks.triggerWebhooks, {
-      projectId: doc.projectId,
-      event: "document.deleted",
-      payload: {
-        documentId: args.id,
-        filePath: doc.filePath,
-        title: doc.title,
-      },
-    })
   },
 })
 
@@ -258,8 +242,13 @@ export const search = query({
   args: {
     projectId: v.id("projects"),
     searchTerm: v.string(),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const access = await resolveProjectReader(ctx, args)
+    if (!access) return []
+
     return await ctx.db
       .query("documents")
       .withSearchIndex("search_title", (q) => q.search("title", args.searchTerm).eq("projectId", args.projectId))
@@ -282,7 +271,7 @@ export const saveDraft = mutation({
     const doc = await ctx.db.get(args.id)
     if (!doc) throw new Error("Document not found")
 
-    const { userId } = await resolveProjectCaller(ctx, doc.projectId, args.userId, args.projectAccessToken)
+    const { userId } = await resolveProjectAccess(ctx, { projectId: doc.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken }, "editor")
 
     if (args.expectedUpdatedAt !== undefined && doc.updatedAt !== args.expectedUpdatedAt) {
       throw new Error("Document was modified by another user. Please refresh and try again.")
@@ -325,15 +314,12 @@ export const publish = mutation({
   args: {
     id: v.id("documents"),
     commitSha: v.string(),
-    userId: v.optional(v.string()),
+    editedBy: v.string(),
     projectAccessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const doc = await ctx.db.get(args.id)
     if (!doc) throw new Error("Document not found")
-
-    // Verify ownership and authentication
-    const { userId } = await resolveProjectCaller(ctx, doc.projectId, args.userId, args.projectAccessToken)
 
     // Enforce state machine: only draft/approved can be published
     const publishableStatuses = ["draft", "approved"]
@@ -341,25 +327,18 @@ export const publish = mutation({
       throw new Error(`Cannot publish from "${doc.status}" status. Document must be in draft or approved state.`)
     }
 
+    await resolveProjectAccess(
+      ctx,
+      { projectId: doc.projectId, userId: args.editedBy, projectAccessToken: args.projectAccessToken },
+      "editor",
+    )
+
     await ctx.db.patch(args.id, {
       status: "published",
       githubSha: args.commitSha,
       lastSyncedAt: Date.now(),
       publishedAt: Date.now(),
       updatedAt: Date.now(),
-    })
-
-    // Trigger webhooks
-    await ctx.scheduler.runAfter(0, api.webhooks.triggerWebhooks, {
-      projectId: doc.projectId,
-      event: "document.published",
-      payload: {
-        documentId: args.id,
-        status: "published",
-        githubSha: args.commitSha,
-        filePath: doc.filePath,
-        title: doc.title,
-      },
     })
   },
 })
@@ -396,7 +375,7 @@ export const transitionStatus = mutation({
     const doc = await ctx.db.get(args.id)
     if (!doc) throw new Error("Document not found")
 
-    await resolveProjectCaller(ctx, doc.projectId, args.userId, args.projectAccessToken)
+    await resolveProjectAccess(ctx, { projectId: doc.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken }, "editor")
 
     const allowed = ALLOWED_TRANSITIONS[doc.status] || []
     if (!allowed.includes(args.newStatus)) {
@@ -423,19 +402,6 @@ export const transitionStatus = mutation({
     }
 
     await ctx.db.patch(args.id, updates)
-
-    // Trigger webhooks
-    await ctx.scheduler.runAfter(0, api.webhooks.triggerWebhooks, {
-      projectId: doc.projectId,
-      event: "document.status_changed",
-      payload: {
-        documentId: args.id,
-        oldStatus: doc.status,
-        newStatus: args.newStatus,
-        filePath: doc.filePath,
-        title: doc.title,
-      },
-    })
   },
 })
 
@@ -494,7 +460,8 @@ export const listTitlesForProject = query({
     projectAccessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await resolveProjectCaller(ctx, args.projectId, args.userId, args.projectAccessToken)
+    const access = await resolveProjectReader(ctx, args)
+    if (!access) return []
 
     const docs = await ctx.db
       .query("documents")
@@ -513,7 +480,8 @@ export const listDirtyForProject = query({
     projectAccessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await resolveProjectCaller(ctx, args.projectId, args.userId, args.projectAccessToken)
+    const access = await resolveProjectReader(ctx, args)
+    if (!access) return []
 
     const drafts = await ctx.db
       .query("documents")

@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "defaults": {
+    "branch": "main",
+    "framework": "auto",
+    "preview": {
+      "entry": ".repopress/mdx-preview.tsx"
+    }
+  },
+  "projects": [
+    {
+      "id": "main",
+      "name": "repo-press Content",
+      "contentRoot": "docs",
+      "framework": "custom",
+      "contentType": "custom",
+      "branch": "main",
+      "components": {
+        "DocsImage": {
+          "props": [
+            {
+              "name": "src",
+              "type": "image",
+              "label": "Source"
+            },
+            {
+              "name": "alt",
+              "type": "string",
+              "label": "Alt text"
+            },
+            {
+              "name": "caption",
+              "type": "string",
+              "label": "Caption"
+            }
+          ],
+          "hasChildren": false,
+          "kind": "flow"
+        },
+        "DocsVideo": {
+          "props": [
+            {
+              "name": "src",
+              "type": "string",
+              "label": "Source"
+            },
+            {
+              "name": "title",
+              "type": "string",
+              "label": "Title"
+            }
+          ],
+          "hasChildren": false,
+          "kind": "flow"
+        },
+        "Callout": {
+          "props": [
+            {
+              "name": "type",
+              "type": "string",
+              "label": "Type",
+              "default": "info"
+            }
+          ],
+          "hasChildren": true,
+          "kind": "flow"
+        }
+      }
+    }
+  ]
+}

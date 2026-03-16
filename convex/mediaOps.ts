@@ -1,18 +1,6 @@
 import { v } from "convex/values"
-import type { Id } from "./_generated/dataModel"
-import type { MutationCtx, QueryCtx } from "./_generated/server"
 import { mutation, query } from "./_generated/server"
-import { resolveProjectCaller } from "./project_auth"
-
-async function requireProjectOwnership(
-  ctx: QueryCtx,
-  projectId: Id<"projects">,
-  userId?: string,
-  projectAccessToken?: string,
-) {
-  const result = await resolveProjectCaller(ctx, projectId, userId, projectAccessToken)
-  return result.userId
-}
+import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
 
 export const stage = mutation({
   args: {
@@ -31,7 +19,7 @@ export const stage = mutation({
     githubSha: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const userId = await requireProjectOwnership(ctx, args.projectId, args.userId, args.projectAccessToken)
+    const { userId } = await resolveProjectAccess(ctx, args, "editor")
 
     const now = Date.now()
     const existingPending = await ctx.db
@@ -77,7 +65,8 @@ export const listPending = query({
     projectAccessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await requireProjectOwnership(ctx, args.projectId, args.userId, args.projectAccessToken)
+    const access = await resolveProjectReader(ctx, args)
+    if (!access) return []
 
     return await ctx.db
       .query("mediaOps")
@@ -94,7 +83,8 @@ export const getPendingByRepoPath = query({
     projectAccessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await requireProjectOwnership(ctx, args.projectId, args.userId, args.projectAccessToken)
+    const access = await resolveProjectReader(ctx, args)
+    if (!access) return null
 
     return await ctx.db
       .query("mediaOps")
@@ -117,7 +107,7 @@ export const markCommitted = mutation({
       const op = await ctx.db.get(id)
       if (!op || op.status !== "pending") continue
 
-      await requireProjectOwnership(ctx, op.projectId, args.userId, args.projectAccessToken)
+      await resolveProjectAccess(ctx, { projectId: op.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken }, "editor")
 
       await ctx.db.patch(id, {
         status: "committed",
@@ -136,7 +126,7 @@ export const undoByRepoPath = mutation({
     repoPath: v.string(),
   },
   handler: async (ctx, args) => {
-    await requireProjectOwnership(ctx, args.projectId, args.userId, args.projectAccessToken)
+    await resolveProjectAccess(ctx, args, "editor")
 
     const pending = await ctx.db
       .query("mediaOps")
@@ -162,7 +152,7 @@ export const clearCommittedForProject = mutation({
     projectAccessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await requireProjectOwnership(ctx, args.projectId, args.userId, args.projectAccessToken)
+    await resolveProjectAccess(ctx, args, "editor")
 
     const committed = await ctx.db
       .query("mediaOps")

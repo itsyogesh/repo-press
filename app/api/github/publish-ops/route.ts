@@ -3,20 +3,15 @@ import matter from "gray-matter"
 import { NextResponse } from "next/server"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
-import { fetchAuthQuery, getGitHubToken, getPatAuthUserId } from "@/lib/auth-server"
 import { prefixContentRoot } from "@/lib/explorer-tree-overlay"
 import type { BatchOperation } from "@/lib/github"
 import { batchCommit, createBranch, createGitHubClient, createPullRequest, getFile } from "@/lib/github"
-import { mintProjectAccessToken } from "@/lib/project-access-token"
+import { mintServerQueryToken } from "@/lib/project-access-token"
+import { RouteAuthError, resolveRouteAuth } from "@/lib/route-auth"
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
 
 export async function POST(request: Request) {
-  const token = await getGitHubToken()
-  if (!token) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  }
-
   try {
     const body = await request.json()
     const { projectId, title, description } = body as {
@@ -29,48 +24,36 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Missing projectId" }, { status: 400 })
     }
 
+    const serverQueryToken = await mintServerQueryToken()
     const project = await convex.query(api.projects.get, {
       id: projectId as Id<"projects">,
+      serverQueryToken,
     })
     if (!project) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 })
     }
 
-    const oauthUserId = await resolveActingUserId()
-    const patUserId = !oauthUserId ? await getPatAuthUserId(token) : null
-    const actingUserId = oauthUserId ?? patUserId
-    const hasAccess = await verifyProjectAccess(project, actingUserId)
-    if (!hasAccess) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
+    let auth: Awaited<ReturnType<typeof resolveRouteAuth>>
+    try {
+      auth = await resolveRouteAuth(project, "editor")
+    } catch (e) {
+      if (e instanceof RouteAuthError) {
+        return NextResponse.json({ error: e.message }, { status: e.status })
+      }
+      throw e
     }
-    const projectAccessToken = actingUserId
-      ? await mintProjectAccessToken({
-          projectId: project._id,
-          userId: actingUserId,
-          repoOwner: project.repoOwner,
-          repoName: project.repoName,
-          branch: project.branch,
-        })
-      : undefined
+    const { actingUserId, projectAccessToken, githubToken: token } = auth
 
     const { repoOwner: owner, repoName: repo, branch: baseBranch, contentRoot } = project
 
+    const queryAuth = { userId: actingUserId, projectAccessToken }
     const [pendingOps, dirtyDocs, pendingMediaOps] = await Promise.all([
-      convex.query(api.explorerOps.listPending, {
-        projectId: project._id,
-        userId: actingUserId ?? undefined,
-        projectAccessToken,
-      }),
+      convex.query(api.explorerOps.listPending, { projectId: project._id, ...queryAuth }),
       convex.query(api.documents.listDirtyForProject, {
         projectId: project._id,
-        userId: actingUserId ?? undefined,
-        projectAccessToken,
+        ...queryAuth,
       }),
-      convex.query(api.mediaOps.listPending, {
-        projectId: project._id,
-        userId: actingUserId ?? undefined,
-        projectAccessToken,
-      }),
+      convex.query(api.mediaOps.listPending, { projectId: project._id, ...queryAuth }),
     ])
 
     if (pendingOps.length === 0 && dirtyDocs.length === 0 && pendingMediaOps.length === 0) {
@@ -210,6 +193,7 @@ export async function POST(request: Request) {
 
     let publishBranch = await convex.query(api.publishBranches.getActiveForProject, {
       projectId: project._id,
+      ...queryAuth,
     })
 
     const branchName = publishBranch?.branchName || `repopress/${baseBranch}/${Date.now()}`
@@ -218,13 +202,14 @@ export async function POST(request: Request) {
       await createBranch(token, owner, repo, baseBranch, branchName)
       await convex.mutation(api.publishBranches.create, {
         projectId: project._id,
-        userId: project.userId,
+        userId: actingUserId,
         projectAccessToken,
         branchName,
         baseBranch,
       })
       publishBranch = await convex.query(api.publishBranches.getActiveForProject, {
         projectId: project._id,
+        ...queryAuth,
       })
       if (!publishBranch) {
         return NextResponse.json({ error: "Failed to create publish branch record" }, { status: 500 })
@@ -258,7 +243,7 @@ export async function POST(request: Request) {
 
     await convex.mutation(api.publishBranches.updateAfterCommit, {
       id: publishBranch._id,
-      userId: project.userId,
+      userId: actingUserId,
       projectAccessToken,
       prNumber,
       prUrl,
@@ -270,7 +255,7 @@ export async function POST(request: Request) {
       await convex.mutation(api.explorerOps.markCommitted, {
         ids: pendingOps.map((op) => op._id),
         commitSha,
-        userId: project.userId,
+        userId: actingUserId,
         projectAccessToken,
       })
     }
@@ -279,7 +264,7 @@ export async function POST(request: Request) {
       await convex.mutation(api.mediaOps.markCommitted, {
         ids: pendingMediaOps.map((op) => op._id),
         commitSha,
-        userId: project.userId,
+        userId: actingUserId,
         projectAccessToken,
       })
     }
@@ -302,7 +287,7 @@ export async function POST(request: Request) {
       try {
         await convex.mutation(api.documents.update, {
           id: doc._id,
-          userId: project.userId,
+          userId: actingUserId,
           projectAccessToken,
           githubSha: blobSha,
         })
@@ -327,27 +312,6 @@ export async function POST(request: Request) {
     console.error("Error in publish-ops:", error)
     return NextResponse.json({ error: message }, { status: 500 })
   }
-}
-
-async function resolveActingUserId(): Promise<string | null> {
-  if (fetchAuthQuery) {
-    try {
-      const authUser = await fetchAuthQuery(api.auth.getCurrentUser)
-      if (authUser?._id) {
-        return authUser._id as string
-      }
-    } catch {
-      // Not an OAuth session
-    }
-  }
-  return null
-}
-
-async function verifyProjectAccess(
-  project: { userId: string; repoOwner: string; repoName: string },
-  actingUserId: string | null,
-): Promise<boolean> {
-  return !!actingUserId && project.userId === actingUserId
 }
 
 function normalizeMediaPath(repoPath: string) {

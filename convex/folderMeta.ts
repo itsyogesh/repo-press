@@ -1,6 +1,6 @@
 import { v } from "convex/values"
 import { mutation, query } from "./_generated/server"
-import { resolveProjectCaller } from "./project_auth"
+import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
 
 export const listByProject = query({
   args: {
@@ -9,7 +9,8 @@ export const listByProject = query({
     projectAccessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await resolveProjectCaller(ctx, args.projectId, args.userId, args.projectAccessToken)
+    const access = await resolveProjectReader(ctx, args)
+    if (!access) return []
 
     return await ctx.db
       .query("folderMeta")
@@ -26,7 +27,8 @@ export const getByPath = query({
     projectAccessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await resolveProjectCaller(ctx, args.projectId, args.userId, args.projectAccessToken)
+    const access = await resolveProjectReader(ctx, args)
+    if (!access) return null
 
     return await ctx.db
       .query("folderMeta")
@@ -48,7 +50,7 @@ export const upsert = mutation({
     pageOrder: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
-    await resolveProjectCaller(ctx, args.projectId, args.userId, args.projectAccessToken)
+    await resolveProjectAccess(ctx, args, "editor")
 
     const existing = await ctx.db
       .query("folderMeta")
@@ -56,17 +58,13 @@ export const upsert = mutation({
       .first()
 
     const now = Date.now()
+    const { userId: _u, projectAccessToken: _pat, ...data } = args
     if (existing) {
-      const { projectId: _p, folderPath: _f, userId: _u, projectAccessToken: _pat, ...updates } = args
+      const { projectId: _p, folderPath: _f, ...updates } = data
       await ctx.db.patch(existing._id, { ...updates, updatedAt: now })
       return existing._id
     }
-    const { userId: _u, projectAccessToken: _pat, ...data } = args
-    return await ctx.db.insert("folderMeta", {
-      ...data,
-      createdAt: now,
-      updatedAt: now,
-    })
+    return await ctx.db.insert("folderMeta", { ...data, createdAt: now, updatedAt: now })
   },
 })
 
@@ -77,9 +75,10 @@ export const remove = mutation({
     projectAccessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const meta = await ctx.db.get(args.id)
-    if (!meta) throw new Error("Folder meta not found")
-    await resolveProjectCaller(ctx, meta.projectId, args.userId, args.projectAccessToken)
+    const record = await ctx.db.get(args.id)
+    if (!record) throw new Error("FolderMeta not found")
+
+    await resolveProjectAccess(ctx, { projectId: record.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken }, "editor")
 
     await ctx.db.delete(args.id)
   },

@@ -1,7 +1,6 @@
 import { v } from "convex/values"
-import type { QueryCtx } from "./_generated/server"
 import { mutation, query } from "./_generated/server"
-import { resolveProjectCaller } from "./project_auth"
+import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
 
 /** Returns all pending explorer ops for a project. */
 export const listPending = query({
@@ -11,7 +10,8 @@ export const listPending = query({
     projectAccessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await resolveProjectCaller(ctx, args.projectId, args.userId, args.projectAccessToken)
+    const access = await resolveProjectReader(ctx, args)
+    if (!access) return []
 
     return await ctx.db
       .query("explorerOps")
@@ -29,7 +29,8 @@ export const getByFilePath = query({
     projectAccessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await resolveProjectCaller(ctx, args.projectId, args.userId, args.projectAccessToken)
+    const access = await resolveProjectReader(ctx, args)
+    if (!access) return null
 
     return await ctx.db
       .query("explorerOps")
@@ -53,7 +54,7 @@ export const stageCreate = mutation({
     initialFrontmatter: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
-    const { userId } = await resolveProjectCaller(ctx, args.projectId, args.userId, args.projectAccessToken)
+    const { userId } = await resolveProjectAccess(ctx, args, "editor")
 
     // Check for existing pending op at this filePath
     const existingOp = await ctx.db
@@ -146,7 +147,7 @@ export const stageDelete = mutation({
     previousSha: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const { userId } = await resolveProjectCaller(ctx, args.projectId, args.userId, args.projectAccessToken)
+    const { userId } = await resolveProjectAccess(ctx, args, "editor")
 
     // Check for existing pending op at this path
     const existingOp = await ctx.db
@@ -191,7 +192,7 @@ export const undoOp = mutation({
       throw new Error("Can only undo pending operations")
     }
 
-    await resolveProjectCaller(ctx, op.projectId, args.userId, args.projectAccessToken)
+    await resolveProjectAccess(ctx, { projectId: op.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken }, "editor")
 
     // Mark the op as undone
     await ctx.db.patch(args.id, {
@@ -228,7 +229,7 @@ export const markCommitted = mutation({
       const op = await ctx.db.get(id)
       // Only mark ops that are still pending (avoid overwriting concurrent undos)
       if (op && op.status === "pending") {
-        await resolveProjectCaller(ctx, op.projectId, args.userId, args.projectAccessToken)
+        await resolveProjectAccess(ctx, { projectId: op.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken }, "editor")
 
         await ctx.db.patch(id, {
           status: "committed",
@@ -250,7 +251,7 @@ export const clearCommittedForProject = mutation({
     projectAccessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await resolveProjectCaller(ctx, args.projectId, args.userId, args.projectAccessToken)
+    await resolveProjectAccess(ctx, args, "editor")
 
     const committed = await ctx.db
       .query("explorerOps")

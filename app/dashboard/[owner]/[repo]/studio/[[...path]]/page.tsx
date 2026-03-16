@@ -8,9 +8,12 @@ import { api } from "@/convex/_generated/api"
 import type { Doc, Id } from "@/convex/_generated/dataModel"
 import { fetchAuthQuery, getGitHubToken, getPatAuthUserId } from "@/lib/auth-server"
 import type { FileTreeNode } from "@/lib/github"
-import { getContentTree, getFile } from "@/lib/github"
-import { mintProjectAccessToken } from "@/lib/project-access-token"
+import { createGitHubClient, getContentTree, getFile } from "@/lib/github"
+import { getRepoRole, probeRepoReadAccess } from "@/lib/github-permissions"
+import { mintProjectAccessToken, mintServerQueryToken } from "@/lib/project-access-token"
 import { projectMatchesRoute, selectStudioFallbackProject } from "@/lib/studio/project-route"
+
+type Role = "owner" | "editor" | "viewer"
 
 interface StudioPageProps {
   params: Promise<{
@@ -38,58 +41,95 @@ export default async function StudioPage({ params, searchParams }: StudioPagePro
   const currentPath = file || (path ? path.join("/") : "")
   const authUser = fetchAuthQuery ? await fetchAuthQuery(api.auth.getCurrentUser).catch(() => null) : null
   const patUserId = !authUser ? await getPatAuthUserId(token) : null
+  const actingUserId = (authUser?._id as string | undefined) ?? patUserId
 
-  // Look up the project: prefer explicit projectId, fall back to repo+branch lookup
   const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
+  const serverQueryToken = await mintServerQueryToken()
+
+  // Look up the project first (needed for ownership fallback)
   let project: Doc<"projects"> | null = null
   if (projectIdParam) {
-    const requestedProject = await convex.query(api.projects.get, { id: projectIdParam as Id<"projects"> })
+    const requestedProject = await convex.query(api.projects.get, {
+      id: projectIdParam as Id<"projects">,
+      serverQueryToken,
+    })
     if (
       projectMatchesRoute(requestedProject, owner, repo, currentBranch) &&
-      (authUser
-        ? requestedProject?.userId === (authUser._id as string)
-        : patUserId
-          ? requestedProject?.userId === patUserId
-          : false)
+      requestedProject &&
+      actingUserId &&
+      requestedProject.userId === actingUserId
     ) {
       project = requestedProject
     }
   }
-  if (!project && authUser && fetchAuthQuery) {
-    try {
-      const repoProjects = await fetchAuthQuery(api.projects.listMyProjectsForRepo, {
-        repoOwner: owner,
-        repoName: repo,
-      })
-      project = selectStudioFallbackProject(repoProjects, currentBranch)
-    } catch {
-      project = null
-    }
+  if (!project) {
+    const repoProjects = await convex.query(api.projects.listProjectsForRepo, {
+      repoOwner: owner,
+      repoName: repo,
+      serverQueryToken,
+    })
+    project = selectStudioFallbackProject(repoProjects, currentBranch)
   }
-  if (!project && !authUser) {
-    if (patUserId) {
-      const repoProjects = await convex.query(api.projects.getByRepo, {
-        userId: patUserId,
+
+  // Resolve role: GitHub API → ownership → cache → content probe
+  const { role: githubRole } = await getRepoRole(token, owner, repo)
+  const isProjectOwner = !!(project && actingUserId && project.userId === actingUserId)
+  let repoRole: Role | null = githubRole ?? (isProjectOwner ? "owner" : null)
+
+  // Fallback chain for org-repo collaborators where getRepoRole returns null
+  if (!repoRole && actingUserId) {
+    // 1. Check access cache (seeded by prior visits)
+    try {
+      const cached = await convex.query(api.repoAccessCache.getForUserPublic, {
         repoOwner: owner,
         repoName: repo,
+        userId: actingUserId,
+        serverQueryToken,
       })
-      project = selectStudioFallbackProject(
-        repoProjects.filter((entry) => entry.branch === currentBranch),
-        currentBranch,
-      )
+      if (cached) repoRole = cached.role as Role
+    } catch {
+      // Cache lookup failed
+    }
+    // 2. Probe: can the token actually read repo content?
+    if (!repoRole) {
+      repoRole = await probeRepoReadAccess(token, owner, repo)
     }
   }
 
+  if (!repoRole) {
+    redirect("/dashboard")
+  }
+
+  // Always mint projectAccessToken with role (fixes OAuth bug)
   const projectAccessToken =
-    project && !authUser
+    project && actingUserId
       ? await mintProjectAccessToken({
           projectId: project._id,
-          userId: project.userId,
+          userId: actingUserId,
           repoOwner: project.repoOwner,
           repoName: project.repoName,
           branch: project.branch,
+          role: repoRole,
         })
       : undefined
+
+  // Cache the permission in Convex (best-effort, requires projectAccessToken)
+  if (actingUserId && projectAccessToken) {
+    try {
+      const octokit = createGitHubClient(token)
+      const { data: ghUser } = await octokit.users.getAuthenticated()
+      await convex.mutation(api.repoAccessCache.upsert, {
+        repoOwner: owner,
+        repoName: repo,
+        userId: actingUserId,
+        githubUsername: ghUser.login,
+        role: repoRole,
+        projectAccessToken,
+      })
+    } catch {
+      // Non-critical: cache miss just means next action will re-check
+    }
+  }
 
   // Use project's contentRoot to scope file listing (falls back to repo root)
   const contentRoot = project?.contentRoot || ""
@@ -146,6 +186,7 @@ export default async function StudioPage({ params, searchParams }: StudioPagePro
             projectId={project?._id}
             projectAccessToken={projectAccessToken}
             contentRoot={contentRoot}
+            role={repoRole}
           />
         </div>
       )}

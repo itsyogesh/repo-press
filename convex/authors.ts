@@ -1,6 +1,6 @@
 import { v } from "convex/values"
 import { mutation, query } from "./_generated/server"
-import { resolveProjectCaller } from "./project_auth"
+import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
 
 export const listByProject = query({
   args: {
@@ -9,7 +9,8 @@ export const listByProject = query({
     projectAccessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await resolveProjectCaller(ctx, args.projectId, args.userId, args.projectAccessToken)
+    const access = await resolveProjectReader(ctx, args)
+    if (!access) return []
 
     return await ctx.db
       .query("authors")
@@ -33,15 +34,11 @@ export const create = mutation({
     twitterHandle: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await resolveProjectCaller(ctx, args.projectId, args.userId, args.projectAccessToken)
+    await resolveProjectAccess(ctx, args, "editor")
 
+    const { userId: _u, projectAccessToken: _pat, ...data } = args
     const now = Date.now()
-    const { userId: _userId, projectAccessToken: _pat, ...data } = args
-    return await ctx.db.insert("authors", {
-      ...data,
-      createdAt: now,
-      updatedAt: now,
-    })
+    return await ctx.db.insert("authors", { ...data, createdAt: now, updatedAt: now })
   },
 })
 
@@ -60,11 +57,12 @@ export const update = mutation({
     twitterHandle: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const author = await ctx.db.get(args.id)
-    if (!author) throw new Error("Author not found")
-    await resolveProjectCaller(ctx, author.projectId, args.userId, args.projectAccessToken)
+    const record = await ctx.db.get(args.id)
+    if (!record) throw new Error("Author not found")
 
-    const { id, userId: _userId, projectAccessToken: _pat, ...updates } = args
+    await resolveProjectAccess(ctx, { projectId: record.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken }, "editor")
+
+    const { id, userId: _u, projectAccessToken: _pat, ...updates } = args
     await ctx.db.patch(id, { ...updates, updatedAt: Date.now() })
   },
 })
@@ -76,9 +74,10 @@ export const remove = mutation({
     projectAccessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const author = await ctx.db.get(args.id)
-    if (!author) throw new Error("Author not found")
-    await resolveProjectCaller(ctx, author.projectId, args.userId, args.projectAccessToken)
+    const record = await ctx.db.get(args.id)
+    if (!record) throw new Error("Author not found")
+
+    await resolveProjectAccess(ctx, { projectId: record.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken }, "editor")
 
     await ctx.db.delete(args.id)
   },

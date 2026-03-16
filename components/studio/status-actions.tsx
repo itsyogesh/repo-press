@@ -24,6 +24,7 @@ import {
 import { Textarea } from "@/components/ui/textarea"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
+import { useStudio } from "./studio-context"
 
 type DocumentStatus = "draft" | "in_review" | "approved" | "published" | "scheduled" | "archived"
 
@@ -74,6 +75,7 @@ interface StatusActionsProps {
 
 export function StatusActions({ documentId, currentStatus }: StatusActionsProps) {
   const user = useQuery(api.auth.getCurrentUser)
+  const { projectAccessToken } = useStudio()
   const transitionStatus = useMutation(api.documents.transitionStatus)
   const [isLoading, setIsLoading] = React.useState(false)
   const [reviewDialogOpen, setReviewDialogOpen] = React.useState(false)
@@ -81,6 +83,7 @@ export function StatusActions({ documentId, currentStatus }: StatusActionsProps)
   const [pendingAction, setPendingAction] = React.useState<TransitionableStatus | null>(null)
 
   const actions = STATUS_ACTIONS[currentStatus] || []
+  const effectiveUserId = (user?._id as string | undefined) ?? undefined
 
   if (actions.length === 0) return null
 
@@ -96,15 +99,17 @@ export function StatusActions({ documentId, currentStatus }: StatusActionsProps)
   }
 
   const executeTransition = async (targetStatus: TransitionableStatus, note?: string) => {
-    if (!user?._id) return
+    // Need at least one auth path: OAuth session or projectAccessToken
+    if (!effectiveUserId && !projectAccessToken) return
     setIsLoading(true)
 
     try {
       await transitionStatus({
         id: documentId as Id<"documents">,
-        userId: user._id as string,
+        userId: effectiveUserId,
+        projectAccessToken: projectAccessToken || undefined,
         newStatus: targetStatus,
-        reviewerId: user._id as string,
+        reviewerId: effectiveUserId,
         reviewNote: note,
       })
 

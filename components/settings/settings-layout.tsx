@@ -32,7 +32,7 @@ export function SettingsLayout({ children }: SettingsLayoutProps) {
               </Link>
             </Button>
             <Separator orientation="vertical" className="h-4 mx-2" />
-            <RepoBreadcrumb owner={owner || "owner"} repo={repo || "repo"} path={["Settings"]} showDashboard={false} />
+            <RepoBreadcrumb owner={owner || "owner"} repo={repo || "repo"} path={["Settings"]} />
           </div>
         </div>
       </header>

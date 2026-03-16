@@ -1,6 +1,6 @@
 import { v } from "convex/values"
 import { mutation, query } from "./_generated/server"
-import { resolveProjectCaller } from "./project_auth"
+import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
 
 export const listByProject = query({
   args: {
@@ -9,7 +9,8 @@ export const listByProject = query({
     projectAccessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await resolveProjectCaller(ctx, args.projectId, args.userId, args.projectAccessToken)
+    const access = await resolveProjectReader(ctx, args)
+    if (!access) return []
 
     return await ctx.db
       .query("mediaAssets")
@@ -34,51 +35,11 @@ export const create = mutation({
     githubSha: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await resolveProjectCaller(ctx, args.projectId, args.userId, args.projectAccessToken)
+    await resolveProjectAccess(ctx, args, "editor")
 
+    const { userId: _u, projectAccessToken: _pat, ...data } = args
     const now = Date.now()
-    const { userId: _u, projectAccessToken: _p, ...data } = args
-    return await ctx.db.insert("mediaAssets", {
-      ...data,
-      createdAt: now,
-      updatedAt: now,
-    })
-  },
-})
-
-export const update = mutation({
-  args: {
-    id: v.id("mediaAssets"),
-    userId: v.optional(v.string()),
-    projectAccessToken: v.optional(v.string()),
-    altText: v.optional(v.string()),
-    width: v.optional(v.number()),
-    height: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const asset = await ctx.db.get(args.id)
-    if (!asset) throw new Error("Media asset not found")
-    await resolveProjectCaller(ctx, asset.projectId, args.userId, args.projectAccessToken)
-
-    const { id, userId: _u, projectAccessToken: _p, ...updates } = args
-    await ctx.db.patch(id, { ...updates, updatedAt: Date.now() })
-  },
-})
-
-export const getByPath = query({
-  args: {
-    projectId: v.id("projects"),
-    filePath: v.string(),
-    userId: v.optional(v.string()),
-    projectAccessToken: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    await resolveProjectCaller(ctx, args.projectId, args.userId, args.projectAccessToken)
-
-    return await ctx.db
-      .query("mediaAssets")
-      .withIndex("by_projectId_filePath", (q) => q.eq("projectId", args.projectId).eq("filePath", args.filePath))
-      .first()
+    return await ctx.db.insert("mediaAssets", { ...data, createdAt: now, updatedAt: now })
   },
 })
 
@@ -89,9 +50,10 @@ export const remove = mutation({
     projectAccessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const asset = await ctx.db.get(args.id)
-    if (!asset) throw new Error("Media asset not found")
-    await resolveProjectCaller(ctx, asset.projectId, args.userId, args.projectAccessToken)
+    const record = await ctx.db.get(args.id)
+    if (!record) throw new Error("MediaAsset not found")
+
+    await resolveProjectAccess(ctx, { projectId: record.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken }, "editor")
 
     await ctx.db.delete(args.id)
   },

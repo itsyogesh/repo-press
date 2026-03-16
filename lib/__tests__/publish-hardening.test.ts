@@ -42,7 +42,7 @@ describe("Publish mutation hardening", () => {
     safeGetAuthUserMock.mockResolvedValue({ _id: "user_owner" })
   })
 
-  it("rejects publish when userId is spoofed", async () => {
+  it("rejects publish when editedBy is spoofed", async () => {
     const ctx = createCtx({
       get: vi
         .fn()
@@ -60,7 +60,7 @@ describe("Publish mutation hardening", () => {
       (publish as any).handler(ctx, {
         id: "doc_1",
         commitSha: "sha123",
-        userId: "user_other",
+        editedBy: "user_other",
       }),
     ).rejects.toThrow("Unauthorized: caller identity does not match userId")
 
@@ -101,7 +101,7 @@ describe("Publish mutation hardening", () => {
     await (publish as any).handler(ctx, {
       id: "doc_1",
       commitSha: "sha123",
-      userId: "user_owner",
+      editedBy: "user_owner",
     })
 
     expect(ctx.db.patch).toHaveBeenCalledWith("doc_1", expect.objectContaining({ status: "published" }))

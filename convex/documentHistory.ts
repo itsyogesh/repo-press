@@ -1,21 +1,7 @@
 import { v } from "convex/values"
-import type { MutationCtx, QueryCtx } from "./_generated/server"
 import { mutation, query } from "./_generated/server"
 import { buildRestoreVersionMutation } from "./documentHistory_restore"
-import { resolveProjectCaller } from "./project_auth"
-
-async function requireDocumentOwnership(
-  ctx: QueryCtx,
-  documentId: string,
-  userId?: string,
-  projectAccessToken?: string,
-) {
-  const doc = (await ctx.db.get(documentId as any)) as {
-    projectId: string
-  } | null
-  if (!doc) throw new Error("Document not found")
-  return await resolveProjectCaller(ctx, doc.projectId, userId, projectAccessToken)
-}
+import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
 
 export const listByDocument = query({
   args: {
@@ -24,7 +10,15 @@ export const listByDocument = query({
     projectAccessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await requireDocumentOwnership(ctx, args.documentId, args.userId, args.projectAccessToken)
+    const doc = await ctx.db.get(args.documentId)
+    if (!doc) return []
+
+    const access = await resolveProjectReader(ctx, {
+      projectId: doc.projectId,
+      userId: args.userId,
+      projectAccessToken: args.projectAccessToken,
+    })
+    if (!access) return []
 
     return await ctx.db
       .query("documentHistory")
@@ -37,16 +31,23 @@ export const listByDocument = query({
 export const listByDocumentPaginated = query({
   args: {
     documentId: v.id("documents"),
-    userId: v.optional(v.string()),
-    projectAccessToken: v.optional(v.string()),
     limit: v.optional(v.number()),
     cursor: v.optional(v.string()),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await requireDocumentOwnership(ctx, args.documentId, args.userId, args.projectAccessToken)
+    const doc = await ctx.db.get(args.documentId)
+    if (!doc) return { page: [], isDone: true, continueCursor: "" }
+
+    const access = await resolveProjectReader(ctx, {
+      projectId: doc.projectId,
+      userId: args.userId,
+      projectAccessToken: args.projectAccessToken,
+    })
+    if (!access) return { page: [], isDone: true, continueCursor: "" }
 
     const limit = args.limit ?? 20
-
     return await ctx.db
       .query("documentHistory")
       .withIndex("by_documentId_createdAt", (q) => q.eq("documentId", args.documentId))
@@ -62,7 +63,15 @@ export const getVersionCount = query({
     projectAccessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await requireDocumentOwnership(ctx, args.documentId, args.userId, args.projectAccessToken)
+    const doc = await ctx.db.get(args.documentId)
+    if (!doc) return 0
+
+    const access = await resolveProjectReader(ctx, {
+      projectId: doc.projectId,
+      userId: args.userId,
+      projectAccessToken: args.projectAccessToken,
+    })
+    if (!access) return 0
 
     const history = await ctx.db
       .query("documentHistory")
@@ -73,9 +82,26 @@ export const getVersionCount = query({
 })
 
 export const get = query({
-  args: { id: v.id("documentHistory") },
+  args: {
+    id: v.id("documentHistory"),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.id)
+    const entry = await ctx.db.get(args.id)
+    if (!entry) return null
+
+    const doc = await ctx.db.get(entry.documentId)
+    if (!doc) return null
+
+    const access = await resolveProjectReader(ctx, {
+      projectId: doc.projectId,
+      userId: args.userId,
+      projectAccessToken: args.projectAccessToken,
+    })
+    if (!access) return null
+
+    return entry
   },
 })
 
@@ -96,7 +122,7 @@ export const restoreVersion = mutation({
       throw new Error("Document not found")
     }
 
-    const { userId } = await resolveProjectCaller(ctx, document.projectId, args.userId, args.projectAccessToken)
+    const { userId } = await resolveProjectAccess(ctx, { projectId: document.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken }, "editor")
 
     const now = Date.now()
     const restoreMutation = buildRestoreVersionMutation({

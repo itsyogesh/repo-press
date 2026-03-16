@@ -84,7 +84,7 @@ describe("review regression guards", () => {
 
   it("cleans up the image upload progress timer on failures", () => {
     const source = read("components/studio/image-upload-zone.tsx")
-    expect(source).toMatch(/finally\s*{[^}]*clearInterval\(/s)
+    expect(source).toMatch(/finally\s*{[\s\S]*?clearInterval\(/)
   })
 
   it("normalizes external image URLs before saving", () => {

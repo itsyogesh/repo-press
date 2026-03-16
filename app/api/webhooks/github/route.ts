@@ -48,25 +48,17 @@ export async function POST(request: Request) {
 
     if (action === "closed" && merged && mergeCommitSha) {
       // PR was merged -- trigger publish
-      await convex.action(api.githubWebhook.handleWebhook, {
-        secret,
-        type: "merged",
-        payload: {
-          prNumber,
-          mergeCommitSha,
-        },
+      await convex.mutation(api.githubWebhook.handlePRMerged, {
+        prNumber,
+        mergeCommitSha,
       })
       return NextResponse.json({ ok: true, action: "merged" })
     }
 
     if (action === "closed" && !merged) {
       // PR was closed without merge
-      await convex.action(api.githubWebhook.handleWebhook, {
-        secret,
-        type: "closed",
-        payload: {
-          prNumber,
-        },
+      await convex.mutation(api.githubWebhook.handlePRClosed, {
+        prNumber,
       })
       return NextResponse.json({ ok: true, action: "closed" })
     }
