@@ -43,25 +43,34 @@ export async function POST(request: Request) {
     if (!hasAccess) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
     }
-    const projectAccessToken =
-      actingUserId && !oauthUserId
-        ? await mintProjectAccessToken({
-            projectId: project._id,
-            userId: actingUserId,
-            repoOwner: project.repoOwner,
-            repoName: project.repoName,
-            branch: project.branch,
-          })
-        : undefined
+    const projectAccessToken = actingUserId
+      ? await mintProjectAccessToken({
+          projectId: project._id,
+          userId: actingUserId,
+          repoOwner: project.repoOwner,
+          repoName: project.repoName,
+          branch: project.branch,
+        })
+      : undefined
 
     const { repoOwner: owner, repoName: repo, branch: baseBranch, contentRoot } = project
 
     const [pendingOps, dirtyDocs, pendingMediaOps] = await Promise.all([
-      convex.query(api.explorerOps.listPending, { projectId: project._id }),
+      convex.query(api.explorerOps.listPending, {
+        projectId: project._id,
+        userId: actingUserId ?? undefined,
+        projectAccessToken,
+      }),
       convex.query(api.documents.listDirtyForProject, {
         projectId: project._id,
+        userId: actingUserId ?? undefined,
+        projectAccessToken,
       }),
-      convex.query(api.mediaOps.listPending, { projectId: project._id }),
+      convex.query(api.mediaOps.listPending, {
+        projectId: project._id,
+        userId: actingUserId ?? undefined,
+        projectAccessToken,
+      }),
     ])
 
     if (pendingOps.length === 0 && dirtyDocs.length === 0 && pendingMediaOps.length === 0) {

@@ -23,6 +23,11 @@ async function verifyCallerIdentity(ctx: MutationCtx, claimedUserId: string) {
 export const list = query({
   args: { userId: v.string() },
   handler: async (ctx, args) => {
+    const user = await authComponent.safeGetAuthUser(ctx)
+    if (!user || (user._id as string) !== args.userId) {
+      throw new Error("Unauthorized")
+    }
+
     return await ctx.db
       .query("projects")
       .withIndex("by_userId", (q) => q.eq("userId", args.userId))
@@ -79,6 +84,11 @@ export const getByRepo = query({
     repoName: v.string(),
   },
   handler: async (ctx, args) => {
+    const user = await authComponent.safeGetAuthUser(ctx)
+    if (!user || (user._id as string) !== args.userId) {
+      throw new Error("Unauthorized")
+    }
+
     return await ctx.db
       .query("projects")
       .withIndex("by_userId_repo", (q) =>

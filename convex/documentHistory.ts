@@ -1,47 +1,31 @@
 import { v } from "convex/values"
-import { verifyProjectAccessToken } from "../lib/project-access-token"
-import type { MutationCtx } from "./_generated/server"
+import type { MutationCtx, QueryCtx } from "./_generated/server"
 import { mutation, query } from "./_generated/server"
-import { authComponent } from "./auth"
 import { buildRestoreVersionMutation } from "./documentHistory_restore"
+import { resolveProjectCaller } from "./project_auth"
 
-async function resolveProjectCaller(
-  ctx: MutationCtx,
-  projectId: string,
-  explicitUserId?: string,
+async function requireDocumentOwnership(
+  ctx: QueryCtx,
+  documentId: string,
+  userId?: string,
   projectAccessToken?: string,
 ) {
-  const authUser = await authComponent.safeGetAuthUser(ctx)
-  if (authUser?._id) {
-    const authUserId = authUser._id as string
-    if (explicitUserId && explicitUserId !== authUserId) {
-      throw new Error("Unauthorized: caller identity does not match userId")
-    }
-    const project = (await ctx.db.get(projectId as any)) as { userId: string } | null
-    if (!project || project.userId !== authUserId) {
-      throw new Error("Unauthorized")
-    }
-    return { userId: authUserId, project }
-  }
-
-  const payload = await verifyProjectAccessToken(projectAccessToken)
-  if (payload && payload.projectId === projectId) {
-    const project = (await ctx.db.get(projectId as any)) as { userId: string } | null
-    if (!project || project.userId !== payload.userId) {
-      throw new Error("Unauthorized")
-    }
-    if (explicitUserId && explicitUserId !== payload.userId) {
-      throw new Error("Unauthorized: caller identity does not match userId")
-    }
-    return { userId: payload.userId, project }
-  }
-
-  throw new Error("Unauthorized: Not authenticated")
+  const doc = (await ctx.db.get(documentId as any)) as {
+    projectId: string
+  } | null
+  if (!doc) throw new Error("Document not found")
+  return await resolveProjectCaller(ctx, doc.projectId, userId, projectAccessToken)
 }
 
 export const listByDocument = query({
-  args: { documentId: v.id("documents") },
+  args: {
+    documentId: v.id("documents"),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
+    await requireDocumentOwnership(ctx, args.documentId, args.userId, args.projectAccessToken)
+
     return await ctx.db
       .query("documentHistory")
       .withIndex("by_documentId_createdAt", (q) => q.eq("documentId", args.documentId))
@@ -53,10 +37,14 @@ export const listByDocument = query({
 export const listByDocumentPaginated = query({
   args: {
     documentId: v.id("documents"),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
     limit: v.optional(v.number()),
     cursor: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    await requireDocumentOwnership(ctx, args.documentId, args.userId, args.projectAccessToken)
+
     const limit = args.limit ?? 20
 
     return await ctx.db
@@ -68,8 +56,14 @@ export const listByDocumentPaginated = query({
 })
 
 export const getVersionCount = query({
-  args: { documentId: v.id("documents") },
+  args: {
+    documentId: v.id("documents"),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
+    await requireDocumentOwnership(ctx, args.documentId, args.userId, args.projectAccessToken)
+
     const history = await ctx.db
       .query("documentHistory")
       .withIndex("by_documentId", (q) => q.eq("documentId", args.documentId))

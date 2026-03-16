@@ -1,41 +1,18 @@
 import { v } from "convex/values"
-import { verifyProjectAccessToken } from "../lib/project-access-token"
+import type { QueryCtx } from "./_generated/server"
 import { mutation, query } from "./_generated/server"
-import { authComponent } from "./auth"
-
-async function resolveProjectCaller(ctx: any, projectId: string, explicitUserId?: string, projectAccessToken?: string) {
-  const authUser = await authComponent.safeGetAuthUser(ctx)
-  if (authUser?._id) {
-    const authUserId = authUser._id as string
-    if (explicitUserId && authUserId !== explicitUserId) {
-      throw new Error("Unauthorized")
-    }
-    const project = await ctx.db.get(projectId)
-    if (!project || project.userId !== authUserId) {
-      throw new Error("Unauthorized")
-    }
-    return { userId: authUserId, project }
-  }
-
-  const payload = await verifyProjectAccessToken(projectAccessToken)
-  if (payload && payload.projectId === projectId) {
-    const project = await ctx.db.get(projectId)
-    if (!project || project.userId !== payload.userId) {
-      throw new Error("Unauthorized")
-    }
-    if (explicitUserId && explicitUserId !== payload.userId) {
-      throw new Error("Unauthorized")
-    }
-    return { userId: payload.userId, project }
-  }
-
-  throw new Error("Unauthorized")
-}
+import { resolveProjectCaller } from "./project_auth"
 
 /** Returns all pending explorer ops for a project. */
 export const listPending = query({
-  args: { projectId: v.id("projects") },
+  args: {
+    projectId: v.id("projects"),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
+    await resolveProjectCaller(ctx, args.projectId, args.userId, args.projectAccessToken)
+
     return await ctx.db
       .query("explorerOps")
       .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", "pending"))
@@ -48,8 +25,12 @@ export const getByFilePath = query({
   args: {
     projectId: v.id("projects"),
     filePath: v.string(),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    await resolveProjectCaller(ctx, args.projectId, args.userId, args.projectAccessToken)
+
     return await ctx.db
       .query("explorerOps")
       .withIndex("by_projectId_filePath", (q) => q.eq("projectId", args.projectId).eq("filePath", args.filePath))

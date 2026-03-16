@@ -1,12 +1,36 @@
 import { v } from "convex/values"
-import { mutation } from "./_generated/server"
+import { action, internalMutation } from "./_generated/server"
+import { api, internal } from "./_generated/api"
 
 /**
- * Handle a GitHub PR merge event.
- * Looks up the publishBranch by PR number, marks it as merged,
- * clears committed explorer ops, and publishes all affected documents.
+ * Public action to handle GitHub webhooks.
+ * Verifies a shared secret between Next.js and Convex.
  */
-export const handlePRMerged = mutation({
+export const handleWebhook = action({
+  args: {
+    secret: v.string(),
+    type: v.union(v.literal("merged"), v.literal("closed")),
+    payload: v.any(),
+  },
+  handler: async (ctx, args) => {
+    if (args.secret !== process.env.GITHUB_WEBHOOK_SECRET) {
+      throw new Error("Unauthorized")
+    }
+
+    if (args.type === "merged") {
+      await ctx.runMutation(internal.githubWebhook.handlePRMerged, {
+        prNumber: args.payload.prNumber,
+        mergeCommitSha: args.payload.mergeCommitSha,
+      })
+    } else if (args.type === "closed") {
+      await ctx.runMutation(internal.githubWebhook.handlePRClosed, {
+        prNumber: args.payload.prNumber,
+      })
+    }
+  },
+})
+
+export const handlePRMerged = internalMutation({
   args: {
     prNumber: v.number(),
     mergeCommitSha: v.string(),
@@ -147,12 +171,7 @@ export const handlePRMerged = mutation({
   },
 })
 
-/**
- * Handle a GitHub PR close event (without merge).
- * Marks the publish branch as closed. Explorer ops remain pending
- * so the user can re-publish later.
- */
-export const handlePRClosed = mutation({
+export const handlePRClosed = internalMutation({
   args: {
     prNumber: v.number(),
   },
