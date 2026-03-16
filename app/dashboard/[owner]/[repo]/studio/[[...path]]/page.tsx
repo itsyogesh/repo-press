@@ -53,7 +53,12 @@ export default async function StudioPage({ params, searchParams }: StudioPagePro
       id: projectIdParam as Id<"projects">,
       serverQueryToken,
     })
-    if (projectMatchesRoute(requestedProject, owner, repo, currentBranch)) {
+    if (
+      projectMatchesRoute(requestedProject, owner, repo, currentBranch) &&
+      requestedProject &&
+      actingUserId &&
+      requestedProject.userId === actingUserId
+    ) {
       project = requestedProject
     }
   }

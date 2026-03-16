@@ -62,12 +62,16 @@ export async function resolveProjectAccess(
       throw new Error("Unauthorized: caller identity does not match userId")
     }
 
-    const role = await resolveRole(ctx, project, authUserId)
-    requireRole(role, minimumRole)
-    return { userId: authUserId, role, project }
+    try {
+      const role = await resolveRole(ctx, project, authUserId)
+      requireRole(role, minimumRole)
+      return { userId: authUserId, role, project }
+    } catch {
+      // Cache expired or not owner — fall through to projectAccessToken
+    }
   }
 
-  // 2. Verify projectAccessToken
+  // 2. Verify projectAccessToken (also serves as fallback when OAuth cache expires)
   const payload = await verifyProjectAccessToken(args.projectAccessToken)
   if (payload && payload.projectId === (args.projectId as string)) {
     if (args.userId && args.userId !== payload.userId) {
