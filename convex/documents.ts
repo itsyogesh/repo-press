@@ -1,6 +1,6 @@
 import { v } from "convex/values"
 import { api, internal } from "./_generated/api"
-import { action, internalMutation, mutation, query } from "./_generated/server"
+import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server"
 import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
 
 export const listByProject = query({
@@ -30,6 +30,18 @@ export const listByProject = query({
         .order("desc")
         .collect()
     }
+    return await ctx.db
+      .query("documents")
+      .withIndex("by_projectId", (q) => q.eq("projectId", args.projectId))
+      .order("desc")
+      .collect()
+  },
+})
+
+/** Internal version of listByProject — no auth, for use by actions like syncTreeTitles. */
+export const listByProjectInternal = internalQuery({
+  args: { projectId: v.id("projects") },
+  handler: async (ctx, args) => {
     return await ctx.db
       .query("documents")
       .withIndex("by_projectId", (q) => q.eq("projectId", args.projectId))
@@ -511,7 +523,7 @@ export const syncTreeTitles = action({
   },
   handler: async (ctx, args) => {
     // Check which files already have document records
-    const existingDocs = await ctx.runQuery(api.documents.listByProject, {
+    const existingDocs = await ctx.runQuery(internal.documents.listByProjectInternal, {
       projectId: args.projectId,
     })
     const existingPaths = new Set(existingDocs.map((d) => d.filePath))
