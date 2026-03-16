@@ -48,12 +48,18 @@ export async function POST(request: Request) {
 
     const queryAuth = { userId: actingUserId, projectAccessToken }
     const [pendingOps, dirtyDocs, pendingMediaOps] = await Promise.all([
-      convex.query(api.explorerOps.listPending, { projectId: project._id, ...queryAuth }),
+      convex.query(api.explorerOps.listPending, {
+        projectId: project._id,
+        ...queryAuth,
+      }),
       convex.query(api.documents.listDirtyForProject, {
         projectId: project._id,
         ...queryAuth,
       }),
-      convex.query(api.mediaOps.listPending, { projectId: project._id, ...queryAuth }),
+      convex.query(api.mediaOps.listPending, {
+        projectId: project._id,
+        ...queryAuth,
+      }),
     ])
 
     if (pendingOps.length === 0 && dirtyDocs.length === 0 && pendingMediaOps.length === 0) {
@@ -191,11 +197,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No valid operations to publish" }, { status: 400 })
     }
 
+    // Branch reuse strategy: If an active PR already exists for this project,
+    // reuse its branch to update the existing PR rather than creating a new one.
+    // This is the industry-standard best practice for git-based CMSes (like TinaCMS, Statamic).
+    // Benefits: Single source of truth, preserved review history, clean commit history.
     let publishBranch = await convex.query(api.publishBranches.getActiveForProject, {
       projectId: project._id,
       ...queryAuth,
     })
 
+    // If no active branch exists, create a new publish branch with timestamp-based name.
+    // Branch naming: repopress/${baseBranch}/${timestamp} e.g., repopress/main/1710681600000
     const branchName = publishBranch?.branchName || `repopress/${baseBranch}/${Date.now()}`
 
     if (!publishBranch) {
@@ -229,6 +241,9 @@ export async function POST(request: Request) {
     const commitMessage = `chore(content): ${parts.join(", ")} via RepoPress`
     const { commitSha } = await batchCommit(token, owner, repo, branchName, operations, commitMessage)
 
+    // PR creation: Only create a new PR if one doesn't exist for this branch.
+    // When the PR already exists (prNumber is set), we skip PR creation and just push commits.
+    // This is intentional - additional publishes will update the same PR with new commits.
     let prUrl = publishBranch.prUrl
     let prNumber = publishBranch.prNumber
 
