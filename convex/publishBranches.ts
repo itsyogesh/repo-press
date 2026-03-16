@@ -1,71 +1,18 @@
 import { v } from "convex/values"
-import { verifyProjectAccessToken } from "../lib/project-access-token"
-import type { MutationCtx } from "./_generated/server"
 import { mutation, query } from "./_generated/server"
-import { authComponent } from "./auth"
-
-/**
- * Verify the caller owns the project using the same pattern as documents.ts:
- * 1. Check Better Auth session (OAuth users)
- * 2. Fall back to signed projectAccessToken (PAT users)
- * 3. Reject if neither is valid
- */
-async function resolveProjectCaller(
-  ctx: MutationCtx,
-  projectId: string,
-  explicitUserId?: string,
-  projectAccessToken?: string,
-) {
-  // First check for projectAccessToken (used when called from API routes with PAT auth)
-  const payload = await verifyProjectAccessToken(projectAccessToken)
-  if (payload && payload.projectId === projectId) {
-    const project = (await ctx.db.get(projectId as any)) as {
-      userId: string
-    } | null
-    if (!project || project.userId !== payload.userId) {
-      throw new Error("Unauthorized")
-    }
-    if (explicitUserId && explicitUserId !== payload.userId) {
-      throw new Error("Unauthorized: caller identity does not match userId")
-    }
-    return { userId: payload.userId, project }
-  }
-
-  // Fall back to Convex session auth (for OAuth users calling from client)
-  const authUser = await authComponent.safeGetAuthUser(ctx)
-  if (authUser?._id) {
-    const authUserId = authUser._id as string
-    if (explicitUserId && explicitUserId !== authUserId) {
-      throw new Error("Unauthorized: caller identity does not match userId")
-    }
-    const project = (await ctx.db.get(projectId as any)) as {
-      userId: string
-    } | null
-    if (!project || project.userId !== authUserId) {
-      throw new Error("Unauthorized")
-    }
-    return { userId: authUserId, project }
-  }
-
-  // Last resort: verify explicitUserId matches project owner
-  // This handles the API route case where we pass project.userId as explicitUserId
-  if (explicitUserId) {
-    const project = (await ctx.db.get(projectId as any)) as {
-      userId: string
-    } | null
-    if (!project || project.userId !== explicitUserId) {
-      throw new Error("Unauthorized")
-    }
-    return { userId: explicitUserId, project }
-  }
-
-  throw new Error("Unauthorized: Not authenticated")
-}
+import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
 
 /** Returns the active publish branch for a project (at most one). */
 export const getActiveForProject = query({
-  args: { projectId: v.id("projects") },
+  args: {
+    projectId: v.id("projects"),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
+    const access = await resolveProjectReader(ctx, args)
+    if (!access) return null
+
     return await ctx.db
       .query("publishBranches")
       .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", "active"))
@@ -93,7 +40,7 @@ export const create = mutation({
     baseBranch: v.string(),
   },
   handler: async (ctx, args) => {
-    await resolveProjectCaller(ctx, args.projectId, args.userId, args.projectAccessToken)
+    await resolveProjectAccess(ctx, args, "editor")
 
     const now = Date.now()
     return await ctx.db.insert("publishBranches", {
@@ -121,7 +68,7 @@ export const updateAfterCommit = mutation({
   handler: async (ctx, args) => {
     const publishBranch = await ctx.db.get(args.id)
     if (!publishBranch) throw new Error("Publish branch not found")
-    await resolveProjectCaller(ctx, publishBranch.projectId, args.userId, args.projectAccessToken)
+    await resolveProjectAccess(ctx, { projectId: publishBranch.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken }, "editor")
 
     const { id, userId: _userId, projectAccessToken: _pat, newFilePaths, ...updates } = args
     // Remove undefined keys so we only patch provided values
@@ -151,7 +98,7 @@ export const markMerged = mutation({
   handler: async (ctx, args) => {
     const publishBranch = await ctx.db.get(args.id)
     if (!publishBranch) throw new Error("Publish branch not found")
-    await resolveProjectCaller(ctx, publishBranch.projectId, args.userId, args.projectAccessToken)
+    await resolveProjectAccess(ctx, { projectId: publishBranch.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken }, "editor")
 
     await ctx.db.patch(args.id, {
       status: "merged",
@@ -170,7 +117,7 @@ export const markClosed = mutation({
   handler: async (ctx, args) => {
     const publishBranch = await ctx.db.get(args.id)
     if (!publishBranch) throw new Error("Publish branch not found")
-    await resolveProjectCaller(ctx, publishBranch.projectId, args.userId, args.projectAccessToken)
+    await resolveProjectAccess(ctx, { projectId: publishBranch.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken }, "editor")
 
     await ctx.db.patch(args.id, {
       status: "closed",

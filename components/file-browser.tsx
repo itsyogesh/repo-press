@@ -12,9 +12,19 @@ interface FileBrowserProps {
   owner: string
   repo: string
   branch?: string
+  basePath?: string
 }
 
-export function FileBrowser({ files, currentPath = "", owner, repo, branch = "main" }: FileBrowserProps) {
+export function FileBrowser({
+  files,
+  currentPath = "",
+  owner,
+  repo,
+  branch = "main",
+  basePath,
+}: FileBrowserProps) {
+  const resolvedBasePath = basePath || `/dashboard/${owner}/${repo}/files`
+
   // Sort files: directories first, then files
   const sortedFiles = [...files].sort((a, b) => {
     if (a.type === b.type) {
@@ -27,7 +37,7 @@ export function FileBrowser({ files, currentPath = "", owner, repo, branch = "ma
     const params = new URLSearchParams()
     if (path) params.set("path", path)
     if (branch) params.set("branch", branch)
-    return `/dashboard/${owner}/${repo}?${params.toString()}`
+    return `${resolvedBasePath}?${params.toString()}`
   }
 
   return (
@@ -52,7 +62,14 @@ export function FileBrowser({ files, currentPath = "", owner, repo, branch = "ma
           </div>
         )}
         {sortedFiles.map((file) => (
-          <FileItem key={file.path} file={file} owner={owner} repo={repo} branch={branch} />
+          <FileItem
+            key={file.path}
+            file={file}
+            owner={owner}
+            repo={repo}
+            branch={branch}
+            basePath={resolvedBasePath}
+          />
         ))}
       </div>
     </div>
@@ -64,9 +81,10 @@ interface FileItemProps {
   owner: string
   repo: string
   branch: string
+  basePath: string
 }
 
-function FileItem({ file, owner, repo, branch }: FileItemProps) {
+function FileItem({ file, owner, repo, branch, basePath }: FileItemProps) {
   const isDirectory = file.type === "dir"
 
   const getHref = () => {
@@ -75,16 +93,8 @@ function FileItem({ file, owner, repo, branch }: FileItemProps) {
 
     if (isDirectory) {
       params.set("path", file.path)
-      return `/dashboard/${owner}/${repo}?${params.toString()}`
+      return `${basePath}?${params.toString()}`
     } else {
-      // For files, we might want to go to the blob view or studio
-      // For now, let's assume blob view, but we need to pass branch there too
-      // Or maybe we link to studio directly?
-      // The original code linked to /blob/...
-      // Let's keep it consistent but add branch param if the blob page supports it
-      // Wait, the blob page is `app/dashboard/[owner]/[repo]/blob/[...path]/page.tsx`
-      // I should check if that page supports branch.
-      // For now, let's just append the branch param.
       return `/dashboard/${owner}/${repo}/blob/${file.path}?${params.toString()}`
     }
   }

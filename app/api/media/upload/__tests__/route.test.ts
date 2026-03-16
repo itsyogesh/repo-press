@@ -30,11 +30,21 @@ vi.mock("@/lib/github", async () => {
   }
 })
 
+vi.mock("@/lib/github-permissions", () => ({
+  getRepoRole: vi.fn(),
+  probeRepoReadAccess: vi.fn().mockResolvedValue(null),
+  roleAtLeast: (actual: string, minimum: string) => {
+    const h: Record<string, number> = { owner: 3, editor: 2, viewer: 1 }
+    return (h[actual] ?? 0) >= (h[minimum] ?? 0)
+  },
+}))
+
 process.env.NEXT_PUBLIC_CONVEX_URL = process.env.NEXT_PUBLIC_CONVEX_URL || "https://example.convex.cloud"
 
 import { put } from "@vercel/blob"
 import { fetchAuthQuery, getGitHubToken, getPatAuthUserId } from "@/lib/auth-server"
 import { createGitHubClient } from "@/lib/github"
+import { getRepoRole } from "@/lib/github-permissions"
 import { POST } from "../route"
 
 function buildRequest(body: Record<string, unknown>) {
@@ -81,7 +91,13 @@ describe("POST /api/media/upload", () => {
     vi.mocked(getGitHubToken).mockResolvedValue("gh-token")
     vi.mocked(fetchAuthQuery!).mockResolvedValue({ _id: "user_1" })
     vi.mocked(getPatAuthUserId).mockResolvedValue("user_1")
-    vi.mocked(createGitHubClient).mockReturnValue(baseGithubClient as any)
+    vi.mocked(getRepoRole).mockResolvedValue({ role: "owner", defaultBranch: "main", defaultBranchInferred: false })
+    vi.mocked(createGitHubClient).mockReturnValue({
+      ...baseGithubClient,
+      users: {
+        getAuthenticated: vi.fn().mockResolvedValue({ data: { login: "user_1" } }),
+      },
+    } as any)
     convexQueryMock.mockResolvedValue(projectRecord)
     convexMutationMock.mockResolvedValue("media-op-1")
   })
@@ -121,18 +137,24 @@ describe("POST /api/media/upload", () => {
 
     expect(response.status).toBe(400)
     expect(payload.error).toContain("repo context")
-    expect(convexMutationMock).not.toHaveBeenCalled()
+    // convexMutationMock may be called once by resolveRouteAuth's cache upsert (best-effort),
+    // but the media staging mutation should NOT have been called.
+    const stagingCalls = convexMutationMock.mock.calls.filter(
+      (call: any[]) => call[1]?.repoPath !== undefined,
+    )
+    expect(stagingCalls).toHaveLength(0)
   })
 
-  it("rejects PAT-mode uploads when the PAT does not resolve to the project owner", async () => {
+  it("rejects PAT-mode uploads when the PAT user has no repo access", async () => {
     vi.mocked(fetchAuthQuery!).mockResolvedValue(null as never)
     vi.mocked(getPatAuthUserId).mockResolvedValue("different_user")
+    vi.mocked(getRepoRole).mockResolvedValue({ role: null, defaultBranch: null, defaultBranchInferred: false })
 
     const response = await POST(buildRequest(baseBody()))
     const payload = await response.json()
 
     expect(response.status).toBe(403)
-    expect(payload.error).toContain("Unauthorized")
+    expect(payload.error).toContain("no access")
     expect(convexMutationMock).not.toHaveBeenCalled()
   })
 
@@ -176,6 +198,9 @@ describe("POST /api/media/upload", () => {
       repos: {
         createOrUpdateFileContents,
         getContent: vi.fn(),
+      },
+      users: {
+        getAuthenticated: vi.fn().mockResolvedValue({ data: { login: "user_1" } }),
       },
     } as any)
 
@@ -223,6 +248,9 @@ describe("POST /api/media/upload", () => {
       repos: {
         createOrUpdateFileContents,
         getContent,
+      },
+      users: {
+        getAuthenticated: vi.fn().mockResolvedValue({ data: { login: "user_1" } }),
       },
     } as any)
 

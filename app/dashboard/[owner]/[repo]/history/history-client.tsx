@@ -28,13 +28,18 @@ export function HistoryClient({ owner, repo, branch: _branch, projectId, project
   const [compareVersions, setCompareVersions] = useState<[string | null, string | null]>([null, null])
   const [isRestoring, setIsRestoring] = useState(false)
 
-  const project = useQuery(api.projects.get, projectId ? { id: projectId as Id<"projects"> } : "skip")
+  const user = useQuery(api.auth.getCurrentUser)
+  const userId = user?._id as string | undefined
 
-  const documents = useQuery(api.documents.listByProject, project?._id ? { projectId: project._id } : "skip")
+  const queryAuth = { userId, projectAccessToken: projectAccessToken || undefined }
+
+  const project = useQuery(api.projects.get, projectId ? { id: projectId as Id<"projects">, ...queryAuth } : "skip")
+
+  const documents = useQuery(api.documents.listByProject, project?._id ? { projectId: project._id, ...queryAuth } : "skip")
 
   const documentHistory = useQuery(
     api.documentHistory.listByDocument,
-    selectedDoc ? { documentId: selectedDoc as Id<"documents"> } : "skip",
+    selectedDoc ? { documentId: selectedDoc as Id<"documents">, ...queryAuth } : "skip",
   )
 
   const restoreMutation = useMutation(api.documentHistory.restoreVersion)
@@ -52,7 +57,7 @@ export function HistoryClient({ owner, repo, branch: _branch, projectId, project
     try {
       await restoreMutation({
         historyId: historyId as Id<"documentHistory">,
-        userId: (project?.userId as string | undefined) ?? undefined,
+        userId,
         projectAccessToken: projectAccessToken ?? undefined,
       })
       toast.success("Version restored successfully")

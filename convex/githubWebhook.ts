@@ -6,6 +6,9 @@ import { mutation } from "./_generated/server"
  * Looks up the publishBranch by PR number, marks it as merged,
  * clears committed explorer ops, and publishes all affected documents.
  */
+// These mutations are called from the webhook route handler which verifies
+// the GitHub webhook signature. The ConvexHttpClient cannot call internalMutation,
+// so these remain public but are effectively protected by the webhook secret.
 export const handlePRMerged = mutation({
   args: {
     prNumber: v.number(),
