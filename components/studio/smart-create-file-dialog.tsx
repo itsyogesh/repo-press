@@ -1,7 +1,6 @@
 "use client"
 
 import matter from "gray-matter"
-import { DraftingCompass } from "lucide-react"
 import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -193,6 +192,7 @@ export function SmartCreateFileDialog({
   const [fieldValues, setFieldValues] = React.useState<Record<string, unknown>>({})
   // Whether both the skeleton timer and sibling fetch have resolved
   const [ready, setReady] = React.useState(false)
+  const userTouched = React.useRef(false)
 
   // Context derived from folder path + adapter (synchronous)
   const context = React.useMemo(() => {
@@ -243,6 +243,7 @@ export function SmartCreateFileDialog({
     setSiblingFields([])
     setFieldValues({})
     setReady(false)
+    userTouched.current = false
     return undefined
   }, [open, parentPath, owner, repo, branch])
 
@@ -258,10 +259,12 @@ export function SmartCreateFileDialog({
     const allFields = [...inferredFields, ...extraAdapterFields]
 
     setSiblingFields(allFields)
-    setFieldValues((previous) => {
-      if (Object.keys(previous).length > 0) return previous
-      return Object.fromEntries(allFields.map((field) => [field.name, blankSmartCreateValue(field)]))
-    })
+    if (!userTouched.current) {
+      setFieldValues((previous) => {
+        if (Object.keys(previous).length > 0) return previous
+        return Object.fromEntries(allFields.map((field) => [field.name, blankSmartCreateValue(field)]))
+      })
+    }
 
     const timer = window.setTimeout(() => {
       setReady(true)
@@ -270,7 +273,7 @@ export function SmartCreateFileDialog({
     return () => {
       window.clearTimeout(timer)
     }
-  }, [open, sibling?.path, siblingSnapshot.status, siblingSnapshot.fields, context.requiredFields])
+  }, [open, sibling?.path, siblingSnapshot.status, siblingSnapshot.fields])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -304,22 +307,9 @@ export function SmartCreateFileDialog({
   // Skeleton field count: show 2 placeholder rows while loading
   const skeletonFieldCount = 2
 
-  const handleOpenChange = (newOpen: boolean) => {
-    onOpenChange(newOpen)
-    if (!newOpen) {
-      // Force immediate restoration of interaction on close
-      document.body.style.pointerEvents = "auto"
-      document.body.style.overflow = ""
-    }
-  }
-
   return (
-    <Sheet open={open} onOpenChange={handleOpenChange}>
-      <SheetContent className="relative overflow-hidden flex flex-col w-full sm:max-w-lg p-0">
-        <DraftingCompass
-          className="absolute bottom-[-10%] right-[-10%] w-96 h-96 text-foreground opacity-[0.03] pointer-events-none transition-opacity duration-1000"
-          aria-hidden="true"
-        />
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent side="right" className="overflow-hidden flex flex-col w-full sm:max-w-lg p-0">
         <form onSubmit={handleSubmit} className="flex flex-col h-full">
           <SheetHeader className="px-6 pt-6 pb-4">
             <SheetTitle>New {contentLabel}</SheetTitle>
@@ -381,12 +371,13 @@ export function SmartCreateFileDialog({
                           key={field.name}
                           field={toMergedField(field)}
                           value={fieldValues[field.name]}
-                          onChange={(val) =>
+                          onChange={(val) => {
+                            userTouched.current = true
                             setFieldValues((prev) => ({
                               ...prev,
                               [field.name]: val,
                             }))
-                          }
+                          }}
                         />
                       ))}
                     </div>

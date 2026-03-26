@@ -122,7 +122,11 @@ export const restoreVersion = mutation({
       throw new Error("Document not found")
     }
 
-    const { userId } = await resolveProjectAccess(ctx, { projectId: document.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken }, "editor")
+    const { userId } = await resolveProjectAccess(
+      ctx,
+      { projectId: document.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken },
+      "editor",
+    )
 
     const now = Date.now()
     const restoreMutation = buildRestoreVersionMutation({

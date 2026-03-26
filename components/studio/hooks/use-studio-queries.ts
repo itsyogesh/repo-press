@@ -119,8 +119,26 @@ function getTitleSyncSnapshot(key: string | null): TitleSyncSnapshot {
   return entry.status
 }
 
-export function useStudioQueries(selectedFilePath?: string) {
-  const { projectId, tree, contentRoot, owner, repo, branch, projectAccessToken } = useStudio()
+export function useStudioQueries(
+  selectedFilePath?: string,
+  overrides?: {
+    projectId?: string
+    tree?: FileTreeNode[]
+    contentRoot?: string
+    owner?: string
+    repo?: string
+    branch?: string
+    projectAccessToken?: string
+  },
+) {
+  const context = useStudio()
+  const projectId = overrides?.projectId ?? context.projectId
+  const tree = overrides?.tree ?? context.tree
+  const contentRoot = overrides?.contentRoot ?? context.contentRoot
+  const owner = overrides?.owner ?? context.owner
+  const repo = overrides?.repo ?? context.repo
+  const branch = overrides?.branch ?? context.branch
+  const projectAccessToken = overrides?.projectAccessToken ?? context.projectAccessToken
 
   const user = useQuery(api.auth.getCurrentUser)
   const authUserId = user?._id as string | undefined

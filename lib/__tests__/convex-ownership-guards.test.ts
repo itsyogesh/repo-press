@@ -22,7 +22,7 @@ import { restoreVersion as restoreDocumentHistoryVersion } from "@/convex/docume
 import { getOrCreateInternal, remove as removeDocument, saveDraft, transitionStatus } from "@/convex/documents"
 import { markCommitted as markExplorerOpsCommitted } from "@/convex/explorerOps"
 import { stage as stageMediaOp } from "@/convex/mediaOps"
-import { remove as removeProject, removeFull, update as updateProject } from "@/convex/projects"
+import { removeFull, remove as removeProject, update as updateProject } from "@/convex/projects"
 import {
   create as createPublishBranch,
   markClosed as markPublishBranchClosed,
@@ -407,10 +407,7 @@ describe("Convex ownership guards", () => {
       newStatus: "in_review",
     })
 
-    expect(patch).toHaveBeenCalledWith(
-      "doc_1",
-      expect.objectContaining({ status: "in_review" }),
-    )
+    expect(patch).toHaveBeenCalledWith("doc_1", expect.objectContaining({ status: "in_review" }))
   })
 
   it("rejects PAT-driven status transition without any auth", async () => {

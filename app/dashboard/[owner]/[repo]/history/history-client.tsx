@@ -35,7 +35,10 @@ export function HistoryClient({ owner, repo, branch: _branch, projectId, project
 
   const project = useQuery(api.projects.get, projectId ? { id: projectId as Id<"projects">, ...queryAuth } : "skip")
 
-  const documents = useQuery(api.documents.listByProject, project?._id ? { projectId: project._id, ...queryAuth } : "skip")
+  const documents = useQuery(
+    api.documents.listByProject,
+    project?._id ? { projectId: project._id, ...queryAuth } : "skip",
+  )
 
   const documentHistory = useQuery(
     api.documentHistory.listByDocument,

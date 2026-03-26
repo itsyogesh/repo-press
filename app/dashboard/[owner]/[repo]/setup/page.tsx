@@ -5,7 +5,7 @@ import { fetchAuthQuery, getGitHubToken, getPatAuthUserId } from "@/lib/auth-ser
 import { detectFramework } from "@/lib/framework-detector"
 import { getRepoBranches } from "@/lib/github"
 import { resolveRepoRole } from "@/lib/github-permissions"
-import { fetchRepoConfig, type ConfigErrorType } from "@/lib/repopress/config"
+import { type ConfigErrorType, fetchRepoConfig } from "@/lib/repopress/config"
 import { syncProjectsServerSide } from "@/lib/sync-projects"
 
 interface SetupPageProps {

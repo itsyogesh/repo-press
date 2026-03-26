@@ -15,11 +15,12 @@ export function ProjectList({ serverProjects }: ProjectListProps) {
   // Convex query: undefined = still loading, [] = loaded (empty or no session).
   // For PAT users the query returns [] (no OAuth session), so serverProjects is authoritative.
   // For OAuth users the Convex query is authoritative once loaded.
-  const projects = convexProjects === undefined
-    ? serverProjects                          // still loading — use server data if available
-    : convexProjects.length > 0
-      ? convexProjects                        // Convex has data (OAuth user with projects)
-      : (serverProjects ?? convexProjects)    // Convex empty — prefer server data (PAT), else empty array (OAuth)
+  const projects =
+    convexProjects === undefined
+      ? serverProjects // still loading — use server data if available
+      : convexProjects.length > 0
+        ? convexProjects // Convex has data (OAuth user with projects)
+        : (serverProjects ?? convexProjects) // Convex empty — prefer server data (PAT), else empty array (OAuth)
 
   if (projects === undefined) {
     return null
@@ -38,9 +39,7 @@ export function ProjectList({ serverProjects }: ProjectListProps) {
           <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center mb-3">
             <Folder className="h-5 w-5 text-muted-foreground" />
           </div>
-          <p className="text-sm text-muted-foreground">
-            No projects yet. Select a repository below to get started.
-          </p>
+          <p className="text-sm text-muted-foreground">No projects yet. Select a repository below to get started.</p>
         </div>
       </div>
     )

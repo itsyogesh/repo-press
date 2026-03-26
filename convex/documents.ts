@@ -244,7 +244,11 @@ export const remove = mutation({
     const doc = await ctx.db.get(args.id)
     if (!doc) throw new Error("Document not found")
 
-    await resolveProjectAccess(ctx, { projectId: doc.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken }, "editor")
+    await resolveProjectAccess(
+      ctx,
+      { projectId: doc.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken },
+      "editor",
+    )
 
     await ctx.db.delete(args.id)
   },
@@ -283,7 +287,11 @@ export const saveDraft = mutation({
     const doc = await ctx.db.get(args.id)
     if (!doc) throw new Error("Document not found")
 
-    const { userId } = await resolveProjectAccess(ctx, { projectId: doc.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken }, "editor")
+    const { userId } = await resolveProjectAccess(
+      ctx,
+      { projectId: doc.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken },
+      "editor",
+    )
 
     if (args.expectedUpdatedAt !== undefined && doc.updatedAt !== args.expectedUpdatedAt) {
       throw new Error("Document was modified by another user. Please refresh and try again.")
@@ -387,7 +395,11 @@ export const transitionStatus = mutation({
     const doc = await ctx.db.get(args.id)
     if (!doc) throw new Error("Document not found")
 
-    await resolveProjectAccess(ctx, { projectId: doc.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken }, "editor")
+    await resolveProjectAccess(
+      ctx,
+      { projectId: doc.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken },
+      "editor",
+    )
 
     const allowed = ALLOWED_TRANSITIONS[doc.status] || []
     if (!allowed.includes(args.newStatus)) {

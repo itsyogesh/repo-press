@@ -23,15 +23,10 @@ export function RepoCard({ repo, connectedProjectCount = 0 }: RepoCardProps) {
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
             {repo.private && (
-              <span className="px-2 py-1 text-xs font-medium rounded-full bg-muted text-muted-foreground">
-                Private
-              </span>
+              <span className="px-2 py-1 text-xs font-medium rounded-full bg-muted text-muted-foreground">Private</span>
             )}
             {isConnected ? (
-              <Badge
-                variant="outline"
-                className="border-studio-success/20 bg-studio-success-muted text-studio-success"
-              >
+              <Badge variant="outline" className="border-studio-success/20 bg-studio-success-muted text-studio-success">
                 <CheckCircle2 className="h-3 w-3 mr-1" />
                 Connected
               </Badge>

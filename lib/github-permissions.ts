@@ -73,11 +73,7 @@ interface ProbeResult {
  * Used internally by `resolveRepoRole` to avoid a redundant API call when
  * `repos.get()` returns 403 (which means we have no `default_branch`).
  */
-async function probeRepoReadAccessWithBranch(
-  token: string,
-  owner: string,
-  repo: string,
-): Promise<ProbeResult> {
+async function probeRepoReadAccessWithBranch(token: string, owner: string, repo: string): Promise<ProbeResult> {
   try {
     const octokit = createGitHubClient(token)
     // Fetch enough branches to reliably detect main/master
@@ -85,7 +81,7 @@ async function probeRepoReadAccessWithBranch(
     // Infer default branch heuristically
     const hasMain = branches.find((b) => b.name === "main")
     const hasMaster = branches.find((b) => b.name === "master")
-    const defaultBranch = hasMain ? "main" : hasMaster ? "master" : branches[0]?.name ?? null
+    const defaultBranch = hasMain ? "main" : hasMaster ? "master" : (branches[0]?.name ?? null)
     return { role: "viewer", defaultBranch }
   } catch {
     return { role: null, defaultBranch: null }

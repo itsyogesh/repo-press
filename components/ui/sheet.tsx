@@ -39,6 +39,7 @@ function SheetContent({
   className,
   children,
   side = "right",
+  onCloseAutoFocus,
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Content> & {
   side?: "top" | "right" | "bottom" | "left"
@@ -60,6 +61,12 @@ function SheetContent({
             "data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom inset-x-0 bottom-0 h-auto border-t",
           className,
         )}
+        onCloseAutoFocus={(e) => {
+          // Reset pointer-events on body in case Radix left it stuck as "none"
+          // which causes the entire page to become unresponsive after sheet dismiss
+          document.body.style.pointerEvents = ""
+          onCloseAutoFocus?.(e)
+        }}
         {...props}
       >
         {children}

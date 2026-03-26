@@ -27,7 +27,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
 import { getFrameworkAdapter } from "@/lib/framework-adapters"
-import { findTreeNode, type FileTreeNode } from "@/lib/github"
+import { type FileTreeNode, findTreeNode } from "@/lib/github"
 import { usePreviewContext } from "@/lib/hooks/use-preview-context"
 import { buildHistoryHref } from "@/lib/studio/history-link"
 import { CommandPalette } from "./command-palette"
@@ -615,7 +615,16 @@ function StudioLayoutInner({
         toast.error(error.message || "Failed to create file")
       }
     },
-    [projectId, canMutateExplorer, userId, projectAccessToken, contentRoot, stageCreate, primeFileSnapshot, navigateToFile],
+    [
+      projectId,
+      canMutateExplorer,
+      userId,
+      projectAccessToken,
+      contentRoot,
+      stageCreate,
+      primeFileSnapshot,
+      navigateToFile,
+    ],
   )
 
   const handleDeleteFile = React.useCallback(
@@ -657,7 +666,16 @@ function StudioLayoutInner({
         toast.error(error.message || "Failed to delete file")
       }
     },
-    [projectId, canMutateExplorer, userId, projectAccessToken, pendingOps, undoOp, discardFileFromClientState, stageDelete],
+    [
+      projectId,
+      canMutateExplorer,
+      userId,
+      projectAccessToken,
+      pendingOps,
+      undoOp,
+      discardFileFromClientState,
+      stageDelete,
+    ],
   )
 
   const handleUndoDelete = React.useCallback(
@@ -679,16 +697,27 @@ function StudioLayoutInner({
   const handleDiscardAll = React.useCallback(async () => {
     if (!pendingOps || !canMutateExplorer) return
     try {
+      // Collect created file paths before undoing so we can clean up client state
+      const createdPaths = pendingOps
+        .filter((op) => op.status === "pending" && op.opType === "create")
+        .map((op) => op.filePath)
+
       for (const op of pendingOps) {
         if (op.status === "pending") {
           await undoOp({ id: op._id, userId, projectAccessToken })
         }
       }
+
+      // Close tabs and clear cache for discarded NEW files
+      for (const path of createdPaths) {
+        discardFileFromClientState(path)
+      }
+
       toast.success("All pending changes discarded")
     } catch (error: any) {
       toast.error(error.message || "Failed to discard changes")
     }
-  }, [pendingOps, canMutateExplorer, userId, projectAccessToken, undoOp])
+  }, [pendingOps, canMutateExplorer, userId, projectAccessToken, undoOp, discardFileFromClientState])
 
   const resolveRelocatePayload = React.useCallback(
     async (oldPath: string) => {
@@ -890,6 +919,7 @@ function StudioLayoutInner({
   const editorScrollRef = React.useRef<HTMLDivElement>(null)
   const previewScrollRef = React.useRef<HTMLDivElement>(null)
   const isSyncingScroll = React.useRef(false)
+  const savedScrollRatio = React.useRef(0)
 
   const getScrollSyncMetrics = React.useCallback((container: HTMLDivElement) => {
     const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight)
@@ -954,7 +984,20 @@ function StudioLayoutInner({
     [getScrollSyncMetrics],
   )
 
-  const handleEditorScroll = React.useCallback(() => syncScroll("editor"), [syncScroll])
+  const handleEditorScroll = React.useCallback(() => {
+    // Save scroll ratio for restore on mode switch
+    const el = editorScrollRef.current
+    if (el) {
+      const metrics = getScrollSyncMetrics(el)
+      if (metrics.scrollable > 0) {
+        savedScrollRatio.current = (el.scrollTop - metrics.start) / metrics.scrollable
+      } else if (metrics.maxScroll > 0) {
+        savedScrollRatio.current = el.scrollTop / metrics.maxScroll
+      }
+      savedScrollRatio.current = Math.min(1, Math.max(0, savedScrollRatio.current))
+    }
+    syncScroll("editor")
+  }, [syncScroll, getScrollSyncMetrics])
   const handlePreviewScroll = React.useCallback(() => syncScroll("preview"), [syncScroll])
 
   // Keyboard shortcuts
@@ -1012,6 +1055,31 @@ function StudioLayoutInner({
 
   const isSidebarCollapsed = !isMobile && sidebarState === "collapsed"
   const showPreview = viewMode === "split" && !isMobile
+
+  // Restore scroll positions after mode switch
+  React.useLayoutEffect(() => {
+    if (!showPreview) return
+    // When switching to split mode, restore preview scroll from saved editor ratio
+    const ratio = savedScrollRatio.current
+    requestAnimationFrame(() => {
+      const previewEl = previewScrollRef.current
+      if (previewEl && ratio > 0) {
+        const metrics = getScrollSyncMetrics(previewEl)
+        const targetTop =
+          metrics.scrollable > 0 ? metrics.start + ratio * metrics.scrollable : ratio * metrics.maxScroll
+        previewEl.scrollTop = Math.min(metrics.maxScroll, Math.max(0, targetTop))
+      }
+      // Also ensure editor scroll is preserved (ResizablePanel resize may reset it)
+      const editorEl = editorScrollRef.current
+      if (editorEl && ratio > 0) {
+        const metrics = getScrollSyncMetrics(editorEl)
+        const targetTop =
+          metrics.scrollable > 0 ? metrics.start + ratio * metrics.scrollable : ratio * metrics.maxScroll
+        editorEl.scrollTop = Math.min(metrics.maxScroll, Math.max(0, targetTop))
+      }
+    })
+  }, [showPreview, getScrollSyncMetrics])
+
   const [resolvedProjectDataId, setResolvedProjectDataId] = React.useState<string | null>(null)
 
   React.useEffect(() => {
@@ -1507,14 +1575,33 @@ function StudioLayoutInner({
 }
 
 function StudioProviderWrapper(props: StudioLayoutProps) {
-  const { owner, repo, branch, projectId, projectAccessToken, contentRoot = "", tree, initialFile, currentPath, role = "owner" } = props
+  const {
+    owner,
+    repo,
+    branch,
+    projectId,
+    projectAccessToken,
+    contentRoot = "",
+    tree,
+    initialFile,
+    currentPath,
+    role = "owner",
+  } = props
 
   // 1. File state hook
   const studioFile = useStudioFile(initialFile, currentPath)
   const { selectedFile } = studioFile
 
   // 2. Queries hook
-  const studioQueries = useStudioQueries(selectedFile?.path)
+  const studioQueries = useStudioQueries(selectedFile?.path, {
+    projectId,
+    tree,
+    contentRoot,
+    owner,
+    repo,
+    branch,
+    projectAccessToken,
+  })
   const {
     previewEntry,
     enabledPlugins,
@@ -1534,9 +1621,11 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
     pluginRegistry,
   })
 
-  // 3. Auto-sync config logic
+  // 3. Auto-sync config logic — only sync once per project/branch load
+  const hasSynced = React.useRef(false)
   React.useEffect(() => {
-    if (!owner || !repo || !branch) return
+    if (!owner || !repo || !branch || hasSynced.current) return
+    hasSynced.current = true
     syncProjectsFromConfigAction(owner, repo, branch).catch((err) => {
       console.warn("Background config sync failed:", err)
     })
@@ -1572,7 +1661,10 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
       contentRoot,
       tree,
       role,
-      previewContext,
+      previewContext.context,
+      previewContext.loading,
+      previewContext.error,
+      previewContext.diagnostics,
       componentSchema,
     ],
   )

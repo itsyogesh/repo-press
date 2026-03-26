@@ -88,7 +88,7 @@ export function FrontmatterPanel({
           </Button>
         </CollapsibleTrigger>
       </div>
-      <CollapsibleContent className="px-4 py-3 space-y-4">
+      <CollapsibleContent className="px-4 py-3 space-y-4 max-h-[70vh] overflow-y-auto">
         {fieldsInFile.length > 0 ? (
           groupMergedFields(fieldsInFile).map((grouped) => (
             <div key={grouped.group}>

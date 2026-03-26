@@ -92,11 +92,23 @@ export function ImageField({
 
             {/* Overlay actions */}
             <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-              <Button variant="secondary" size="sm" className="h-8 gap-1.5" onClick={() => setBrowserOpen(true)}>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="h-8 gap-1.5"
+                onClick={() => setBrowserOpen(true)}
+              >
                 <RefreshCw className="h-3.5 w-3.5" />
                 Replace
               </Button>
-              <Button variant="destructive" size="sm" className="h-8 gap-1.5" onClick={() => onChange("")}>
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                className="h-8 gap-1.5"
+                onClick={() => onChange("")}
+              >
                 <Trash2 className="h-3.5 w-3.5" />
                 Remove
               </Button>
@@ -145,6 +157,7 @@ export function ImageField({
   return (
     <>
       <Button
+        type="button"
         variant="outline"
         className={cn(
           "w-full h-24 border-2 border-dashed border-studio-border bg-studio-canvas-inset hover:bg-studio-accent/5 hover:border-studio-accent transition-all duration-200 group flex-col gap-2",

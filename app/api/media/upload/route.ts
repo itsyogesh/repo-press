@@ -5,7 +5,7 @@ import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
 import { createGitHubClient } from "@/lib/github"
 import { mintServerQueryToken } from "@/lib/project-access-token"
-import { RouteAuthError, getContentType as sharedGetContentType, resolveRouteAuth } from "@/lib/route-auth"
+import { RouteAuthError, resolveRouteAuth, getContentType as sharedGetContentType } from "@/lib/route-auth"
 import { buildMediaResolveUrl, normalizeRepoMediaPath } from "@/lib/studio/media-resolve"
 
 export const runtime = "nodejs"
