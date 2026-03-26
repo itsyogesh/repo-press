@@ -181,8 +181,8 @@ function PropField({
 
     // "string" and fallback
     default: {
-      // Show video preview for DocsVideo.src prop
-      const isVideoComponent = componentName === "Docs Video" && propDef.name === "src"
+      // Show video preview for DocsVideo.src prop (match either 'DocsVideo' or 'Docs Video')
+      const isVideoComponent = /docs\s*video/i.test(String(componentName || "")) && propDef.name === "src"
 
       return (
         <div className="space-y-1.5">
