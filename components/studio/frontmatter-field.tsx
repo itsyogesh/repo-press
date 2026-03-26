@@ -1,5 +1,6 @@
 "use client"
 
+import { useState, useEffect } from "react"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -20,6 +21,12 @@ interface FrontmatterFieldProps {
 
 export function FrontmatterField({ field, value, onChange, imagePaths = [], selectedFilePath }: FrontmatterFieldProps) {
   const id = field.actualFieldName
+
+  // Local state for textarea-type fields to ensure charCount always reflects actual content
+  const [localTextValue, setLocalTextValue] = useState<string>(typeof value === "string" ? value : "")
+  useEffect(() => {
+    setLocalTextValue(typeof value === "string" ? value : "")
+  }, [value])
 
   const labelEl = (
     <div className="flex items-center gap-1.5">
@@ -193,8 +200,7 @@ export function FrontmatterField({ field, value, onChange, imagePaths = [], sele
       const charLimit = field.charLimit || (isLongText ? 160 : 0)
 
       if (isLongText || charLimit > 0) {
-        const strValue = typeof value === "string" ? value : ""
-        const charCount = strValue.length
+        const charCount = localTextValue.length
         const isOverLimit = charLimit > 0 && charCount > charLimit
         return (
           <div className="grid gap-1">
@@ -202,8 +208,9 @@ export function FrontmatterField({ field, value, onChange, imagePaths = [], sele
             {helperEl}
             <Textarea
               id={id}
-              value={strValue}
+              value={localTextValue}
               onChange={(e) => {
+                setLocalTextValue(e.target.value)
                 onChange(e.target.value)
               }}
               placeholder={field.description}
