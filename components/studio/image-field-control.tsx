@@ -46,6 +46,14 @@ interface ImageFieldControlProps {
   imagePaths?: string[]
   /** Current file path (for suggested upload paths) */
   selectedFilePath?: string
+  /** Optional repo context for upload functionality (e.g. from ComponentPropForm). */
+  repoContext?: {
+    projectId: string
+    userId?: string
+    owner: string
+    repo: string
+    branch: string
+  }
 }
 
 /** Allow relative paths and http(s) URLs. Block javascript: and other protocol URIs. */
@@ -242,9 +250,16 @@ export function ImageFieldControl({
   className,
   imagePaths = [],
   selectedFilePath: selectedFilePathProp,
+  repoContext,
 }: ImageFieldControlProps) {
-  const { projectId, userId, selectedFilePath: selectedFilePathContext, owner, repo, branch } = useStudio()
-  const selectedFilePath = selectedFilePathProp ?? selectedFilePathContext
+  const studio = useStudio()
+  // repoContext (from ComponentPropForm) takes priority over studio context for upload credentials
+  const projectId = repoContext?.projectId ?? studio.projectId
+  const userId = repoContext?.userId ?? studio.userId
+  const owner = repoContext?.owner ?? studio.owner
+  const repo = repoContext?.repo ?? studio.repo
+  const branch = repoContext?.branch ?? studio.branch
+  const selectedFilePath = selectedFilePathProp ?? studio.selectedFilePath
   const [browserOpen, setBrowserOpen] = React.useState(false)
   const resolvedValuePreview = value ? resolveStudioAssetUrl(value, projectId, userId, selectedFilePath) : value
 

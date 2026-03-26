@@ -2,7 +2,7 @@
 
 export { allAdapters } from "./adapters"
 export { FIELD_GROUP_MAP, GROUP_LABELS, groupFields, groupMergedFields } from "./field-groups"
-export { UNIVERSAL_FIELDS } from "./fields"
+export { EXTENDED_UNIVERSAL_FIELDS, SEO_SCHEMA_FIELDS, UNIVERSAL_FIELDS } from "./fields"
 export {
   detectFramework,
   getFrameworkAdapter,

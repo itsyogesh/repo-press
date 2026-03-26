@@ -261,8 +261,12 @@ export function SmartCreateFileDialog({
     setSiblingFields(allFields)
     if (!userTouched.current) {
       setFieldValues((previous) => {
-        if (Object.keys(previous).length > 0) return previous
-        return Object.fromEntries(allFields.map((field) => [field.name, blankSmartCreateValue(field)]))
+        // Preserve any values the user has already entered; fill blanks for new fields only.
+        const merged: Record<string, unknown> = {}
+        for (const field of allFields) {
+          merged[field.name] = field.name in previous ? previous[field.name] : blankSmartCreateValue(field)
+        }
+        return merged
       })
     }
 
