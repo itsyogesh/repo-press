@@ -421,6 +421,7 @@ if (err.status === 429) setRateLimited(true)          // Rate limit hit
 - `CLAUDE.md` / `AGENTS.md` – Comprehensive architecture and function reference
 - `README.md` – Feature overview, setup instructions, supported frameworks
 - `copilot-instructions.md` – This file; update with new patterns as they emerge
+- `.github/plan/` – Draft plans for complex tasks. Save plans here only (do NOT commit); agents should ask for approval and create PRs from feature branches when ready.
 
 ## Testing Patterns
 
