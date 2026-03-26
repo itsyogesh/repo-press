@@ -440,7 +440,6 @@ app/api/github/__tests__/
 Run with `npm run test` or `npm run test:watch`. Uses Vitest.
 
 Note: Playwright is not used; use the Google Chrome MCP tool (chrome-devtools) for browser automation/testing.
-
 ## Related Documentation
 
 Full architecture and implementation details:
