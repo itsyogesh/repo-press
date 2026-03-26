@@ -14,37 +14,13 @@ import { cn } from "@/lib/utils"
 import { ImageUploadZone } from "./image-upload-zone"
 import { useStudio } from "./studio-context"
 
-/**
- * ImageFieldControl — Rich image picker with preview tile, upload, and hover actions.
- *
- * This is a reusable component for image-type fields that can appear in:
- * - Frontmatter image fields (cover image, etc.)
- * - Component prop forms (DocsImage.src, etc.)
- * - Any other image selection context
- *
- * When value is set and valid, shows:
- * - Aspect-video preview tile with image
- * - Hover overlay with Replace, Remove, and View buttons
- * - File path display below image
- *
- * When value is empty, shows:
- * - Large dashed button to select or upload
- *
- * Supports both relative paths and external URLs.
- */
-
 interface ImageFieldControlProps {
-  /** Current image value (path or URL) */
   value: string
-  /** Called when image changes or is cleared */
   onChange: (value: string) => void
-  /** Placeholder text for empty state */
   placeholder?: string
-  /** Additional CSS classes */
   className?: string
-  /** Current file path (for suggested upload paths) */
+  imagePaths?: string[]
   selectedFilePath?: string
-  /** Optional repo context for upload functionality (e.g. from ComponentPropForm). */
   repoContext?: {
     projectId: string
     userId?: string
@@ -54,7 +30,6 @@ interface ImageFieldControlProps {
   }
 }
 
-/** Allow relative paths and http(s) URLs. Block javascript: and other protocol URIs. */
 function isSafeSrc(src: string): boolean {
   const trimmed = src.trim()
   if (!trimmed) return false
@@ -75,11 +50,11 @@ function normalizeExternalImageUrl(src: string): string {
   return `https://${trimmed}`
 }
 
-// Image selector dialog (used by ImageFieldControl)
 interface ImageSelectorDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   value: string
+  imagePaths: string[]
   onSelect: (path: string) => void
   projectId?: string
   userId?: string
@@ -94,6 +69,7 @@ function ImageSelectorDialog({
   open,
   onOpenChange,
   value,
+  imagePaths,
   onSelect,
   projectId,
   userId,
@@ -125,6 +101,12 @@ function ImageSelectorDialog({
                 Upload
               </TabsTrigger>
               <TabsTrigger
+                value="library"
+                className="rounded-none border-b-2 border-transparent data-[state=active]:border-studio-accent data-[state=active]:bg-transparent px-0 h-10 shadow-none"
+              >
+                Library
+              </TabsTrigger>
+              <TabsTrigger
                 value="url"
                 className="rounded-none border-b-2 border-transparent data-[state=active]:border-studio-accent data-[state=active]:bg-transparent px-0 h-10 shadow-none"
               >
@@ -150,6 +132,43 @@ function ImageSelectorDialog({
                 ) : (
                   <div className="flex flex-col items-center justify-center h-48 text-studio-fg-muted">
                     <p className="text-sm">Upload context unavailable</p>
+                  </div>
+                )}
+              </TabsContent>
+
+              <TabsContent value="library" className="mt-0">
+                <div className="grid grid-cols-3 gap-3 p-1">
+                  {imagePaths.filter(isSafeSrc).map((path) => (
+                    <button
+                      type="button"
+                      key={path}
+                      onClick={() => onSelect(path)}
+                      className={cn(
+                        "relative aspect-square rounded-lg border overflow-hidden bg-studio-canvas-inset hover:border-studio-accent transition-all duration-200 hover:shadow-md group",
+                        value === path && "border-studio-accent ring-2 ring-studio-accent ring-offset-2",
+                      )}
+                      title={path}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={resolveStudioAssetUrl(path, projectId, userId, selectedFilePath)}
+                        alt={path.split("/").pop()}
+                        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
+                        onError={(e) => {
+                          ;(e.target as HTMLImageElement).src =
+                            "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Crect x='3' y='3' width='18' height='18' rx='2'/%3E%3Ccircle cx='8.5' cy='8.5' r='1.5'/%3E%3Cpath d='m21 15-5-5L5 21'/%3E%3C/svg%3E"
+                        }}
+                      />
+                      <div className="absolute inset-x-0 bottom-0 bg-black/60 px-2 py-1 backdrop-blur-[2px] translate-y-full group-hover:translate-y-0 transition-transform duration-200">
+                        <p className="text-[9px] text-white truncate text-center">{path.split("/").pop()}</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+                {imagePaths.length === 0 && (
+                  <div className="flex flex-col items-center justify-center h-48 text-studio-fg-muted">
+                    <ImageIcon className="h-10 w-10 mb-2 opacity-20" />
+                    <p className="text-sm">No images found in repository</p>
                   </div>
                 )}
               </TabsContent>
@@ -201,11 +220,11 @@ export function ImageFieldControl({
   onChange,
   placeholder = "Select or upload image...",
   className,
+  imagePaths = [],
   selectedFilePath: selectedFilePathProp,
   repoContext,
 }: ImageFieldControlProps) {
   const studio = useStudio()
-  // repoContext (from ComponentPropForm) takes priority over studio context for upload credentials
   const projectId = repoContext?.projectId ?? studio.projectId
   const userId = repoContext?.userId ?? studio.userId
   const owner = repoContext?.owner ?? studio.owner
@@ -223,7 +242,6 @@ export function ImageFieldControl({
   const pathHint = selectedFilePath ? getSuggestedImagePath(selectedFilePath) : "public/images"
   const displayValue = value ? (value.startsWith("/") ? value : `/${value}`) : ""
 
-  // Rich preview UI when image is selected and valid
   if (value && isSafeSrc(value)) {
     return (
       <BlurFade delay={0.1} inView>
@@ -245,7 +263,6 @@ export function ImageFieldControl({
               }}
             />
 
-            {/* Hover overlay with actions */}
             <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
               <Button
                 type="button"
@@ -278,7 +295,6 @@ export function ImageFieldControl({
             </div>
           </div>
 
-          {/* File path display */}
           <div className="px-3 py-2 border-t border-studio-border bg-background/50 backdrop-blur-sm flex items-center justify-between">
             <span className="text-[10px] font-mono text-studio-fg-muted truncate max-w-[200px]" title={value}>
               {displayValue}
@@ -297,11 +313,11 @@ export function ImageFieldControl({
           </div>
         </div>
 
-        {/* Image browser dialog */}
         <ImageSelectorDialog
           open={browserOpen}
           onOpenChange={setBrowserOpen}
           value={value}
+          imagePaths={imagePaths}
           onSelect={handleSelectImage}
           projectId={projectId}
           userId={userId}
@@ -315,7 +331,6 @@ export function ImageFieldControl({
     )
   }
 
-  // Empty state: dashed button to start upload
   return (
     <>
       <Button
@@ -333,11 +348,11 @@ export function ImageFieldControl({
         <span className="text-sm font-medium text-studio-fg-muted group-hover:text-studio-fg">{placeholder}</span>
       </Button>
 
-      {/* Image browser dialog */}
       <ImageSelectorDialog
         open={browserOpen}
         onOpenChange={setBrowserOpen}
         value={value}
+        imagePaths={imagePaths}
         onSelect={handleSelectImage}
         projectId={projectId}
         userId={userId}

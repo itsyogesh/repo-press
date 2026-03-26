@@ -7,20 +7,10 @@ import { getVideoInfo } from "@/lib/studio/video-embed"
 import { cn } from "@/lib/utils"
 
 interface VideoPreviewProps {
-  /** Video URL to preview */
   url: string
-  /** Optional CSS class */
   className?: string
 }
 
-/**
- * VideoPreview — Shows embedded video or helpful message.
- *
- * Detects video provider (YouTube, Vimeo, direct URLs) and renders:
- * - Embedded iframe for YouTube/Vimeo
- * - HTML5 <video> for direct URLs
- * - Help message for invalid URLs
- */
 export function VideoPreview({ url, className }: VideoPreviewProps) {
   const videoInfo = getVideoInfo(url)
 
@@ -49,7 +39,6 @@ export function VideoPreview({ url, className }: VideoPreviewProps) {
     )
   }
 
-  // YouTube embed
   if (videoInfo.provider === "youtube") {
     return (
       <div className={cn("rounded-lg overflow-hidden border border-studio-border", className)}>
@@ -64,7 +53,6 @@ export function VideoPreview({ url, className }: VideoPreviewProps) {
     )
   }
 
-  // Vimeo embed
   if (videoInfo.provider === "vimeo") {
     return (
       <div className={cn("rounded-lg overflow-hidden border border-studio-border", className)}>
@@ -78,7 +66,6 @@ export function VideoPreview({ url, className }: VideoPreviewProps) {
     )
   }
 
-  // Direct video file
   if (videoInfo.provider === "direct") {
     return (
       <div className={cn("rounded-lg overflow-hidden border border-studio-border bg-black", className)}>
