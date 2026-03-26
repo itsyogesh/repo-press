@@ -1,6 +1,6 @@
 "use client"
 
-import { ImageIcon, Loader2, Upload } from "lucide-react"
+import { Loader2, Upload } from "lucide-react"
 import * as React from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -10,6 +10,8 @@ import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import type { RepoComponentDef, RepoComponentPropDef } from "@/lib/studio/component-registry"
 import { uploadMedia } from "@/lib/studio/media-upload"
+import { ImageFieldControl } from "./image-field-control"
+import { VideoPreview } from "./video-preview"
 
 // ---------------------------------------------------------------------------
 // Types
@@ -43,7 +45,7 @@ interface ComponentPropFormProps {
  * - `number`     → number input
  * - `boolean`    → switch toggle
  * - `expression` → text input (monospace, curly-brace hint)
- * - `image`      → text input (URL / path)
+ * - `image`      → rich image picker with preview (ImageFieldControl)
  *
  * If `def.hasChildren` is true, an additional textarea is rendered
  * for children content.
@@ -65,6 +67,7 @@ export function ComponentPropForm({ def, formState, onFormChange, repoContext }:
           value={formState[propDef.name]}
           onChange={(v) => setProp(propDef.name, v)}
           repoContext={repoContext}
+          componentName={def.displayName}
         />
       ))}
 
@@ -94,6 +97,7 @@ function PropField({
   value,
   onChange,
   repoContext,
+  componentName,
 }: {
   propDef: RepoComponentPropDef
   value: unknown
@@ -105,11 +109,10 @@ function PropField({
     repo: string
     branch: string
   }
+  componentName?: string
 }) {
   const label = propDef.label ?? propDef.name
   const id = `prop-${propDef.name}`
-  const [uploading, setUploading] = React.useState(false)
-  const [previewUrl, setPreviewUrl] = React.useState<string | null>(null)
 
   switch (propDef.type) {
     case "boolean":
@@ -160,77 +163,27 @@ function PropField({
       )
 
     case "image": {
-      const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0]
-        if (!file || !repoContext) return
-        setUploading(true)
-        try {
-          const result = await uploadMedia({
-            file,
-            projectId: repoContext.projectId,
-            userId: repoContext.userId,
-            owner: repoContext.owner,
-            repo: repoContext.repo,
-            branch: repoContext.branch,
-            storagePreference: "auto",
-          })
-          onChange(result.repoPath)
-          setPreviewUrl(result.previewUrl)
-          toast.success(`Uploaded via ${result.storage}: ${result.repoPath}`)
-        } catch (err) {
-          toast.error(err instanceof Error ? err.message : "Upload failed")
-        } finally {
-          setUploading(false)
-        }
-      }
-
       return (
         <div className="space-y-1.5">
           <Label htmlFor={id}>
             {label}
             <span className="ml-1.5 text-xs text-muted-foreground font-normal">(image)</span>
           </Label>
-          <div className="flex gap-2">
-            <Input
-              id={id}
-              placeholder="/images/example.png or https://..."
-              value={typeof value === "string" ? value : ""}
-              onChange={(e) => onChange(e.target.value)}
-              className="flex-1"
-            />
-            {repoContext && (
-              <Button type="button" variant="outline" size="icon" className="shrink-0" disabled={uploading} asChild>
-                <label htmlFor={`${id}-file`} className="cursor-pointer">
-                  {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-                  <input
-                    id={`${id}-file`}
-                    type="file"
-                    accept="image/*"
-                    className="sr-only"
-                    onChange={handleFileSelect}
-                    disabled={uploading}
-                  />
-                </label>
-              </Button>
-            )}
-          </div>
-          {typeof value === "string" && value.length > 0 && (
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <ImageIcon className="h-3 w-3" />
-              <span className="truncate">{value}</span>
-            </div>
-          )}
-          {previewUrl && (
-            <p className="text-xs text-muted-foreground break-all">
-              Preview: <span className="font-mono">{previewUrl}</span>
-            </p>
-          )}
+          <ImageFieldControl
+            value={typeof value === "string" ? value : ""}
+            onChange={onChange}
+            placeholder="Select or upload image..."
+            repoContext={repoContext}
+          />
         </div>
       )
     }
 
     // "string" and fallback
-    default:
+    default: {
+      // Show video preview for DocsVideo.src prop
+      const isVideoComponent = componentName === "Docs Video" && propDef.name === "src"
+
       return (
         <div className="space-y-1.5">
           <Label htmlFor={id}>{label}</Label>
@@ -240,7 +193,14 @@ function PropField({
             value={typeof value === "string" ? value : ""}
             onChange={(e) => onChange(e.target.value)}
           />
+          {isVideoComponent && typeof value === "string" && (
+            <div className="mt-3">
+              <p className="text-xs text-muted-foreground mb-2">Preview:</p>
+              <VideoPreview url={value} className="max-w-full" />
+            </div>
+          )}
         </div>
       )
+    }
   }
 }
