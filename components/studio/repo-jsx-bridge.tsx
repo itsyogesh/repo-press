@@ -66,6 +66,17 @@ export function RepoJsxBridge({ mdastNode, descriptor }: RepoJsxBridgeProps) {
   const Component = adapter?.components?.[descriptor.name]
   const schema = componentSchema?.[descriptor.name]
 
+  // Debug: log available components
+  React.useEffect(() => {
+    if (descriptor.name === "DocsImage" || descriptor.name === "DocsVideo") {
+      console.log(`[RepoJsxBridge] ${descriptor.name}:`, {
+        found: !!Component,
+        adapterComponentNames: Object.keys(adapter?.components || {}).sort(),
+        schemaNames: Object.keys(componentSchema || {}).sort(),
+      })
+    }
+  }, [Component, descriptor.name, adapter, componentSchema])
+
   // Extract props from MDAST node attributes
   const { props, propWarnings } = useMemo(() => {
     const attrs = mdastNode.attributes || []
