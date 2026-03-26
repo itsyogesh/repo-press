@@ -27,7 +27,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
 import { getFrameworkAdapter } from "@/lib/framework-adapters"
-import { findTreeNode, type FileTreeNode } from "@/lib/github"
+import { type FileTreeNode, findTreeNode } from "@/lib/github"
 import { usePreviewContext } from "@/lib/hooks/use-preview-context"
 import { buildHistoryHref } from "@/lib/studio/history-link"
 import { CommandPalette } from "./command-palette"
@@ -615,7 +615,16 @@ function StudioLayoutInner({
         toast.error(error.message || "Failed to create file")
       }
     },
-    [projectId, canMutateExplorer, userId, projectAccessToken, contentRoot, stageCreate, primeFileSnapshot, navigateToFile],
+    [
+      projectId,
+      canMutateExplorer,
+      userId,
+      projectAccessToken,
+      contentRoot,
+      stageCreate,
+      primeFileSnapshot,
+      navigateToFile,
+    ],
   )
 
   const handleDeleteFile = React.useCallback(
@@ -657,7 +666,16 @@ function StudioLayoutInner({
         toast.error(error.message || "Failed to delete file")
       }
     },
-    [projectId, canMutateExplorer, userId, projectAccessToken, pendingOps, undoOp, discardFileFromClientState, stageDelete],
+    [
+      projectId,
+      canMutateExplorer,
+      userId,
+      projectAccessToken,
+      pendingOps,
+      undoOp,
+      discardFileFromClientState,
+      stageDelete,
+    ],
   )
 
   const handleUndoDelete = React.useCallback(
@@ -909,7 +927,8 @@ function StudioLayoutInner({
 
   // Restore scroll position after mode switch completes
   React.useLayoutEffect(() => {
-    // Use a microtask to ensure DOM has settled after mode change
+    // Double requestAnimationFrame: first frame commits layout, second applies after
+    // MDX async compilation finishes updating scrollHeight.
     const restoreScroll = () => {
       if (editorScrollRef.current) {
         const maxScroll = editorScrollRef.current.scrollHeight - editorScrollRef.current.clientHeight
@@ -921,8 +940,11 @@ function StudioLayoutInner({
       }
     }
 
-    // Defer restoration to ensure layout is complete
-    requestAnimationFrame(restoreScroll)
+    // Defer restoration to ensure layout and async MDX rendering are complete
+    const raf1 = requestAnimationFrame(() => {
+      requestAnimationFrame(restoreScroll)
+    })
+    return () => cancelAnimationFrame(raf1)
   }, [viewMode])
 
   // Preserve scroll position when switching between editor and preview modes
@@ -1594,7 +1616,18 @@ function StudioLayoutInner({
 }
 
 function StudioProviderWrapper(props: StudioLayoutProps) {
-  const { owner, repo, branch, projectId, projectAccessToken, contentRoot = "", tree, initialFile, currentPath, role = "owner" } = props
+  const {
+    owner,
+    repo,
+    branch,
+    projectId,
+    projectAccessToken,
+    contentRoot = "",
+    tree,
+    initialFile,
+    currentPath,
+    role = "owner",
+  } = props
 
   // 1. File state hook
   const studioFile = useStudioFile(initialFile, currentPath)
