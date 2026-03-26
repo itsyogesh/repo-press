@@ -218,7 +218,9 @@ export function ComponentInsertModal({
                       {selectedDef?.props && selectedDef.props.length > 0 && (
                         <>
                           <span className="text-studio-border-muted">•</span>
-                          <span className="text-[10px] font-medium text-studio-accent">{selectedDef.props.length} prop{selectedDef.props.length !== 1 ? 's' : ''}</span>
+                          <span className="text-[10px] font-medium text-studio-accent">
+                            {selectedDef.props.length} prop{selectedDef.props.length !== 1 ? "s" : ""}
+                          </span>
                         </>
                       )}
                     </div>

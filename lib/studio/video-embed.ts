@@ -27,9 +27,7 @@ export function getVideoInfo(url: string): VideoInfo {
   if (!trimmed) return { provider: null, isValid: false }
 
   // YouTube patterns
-  const youtubeMatch = trimmed.match(
-    /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com|youtu\.be)\/(?:watch\?v=)?(.{11})/i,
-  )
+  const youtubeMatch = trimmed.match(/(?:https?:\/\/)?(?:www\.)?(?:youtube\.com|youtu\.be)\/(?:watch\?v=)?(.{11})/i)
   if (youtubeMatch) {
     const id = youtubeMatch[1]
     return {

@@ -97,6 +97,8 @@ export async function POST(request: Request) {
     // Capture base-branch SHA at staging time for later publish conflict detection.
     const baseShaAtStage = await getExistingFileShaSafe(token, owner, repo, githubPath, project.branch)
 
+    let blobDiagnostics: Record<string, string> | undefined
+
     if (shouldTryBlob(storagePreference)) {
       const blobResult = await uploadToBlobWithRetry({
         owner: project.repoOwner,
@@ -105,6 +107,8 @@ export async function POST(request: Request) {
         content: contentBuffer,
         contentType,
       })
+
+      blobDiagnostics = blobResult.diagnostics
 
       if (blobResult.ok) {
         const mediaOpId = await convex.mutation(api.mediaOps.stage, {
@@ -151,10 +155,13 @@ export async function POST(request: Request) {
     })
 
     if (!activePublishBranch?.branchName) {
+      const isBlobTokenMissing = blobDiagnostics?.blob === "token-missing"
       return NextResponse.json(
         {
-          error:
-            "Blob upload fallback requires an active publish branch. Start a publish draft first, then retry upload.",
+          error: isBlobTokenMissing
+            ? "Image upload requires either Vercel Blob storage (configure BLOB_READ_WRITE_TOKEN) or an active publish branch on GitHub. Please set up one of these options."
+            : "Image upload requires an active publish branch. Start a publish draft first, then retry upload.",
+          diagnostics: blobDiagnostics,
         },
         { status: 409 },
       )

@@ -79,7 +79,7 @@ export const SEO_SCHEMA_FIELDS: FrontmatterFieldDef[] = [
     name: "imageAltText",
     type: "string",
     required: false,
-    description: "Cover image alt text",
+    description: "Alt text for cover image (text description for accessibility)",
     semanticRole: "imageAltText",
   },
   // Open Graph
