@@ -163,6 +163,23 @@ export function FrontmatterField({ field, value, onChange, imagePaths = [], sele
       )
 
     default: {
+      // Heuristic: if the field name implies an image (image, cover, thumbnail, hero), render the rich ImageField
+      const nameLower = String(field.actualFieldName || field.name || "").toLowerCase()
+      if (nameLower.includes("image") || nameLower.includes("cover") || nameLower.includes("thumbnail") || nameLower.includes("hero")) {
+        return (
+          <div className="grid gap-1">
+            {labelEl}
+            {helperEl}
+            <ImageField
+              value={value || ""}
+              onChange={onChange}
+              imagePaths={imagePaths}
+              selectedFilePath={selectedFilePath}
+            />
+          </div>
+        )
+      }
+
       const isLongText =
         field.actualFieldName === "description" ||
         field.actualFieldName === "summary" ||
