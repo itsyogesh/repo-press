@@ -57,6 +57,8 @@ const EMPTY_RESULT: UsePreviewContextResult = {
   diagnostics: [],
 }
 
+const PREVIEW_CONTEXT_REVALIDATE_MS = 15_000
+
 function getStoreEntry(key: string) {
   let entry = previewStore.get(key)
   if (!entry) {
@@ -116,9 +118,13 @@ function hashSource(source: string) {
   return String(hash >>> 0)
 }
 
-async function loadPreviewContext(key: string, options: Required<UsePreviewContextOptions>) {
+async function loadPreviewContext(
+  key: string,
+  options: Required<UsePreviewContextOptions>,
+  { force = false }: { force?: boolean } = {},
+) {
   const entry = getStoreEntry(key)
-  if (entry.promise || entry.loading || entry.loaded) return
+  if (entry.promise || entry.loading || (entry.loaded && !entry.error && !force)) return
 
   entry.loading = true
   entry.error = null
@@ -243,8 +249,12 @@ function subscribePreviewContext(
   const entry = getStoreEntry(key)
   entry.listeners.add(listener)
   void loadPreviewContext(key, options)
+  const refreshInterval = window.setInterval(() => {
+    void loadPreviewContext(key, options, { force: true })
+  }, PREVIEW_CONTEXT_REVALIDATE_MS)
 
   return () => {
+    window.clearInterval(refreshInterval)
     entry.listeners.delete(listener)
   }
 }

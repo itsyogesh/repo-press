@@ -1,15 +1,11 @@
 "use client"
 
-import { Loader2, Upload } from "lucide-react"
 import * as React from "react"
-import { toast } from "sonner"
-import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import type { RepoComponentDef, RepoComponentPropDef } from "@/lib/studio/component-registry"
-import { uploadMedia } from "@/lib/studio/media-upload"
 import { ImageFieldControl } from "./image-field-control"
 import { VideoPreview } from "./video-preview"
 
@@ -18,6 +14,10 @@ import { VideoPreview } from "./video-preview"
 // ---------------------------------------------------------------------------
 
 export type PropFormState = Record<string, unknown>
+
+export function shouldShowVideoPreview(componentName: string | undefined, propName: string): boolean {
+  return /docs\s*video/i.test(String(componentName || "")) && propName === "src"
+}
 
 interface ComponentPropFormProps {
   def: RepoComponentDef
@@ -67,7 +67,7 @@ export function ComponentPropForm({ def, formState, onFormChange, repoContext }:
           value={formState[propDef.name]}
           onChange={(v) => setProp(propDef.name, v)}
           repoContext={repoContext}
-          componentName={def.displayName}
+          componentName={def.displayName ?? def.name}
         />
       ))}
 
@@ -181,8 +181,7 @@ function PropField({
 
     // "string" and fallback
     default: {
-      // Show video preview for DocsVideo.src prop (match either 'DocsVideo' or 'Docs Video')
-      const isVideoComponent = /docs\s*video/i.test(String(componentName || "")) && propDef.name === "src"
+      const isVideoComponent = shouldShowVideoPreview(componentName, propDef.name)
 
       return (
         <div className="space-y-1.5">

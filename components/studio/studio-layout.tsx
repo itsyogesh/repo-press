@@ -1533,7 +1533,7 @@ function StudioLayoutInner({
         pendingCounts={{
           creates: opCounts.creates,
           deletes: opCounts.deletes,
-          edits: editCount,
+          edits: adjustedEditCount,
         }}
         existingPrUrl={activeBranch?.prUrl}
         isPublishing={isPublishing}

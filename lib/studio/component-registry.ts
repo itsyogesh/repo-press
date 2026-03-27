@@ -203,8 +203,7 @@ export function buildComponentRegistry(
 
   const adapterNames = new Set(Object.keys(adapterComponents ?? {}))
   const configNames = new Set(Object.keys(projectComponents ?? {}))
-  const fallbackNames = new Set(Object.keys(KNOWN_ADAPTER_FALLBACKS))
-  const allNames = new Set([...adapterNames, ...configNames, ...fallbackNames])
+  const allNames = new Set([...adapterNames, ...configNames])
 
   for (const name of allNames) {
     const rawAdapter = adapterComponents?.[name]
