@@ -115,6 +115,7 @@ function getDirectVideoEmbedUrl(trimmed: string): string | null {
   }
 
   if (hasExplicitProtocol(trimmed)) return null
+  if (trimmed.startsWith("//")) return null
 
   const relativeUrl = tryParseRelativeUrl(trimmed)
   if (

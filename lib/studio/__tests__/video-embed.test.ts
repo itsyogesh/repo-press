@@ -78,4 +78,11 @@ describe("getVideoInfo", () => {
       isValid: false,
     })
   })
+
+  it("rejects protocol-relative direct video URLs", () => {
+    expect(getVideoInfo("//cdn.example.com/clips/demo.mp4")).toEqual({
+      provider: null,
+      isValid: false,
+    })
+  })
 })

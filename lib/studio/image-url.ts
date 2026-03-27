@@ -9,6 +9,7 @@ const EXPLICIT_PROTOCOL_REGEX = /^[a-z][a-z0-9+.-]*:/i
 export function isSafeImageSrc(src: string): boolean {
   const trimmed = src.trim()
   if (!trimmed) return false
+  if (trimmed.startsWith("//")) return false
 
   if (trimmed.startsWith("/") || trimmed.startsWith("./") || trimmed.startsWith("../")) {
     return true
@@ -34,6 +35,7 @@ export function isSafeImageSrc(src: string): boolean {
 export function normalizeExternalImageUrl(src: string): string {
   const trimmed = src.trim()
   if (!trimmed) return ""
+  if (trimmed.startsWith("//")) return ""
   if (trimmed.startsWith("/") || trimmed.startsWith("./") || trimmed.startsWith("../")) return trimmed
   if (EXPLICIT_PROTOCOL_REGEX.test(trimmed)) return trimmed
   return `https://${trimmed}`

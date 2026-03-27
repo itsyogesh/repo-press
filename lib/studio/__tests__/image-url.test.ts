@@ -23,4 +23,9 @@ describe("image-url helpers", () => {
     expect(isSafeImageSrc("data:text/html,hello")).toBe(false)
     expect(isSafeImageSrc("file:///etc/passwd")).toBe(false)
   })
+
+  it("rejects protocol-relative image URLs", () => {
+    expect(isSafeImageSrc("//cdn.example.com/hero.png")).toBe(false)
+    expect(normalizeExternalImageUrl("//cdn.example.com/hero.png")).toBe("")
+  })
 })

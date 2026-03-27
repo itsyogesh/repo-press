@@ -173,7 +173,7 @@ export function ImageFieldControl({
   const pathHint = selectedFilePath ? getSuggestedImagePath(selectedFilePath) : "public/images"
   const displayValue = value ? (value.startsWith("/") ? value : `/${value}`) : ""
 
-  if (value && isSafeSrc(value)) {
+  if (value && isSafeImageSrc(value)) {
     return (
       <BlurFade delay={0.1} inView>
         <div
