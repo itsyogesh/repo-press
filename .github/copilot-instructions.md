@@ -421,13 +421,13 @@ if (err.status === 429) setRateLimited(true)          // Rate limit hit
 - `CLAUDE.md` / `AGENTS.md` – Comprehensive architecture and function reference
 - `README.md` – Feature overview, setup instructions, supported frameworks
 - `copilot-instructions.md` – This file; update with new patterns as they emerge
-- `.github/plan/` – Draft plans for complex tasks. Save plans here only (do NOT commit); agents should ask for approval and create PRs from feature branches when ready. See the canonical plan template and guidance in `.github/plan/plan_best_practice.md`.
+- `.github/plans/` – Draft plans for complex tasks. Save plans here only (do NOT commit); agents should ask for approval and create PRs from feature branches when ready. See the canonical plan template and guidance in `.github/plans/template_plan.md`.
   - Naming: Use simple descriptive names. Do NOT use dates in filenames (avoid formats like `2026-27-03`). Prefer one of:
     - `XYZ_task_plan.md`
     - `XYZ_feature_plan.md`
     - `XYZ_test_plan.md`
     Replace `XYZ` with a concise identifier (e.g., `editor_save_flow_task_plan.md`).
-  - Important: Agents must not commit or push files in this folder; finalize plans in a feature branch and open a PR.
+  - Important: Agents must not commit or push files in this folder; finalize plans in a branch and open a PR.
 
 ## Testing Patterns
 

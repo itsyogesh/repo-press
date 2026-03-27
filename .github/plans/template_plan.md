@@ -79,6 +79,7 @@ List files, docs, or UI text that must be updated as part of this work.
 ## Reviewers and Approvers
 - Reviewers: @itsYogesh
 - Approver: @owner - itsYogesh (final approval required to merge)
+- Assign PR to me: @itsTarun
 
 ## Next Steps
 Short, ordered list of the next actions after plan approval.
