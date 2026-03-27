@@ -47,7 +47,10 @@ export function PublishOpsBar({
 
   const newFiles = pendingOps.filter((op) => op.opType === "create" && op.status === "pending")
   const deletedFiles = pendingOps.filter((op) => op.opType === "delete" && op.status === "pending")
-  const modifiedFiles = dirtyDocs || []
+  
+  // Filter out documents that are already in newFiles to avoid duplication
+  const newFilePaths = new Set(newFiles.map((f) => f.filePath))
+  const modifiedFiles = (dirtyDocs || []).filter((doc) => !newFilePaths.has(doc.filePath))
 
   const handleFileClick = (filePath: string) => {
     if (onSelectFile) {
