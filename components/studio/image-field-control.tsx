@@ -42,8 +42,6 @@ interface ImageFieldControlProps {
   placeholder?: string
   /** Additional CSS classes */
   className?: string
-  /** List of available image paths (for browser) */
-  imagePaths?: string[]
   /** Current file path (for suggested upload paths) */
   selectedFilePath?: string
   /** Optional repo context for upload functionality (e.g. from ComponentPropForm). */
@@ -82,7 +80,6 @@ interface ImageSelectorDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   value: string
-  imagePaths: string[]
   onSelect: (path: string) => void
   projectId?: string
   userId?: string
@@ -97,7 +94,6 @@ function ImageSelectorDialog({
   open,
   onOpenChange,
   value,
-  imagePaths,
   onSelect,
   projectId,
   userId,
@@ -205,7 +201,6 @@ export function ImageFieldControl({
   onChange,
   placeholder = "Select or upload image...",
   className,
-  imagePaths = [],
   selectedFilePath: selectedFilePathProp,
   repoContext,
 }: ImageFieldControlProps) {
@@ -307,7 +302,6 @@ export function ImageFieldControl({
           open={browserOpen}
           onOpenChange={setBrowserOpen}
           value={value}
-          imagePaths={imagePaths}
           onSelect={handleSelectImage}
           projectId={projectId}
           userId={userId}
@@ -344,7 +338,6 @@ export function ImageFieldControl({
         open={browserOpen}
         onOpenChange={setBrowserOpen}
         value={value}
-        imagePaths={imagePaths}
         onSelect={handleSelectImage}
         projectId={projectId}
         userId={userId}
