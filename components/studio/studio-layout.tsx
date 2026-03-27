@@ -947,43 +947,6 @@ function StudioLayoutInner({
     return () => cancelAnimationFrame(raf1)
   }, [viewMode])
 
-  // Preserve scroll position when switching between editor and preview modes
-  const savedEditorScrollRatio = React.useRef(0)
-  const savedPreviewScrollRatio = React.useRef(0)
-
-  // Capture scroll position before switching modes
-  const captureScrollPositions = React.useCallback(() => {
-    if (editorScrollRef.current) {
-      const maxScroll = editorScrollRef.current.scrollHeight - editorScrollRef.current.clientHeight
-      savedEditorScrollRatio.current = maxScroll > 0 ? editorScrollRef.current.scrollTop / maxScroll : 0
-    }
-    if (previewScrollRef.current) {
-      const maxScroll = previewScrollRef.current.scrollHeight - previewScrollRef.current.clientHeight
-      savedPreviewScrollRatio.current = maxScroll > 0 ? previewScrollRef.current.scrollTop / maxScroll : 0
-    }
-  }, [])
-
-  // Restore scroll position after mode switch completes
-  React.useLayoutEffect(() => {
-    // Double requestAnimationFrame: first frame commits layout, second applies after
-    // MDX async compilation finishes updating scrollHeight.
-    const restoreScroll = () => {
-      if (editorScrollRef.current) {
-        const maxScroll = editorScrollRef.current.scrollHeight - editorScrollRef.current.clientHeight
-        editorScrollRef.current.scrollTop = savedEditorScrollRatio.current * maxScroll
-      }
-      if (previewScrollRef.current) {
-        const maxScroll = previewScrollRef.current.scrollHeight - previewScrollRef.current.clientHeight
-        previewScrollRef.current.scrollTop = savedPreviewScrollRatio.current * maxScroll
-      }
-    }
-
-    // Defer restoration to ensure layout and async MDX rendering are complete
-    const raf1 = requestAnimationFrame(() => {
-      requestAnimationFrame(restoreScroll)
-    })
-    return () => cancelAnimationFrame(raf1)
-  }, [viewMode])
 
   const getScrollSyncMetrics = React.useCallback((container: HTMLDivElement) => {
     const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight)
