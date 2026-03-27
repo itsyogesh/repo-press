@@ -129,12 +129,6 @@ function ImageSelectorDialog({
                 Upload
               </TabsTrigger>
               <TabsTrigger
-                value="library"
-                className="rounded-none border-b-2 border-transparent data-[state=active]:border-studio-accent data-[state=active]:bg-transparent px-0 h-10 shadow-none"
-              >
-                Library
-              </TabsTrigger>
-              <TabsTrigger
                 value="url"
                 className="rounded-none border-b-2 border-transparent data-[state=active]:border-studio-accent data-[state=active]:bg-transparent px-0 h-10 shadow-none"
               >
@@ -160,43 +154,6 @@ function ImageSelectorDialog({
                 ) : (
                   <div className="flex flex-col items-center justify-center h-48 text-studio-fg-muted">
                     <p className="text-sm">Upload context unavailable</p>
-                  </div>
-                )}
-              </TabsContent>
-
-              <TabsContent value="library" className="mt-0">
-                <div className="grid grid-cols-3 gap-3 p-1">
-                  {imagePaths.filter(isSafeSrc).map((path) => (
-                    <button
-                      type="button"
-                      key={path}
-                      onClick={() => onSelect(path)}
-                      className={cn(
-                        "relative aspect-square rounded-lg border overflow-hidden bg-studio-canvas-inset hover:border-studio-accent transition-all duration-200 hover:shadow-md group",
-                        value === path && "border-studio-accent ring-2 ring-studio-accent ring-offset-2",
-                      )}
-                      title={path}
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={resolveStudioAssetUrl(path, projectId, userId, selectedFilePath)}
-                        alt={path.split("/").pop()}
-                        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
-                        onError={(e) => {
-                          ;(e.target as HTMLImageElement).src =
-                            "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Crect x='3' y='3' width='18' height='18' rx='2'/%3E%3Ccircle cx='8.5' cy='8.5' r='1.5'/%3E%3Cpath d='m21 15-5-5L5 21'/%3E%3C/svg%3E"
-                        }}
-                      />
-                      <div className="absolute inset-x-0 bottom-0 bg-black/60 px-2 py-1 backdrop-blur-[2px] translate-y-full group-hover:translate-y-0 transition-transform duration-200">
-                        <p className="text-[9px] text-white truncate text-center">{path.split("/").pop()}</p>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-                {imagePaths.length === 0 && (
-                  <div className="flex flex-col items-center justify-center h-48 text-studio-fg-muted">
-                    <ImageIcon className="h-10 w-10 mb-2 opacity-20" />
-                    <p className="text-sm">No images found in repository</p>
                   </div>
                 )}
               </TabsContent>
