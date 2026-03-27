@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useEffect, useState } from "react"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -15,11 +15,10 @@ interface FrontmatterFieldProps {
   field: MergedFieldDef
   value: any
   onChange: (value: any) => void
-  imagePaths?: string[]
   selectedFilePath?: string
 }
 
-export function FrontmatterField({ field, value, onChange, imagePaths = [], selectedFilePath }: FrontmatterFieldProps) {
+export function FrontmatterField({ field, value, onChange, selectedFilePath }: FrontmatterFieldProps) {
   const id = field.actualFieldName
 
   // Local state for textarea-type fields to ensure charCount always reflects actual content
@@ -102,12 +101,7 @@ export function FrontmatterField({ field, value, onChange, imagePaths = [], sele
         <div className="grid gap-1">
           {labelEl}
           {helperEl}
-          <ImageField
-            value={value || ""}
-            onChange={onChange}
-            imagePaths={imagePaths}
-            selectedFilePath={selectedFilePath}
-          />
+          <ImageField value={value || ""} onChange={onChange} selectedFilePath={selectedFilePath} />
         </div>
       )
 
@@ -177,12 +171,7 @@ export function FrontmatterField({ field, value, onChange, imagePaths = [], sele
           <div className="grid gap-1">
             {labelEl}
             {helperEl}
-            <ImageField
-              value={value || ""}
-              onChange={onChange}
-              imagePaths={imagePaths}
-              selectedFilePath={selectedFilePath}
-            />
+            <ImageField value={value || ""} onChange={onChange} selectedFilePath={selectedFilePath} />
           </div>
         )
       }

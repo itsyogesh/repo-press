@@ -2,6 +2,7 @@
 
 import { AlertCircle, Info, Settings } from "lucide-react"
 import React, { useEffect, useMemo, useRef, useState } from "react"
+import { DocsVideo as DocsMediaVideo } from "@/components/docs/doc-media"
 import type { RepoPressPreviewAdapter } from "@/lib/repopress/evaluate-adapter"
 
 import { cn } from "@/lib/utils"
@@ -271,35 +272,7 @@ export function PreviewRuntime({
               </div>
             )
           },
-          DocsVideo: (props) => {
-            let resolvedSrc = props.src && resolveAssetUrl ? resolveAssetUrl(props.src) : props.src
-            if (resolvedSrc?.includes("youtu.be/")) {
-              const id = resolvedSrc.split("youtu.be/")[1]?.split("?")[0]
-              if (id) resolvedSrc = `https://www.youtube.com/embed/${id}`
-            }
-            return (
-              <div className="my-6 relative aspect-video overflow-hidden rounded-xl border bg-foreground text-background flex items-center justify-center text-left font-sans shadow-lg">
-                {resolvedSrc ? (
-                  <iframe
-                    src={resolvedSrc}
-                    title={props.title || "Documentation Video"}
-                    className="w-full h-full border-0"
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                    allowFullScreen
-                  />
-                ) : (
-                  <div className="flex flex-col items-center gap-2 text-background/60">
-                    <div className="size-12 rounded-full border-2 border-background/20 bg-background/5 flex items-center justify-center">
-                      <div className="ml-1 size-0 border-t-[8px] border-t-transparent border-l-[12px] border-l-background/70 border-b-[8px] border-b-transparent" />
-                    </div>
-                    <span className="text-[10px] uppercase font-bold tracking-widest opacity-50">
-                      Video: {props.title || "No Source"}
-                    </span>
-                  </div>
-                )}
-              </div>
-            )
-          },
+          DocsVideo: withAssetResolver(DocsMediaVideo, resolveAssetUrl),
           Image: (props) => {
             const src = props.src && resolveAssetUrl ? resolveAssetUrl(props.src) : props.src
             return <img {...props} src={src} className="rounded-lg border shadow-sm max-w-full" alt={props.alt || ""} />

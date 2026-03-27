@@ -3,6 +3,7 @@
 import { Info } from "lucide-react"
 import React from "react"
 
+import { getVideoInfo } from "@/lib/studio/video-embed"
 import { cn } from "@/lib/utils"
 
 /**
@@ -56,32 +57,38 @@ DocsImage.displayName = "DocsImage"
 
 /**
  * DocsVideo — Embed a video (YouTube, Vimeo, or direct URL).
- * Automatically converts youtu.be short URLs to embed URLs.
+ * Uses the shared video parser so Studio and preview runtimes stay consistent.
  */
 export const DocsVideo = React.forwardRef<
   HTMLDivElement,
   { src: string; title?: string; resolveAssetUrl?: (path: string) => string }
 >(({ src, title, resolveAssetUrl }, ref) => {
-  let resolvedSrc = src && resolveAssetUrl ? resolveAssetUrl(src) : src
-
-  if (resolvedSrc?.includes("youtu.be/")) {
-    const id = resolvedSrc.split("youtu.be/")[1]?.split("?")[0]
-    if (id) resolvedSrc = `https://www.youtube.com/embed/${id}`
-  }
+  const resolvedSrc = src && resolveAssetUrl ? resolveAssetUrl(src) : src
+  const videoInfo = resolvedSrc ? getVideoInfo(resolvedSrc) : null
+  const hasVideo = Boolean(videoInfo?.isValid && videoInfo.embedUrl)
 
   return (
     <div
       ref={ref}
       className="my-6 relative aspect-video overflow-hidden rounded-xl border bg-foreground text-background flex items-center justify-center text-left font-sans shadow-lg"
     >
-      {resolvedSrc ? (
-        <iframe
-          src={resolvedSrc}
-          title={title || "Documentation Video"}
-          className="w-full h-full border-0"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-          allowFullScreen
-        />
+      {hasVideo ? (
+        videoInfo?.provider === "direct" ? (
+          // biome-ignore lint/a11y/useMediaCaption: DocsVideo renders arbitrary user media URLs and cannot infer a matching caption track.
+          <video src={videoInfo.embedUrl} controls className="h-full w-full bg-black" />
+        ) : (
+          <iframe
+            src={videoInfo?.embedUrl}
+            title={title || "Documentation Video"}
+            className="w-full h-full border-0"
+            allow={
+              videoInfo?.provider === "vimeo"
+                ? "autoplay; fullscreen; picture-in-picture"
+                : "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            }
+            allowFullScreen
+          />
+        )
       ) : (
         <div className="flex flex-col items-center gap-2 text-background/60">
           <div className="size-12 rounded-full border-2 border-background/20 bg-background/5 flex items-center justify-center">

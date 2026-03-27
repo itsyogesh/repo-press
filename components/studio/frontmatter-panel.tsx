@@ -8,14 +8,12 @@ import type { FieldVariantMap, FrontmatterFieldDef } from "@/lib/framework-adapt
 import { buildMergedFieldList, EXTENDED_UNIVERSAL_FIELDS } from "@/lib/framework-adapters"
 import { groupMergedFields } from "@/lib/framework-adapters/field-groups"
 import { FrontmatterField } from "./frontmatter-field"
-import { IMAGE_EXTENSIONS } from "./shared-constants"
 
 interface FrontmatterPanelProps {
   frontmatter: Record<string, any>
   frontmatterSchema?: FrontmatterFieldDef[]
   fieldVariants?: FieldVariantMap
   onChangeFrontmatter: (key: string, value: any) => void
-  tree?: { path: string; type: string }[]
   filePath?: string
 }
 
@@ -24,7 +22,6 @@ export function FrontmatterPanel({
   frontmatterSchema,
   fieldVariants,
   onChangeFrontmatter,
-  tree = [],
   filePath,
 }: FrontmatterPanelProps) {
   const [isOpen, setIsOpen] = React.useState(true)
@@ -77,13 +74,6 @@ export function FrontmatterPanel({
     [onChangeFrontmatter],
   )
 
-  // Extract image paths from tree for the image field
-  const imagePaths = React.useMemo(() => {
-    return tree
-      .filter((node) => node.type === "file" && IMAGE_EXTENSIONS.some((ext) => node.path.toLowerCase().endsWith(ext)))
-      .map((node) => node.path)
-  }, [tree])
-
   return (
     <Collapsible
       open={isOpen}
@@ -123,7 +113,6 @@ export function FrontmatterPanel({
                     field={field}
                     value={frontmatter[field.actualFieldName]}
                     onChange={(value) => handleFieldChange(field.actualFieldName, value)}
-                    imagePaths={imagePaths}
                     selectedFilePath={filePath}
                   />
                 ))}
@@ -167,7 +156,6 @@ export function FrontmatterPanel({
                           field={field}
                           value={frontmatter[field.actualFieldName]}
                           onChange={(value) => handleFieldChange(field.actualFieldName, value)}
-                          imagePaths={imagePaths}
                         />
                       ))}
                     </div>

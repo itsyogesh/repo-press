@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { isSafeImageSrc, normalizeExternalImageUrl } from "@/lib/studio/image-url"
 import { getSuggestedImagePath, resolveStudioAssetUrl } from "@/lib/studio/media-resolve"
 import { cn } from "@/lib/utils"
 import { ImageUploadZone } from "./image-upload-zone"
@@ -30,30 +31,9 @@ interface ImageFieldControlProps {
   }
 }
 
-function isSafeSrc(src: string): boolean {
-  const trimmed = src.trim()
-  if (!trimmed) return false
-  if (trimmed.startsWith("/") || trimmed.startsWith("./") || trimmed.startsWith("../")) return true
-  try {
-    const url = new URL(trimmed.startsWith("http") ? trimmed : `https://${trimmed}`)
-    return url.protocol === "http:" || url.protocol === "https:"
-  } catch {
-    return !trimmed.includes(":")
-  }
-}
-
-function normalizeExternalImageUrl(src: string): string {
-  const trimmed = src.trim()
-  if (!trimmed) return ""
-  if (trimmed.startsWith("/") || trimmed.startsWith("./") || trimmed.startsWith("../")) return trimmed
-  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed)) return trimmed
-  return `https://${trimmed}`
-}
-
 interface ImageSelectorDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  value: string
   onSelect: (path: string) => void
   projectId?: string
   userId?: string
@@ -61,13 +41,11 @@ interface ImageSelectorDialogProps {
   repo?: string
   branch?: string
   pathHint: string
-  selectedFilePath?: string
 }
 
 function ImageSelectorDialog({
   open,
   onOpenChange,
-  value,
   onSelect,
   projectId,
   userId,
@@ -75,11 +53,10 @@ function ImageSelectorDialog({
   repo,
   branch,
   pathHint,
-  selectedFilePath,
 }: ImageSelectorDialogProps) {
   const [urlValue, setUrlValue] = React.useState("")
   const normalizedUrlValue = normalizeExternalImageUrl(urlValue)
-  const canUseUrl = Boolean(normalizedUrlValue) && isSafeSrc(normalizedUrlValue)
+  const canUseUrl = Boolean(normalizedUrlValue) && isSafeImageSrc(normalizedUrlValue)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -270,7 +247,6 @@ export function ImageFieldControl({
         <ImageSelectorDialog
           open={browserOpen}
           onOpenChange={setBrowserOpen}
-          value={value}
           onSelect={handleSelectImage}
           projectId={projectId}
           userId={userId}
@@ -278,7 +254,6 @@ export function ImageFieldControl({
           repo={repo}
           branch={branch}
           pathHint={pathHint}
-          selectedFilePath={selectedFilePath}
         />
       </BlurFade>
     )
@@ -304,7 +279,6 @@ export function ImageFieldControl({
       <ImageSelectorDialog
         open={browserOpen}
         onOpenChange={setBrowserOpen}
-        value={value}
         onSelect={handleSelectImage}
         projectId={projectId}
         userId={userId}
@@ -312,7 +286,6 @@ export function ImageFieldControl({
         repo={repo}
         branch={branch}
         pathHint={pathHint}
-        selectedFilePath={selectedFilePath}
       />
     </>
   )
