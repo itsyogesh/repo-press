@@ -1086,7 +1086,20 @@ function StudioLayoutInner({
   const shouldShowProjectDataSkeleton =
     Boolean(projectId) && resolvedProjectDataId !== projectId && isProjectDataLoading
   const isSelectedDocumentLoading = isFileLoading
-  const totalPendingCount = opCounts.creates + opCounts.deletes + editCount
+  
+  // Filter out documents that are already tracked in pending creates
+  // This prevents "new" files from also showing as "modified"
+  const creatingFilePaths = React.useMemo(() => {
+    if (!pendingOps) return new Set<string>()
+    return new Set(
+      pendingOps
+        .filter((op: any) => op.opType === "create" && op.status === "pending")
+        .map((op: any) => op.filePath)
+    )
+  }, [pendingOps])
+  
+  const adjustedEditCount = dirtyDocs ? dirtyDocs.filter((doc: any) => !creatingFilePaths.has(doc.filePath)).length : 0
+  const totalPendingCount = opCounts.creates + opCounts.deletes + adjustedEditCount
   const flatFiles = React.useMemo(() => flattenFiles(overlayTree, titleMap), [overlayTree, titleMap])
   const flatFilesByPath = React.useMemo(() => {
     const map = new Map<string, FlatFileEntry>()
@@ -1225,7 +1238,7 @@ function StudioLayoutInner({
                         <PublishOpsBar
                           creates={opCounts.creates}
                           deletes={opCounts.deletes}
-                          edits={editCount}
+                          edits={adjustedEditCount}
                           pendingOps={pendingOps}
                           dirtyDocs={dirtyDocs}
                           prUrl={activeBranch?.prUrl}
