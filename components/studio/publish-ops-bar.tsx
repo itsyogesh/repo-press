@@ -24,7 +24,8 @@ interface PublishOpsBarProps {
   edits: number
   pendingOps?: PendingOp[]
   dirtyDocs?: DirtyDoc[]
-  prUrl?: string | null
+  currentPrNumber?: number | null
+  currentPrUrl?: string | null
   onPublish: () => void
   onDiscard: () => void
   onSelectFile?: (path: string) => void
@@ -36,7 +37,8 @@ export function PublishOpsBar({
   edits,
   pendingOps = [],
   dirtyDocs = [],
-  prUrl,
+  currentPrNumber,
+  currentPrUrl,
   onPublish,
   onDiscard,
   onSelectFile,
@@ -72,15 +74,15 @@ export function PublishOpsBar({
           </span>
           {isExpanded ? <ChevronDown className="ml-auto h-3 w-3" /> : <ChevronRight className="ml-auto h-3 w-3" />}
         </button>
-        {prUrl && (
+        {currentPrUrl && (
           <a
-            href={prUrl}
+            href={currentPrUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="shrink-0 text-studio-accent hover:underline inline-flex items-center gap-1"
           >
             <ExternalLink className="h-3 w-3" />
-            PR
+            {currentPrNumber != null ? `PR #${currentPrNumber}` : "Current PR"}
           </a>
         )}
       </div>
@@ -180,7 +182,7 @@ export function PublishOpsBar({
           Discard
         </Button>
         <Button size="sm" className="flex-1 h-7 text-xs bg-studio-accent hover:bg-studio-accent/90" onClick={onPublish}>
-          Publish to PR →
+          {currentPrNumber != null ? "Update current PR →" : "Create new PR →"}
         </Button>
       </div>
     </div>

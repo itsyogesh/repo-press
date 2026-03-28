@@ -30,6 +30,7 @@ import { getFrameworkAdapter } from "@/lib/framework-adapters"
 import { type FileTreeNode, findTreeNode } from "@/lib/github"
 import { usePreviewContext } from "@/lib/hooks/use-preview-context"
 import { buildHistoryHref } from "@/lib/studio/history-link"
+import { getPublishLaneViewModel } from "@/lib/studio/publish-lane-view-model"
 import { CommandPalette } from "./command-palette"
 import { Editor } from "./editor"
 import { FileTree } from "./file-tree"
@@ -508,11 +509,21 @@ function StudioLayoutInner({
     pendingOps,
     overlayTree,
     opCounts,
-    activeBranch,
+    currentPublishLane,
+    openPublishLanes,
     dirtyDocs,
     frontmatterSchema,
     fieldVariants,
   } = studioQueries
+
+  const publishLaneViewModel = React.useMemo(
+    () =>
+      getPublishLaneViewModel({
+        currentLane: currentPublishLane,
+        openLanes: openPublishLanes ?? [],
+      }),
+    [currentPublishLane, openPublishLanes],
+  )
 
   const canMutateExplorer = Boolean(userId || projectAccessToken)
 
@@ -561,7 +572,7 @@ function StudioLayoutInner({
   })
 
   // 4. Publish logic
-  const { isPublishing, publishDialogOpen, publishConflicts, openPublishDialog, setPublishDialogOpen, handlePublish } =
+  const { isPublishing, publishDialogOpen, publishConflicts, publishMode, openPublishDialog, setPublishDialogOpen, setPublishMode, handlePublish } =
     useStudioPublish({
       userId,
       projectAccessToken,
@@ -570,6 +581,7 @@ function StudioLayoutInner({
       selectedFile,
       content,
       frontmatter,
+      defaultPublishMode: publishLaneViewModel.defaultMode,
     })
 
   // Explorer handlers
@@ -1338,7 +1350,8 @@ function StudioLayoutInner({
                             edits={adjustedEditCount}
                             pendingOps={pendingOps}
                             dirtyDocs={dirtyDocs}
-                            prUrl={activeBranch?.prUrl}
+                            currentPrNumber={publishLaneViewModel.currentLane?.prNumber ?? currentPublishLane?.prNumber}
+                            currentPrUrl={publishLaneViewModel.currentLane?.prUrl ?? currentPublishLane?.prUrl}
                             onPublish={() => {
                               openPublishDialog()
                             }}
@@ -1637,7 +1650,9 @@ function StudioLayoutInner({
             deletes: opCounts.deletes,
             edits: adjustedEditCount,
           }}
-          existingPrUrl={activeBranch?.prUrl}
+          publishLaneViewModel={publishLaneViewModel}
+          publishMode={publishMode}
+          onPublishModeChange={setPublishMode}
           isPublishing={isPublishing}
           onConfirm={handlePublish}
           conflicts={publishConflicts}
@@ -1704,7 +1719,7 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
     previewEntry,
     enabledPlugins,
     pluginRegistry,
-    activeBranch,
+    currentPublishLane,
     userId,
     components: componentSchema,
   } = studioQueries
@@ -1713,7 +1728,7 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
   const previewContext = usePreviewContext({
     owner,
     repo,
-    branch: activeBranch?.branchName ?? branch,
+    branch: currentPublishLane?.branchName ?? branch,
     adapterPath: previewEntry,
     enabledPlugins,
     pluginRegistry,

@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
 import type { FileTreeNode } from "@/lib/github"
+import type { PublishMode } from "@/lib/studio/publish-lane-view-model"
 import { useStudio } from "../studio-context"
 
 interface UseStudioPublishProps {
@@ -16,6 +17,7 @@ interface UseStudioPublishProps {
   selectedFile: FileTreeNode | null
   content: string
   frontmatter: Record<string, any>
+  defaultPublishMode: PublishMode
 }
 
 export function useStudioPublish({
@@ -26,12 +28,14 @@ export function useStudioPublish({
   selectedFile,
   content,
   frontmatter,
+  defaultPublishMode,
 }: UseStudioPublishProps) {
   const { projectId } = useStudio()
 
   const [isPublishing, setIsPublishing] = React.useState(false)
   const [publishDialogOpen, setPublishDialogOpen] = React.useState(false)
   const [publishConflicts, setPublishConflicts] = React.useState<{ path: string; reason: string }[]>([])
+  const [publishMode, setPublishMode] = React.useState<PublishMode>(defaultPublishMode)
 
   const saveDraftMutation = useMutation(api.documents.saveDraft)
 
@@ -62,7 +66,7 @@ export function useStudioPublish({
         const response = await fetch("/api/github/publish-ops", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ projectId, title, description }),
+          body: JSON.stringify({ projectId, title, description, publishMode }),
         })
 
         const data = await response.json()
@@ -94,20 +98,29 @@ export function useStudioPublish({
       saveDraftMutation,
       content,
       frontmatter,
+      publishMode,
     ],
   )
 
+  React.useEffect(() => {
+    if (publishDialogOpen) return
+    setPublishMode(defaultPublishMode)
+  }, [defaultPublishMode, publishDialogOpen])
+
   const openPublishDialog = React.useCallback(() => {
     setPublishConflicts([])
+    setPublishMode(defaultPublishMode)
     setPublishDialogOpen(true)
-  }, [])
+  }, [defaultPublishMode])
 
   return {
     isPublishing,
     publishDialogOpen,
     publishConflicts,
+    publishMode,
     openPublishDialog,
     setPublishDialogOpen,
+    setPublishMode,
     handlePublish,
   }
 }
