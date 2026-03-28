@@ -151,7 +151,7 @@ export function RepoJsxBridge({ mdastNode, descriptor }: RepoJsxBridgeProps) {
             </span>
           )}
         </div>
-        <div className="border border-transparent group-hover:border-studio-accent/30 rounded-sm transition-colors overflow-hidden">
+        <div className="rounded-sm transition-colors group-hover:ring-1 group-hover:ring-studio-accent/30 group-hover:ring-offset-1">
           <Component {...props}>
             {/* If the component has children, MDXEditor handles them via the nested editor */}
             {descriptor.hasChildren && props.children ? props.children : null}
