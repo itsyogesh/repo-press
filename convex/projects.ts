@@ -600,7 +600,37 @@ export const syncProjectsFromConfig = mutation({
       }
     }
 
-    return { synced, created, unchanged }
+    // ── Orphan detection ─────────────────────────────────────────
+    // Flag config-driven projects that are no longer in the config.
+    // Clear the flag for projects that were re-added.
+    const configIds = new Set(args.projects.map((p) => p.configProjectId))
+    const orphaned: string[] = []
+
+    for (const project of repoProjects) {
+      if (project.frameworkSource !== "config" || !project.configProjectId) continue
+      if (project.name.startsWith("[DELETING]")) continue
+
+      if (!configIds.has(project.configProjectId)) {
+        // Project is no longer in config — flag it
+        if (!project.configRemoved) {
+          await ctx.db.patch(project._id, {
+            configRemoved: true,
+            configRemovedAt: Date.now(),
+            updatedAt: Date.now(),
+          })
+        }
+        orphaned.push(project._id)
+      } else if (project.configRemoved) {
+        // Project was re-added to config — clear the flag
+        await ctx.db.patch(project._id, {
+          configRemoved: undefined,
+          configRemovedAt: undefined,
+          updatedAt: Date.now(),
+        })
+      }
+    }
+
+    return { synced, created, unchanged, orphaned }
   },
 })
 
@@ -659,6 +689,32 @@ export const updateFramework = mutation({
     await ctx.db.patch(args.id, {
       detectedFramework: args.detectedFramework,
       frontmatterSchema: args.frontmatterSchema,
+      updatedAt: Date.now(),
+    })
+  },
+})
+
+/**
+ * Clears the configRemoved flag and converts a config-driven project to a
+ * manual project. Used when the owner wants to keep a project that was
+ * removed from the config file.
+ */
+export const keepAsManual = mutation({
+  args: {
+    projectId: v.id("projects"),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await resolveProjectAccess(ctx, args, "owner")
+
+    await ctx.db.patch(args.projectId, {
+      configRemoved: undefined,
+      configRemovedAt: undefined,
+      frameworkSource: undefined,
+      configProjectId: undefined,
+      configVersion: undefined,
+      configPath: undefined,
       updatedAt: Date.now(),
     })
   },

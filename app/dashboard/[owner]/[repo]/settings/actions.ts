@@ -1,7 +1,8 @@
 "use server"
 
-import { deleteFileContent, saveFileContent } from "@/lib/github"
-import { fetchRepoConfig } from "@/lib/repopress/config"
+import { type RepoPressConfig, repoPressConfigSchema } from "@/lib/config-schema"
+import { deleteFileContent } from "@/lib/github"
+import { commitConfig, readConfig, removeProject } from "@/lib/repopress/config-writer"
 
 interface RemoveProjectFromConfigResult {
   success: true
@@ -30,7 +31,7 @@ export async function removeProjectFromConfig(
   githubToken: string,
 ): Promise<RemoveProjectFromConfigResult | RemoveProjectFromConfigError> {
   // 1. Fetch current config from GitHub
-  const { config, sha, error, errorType } = await fetchRepoConfig(githubToken, owner, repo, branch)
+  const { config, sha, error, errorType } = await readConfig(githubToken, owner, repo, branch)
 
   if (!config || !sha) {
     // Config doesn't exist — nothing to remove, consider it a no-op success
@@ -50,11 +51,8 @@ export async function removeProjectFromConfig(
     return { success: true, deletedFile: false }
   }
 
-  // 3. Build the updated projects list
-  const remainingProjects = config.projects.filter((p) => p.id !== configProjectId)
-
-  // 4. If no projects remain, delete the config file
-  if (remainingProjects.length === 0) {
+  // 3. If only one project remains, delete the entire config file
+  if (config.projects.length === 1) {
     try {
       await deleteFileContent(
         githubToken,
@@ -74,18 +72,17 @@ export async function removeProjectFromConfig(
     }
   }
 
-  // 5. Otherwise, update the config file with the project removed
+  // 4. Otherwise, update the config file with the project removed
   try {
-    const updatedConfig = JSON.stringify(config, null, 2)
-    await saveFileContent(
+    const updatedConfig = removeProject(config, configProjectId)
+    await commitConfig(
       githubToken,
       owner,
       repo,
-      "repopress.config.json",
+      branch,
       updatedConfig,
       sha,
       `chore: remove project "${configProjectId}" from RepoPress config`,
-      branch,
     )
     return { success: true, deletedFile: false }
   } catch (err: any) {

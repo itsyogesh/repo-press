@@ -86,6 +86,10 @@ export default defineSchema({
     components: v.optional(v.any()), // Map of componentName -> { props, hasChildren, kind }
     frameworkSource: v.optional(v.union(v.literal("config"), v.literal("detected"))),
 
+    // Orphan detection: set when a config-driven project is no longer in the config
+    configRemoved: v.optional(v.boolean()),
+    configRemovedAt: v.optional(v.number()),
+
     createdAt: v.number(),
     updatedAt: v.number(),
   })
