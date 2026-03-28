@@ -550,7 +550,9 @@ export const syncProjectsFromConfig = mutation({
           JSON.stringify(existing.enabledPlugins) !== JSON.stringify(p.enabledPlugins) ||
           JSON.stringify(existing.pluginRegistry) !== JSON.stringify(args.pluginRegistry) ||
           JSON.stringify(existing.components) !== JSON.stringify(p.components) ||
-          existing.frameworkSource !== "config"
+          existing.frameworkSource !== "config" ||
+          // Re-added orphan: configRemoved was set but project is back in config
+          existing.configRemoved !== undefined
 
         if (needsUpdate) {
           await ctx.db.patch(existing._id, {
@@ -567,6 +569,9 @@ export const syncProjectsFromConfig = mutation({
             pluginRegistry: args.pluginRegistry,
             components: p.components,
             frameworkSource: "config",
+            // Clear orphan flag if it was previously set
+            configRemoved: undefined,
+            configRemovedAt: undefined,
             updatedAt: Date.now(),
           })
           synced.push(existing._id)
@@ -611,7 +616,7 @@ export const syncProjectsFromConfig = mutation({
       if (project.name.startsWith("[DELETING]")) continue
 
       if (!configIds.has(project.configProjectId)) {
-        // Project is no longer in config — flag it
+        // Project is no longer in config — flag it as orphaned
         if (!project.configRemoved) {
           await ctx.db.patch(project._id, {
             configRemoved: true,
@@ -620,13 +625,8 @@ export const syncProjectsFromConfig = mutation({
           })
         }
         orphaned.push(project._id)
-      } else if (project.configRemoved) {
-        // Project was re-added to config — clear the flag
-        await ctx.db.patch(project._id, {
-          configRemoved: undefined,
-          configRemovedAt: undefined,
-          updatedAt: Date.now(),
-        })
+        // Note: re-added orphans (configRemoved → cleared) are handled in the
+        // main upsert loop above via the needsUpdate check on configRemoved.
       }
     }
 
