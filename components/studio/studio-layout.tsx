@@ -48,6 +48,23 @@ import { StudioFooter } from "./studio-footer"
 import { StudioHeader } from "./studio-header"
 import { useViewMode, ViewModeProvider } from "./view-mode-context"
 
+// ── Insert Component Modal Context ──────────────────────────────────────
+// Bridges studio-layout (keyboard shortcut) → insert-jsx-button (modal)
+// without prop-drilling through editor.tsx / studio-toolbar.tsx.
+
+type InsertComponentModalContextValue = {
+  open: boolean
+  setOpen: (open: boolean) => void
+}
+
+const InsertComponentModalContext = React.createContext<InsertComponentModalContextValue | null>(null)
+
+export function useInsertComponentModal() {
+  return React.useContext(InsertComponentModalContext)
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+
 export interface StudioLayoutProps {
   tree: FileTreeNode[]
   initialFile?: {
@@ -520,6 +537,7 @@ function StudioLayoutInner({
   const [createDialogParent, setCreateDialogParent] = React.useState("")
   const [discardDialogOpen, setDiscardDialogOpen] = React.useState(false)
   const [commandPaletteOpen, setCommandPaletteOpen] = React.useState(false)
+  const [insertComponentModalOpen, setInsertComponentModalOpen] = React.useState(false)
   const [emptySearch, setEmptySearch] = React.useState("")
   const [isMobile, setIsMobile] = React.useState(false)
   const searchInputRef = React.useRef<HTMLInputElement>(null)
@@ -1021,6 +1039,12 @@ function StudioLayoutInner({
         e.target instanceof HTMLTextAreaElement ||
         (e.target as HTMLElement).isContentEditable
 
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "j") {
+        e.preventDefault()
+        setInsertComponentModalOpen(true)
+        return
+      }
+
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault()
         setCommandPaletteOpen(true)
@@ -1130,7 +1154,13 @@ function StudioLayoutInner({
   const canPublish = ["draft", "approved"].includes(currentStatus)
   const historyHref = buildHistoryHref({ owner, repo, branch, projectId })
 
+  const insertComponentModalCtx = React.useMemo(
+    () => ({ open: insertComponentModalOpen, setOpen: setInsertComponentModalOpen }),
+    [insertComponentModalOpen],
+  )
+
   return (
+    <InsertComponentModalContext.Provider value={insertComponentModalCtx}>
     <div
       className="h-full w-full flex flex-col overflow-hidden bg-studio-canvas text-studio-fg"
       role="application"
@@ -1572,6 +1602,7 @@ function StudioLayoutInner({
         </AlertDialogContent>
       </AlertDialog>
     </div>
+    </InsertComponentModalContext.Provider>
   )
 }
 

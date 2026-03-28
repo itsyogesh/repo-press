@@ -9,6 +9,7 @@ import type { ComponentNode } from "@/lib/studio/component-node"
 import type { RepoComponentDef } from "@/lib/studio/component-registry"
 import { ComponentInsertModal } from "./component-insert-modal"
 import { useStudioAdapter } from "./studio-adapter-context"
+import { useInsertComponentModal } from "./studio-layout"
 
 interface InsertJsxButtonProps {
   owner: string
@@ -22,6 +23,15 @@ export function InsertJsxButton({ owner, repo, branch, projectId, userId }: Inse
   const { components: schema, adapter } = useStudioAdapter()
   const insertJsx = usePublisher(insertJsx$)
   const [modalOpen, setModalOpen] = React.useState(false)
+  const insertComponentModalCtx = useInsertComponentModal()
+
+  // Use controlled state from context (⌘J shortcut) when available,
+  // otherwise fall back to local state (toolbar button click).
+  const effectiveOpen = insertComponentModalCtx?.open ?? modalOpen
+  const handleOpenChange = (open: boolean) => {
+    setModalOpen(open)
+    insertComponentModalCtx?.setOpen(open)
+  }
 
   const hasComponents = React.useMemo(() => {
     const adapterCount = Object.keys(adapter?.components || {}).length
@@ -46,7 +56,7 @@ export function InsertJsxButton({ owner, repo, branch, projectId, userId }: Inse
     <>
       <button
         type="button"
-        onClick={() => setModalOpen(true)}
+        onClick={() => handleOpenChange(true)}
         className="flex h-8 items-center gap-1.5 rounded px-2 text-xs font-medium hover:bg-studio-canvas-inset transition-colors"
         title="Insert component"
       >
@@ -56,8 +66,8 @@ export function InsertJsxButton({ owner, repo, branch, projectId, userId }: Inse
       </button>
 
       <ComponentInsertModal
-        open={modalOpen}
-        onOpenChange={setModalOpen}
+        open={effectiveOpen}
+        onOpenChange={handleOpenChange}
         adapterComponents={adapter?.components}
         projectComponents={schema}
         repoContext={projectId ? { projectId, userId, owner, repo, branch } : undefined}

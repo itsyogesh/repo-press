@@ -249,6 +249,10 @@ export function StudioHeader({
                     <span>Command palette</span>
                     <kbd className="px-2 py-0.5 bg-muted rounded text-xs">⌘K</kbd>
                   </li>
+                  <li className="flex justify-between">
+                    <span>Insert component</span>
+                    <kbd className="px-2 py-0.5 bg-muted rounded text-xs">⌘J</kbd>
+                  </li>
                 </ul>
               </div>
               <div>

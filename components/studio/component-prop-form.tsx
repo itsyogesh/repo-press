@@ -3,9 +3,11 @@
 import * as React from "react"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import type { RepoComponentDef, RepoComponentPropDef } from "@/lib/studio/component-registry"
+import { cn } from "@/lib/utils"
 import { ImageFieldControl } from "./image-field-control"
 import { VideoPreview } from "./video-preview"
 
@@ -152,6 +154,29 @@ function PropField({
   ) : null
 
   const errorEl = error ? <p className="text-xs text-destructive">{error}</p> : null
+
+  // Enum/Select: render <Select> when options array is present
+  if (propDef.options && propDef.options.length > 0) {
+    return (
+      <div className="space-y-1.5">
+        <Label htmlFor={id}>{labelContent}</Label>
+        <Select value={typeof value === "string" ? value : ""} onValueChange={(v) => onChange(v)}>
+          <SelectTrigger id={id} className={cn("h-9", errorClass)}>
+            <SelectValue placeholder={placeholder ?? "Select..."} />
+          </SelectTrigger>
+          <SelectContent>
+            {propDef.options.map((opt) => (
+              <SelectItem key={opt} value={opt}>
+                {opt}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {descriptionEl}
+        {errorEl}
+      </div>
+    )
+  }
 
   switch (propDef.type) {
     case "boolean":
