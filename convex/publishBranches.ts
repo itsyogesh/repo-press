@@ -67,7 +67,9 @@ export const listOpenForProject = query({
 export const getByPRNumber = query({
   args: { prNumber: v.number() },
   handler: async (ctx, args) => {
-    return await ctx.db.query("publishBranches").withIndex("by_prNumber", (q) => q.eq("prNumber", args.prNumber)).first()
+    // No index on prNumber — PR numbers are unique and this is only called by webhooks
+    const all = await ctx.db.query("publishBranches").collect()
+    return all.find((pb) => pb.prNumber === args.prNumber) ?? null
   },
 })
 
