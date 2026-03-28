@@ -126,15 +126,17 @@ export function PublishDialog({
                 <p className="text-sm font-medium text-studio-fg">{currentLane.title}</p>
                 <p className="text-xs text-studio-fg-muted">{currentLane.summary}</p>
               </div>
-              <a
-                href={currentLane.prUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="shrink-0 inline-flex items-center gap-1 text-sm text-studio-accent hover:underline"
-              >
-                <ExternalLink className="h-4 w-4" />
-                {currentLane.linkLabel}
-              </a>
+              {currentLane.prUrl && currentLane.linkLabel ? (
+                <a
+                  href={currentLane.prUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="shrink-0 inline-flex items-center gap-1 text-sm text-studio-accent hover:underline"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  {currentLane.linkLabel}
+                </a>
+              ) : null}
             </div>
           </div>
         )}

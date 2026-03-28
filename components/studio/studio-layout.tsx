@@ -1350,6 +1350,7 @@ function StudioLayoutInner({
                             edits={adjustedEditCount}
                             pendingOps={pendingOps}
                             dirtyDocs={dirtyDocs}
+                            hasCurrentLane={Boolean(currentPublishLane)}
                             currentPrNumber={publishLaneViewModel.currentLane?.prNumber ?? currentPublishLane?.prNumber}
                             currentPrUrl={publishLaneViewModel.currentLane?.prUrl ?? currentPublishLane?.prUrl}
                             onPublish={() => {

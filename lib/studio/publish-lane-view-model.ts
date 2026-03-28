@@ -10,11 +10,11 @@ export type PublishLaneLike = {
 export type PublishLaneViewModel = {
   defaultMode: PublishMode
   currentLane: {
-    prNumber: number
-    prUrl: string
+    prNumber?: number | null
+    prUrl?: string | null
     title: string
     summary: string
-    linkLabel: string
+    linkLabel?: string
   } | null
   modeOptions: Record<
     PublishMode,
@@ -40,7 +40,9 @@ export function getPublishLaneViewModel({
   openLanes?: PublishLaneLike[] | null
 }): PublishLaneViewModel {
   const currentLaneSummary =
-    currentLane?.prNumber != null && currentLane.prUrl
+    currentLane == null
+      ? null
+      : currentLane.prNumber != null && currentLane.prUrl
       ? {
           prNumber: currentLane.prNumber,
           prUrl: currentLane.prUrl,
@@ -48,9 +50,16 @@ export function getPublishLaneViewModel({
           summary: `New publishes will update PR #${currentLane.prNumber}.`,
           linkLabel: `PR #${currentLane.prNumber}`,
         }
-      : null
+      : {
+          prNumber: currentLane.prNumber ?? null,
+          prUrl: currentLane.prUrl ?? null,
+          title: "Current publish lane",
+          summary: "New publishes will continue in the current RepoPress lane.",
+          linkLabel: currentLane.prUrl ? "View lane" : undefined,
+        }
 
-  const currentLaneLabel = currentLaneSummary ? `PR #${currentLaneSummary.prNumber}` : "the current PR"
+  const currentLaneLabel =
+    currentLaneSummary?.prNumber != null ? `PR #${currentLaneSummary.prNumber}` : "the current publish lane"
 
   return {
     defaultMode: currentLane ? "reuse-current" : "create-new",
@@ -59,7 +68,8 @@ export function getPublishLaneViewModel({
       "reuse-current": {
         label: "Update current PR",
         description: `Keep publishing into ${currentLaneLabel}.`,
-        submitLabel: currentLaneSummary ? `Update PR #${currentLaneSummary.prNumber} →` : "Update current PR →",
+        submitLabel:
+          currentLaneSummary?.prNumber != null ? `Update PR #${currentLaneSummary.prNumber} →` : "Continue current lane →",
       },
       "create-new": {
         label: "Create new PR",

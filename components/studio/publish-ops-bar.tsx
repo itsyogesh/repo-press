@@ -24,6 +24,7 @@ interface PublishOpsBarProps {
   edits: number
   pendingOps?: PendingOp[]
   dirtyDocs?: DirtyDoc[]
+  hasCurrentLane?: boolean
   currentPrNumber?: number | null
   currentPrUrl?: string | null
   onPublish: () => void
@@ -37,6 +38,7 @@ export function PublishOpsBar({
   edits,
   pendingOps = [],
   dirtyDocs = [],
+  hasCurrentLane = false,
   currentPrNumber,
   currentPrUrl,
   onPublish,
@@ -182,7 +184,7 @@ export function PublishOpsBar({
           Discard
         </Button>
         <Button size="sm" className="flex-1 h-7 text-xs bg-studio-accent hover:bg-studio-accent/90" onClick={onPublish}>
-          {currentPrNumber != null ? "Update current PR →" : "Create new PR →"}
+          {hasCurrentLane ? (currentPrNumber != null ? "Update current PR →" : "Continue current lane →") : "Create new PR →"}
         </Button>
       </div>
     </div>

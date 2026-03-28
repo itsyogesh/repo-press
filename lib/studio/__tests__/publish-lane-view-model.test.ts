@@ -114,4 +114,23 @@ describe("getPublishLaneViewModel", () => {
       },
     ])
   })
+
+  it("keeps reuse-current mode when a current lane exists without PR metadata", () => {
+    const viewModel = getPublishLaneViewModel({
+      currentLane: {
+        _id: "lane_current",
+        status: "active",
+      },
+      openLanes: [],
+    })
+
+    expect(viewModel.defaultMode).toBe("reuse-current")
+    expect(viewModel.currentLane).toMatchObject({
+      title: "Current publish lane",
+      summary: "New publishes will continue in the current RepoPress lane.",
+    })
+    expect(viewModel.modeOptions["reuse-current"]).toMatchObject({
+      submitLabel: "Continue current lane →",
+    })
+  })
 })
