@@ -1,7 +1,6 @@
 "use client"
 
 import { AlertCircle, Play } from "lucide-react"
-import * as React from "react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { getVideoInfo } from "@/lib/studio/video-embed"
 import { cn } from "@/lib/utils"
@@ -58,6 +57,7 @@ export function VideoPreview({ url, className }: VideoPreviewProps) {
       <div className={cn("rounded-lg overflow-hidden border border-studio-border", className)}>
         <iframe
           src={videoInfo.embedUrl}
+          title="Vimeo video player"
           className="w-full aspect-video"
           allow="autoplay; fullscreen; picture-in-picture"
           allowFullScreen
@@ -69,7 +69,7 @@ export function VideoPreview({ url, className }: VideoPreviewProps) {
   if (videoInfo.provider === "direct") {
     return (
       <div className={cn("rounded-lg overflow-hidden border border-studio-border bg-black", className)}>
-        {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+        {/* biome-ignore lint/a11y/useMediaCaption: user-provided video URLs; captions not available */}
         <video src={videoInfo.embedUrl} controls className="w-full h-auto" style={{ maxHeight: "400px" }} />
       </div>
     )

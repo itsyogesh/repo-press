@@ -132,7 +132,13 @@ export function getFrameworkFallbacks(framework?: string): Record<string, Config
       },
       Callout: {
         props: [
-          { name: "type", type: "string", label: "Type", default: "info", options: ["info", "warning", "error", "tip"] },
+          {
+            name: "type",
+            type: "string",
+            label: "Type",
+            default: "info",
+            options: ["info", "warning", "error", "tip"],
+          },
           { name: "title", type: "string", label: "Title" },
         ],
         hasChildren: true,
@@ -148,7 +154,13 @@ export function getFrameworkFallbacks(framework?: string): Record<string, Config
     return {
       Callout: {
         props: [
-          { name: "type", type: "string", label: "Type", options: ["default", "info", "warning", "error"], default: "default" },
+          {
+            name: "type",
+            type: "string",
+            label: "Type",
+            options: ["default", "info", "warning", "error"],
+            default: "default",
+          },
           { name: "emoji", type: "string", label: "Emoji", placeholder: "💡" },
         ],
         hasChildren: true,
@@ -182,18 +194,14 @@ export function getFrameworkFallbacks(framework?: string): Record<string, Config
         description: "Grid container for Card components.",
       },
       Tab: {
-        props: [
-          { name: "label", type: "string", label: "Label", required: true },
-        ],
+        props: [{ name: "label", type: "string", label: "Label", required: true }],
         hasChildren: true,
         kind: "flow",
         displayName: "Tab",
         description: "Single tab panel.",
       },
       Tabs: {
-        props: [
-          { name: "items", type: "string", label: "Tab Labels", placeholder: '["Tab 1", "Tab 2"]' },
-        ],
+        props: [{ name: "items", type: "string", label: "Tab Labels", placeholder: '["Tab 1", "Tab 2"]' }],
         hasChildren: true,
         kind: "flow",
         displayName: "Tabs",
@@ -207,7 +215,13 @@ export function getFrameworkFallbacks(framework?: string): Record<string, Config
     return {
       Aside: {
         props: [
-          { name: "type", type: "string", label: "Type", options: ["note", "tip", "caution", "danger"], default: "note" },
+          {
+            name: "type",
+            type: "string",
+            label: "Type",
+            options: ["note", "tip", "caution", "danger"],
+            default: "note",
+          },
           { name: "title", type: "string", label: "Title", placeholder: "Optional title" },
         ],
         hasChildren: true,
@@ -226,9 +240,7 @@ export function getFrameworkFallbacks(framework?: string): Record<string, Config
         description: "Feature or content card.",
       },
       CardGrid: {
-        props: [
-          { name: "stagger", type: "boolean", label: "Stagger animation" },
-        ],
+        props: [{ name: "stagger", type: "boolean", label: "Stagger animation" }],
         hasChildren: true,
         kind: "flow",
         displayName: "Card Grid",
@@ -253,7 +265,13 @@ export function getFrameworkFallbacks(framework?: string): Record<string, Config
     return {
       Admonition: {
         props: [
-          { name: "type", type: "string", label: "Type", options: ["note", "tip", "info", "caution", "danger"], default: "note" },
+          {
+            name: "type",
+            type: "string",
+            label: "Type",
+            options: ["note", "tip", "info", "caution", "danger"],
+            default: "note",
+          },
           { name: "title", type: "string", label: "Title", placeholder: "Optional custom title" },
         ],
         hasChildren: true,
@@ -262,9 +280,7 @@ export function getFrameworkFallbacks(framework?: string): Record<string, Config
         description: "Highlighted note, tip, info, warning, or danger block.",
       },
       Tabs: {
-        props: [
-          { name: "groupId", type: "string", label: "Group ID", placeholder: "Sync tabs with same group" },
-        ],
+        props: [{ name: "groupId", type: "string", label: "Group ID", placeholder: "Sync tabs with same group" }],
         hasChildren: true,
         kind: "flow",
         displayName: "Tabs",
@@ -293,7 +309,13 @@ export function getFrameworkFallbacks(framework?: string): Record<string, Config
   return {
     Callout: {
       props: [
-        { name: "type", type: "string", label: "Type", options: ["default", "info", "warning", "error"], default: "default" },
+        {
+          name: "type",
+          type: "string",
+          label: "Type",
+          options: ["default", "info", "warning", "error"],
+          default: "default",
+        },
         { name: "title", type: "string", label: "Title", placeholder: "Optional title" },
       ],
       hasChildren: true,

@@ -58,7 +58,12 @@ export function InsertJsxButton({ owner, repo, branch, projectId, userId }: Inse
     <>
       <Tooltip>
         <TooltipTrigger asChild>
-          <Button variant="outline" size="sm" onClick={() => handleOpenChange(true)} className="h-7 gap-1.5 px-2.5 text-xs font-medium">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => handleOpenChange(true)}
+            className="h-7 gap-1.5 px-2.5 text-xs font-medium"
+          >
             <Plus className="h-3.5 w-3.5" />
             Insert
           </Button>
