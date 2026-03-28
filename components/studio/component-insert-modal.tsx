@@ -17,6 +17,33 @@ import { ComponentPreview } from "./component-preview"
 import { ComponentPropForm, validateFormState, type PropFormState } from "./component-prop-form"
 
 // ---------------------------------------------------------------------------
+// Recently-used localStorage helpers
+// ---------------------------------------------------------------------------
+
+const RECENT_KEY = "repopress:recent-components"
+const MAX_RECENT = 5
+
+function getRecentComponents(): string[] {
+  if (typeof window === "undefined") return []
+  try {
+    const stored = localStorage.getItem(RECENT_KEY)
+    return stored ? JSON.parse(stored) : []
+  } catch {
+    return []
+  }
+}
+
+function addRecentComponent(name: string): void {
+  try {
+    const recent = getRecentComponents().filter((n) => n !== name)
+    recent.unshift(name)
+    localStorage.setItem(RECENT_KEY, JSON.stringify(recent.slice(0, MAX_RECENT)))
+  } catch {
+    // localStorage unavailable
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
@@ -82,6 +109,16 @@ export function ComponentInsertModal({
   const [searchQuery, setSearchQuery] = React.useState("")
   const [activeCategory, setActiveCategory] = React.useState<ComponentCategory | "All">("All")
 
+  // -- Recently-used components --
+  const [recentNames, setRecentNames] = React.useState<string[]>([])
+
+  const recentCatalog = React.useMemo(() => {
+    if (!catalog) return []
+    return recentNames
+      .map((name) => catalog.find((c) => c.name === name))
+      .filter((c): c is RepoComponentDef => c !== undefined)
+  }, [recentNames, catalog])
+
   // Real-time validation for the configure step
   const formErrors = React.useMemo(() => {
     if (!selectedDef) return {}
@@ -115,6 +152,7 @@ export function ComponentInsertModal({
       setFormState({})
       setSearchQuery("")
       setActiveCategory("All")
+      setRecentNames(getRecentComponents())
     }
   }, [open])
 
@@ -135,6 +173,7 @@ export function ComponentInsertModal({
       if (def.props.length === 0 && !def.hasChildren) {
         const node = buildComponentNode(def, defaults)
         const jsx = serializeComponentNode(node)
+        addRecentComponent(def.name)
         onInsert(jsx, def, node)
         onOpenChange(false)
         return
@@ -152,6 +191,7 @@ export function ComponentInsertModal({
     try {
       const node = buildComponentNode(selectedDef, formState)
       const jsx = serializeComponentNode(node)
+      addRecentComponent(selectedDef.name)
       onInsert(jsx, selectedDef, node)
       onOpenChange(false)
     } catch (error) {
@@ -221,6 +261,12 @@ export function ComponentInsertModal({
               </div>
 
               <ScrollArea className="flex-1 px-5 py-5 min-h-0">
+                {recentCatalog.length > 0 && !searchQuery && activeCategory === "All" && (
+                  <div className="mb-4">
+                    <h4 className="text-xs font-medium text-muted-foreground mb-2 px-1">Recently used</h4>
+                    <CatalogGallery catalog={recentCatalog} onSelect={handleSelectComponent} />
+                  </div>
+                )}
                 <CatalogGallery catalog={filteredCatalog} onSelect={handleSelectComponent} />
               </ScrollArea>
             </motion.div>
