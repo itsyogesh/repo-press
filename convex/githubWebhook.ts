@@ -38,13 +38,17 @@ export const handlePRMerged = mutation({
       updatedAt: Date.now(),
     })
 
-    // 3. Clear all committed explorer ops for this project
+    // 3. Clear only committed explorer ops tied to this publish branch
     const committedOps = await ctx.db
       .query("explorerOps")
       .withIndex("by_projectId_status", (q) => q.eq("projectId", projectId).eq("status", "committed"))
       .collect()
 
     for (const op of committedOps) {
+      if (op.status !== "committed" || op.publishBranchId !== publishBranch._id) {
+        continue
+      }
+
       await ctx.db.delete(op._id)
     }
 
@@ -54,6 +58,10 @@ export const handlePRMerged = mutation({
       .collect()
 
     for (const op of committedMediaOps) {
+      if (op.status !== "committed" || op.publishBranchId !== publishBranch._id) {
+        continue
+      }
+
       await ctx.db.delete(op._id)
     }
 
