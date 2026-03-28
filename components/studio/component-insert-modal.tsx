@@ -1,7 +1,7 @@
 "use client"
 
 import { AnimatePresence, motion, type Variants } from "framer-motion"
-import { ChevronLeft, Search } from "lucide-react"
+import { ChevronDown, ChevronLeft, Code, Search } from "lucide-react"
 import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
@@ -126,6 +126,19 @@ export function ComponentInsertModal({
   }, [selectedDef, formState])
   const hasErrors = Object.keys(formErrors).length > 0
 
+  // -- JSX preview (reuses the same pipeline as handleInsert) --
+  const [showPreview, setShowPreview] = React.useState(false)
+
+  const jsxPreview = React.useMemo(() => {
+    if (!selectedDef) return ""
+    try {
+      const node = buildComponentNode(selectedDef, formState)
+      return serializeComponentNode(node)
+    } catch {
+      return ""
+    }
+  }, [selectedDef, formState])
+
   // Filtered catalog
   const filteredCatalog = React.useMemo(() => {
     let result = catalog
@@ -152,6 +165,7 @@ export function ComponentInsertModal({
       setFormState({})
       setSearchQuery("")
       setActiveCategory("All")
+      setShowPreview(false)
       setRecentNames(getRecentComponents())
     }
   }, [open])
@@ -210,6 +224,7 @@ export function ComponentInsertModal({
     setStep("pick")
     setSelectedDef(null)
     setFormState({})
+    setShowPreview(false)
   }, [])
 
   // -- Render --
@@ -352,6 +367,24 @@ export function ComponentInsertModal({
                       )}
                     </div>
                   </ScrollArea>
+
+                  {/* Collapsible JSX Preview */}
+                  <div className="px-5 py-3 border-t border-studio-border">
+                    <button
+                      type="button"
+                      onClick={() => setShowPreview(!showPreview)}
+                      className="flex items-center gap-1.5 text-xs text-studio-fg-muted hover:text-studio-fg transition-colors"
+                    >
+                      <Code className="h-3.5 w-3.5" />
+                      {showPreview ? "Hide" : "Show"} JSX preview
+                      <ChevronDown className={cn("h-3 w-3 transition-transform", showPreview && "rotate-180")} />
+                    </button>
+                    {showPreview && (
+                      <pre className="mt-2 p-3 bg-studio-canvas-inset rounded-md text-xs font-mono overflow-x-auto border border-studio-border-muted">
+                        <code>{jsxPreview}</code>
+                      </pre>
+                    )}
+                  </div>
 
                   <div className="p-4 border-t border-studio-border bg-studio-canvas-inset/30 flex items-center justify-between gap-3 shrink-0">
                     <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)} className="text-xs h-8">
