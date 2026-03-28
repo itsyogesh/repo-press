@@ -25,6 +25,7 @@ import { retrySyncAction } from "@/lib/sync-projects"
 import { AddProjectDialog } from "./add-project-dialog"
 import { EditProjectDialog, type EditableProject } from "./edit-project-dialog"
 import { OrphanWarningCard } from "./orphan-warning-card"
+import { RawConfigEditor } from "./raw-config-editor"
 import { RemoveProjectDialog } from "./remove-project-dialog"
 import { Alert, AlertDescription, AlertTitle } from "./ui/alert"
 import { Badge } from "./ui/badge"
@@ -64,6 +65,8 @@ interface RepoProjectHubProps {
   syncError: string | null
   isWriter: boolean
   role: "owner" | "editor" | "viewer"
+  configJson: string | null
+  configSha: string | null
 }
 
 export function RepoProjectHub({
@@ -77,6 +80,8 @@ export function RepoProjectHub({
   syncError,
   isWriter,
   role,
+  configJson,
+  configSha,
 }: RepoProjectHubProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -356,6 +361,19 @@ export function RepoProjectHub({
           </div>
         </div>
       ) : null}
+
+      {/* Raw Config Editor (advanced) */}
+      {hasConfig && configJson && configSha && (
+        <RawConfigEditor
+          owner={owner}
+          repo={repo}
+          branch={defaultBranch}
+          initialJson={configJson}
+          initialSha={configSha}
+          isWriter={isWriter}
+          onCommitted={handleDialogSuccess}
+        />
+      )}
 
       {/* Dialogs */}
       <AddProjectDialog
