@@ -376,6 +376,72 @@ describe("POST /api/github/publish-ops", () => {
     expect(batchCommit).not.toHaveBeenCalled()
   })
 
+  it("ignores inactive overlapping publish branches when create-new is requested", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_001)
+    vi.mocked(getFile).mockResolvedValue(null as never)
+    mockPublishQueries({
+      pendingOps: [
+        {
+          _id: "explorer_op_1",
+          opType: "create",
+          filePath: "posts/new-lane.mdx",
+          initialBody: "# New lane",
+          initialFrontmatter: { title: "New lane" },
+        },
+      ],
+      dirtyDocs: [],
+      pendingMediaOps: [],
+      currentPublishBranch: {
+        _id: "publish_branch_1",
+        branchName: "repopress/main/1234",
+        prNumber: 42,
+        prUrl: "https://github.com/acme/docs-site/pull/42",
+        status: "active",
+        committedFilePaths: ["content/posts/existing.mdx"],
+      },
+      openPublishBranches: [
+        {
+          _id: "publish_branch_1",
+          branchName: "repopress/main/1234",
+          prNumber: 42,
+          status: "active",
+          committedFilePaths: ["content/posts/existing.mdx"],
+        },
+        {
+          _id: "publish_branch_inactive",
+          branchName: "repopress/main/8888",
+          prNumber: 78,
+          prUrl: "https://github.com/acme/docs-site/pull/78",
+          status: "inactive",
+          committedFilePaths: ["content/posts/new-lane.mdx"],
+        },
+      ],
+      refreshedPublishBranch: {
+        _id: "publish_branch_2",
+        branchName: "repopress/main/5678",
+        prNumber: undefined,
+        prUrl: undefined,
+        status: "active",
+        committedFilePaths: [],
+      },
+    })
+
+    const response = await POST(
+      buildRequest({
+        projectId: "project_123",
+        publishMode: "create-new",
+      }),
+    )
+    const payload = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(payload.ok).toBe(true)
+    expect(payload.publishModeUsed).toBe("create-new")
+    expect(createBranch).toHaveBeenCalledWith("gh-token", "acme", "docs-site", "main", "repopress/main/1700000000001")
+    expect(createPullRequest).toHaveBeenCalledTimes(1)
+    expect(batchCommit).toHaveBeenCalledTimes(1)
+  })
+
   it("marks committed explorer and media ops with the new publishBranchId", async () => {
     vi.mocked(getFile).mockResolvedValue(null as never)
     vi.spyOn(globalThis, "fetch").mockResolvedValue({
