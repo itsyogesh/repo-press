@@ -1,9 +1,11 @@
 "use client"
 
 import { insertJsx$, usePublisher } from "@mdxeditor/editor"
-import { Box, Plus } from "lucide-react"
+import { Plus } from "lucide-react"
 import * as React from "react"
 import { toast } from "sonner"
+import { Button } from "@/components/ui/button"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { buildEditorInsertOperation } from "@/lib/studio/component-insert-operation"
 import type { ComponentNode } from "@/lib/studio/component-node"
 import type { RepoComponentDef } from "@/lib/studio/component-registry"
@@ -54,16 +56,19 @@ export function InsertJsxButton({ owner, repo, branch, projectId, userId }: Inse
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => handleOpenChange(true)}
-        className="flex h-8 items-center gap-1.5 rounded px-2 text-xs font-medium hover:bg-studio-canvas-inset transition-colors"
-        title="Insert component"
-      >
-        <Box className="h-3.5 w-3.5" />
-        <span>JSX</span>
-        <Plus className="h-3 w-3 opacity-50" />
-      </button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button variant="ghost" size="icon-sm" onClick={() => handleOpenChange(true)}>
+            <Plus className="h-4 w-4" />
+            <span className="sr-only">Insert component</span>
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">
+          <p>
+            Insert component <kbd className="ml-1 text-xs opacity-60">⌘J</kbd>
+          </p>
+        </TooltipContent>
+      </Tooltip>
 
       <ComponentInsertModal
         open={effectiveOpen}
