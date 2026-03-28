@@ -37,6 +37,8 @@ export function StudioToolbar({
   return (
     <DiffSourceToggleWrapper options={["rich-text", "source"]}>
       <div className="flex items-center gap-0.5 flex-wrap">
+        <InsertJsxButton owner={owner} repo={repo} branch={branch} projectId={projectId} userId={userId} />
+        <Separator />
         <UndoRedo />
         <Separator />
         <BoldItalicUnderlineToggles />
@@ -53,8 +55,6 @@ export function StudioToolbar({
         <InsertTable />
         <InsertThematicBreak />
         <InsertCodeBlock />
-        <Separator />
-        <InsertJsxButton owner={owner} repo={repo} branch={branch} projectId={projectId} userId={userId} />
       </div>
     </DiffSourceToggleWrapper>
   )
