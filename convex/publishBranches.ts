@@ -85,6 +85,15 @@ export const create = mutation({
   handler: async (ctx, args) => {
     await resolveProjectAccess(ctx, args, "editor")
 
+    const existingActiveBranch = await ctx.db
+      .query("publishBranches")
+      .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", "active"))
+      .first()
+
+    if (existingActiveBranch) {
+      throw new Error("Active publish branch already exists for project")
+    }
+
     const now = Date.now()
     return await ctx.db.insert("publishBranches", {
       projectId: args.projectId,

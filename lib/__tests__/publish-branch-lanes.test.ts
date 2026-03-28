@@ -19,11 +19,7 @@ vi.mock("@/convex/auth", () => ({
 
 import { markCommitted as markExplorerOpsCommitted } from "@/convex/explorerOps"
 import { markCommitted as markMediaOpsCommitted } from "@/convex/mediaOps"
-import {
-  deactivateCurrentForProject,
-  getCurrentForProject,
-  listOpenForProject,
-} from "@/convex/publishBranches"
+import { create, deactivateCurrentForProject, getCurrentForProject, listOpenForProject } from "@/convex/publishBranches"
 
 function createProject() {
   return {
@@ -37,12 +33,14 @@ function createProject() {
 
 function createCtx(overrides?: {
   get?: ReturnType<typeof vi.fn>
+  insert?: ReturnType<typeof vi.fn>
   patch?: ReturnType<typeof vi.fn>
   query?: ReturnType<typeof vi.fn>
 }) {
   return {
     db: {
       get: overrides?.get ?? vi.fn(),
+      insert: overrides?.insert ?? vi.fn(),
       patch: overrides?.patch ?? vi.fn(),
       query: overrides?.query ?? vi.fn(),
     },
@@ -97,10 +95,33 @@ describe("Publish branch lanes", () => {
       userId: "user_owner",
     })
 
-    expect(ctx.db.patch).toHaveBeenCalledWith(
-      "publish_branch_current",
-      expect.objectContaining({ status: "inactive" }),
-    )
+    expect(ctx.db.patch).toHaveBeenCalledWith("publish_branch_current", expect.objectContaining({ status: "inactive" }))
+  })
+
+  it("rejects creating a new active lane when one already exists", async () => {
+    const ctx = createCtx({
+      get: vi.fn().mockResolvedValue(createProject()),
+      insert: vi.fn(),
+      query: vi.fn().mockReturnValue({
+        withIndex: () => ({
+          first: vi.fn().mockResolvedValue({
+            _id: "publish_branch_current",
+            projectId: "project_1",
+            status: "active",
+          }),
+        }),
+      }),
+    })
+
+    await expect(
+      (create as any).handler(ctx, {
+        projectId: "project_1",
+        userId: "user_owner",
+        branchName: "repopress/main/5678",
+        baseBranch: "main",
+      }),
+    ).rejects.toThrow("Active publish branch already exists for project")
+    expect(ctx.db.insert).not.toHaveBeenCalled()
   })
 
   it("lists current and inactive open lanes for a project", async () => {

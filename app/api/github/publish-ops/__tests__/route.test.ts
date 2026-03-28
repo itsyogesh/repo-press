@@ -442,6 +442,48 @@ describe("POST /api/github/publish-ops", () => {
     expect(batchCommit).toHaveBeenCalledTimes(1)
   })
 
+  it("returns 409 when create-new loses the race to create the next active lane", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_002)
+    mockPublishQueries({
+      currentPublishBranch: {
+        _id: "publish_branch_1",
+        branchName: "repopress/main/1234",
+        prNumber: 42,
+        prUrl: "https://github.com/acme/docs-site/pull/42",
+      },
+      openPublishBranches: [
+        {
+          _id: "publish_branch_1",
+          branchName: "repopress/main/1234",
+          prNumber: 42,
+          status: "active",
+          committedFilePaths: [],
+        },
+      ],
+    })
+    convexMutationMock.mockImplementation(async (_ref, args) => {
+      if (typeof args === "object" && args !== null && "branchName" in args) {
+        throw new Error("Active publish branch already exists for project")
+      }
+      return undefined
+    })
+
+    const response = await POST(
+      buildRequest({
+        projectId: "project_123",
+        publishMode: "create-new",
+      }),
+    )
+    const payload = await response.json()
+
+    expect(response.status).toBe(409)
+    expect(payload.ok).toBe(false)
+    expect(payload.error).toContain("active publish lane")
+    expect(createBranch).toHaveBeenCalledWith("gh-token", "acme", "docs-site", "main", "repopress/main/1700000000002")
+    expect(createPullRequest).not.toHaveBeenCalled()
+    expect(batchCommit).not.toHaveBeenCalled()
+  })
+
   it("marks committed explorer and media ops with the new publishBranchId", async () => {
     vi.mocked(getFile).mockResolvedValue(null as never)
     vi.spyOn(globalThis, "fetch").mockResolvedValue({

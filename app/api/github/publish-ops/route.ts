@@ -10,6 +10,7 @@ import { mintServerQueryToken } from "@/lib/project-access-token"
 import { RouteAuthError, resolveRouteAuth } from "@/lib/route-auth"
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
+const ACTIVE_PUBLISH_BRANCH_CONFLICT_MESSAGE = "Active publish branch already exists for project"
 
 export async function POST(request: Request) {
   try {
@@ -245,13 +246,26 @@ export async function POST(request: Request) {
 
     if (!publishBranch) {
       await createBranch(token, owner, repo, baseBranch, branchName)
-      await convex.mutation(api.publishBranches.create, {
-        projectId: project._id,
-        userId: actingUserId,
-        projectAccessToken,
-        branchName,
-        baseBranch,
-      })
+      try {
+        await convex.mutation(api.publishBranches.create, {
+          projectId: project._id,
+          userId: actingUserId,
+          projectAccessToken,
+          branchName,
+          baseBranch,
+        })
+      } catch (error) {
+        if (isActivePublishBranchConflict(error)) {
+          return NextResponse.json(
+            {
+              ok: false,
+              error: "Another active publish lane already exists for this project. Reuse the current lane or retry.",
+            },
+            { status: 409 },
+          )
+        }
+        throw error
+      }
       publishBranch = await convex.query(api.publishBranches.getCurrentForProject, {
         projectId: project._id,
         ...queryAuth,
@@ -363,6 +377,10 @@ export async function POST(request: Request) {
     console.error("Error in publish-ops:", error)
     return NextResponse.json({ error: message }, { status: 500 })
   }
+}
+
+function isActivePublishBranchConflict(error: unknown) {
+  return error instanceof Error && error.message.includes(ACTIVE_PUBLISH_BRANCH_CONFLICT_MESSAGE)
 }
 
 function normalizeMediaPath(repoPath: string) {
