@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { api } from "@/convex/_generated/api"
 import { fetchAuthQuery, getGitHubToken, getPatAuthUserId } from "@/lib/auth-server"
-import type { ProjectConfig, RepoPressConfig } from "@/lib/config-schema"
+import type { ProjectConfig } from "@/lib/config-schema"
 import {
   addProject,
   commitConfig,
@@ -54,6 +54,38 @@ export async function addProjectToConfigAction(
 ): Promise<ConfigActionResult> {
   try {
     const { token, actingUserId } = await resolveAuthContext()
+
+    // Validate that contentRoot exists as a directory in the repo before committing.
+    // Empty contentRoot means repo root — always valid, skip the check.
+    // Note: getRepoContents swallows 404 and returns []. We call Octokit directly here
+    // so we can distinguish "not found" from "transient error".
+    if (project.contentRoot) {
+      const { createGitHubClient } = await import("@/lib/github")
+      const octokit = createGitHubClient(token)
+      try {
+        const { data } = await octokit.repos.getContent({
+          owner,
+          repo,
+          path: project.contentRoot,
+          ref: branch,
+        })
+        if (!Array.isArray(data)) {
+          return {
+            success: false,
+            error: `"${project.contentRoot}" is a file, not a folder. Enter a folder path.`,
+          }
+        }
+      } catch (err: any) {
+        if (err.status === 404) {
+          return {
+            success: false,
+            error: `Folder "${project.contentRoot}" does not exist in this repository on branch "${branch}".`,
+          }
+        }
+        // Non-404 errors (rate limit, network) — allow through so a transient failure doesn't block creation
+      }
+    }
+
     const { config, sha } = await fetchConfigOrThrow(token, owner, repo, branch)
 
     const updatedConfig = addProject(config, project)

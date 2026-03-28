@@ -78,6 +78,7 @@ export default async function RepoPage({ params }: RepoPageProps) {
         defaultBranchInferred={defaultBranchInferred || !resolvedDefaultBranch}
         projects={projects.map((p) => ({
           _id: p._id,
+          userId: p.userId,
           name: p.name,
           branch: p.branch,
           contentRoot: p.contentRoot,
@@ -97,6 +98,7 @@ export default async function RepoPage({ params }: RepoPageProps) {
         role={repoRole}
         configJson={config ? JSON.stringify(config, null, 2) : null}
         configSha={configSha ?? null}
+        actingUserId={actingUserId}
       />
     </div>
   )

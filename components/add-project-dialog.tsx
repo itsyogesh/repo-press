@@ -143,7 +143,9 @@ export function AddProjectDialog({ owner, repo, defaultBranch, open, onOpenChang
               onChange={(e) => setContentRoot(e.target.value)}
               disabled={isPending}
             />
-            <p className="text-xs text-muted-foreground">Relative path to the content folder in your repository.</p>
+            <p className="text-xs text-muted-foreground">
+              Relative path to a folder that already exists in your repository. Leave empty to use the repo root.
+            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-4">

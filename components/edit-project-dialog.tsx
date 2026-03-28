@@ -152,7 +152,10 @@ export function EditProjectDialog({
           <div className="grid gap-2">
             <Label>Content Root</Label>
             <Input value={project.contentRoot || "(repo root)"} disabled className="bg-muted" />
-            <p className="text-xs text-muted-foreground">Content root cannot be changed after creation.</p>
+            <p className="text-xs text-muted-foreground">
+              Content root cannot be changed after creation. To use a different path, remove this project and add a new
+              one.
+            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-4">

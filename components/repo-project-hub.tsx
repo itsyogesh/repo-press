@@ -35,6 +35,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 
 export interface HubProject {
   _id: string
+  userId: string
   name: string
   branch: string
   contentRoot: string
@@ -62,6 +63,7 @@ interface RepoProjectHubProps {
   role: "owner" | "editor" | "viewer"
   configJson: string | null
   configSha: string | null
+  actingUserId?: string | null
 }
 
 export function RepoProjectHub({
@@ -77,6 +79,7 @@ export function RepoProjectHub({
   role,
   configJson,
   configSha,
+  actingUserId,
 }: RepoProjectHubProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -222,7 +225,7 @@ export function RepoProjectHub({
             <OrphanWarningCard
               key={project._id}
               project={project}
-              isOwner={role === "owner"}
+              isOwner={role === "owner" || project.userId === actingUserId}
               onResolved={handleDialogSuccess}
             />
           ))}
@@ -232,40 +235,17 @@ export function RepoProjectHub({
       {/* Project cards */}
       {activeProjects.length > 0 ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {activeProjects.map((project) => (
-            <Card key={project._id} className="flex flex-col h-full overflow-hidden">
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="space-y-1 min-w-0 flex-1">
-                    <CardTitle className="text-lg truncate">{project.name}</CardTitle>
-                    <CardDescription className="flex items-center gap-2 text-xs">
-                      {project.contentRoot && (
-                        <span className="flex items-center gap-1">
-                          <Folder className="h-3 w-3" />
-                          {project.contentRoot}
-                        </span>
-                      )}
-                      {project.branch !== defaultBranch && (
-                        <span className="flex items-center gap-1">
-                          <GitBranch className="h-3 w-3" />
-                          {project.branch}
-                        </span>
-                      )}
-                    </CardDescription>
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0 relative z-10">
-                    {project.detectedFramework && project.detectedFramework !== "custom" && (
-                      <Badge variant="secondary" className="text-[10px]">
-                        {project.detectedFramework}
-                      </Badge>
-                    )}
-                    <Badge variant="outline" className="text-[10px] capitalize">
-                      {project.contentType}
-                    </Badge>
-                    {isWriter && project.frameworkSource === "config" && (
+          {activeProjects.map((project) => {
+            const canRemove = role === "owner" || project.userId === actingUserId
+            return (
+              <Card key={project._id} className="flex flex-col h-full">
+                <CardHeader className="pb-3 relative">
+                  {/* Three-dot menu anchored to top-right — absolute so badges get the full row width */}
+                  {isWriter && project.frameworkSource === "config" && (
+                    <div className="absolute top-3 right-3">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-7 w-7 ml-0.5">
+                          <Button variant="ghost" size="icon" className="h-7 w-7">
                             <MoreHorizontal className="h-4 w-4" />
                             <span className="sr-only">Project actions</span>
                           </Button>
@@ -295,7 +275,7 @@ export function RepoProjectHub({
                             <Pencil className="h-4 w-4 mr-2" />
                             Edit
                           </DropdownMenuItem>
-                          {role === "owner" && (
+                          {canRemove && (
                             <DropdownMenuItem
                               className="text-destructive focus:text-destructive"
                               onSelect={() => setTimeout(() => setRemoveProject(project), 0)}
@@ -306,33 +286,61 @@ export function RepoProjectHub({
                           )}
                         </DropdownMenuContent>
                       </DropdownMenu>
-                    )}
+                    </div>
+                  )}
+
+                  <div className="space-y-2 pr-8">
+                    <CardTitle className="text-lg leading-tight truncate">{project.name}</CardTitle>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {project.detectedFramework && project.detectedFramework !== "custom" && (
+                        <Badge variant="secondary" className="text-[10px]">
+                          {project.detectedFramework}
+                        </Badge>
+                      )}
+                      <Badge variant="outline" className="text-[10px] capitalize">
+                        {project.contentType}
+                      </Badge>
+                    </div>
+                    <CardDescription className="flex items-center gap-2 text-xs flex-wrap">
+                      {project.contentRoot && (
+                        <span className="flex items-center gap-1">
+                          <Folder className="h-3 w-3" />
+                          {project.contentRoot}
+                        </span>
+                      )}
+                      {project.branch !== defaultBranch && (
+                        <span className="flex items-center gap-1">
+                          <GitBranch className="h-3 w-3" />
+                          {project.branch}
+                        </span>
+                      )}
+                    </CardDescription>
                   </div>
-                </div>
-              </CardHeader>
-              <CardContent className="flex-1 flex flex-col gap-3 pt-0">
-                <div className="flex items-center gap-2 text-xs text-muted-foreground mt-auto">
-                  {project.frameworkSource === "config" && (
-                    <span className="text-studio-success font-medium">Config</span>
-                  )}
-                  {project.frameworkSource !== "config" && (
-                    <span className="text-muted-foreground font-medium">Manual</span>
-                  )}
-                  <span>&middot;</span>
-                  <span>Updated {new Date(project.updatedAt).toLocaleDateString()}</span>
-                </div>
-                <Link
-                  href={`/dashboard/${owner}/${repo}/studio?branch=${project.branch}&projectId=${project._id}`}
-                  className="w-full"
-                >
-                  <Button className="w-full" variant="default" size="sm">
-                    Open Studio
-                    <ArrowRight className="h-4 w-4 ml-1.5" />
-                  </Button>
-                </Link>
-              </CardContent>
-            </Card>
-          ))}
+                </CardHeader>
+                <CardContent className="flex-1 flex flex-col gap-3 pt-0">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground mt-auto">
+                    {project.frameworkSource === "config" && (
+                      <span className="text-studio-success font-medium">Config</span>
+                    )}
+                    {project.frameworkSource !== "config" && (
+                      <span className="text-muted-foreground font-medium">Manual</span>
+                    )}
+                    <span>&middot;</span>
+                    <span>Updated {new Date(project.updatedAt).toLocaleDateString()}</span>
+                  </div>
+                  <Link
+                    href={`/dashboard/${owner}/${repo}/studio?branch=${project.branch}&projectId=${project._id}`}
+                    className="w-full"
+                  >
+                    <Button className="w-full" variant="default" size="sm">
+                      Open Studio
+                      <ArrowRight className="h-4 w-4 ml-1.5" />
+                    </Button>
+                  </Link>
+                </CardContent>
+              </Card>
+            )
+          })}
         </div>
       ) : !orphanedProjects.length ? (
         /* Empty state — only when no active AND no orphaned projects */

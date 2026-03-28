@@ -45,7 +45,7 @@ export function OrphanWarningCard({ project, isOwner, onResolved }: OrphanWarnin
   const handleDelete = () => {
     startDelete(async () => {
       try {
-        await removeFull({ id: project._id as Id<"projects"> })
+        await removeFull({ projectId: project._id as Id<"projects"> })
         toast.success(`"${project.name}" deleted permanently`)
         onResolved?.()
       } catch (err: any) {
