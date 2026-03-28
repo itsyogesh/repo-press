@@ -380,9 +380,15 @@ export function PreviewRuntime({
           }
         }
 
+        // Studio preview: keep our own DocsImage fallback — adapter versions often have
+        // production-specific sizing (e.g. next/image width=1600 height=900) that forces
+        // a 16:9 crop and breaks aspect ratio for non-landscape images.
+        const STUDIO_PREFERRED_FALLBACKS = new Set(["DocsImage"])
         const componentsContext: Record<string, React.ComponentType<any>> = {
           ...standardComponents,
-          ...adapterComponents,
+          ...Object.fromEntries(
+            Object.entries(adapterComponents).filter(([name]) => !STUDIO_PREFERRED_FALLBACKS.has(name)),
+          ),
         }
 
         const missingRef = new Set<string>()
