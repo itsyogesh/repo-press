@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { buildComponentCatalog, getComponentLabel } from "@/lib/studio/component-catalog"
+import { ALL_CATEGORIES, buildComponentCatalog, deriveCategory, getComponentLabel, type ComponentCategory } from "@/lib/studio/component-catalog"
+import { cn } from "@/lib/utils"
 import { buildComponentNode, type ComponentNode } from "@/lib/studio/component-node"
 import type { RepoComponentDef } from "@/lib/studio/component-registry"
 import { buildComponentRegistry } from "@/lib/studio/component-registry"
@@ -79,18 +80,25 @@ export function ComponentInsertModal({
   const [selectedDef, setSelectedDef] = React.useState<RepoComponentDef | null>(null)
   const [formState, setFormState] = React.useState<PropFormState>({})
   const [searchQuery, setSearchQuery] = React.useState("")
+  const [activeCategory, setActiveCategory] = React.useState<ComponentCategory | "All">("All")
 
   // Filtered catalog
   const filteredCatalog = React.useMemo(() => {
-    if (!searchQuery) return catalog
-    const q = searchQuery.toLowerCase()
-    return catalog.filter(
-      (def) =>
-        getComponentLabel(def).toLowerCase().includes(q) ||
-        def.name.toLowerCase().includes(q) ||
-        def.description?.toLowerCase().includes(q),
-    )
-  }, [catalog, searchQuery])
+    let result = catalog
+    if (activeCategory !== "All") {
+      result = result.filter((def) => deriveCategory(def) === activeCategory)
+    }
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase()
+      result = result.filter(
+        (def) =>
+          getComponentLabel(def).toLowerCase().includes(q) ||
+          def.name.toLowerCase().includes(q) ||
+          def.description?.toLowerCase().includes(q),
+      )
+    }
+    return result
+  }, [catalog, searchQuery, activeCategory])
 
   // Reset state when modal opens/closes
   React.useEffect(() => {
@@ -99,6 +107,7 @@ export function ComponentInsertModal({
       setSelectedDef(null)
       setFormState({})
       setSearchQuery("")
+      setActiveCategory("All")
     }
   }, [open])
 
@@ -190,6 +199,24 @@ export function ComponentInsertModal({
                     />
                   </div>
                 </div>
+              </div>
+
+              <div className="flex items-center gap-1.5 px-5 py-2 border-b border-studio-border bg-studio-canvas">
+                {(["All", ...ALL_CATEGORIES] as const).map((cat) => (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => setActiveCategory(cat)}
+                    className={cn(
+                      "px-2.5 py-1 rounded-full text-xs font-medium transition-colors",
+                      activeCategory === cat
+                        ? "bg-studio-accent text-white"
+                        : "bg-studio-canvas-inset text-studio-fg-muted hover:text-studio-fg",
+                    )}
+                  >
+                    {cat}
+                  </button>
+                ))}
               </div>
 
               <ScrollArea className="flex-1 px-5 py-5 min-h-0">
