@@ -1,6 +1,6 @@
 "use client"
 
-import { Info } from "lucide-react"
+import { ImageIcon, Info } from "lucide-react"
 import React, { useMemo } from "react"
 import { REAL_DOCS_SETUP_MEDIA } from "@/lib/repopress/standard-library"
 import { resolveStudioAssetUrl } from "@/lib/studio/media-resolve"
@@ -13,6 +13,46 @@ import { useStudio } from "./studio-context"
 // that don't exist in the studio editor context, causing black/broken rendering.
 // Use these studio-safe versions instead.
 const STUDIO_SAFE_RENDERERS: Record<string, React.ComponentType<any>> = {
+  DynamicImage: ({
+    src,
+    image,
+    path,
+    url,
+    fileName,
+    alt,
+    resolveAssetUrl,
+  }: {
+    src?: string
+    image?: string
+    path?: string
+    url?: string
+    fileName?: string
+    alt?: string
+    resolveAssetUrl?: (s: string) => string
+  }) => {
+    const rawSrc = src || image || path || url || fileName
+    const resolvedSrc = rawSrc && resolveAssetUrl ? resolveAssetUrl(rawSrc) : rawSrc
+    if (!resolvedSrc) {
+      return (
+        <div className="my-6 flex items-center justify-center gap-2 rounded-xl border border-dashed border-studio-border p-6 text-sm text-studio-fg-muted font-sans">
+          <ImageIcon className="h-5 w-5 opacity-50 shrink-0" />
+          <span>DynamicImage — no source provided</span>
+        </div>
+      )
+    }
+    return (
+      <img
+        src={resolvedSrc}
+        alt={alt ?? ""}
+        className="my-6 w-full h-auto rounded-xl border border-studio-border object-cover"
+      />
+    )
+  },
+  TickPoint: ({ children }: { children?: React.ReactNode }) => (
+    <div className="my-4 rounded-lg border border-studio-border bg-studio-canvas-inset p-4 text-sm font-sans text-foreground">
+      {children ?? <span className="text-studio-fg-muted italic text-xs">TickPoint content</span>}
+    </div>
+  ),
   Callout: ({ children, type, title }: { children?: React.ReactNode; type?: string; title?: string }) => {
     const styles: Record<string, { border: string; bg: string }> = {
       info: { border: "border-studio-accent/20", bg: "bg-studio-accent/5" },
