@@ -1674,6 +1674,7 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
       adapterError: previewContext.error,
       adapterDiagnostics: previewContext.diagnostics,
       components: componentSchema,
+      detectedFramework: studioQueries.project?.detectedFramework as string | undefined,
     }),
     [
       owner,
@@ -1688,6 +1689,7 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
       role,
       previewContext,
       componentSchema,
+      studioQueries.project?.detectedFramework,
     ],
   )
 

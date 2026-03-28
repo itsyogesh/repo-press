@@ -22,7 +22,7 @@ interface InsertJsxButtonProps {
 }
 
 export function InsertJsxButton({ owner, repo, branch, projectId, userId }: InsertJsxButtonProps) {
-  const { components: schema, adapter } = useStudioAdapter()
+  const { components: schema, adapter, detectedFramework } = useStudioAdapter()
   const insertJsx = usePublisher(insertJsx$)
   const [modalOpen, setModalOpen] = React.useState(false)
   const insertComponentModalCtx = useInsertComponentModal()
@@ -75,6 +75,7 @@ export function InsertJsxButton({ owner, repo, branch, projectId, userId }: Inse
         onOpenChange={handleOpenChange}
         adapterComponents={adapter?.components}
         projectComponents={schema}
+        framework={detectedFramework}
         repoContext={projectId ? { projectId, userId, owner, repo, branch } : undefined}
         onInsert={handleInsert}
       />
