@@ -43,20 +43,20 @@ export function getPublishLaneViewModel({
     currentLane == null
       ? null
       : currentLane.prNumber != null && currentLane.prUrl
-      ? {
-          prNumber: currentLane.prNumber,
-          prUrl: currentLane.prUrl,
-          title: `Current PR #${currentLane.prNumber}`,
-          summary: `New publishes will update PR #${currentLane.prNumber}.`,
-          linkLabel: `PR #${currentLane.prNumber}`,
-        }
-      : {
-          prNumber: currentLane.prNumber ?? null,
-          prUrl: currentLane.prUrl ?? null,
-          title: "Current publish lane",
-          summary: "New publishes will continue in the current RepoPress lane.",
-          linkLabel: currentLane.prUrl ? "View lane" : undefined,
-        }
+        ? {
+            prNumber: currentLane.prNumber,
+            prUrl: currentLane.prUrl,
+            title: `Current PR #${currentLane.prNumber}`,
+            summary: `New publishes will update PR #${currentLane.prNumber}.`,
+            linkLabel: `PR #${currentLane.prNumber}`,
+          }
+        : {
+            prNumber: currentLane.prNumber ?? null,
+            prUrl: currentLane.prUrl ?? null,
+            title: "Current publish lane",
+            summary: "New publishes will continue in the current RepoPress lane.",
+            linkLabel: currentLane.prUrl ? "View lane" : undefined,
+          }
 
   const currentLaneLabel =
     currentLaneSummary?.prNumber != null ? `PR #${currentLaneSummary.prNumber}` : "the current publish lane"
@@ -69,7 +69,9 @@ export function getPublishLaneViewModel({
         label: "Update current PR",
         description: `Keep publishing into ${currentLaneLabel}.`,
         submitLabel:
-          currentLaneSummary?.prNumber != null ? `Update PR #${currentLaneSummary.prNumber} →` : "Continue current lane →",
+          currentLaneSummary?.prNumber != null
+            ? `Update PR #${currentLaneSummary.prNumber} →`
+            : "Continue current lane →",
       },
       "create-new": {
         label: "Create new PR",
@@ -80,10 +82,7 @@ export function getPublishLaneViewModel({
     olderOpenPrReferences: (openLanes ?? [])
       .filter(
         (lane) =>
-          lane.status === "inactive" &&
-          lane.prNumber != null &&
-          Boolean(lane.prUrl) &&
-          lane._id !== currentLane?._id,
+          lane.status === "inactive" && lane.prNumber != null && Boolean(lane.prUrl) && lane._id !== currentLane?._id,
       )
       .map((lane) => ({
         _id: lane._id,

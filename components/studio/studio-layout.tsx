@@ -572,17 +572,25 @@ function StudioLayoutInner({
   })
 
   // 4. Publish logic
-  const { isPublishing, publishDialogOpen, publishConflicts, publishMode, openPublishDialog, setPublishDialogOpen, setPublishMode, handlePublish } =
-    useStudioPublish({
-      userId,
-      projectAccessToken,
-      documentUpdatedAt: document?.updatedAt,
-      ensureDocumentRecord,
-      selectedFile,
-      content,
-      frontmatter,
-      defaultPublishMode: publishLaneViewModel.defaultMode,
-    })
+  const {
+    isPublishing,
+    publishDialogOpen,
+    publishConflicts,
+    publishMode,
+    openPublishDialog,
+    setPublishDialogOpen,
+    setPublishMode,
+    handlePublish,
+  } = useStudioPublish({
+    userId,
+    projectAccessToken,
+    documentUpdatedAt: document?.updatedAt,
+    ensureDocumentRecord,
+    selectedFile,
+    content,
+    frontmatter,
+    defaultPublishMode: publishLaneViewModel.defaultMode,
+  })
 
   // Explorer handlers
   const handleCreateFile = React.useCallback((parentPath: string) => {

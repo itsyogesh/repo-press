@@ -159,7 +159,11 @@ export function PublishDialog({
                         isSelected && "border-studio-accent bg-studio-accent/10",
                       )}
                     >
-                      <RadioGroupItem id={inputId} value={mode} className="mt-0.5 border-studio-border text-studio-accent" />
+                      <RadioGroupItem
+                        id={inputId}
+                        value={mode}
+                        className="mt-0.5 border-studio-border text-studio-accent"
+                      />
                       <div className="space-y-1">
                         <p className="text-sm font-medium text-studio-fg">{option.label}</p>
                         <p className="text-xs text-studio-fg-muted">{option.description}</p>

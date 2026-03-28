@@ -184,7 +184,11 @@ export function PublishOpsBar({
           Discard
         </Button>
         <Button size="sm" className="flex-1 h-7 text-xs bg-studio-accent hover:bg-studio-accent/90" onClick={onPublish}>
-          {hasCurrentLane ? (currentPrNumber != null ? "Update current PR →" : "Continue current lane →") : "Create new PR →"}
+          {hasCurrentLane
+            ? currentPrNumber != null
+              ? "Update current PR →"
+              : "Continue current lane →"
+            : "Create new PR →"}
         </Button>
       </div>
     </div>

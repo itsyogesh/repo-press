@@ -159,10 +159,7 @@ describe("GitHub webhook hardening", () => {
       serverQueryToken,
     })
 
-    expect(ctx.db.patch).toHaveBeenCalledWith(
-      "publish_branch_inactive",
-      expect.objectContaining({ status: "merged" }),
-    )
+    expect(ctx.db.patch).toHaveBeenCalledWith("publish_branch_inactive", expect.objectContaining({ status: "merged" }))
     expect(ctx.db.delete).toHaveBeenCalledWith("explorer_op_for_branch_42")
     expect(ctx.db.delete).toHaveBeenCalledWith("media_op_for_branch_42")
     expect(ctx.db.delete).not.toHaveBeenCalledWith("explorer_op_for_branch_84")
@@ -186,10 +183,7 @@ describe("GitHub webhook hardening", () => {
     })
 
     expect(ctx.db.patch).toHaveBeenCalledTimes(1)
-    expect(ctx.db.patch).toHaveBeenCalledWith(
-      "publish_branch_inactive",
-      expect.objectContaining({ status: "closed" }),
-    )
+    expect(ctx.db.patch).toHaveBeenCalledWith("publish_branch_inactive", expect.objectContaining({ status: "closed" }))
     expect(ctx.db.delete).not.toHaveBeenCalled()
   })
 
@@ -238,10 +232,7 @@ describe("GitHub webhook hardening", () => {
       serverQueryToken,
     })
 
-    expect(ctx.db.patch).toHaveBeenCalledWith(
-      "publish_branch_current",
-      expect.objectContaining({ status: "merged" }),
-    )
+    expect(ctx.db.patch).toHaveBeenCalledWith("publish_branch_current", expect.objectContaining({ status: "merged" }))
     expect(ctx.db.delete).toHaveBeenCalledWith("explorer_op_for_current_branch")
     expect(ctx.db.delete).toHaveBeenCalledWith("media_op_for_current_branch")
     expect(ctx.db.delete).not.toHaveBeenCalledWith("explorer_op_for_other_open_pr")
