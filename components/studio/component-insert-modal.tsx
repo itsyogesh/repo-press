@@ -14,7 +14,7 @@ import type { RepoComponentDef } from "@/lib/studio/component-registry"
 import { buildComponentRegistry } from "@/lib/studio/component-registry"
 import { serializeComponentNode } from "@/lib/studio/component-serializer"
 import { ComponentPreview } from "./component-preview"
-import { ComponentPropForm, type PropFormState } from "./component-prop-form"
+import { ComponentPropForm, validateFormState, type PropFormState } from "./component-prop-form"
 
 // ---------------------------------------------------------------------------
 // Types
@@ -81,6 +81,13 @@ export function ComponentInsertModal({
   const [formState, setFormState] = React.useState<PropFormState>({})
   const [searchQuery, setSearchQuery] = React.useState("")
   const [activeCategory, setActiveCategory] = React.useState<ComponentCategory | "All">("All")
+
+  // Real-time validation for the configure step
+  const formErrors = React.useMemo(() => {
+    if (!selectedDef) return {}
+    return validateFormState(selectedDef.props, formState)
+  }, [selectedDef, formState])
+  const hasErrors = Object.keys(formErrors).length > 0
 
   // Filtered catalog
   const filteredCatalog = React.useMemo(() => {
@@ -294,6 +301,7 @@ export function ComponentInsertModal({
                           formState={formState}
                           onFormChange={setFormState}
                           repoContext={repoContext}
+                          errors={formErrors}
                         />
                       )}
                     </div>
@@ -305,7 +313,11 @@ export function ComponentInsertModal({
                     </Button>
                     <Button
                       onClick={handleInsert}
-                      className="h-8 px-5 rounded-md text-[11px] font-bold uppercase tracking-wider shadow-sm"
+                      disabled={hasErrors}
+                      className={cn(
+                        "h-8 px-5 rounded-md text-[11px] font-bold uppercase tracking-wider shadow-sm",
+                        hasErrors && "opacity-50 cursor-not-allowed",
+                      )}
                     >
                       Insert
                     </Button>
