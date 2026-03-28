@@ -1,6 +1,6 @@
 import { type ProjectConfig, type RepoPressConfig, repoPressConfigSchema } from "@/lib/config-schema"
 import { saveFileContent } from "@/lib/github"
-import { fetchRepoConfig, type FetchConfigResult } from "./config"
+import { type FetchConfigResult, fetchRepoConfig } from "./config"
 
 // ── Types ─────────────────────────────────────────────────────────
 

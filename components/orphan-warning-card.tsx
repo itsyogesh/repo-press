@@ -1,9 +1,9 @@
 "use client"
 
+import { useMutation } from "convex/react"
 import { AlertTriangle, Hand, Loader2, Trash2 } from "lucide-react"
 import { useTransition } from "react"
 import { toast } from "sonner"
-import { useMutation } from "convex/react"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
 import { Alert, AlertDescription, AlertTitle } from "./ui/alert"
@@ -62,12 +62,8 @@ export function OrphanWarningCard({ project, isOwner, onResolved }: OrphanWarnin
       </AlertTitle>
       <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="text-xs text-muted-foreground">
-          {project.contentRoot && (
-            <span className="font-medium">{project.contentRoot}</span>
-          )}
-          {project.configRemovedAt && (
-            <span> · Detected {new Date(project.configRemovedAt).toLocaleDateString()}</span>
-          )}
+          {project.contentRoot && <span className="font-medium">{project.contentRoot}</span>}
+          {project.configRemovedAt && <span> · Detected {new Date(project.configRemovedAt).toLocaleDateString()}</span>}
         </div>
         {isOwner && (
           <div className="flex items-center gap-2 shrink-0">

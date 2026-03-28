@@ -47,14 +47,7 @@ function slugify(str: string): string {
     .replace(/^-|-$/g, "")
 }
 
-export function AddProjectDialog({
-  owner,
-  repo,
-  defaultBranch,
-  open,
-  onOpenChange,
-  onSuccess,
-}: AddProjectDialogProps) {
+export function AddProjectDialog({ owner, repo, defaultBranch, open, onOpenChange, onSuccess }: AddProjectDialogProps) {
   const [isPending, startTransition] = useTransition()
   const [name, setName] = useState("")
   const [contentRoot, setContentRoot] = useState("")
@@ -150,9 +143,7 @@ export function AddProjectDialog({
               onChange={(e) => setContentRoot(e.target.value)}
               disabled={isPending}
             />
-            <p className="text-xs text-muted-foreground">
-              Relative path to the content folder in your repository.
-            </p>
+            <p className="text-xs text-muted-foreground">Relative path to the content folder in your repository.</p>
           </div>
 
           <div className="grid grid-cols-2 gap-4">

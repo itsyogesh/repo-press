@@ -23,7 +23,7 @@ import { useMemo, useState, useTransition } from "react"
 import { toast } from "sonner"
 import { retrySyncAction } from "@/lib/sync-projects"
 import { AddProjectDialog } from "./add-project-dialog"
-import { EditProjectDialog, type EditableProject } from "./edit-project-dialog"
+import { type EditableProject, EditProjectDialog } from "./edit-project-dialog"
 import { OrphanWarningCard } from "./orphan-warning-card"
 import { RawConfigEditor } from "./raw-config-editor"
 import { RemoveProjectDialog } from "./remove-project-dialog"
@@ -31,12 +31,7 @@ import { Alert, AlertDescription, AlertTitle } from "./ui/alert"
 import { Badge } from "./ui/badge"
 import { Button } from "./ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "./ui/dropdown-menu"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu"
 
 export interface HubProject {
   _id: string
@@ -166,9 +161,7 @@ export function RepoProjectHub({
             <p className="text-sm text-muted-foreground mt-0.5">
               {activeProjects.length} project{activeProjects.length !== 1 ? "s" : ""}
               {orphanedProjects.length > 0 && (
-                <span className="text-studio-attention ml-1">
-                  · {orphanedProjects.length} removed from config
-                </span>
+                <span className="text-studio-attention ml-1">· {orphanedProjects.length} removed from config</span>
               )}
             </p>
           </div>

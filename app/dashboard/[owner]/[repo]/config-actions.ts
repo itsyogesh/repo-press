@@ -7,10 +7,10 @@ import type { ProjectConfig, RepoPressConfig } from "@/lib/config-schema"
 import {
   addProject,
   commitConfig,
+  type NewProjectDef,
   readConfig,
   removeProject,
   updateProject,
-  type NewProjectDef,
 } from "@/lib/repopress/config-writer"
 import { syncProjectsServerSide } from "@/lib/sync-projects"
 

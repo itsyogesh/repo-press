@@ -89,13 +89,10 @@ export function RawConfigEditor({
     setValidation(validateConfig(initialJson))
   }, [initialJson, initialSha])
 
-  const handleChange = useCallback(
-    (newValue: string) => {
-      setValue(newValue)
-      setValidation(validateConfig(newValue))
-    },
-    [],
-  )
+  const handleChange = useCallback((newValue: string) => {
+    setValue(newValue)
+    setValidation(validateConfig(newValue))
+  }, [])
 
   const diff = computeLineDiff(initialJson, value)
 
@@ -138,7 +135,10 @@ export function RawConfigEditor({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               {validation.valid ? (
-                <Badge variant="outline" className="border-studio-success/20 bg-studio-success-muted text-studio-success">
+                <Badge
+                  variant="outline"
+                  className="border-studio-success/20 bg-studio-success-muted text-studio-success"
+                >
                   <CheckCircle2 className="h-3 w-3 mr-1" />
                   Valid
                 </Badge>
@@ -187,11 +187,7 @@ export function RawConfigEditor({
               <Button variant="outline" size="sm" onClick={handleReset} disabled={isPending || !diff.changed}>
                 Reset
               </Button>
-              <Button
-                size="sm"
-                onClick={handleCommit}
-                disabled={isPending || !validation.valid || !diff.changed}
-              >
+              <Button size="sm" onClick={handleCommit} disabled={isPending || !validation.valid || !diff.changed}>
                 {isPending ? (
                   <>
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
