@@ -224,6 +224,7 @@ export const markCommitted = mutation({
   args: {
     ids: v.array(v.id("explorerOps")),
     commitSha: v.string(),
+    publishBranchId: v.optional(v.id("publishBranches")),
     userId: v.optional(v.string()),
     projectAccessToken: v.optional(v.string()),
   },
@@ -242,6 +243,7 @@ export const markCommitted = mutation({
         await ctx.db.patch(id, {
           status: "committed",
           commitSha: args.commitSha,
+          publishBranchId: args.publishBranchId,
           updatedAt: now,
         })
       }

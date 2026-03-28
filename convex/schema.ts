@@ -298,6 +298,7 @@ export default defineSchema({
     previousSha: v.optional(v.string()),
     status: v.union(v.literal("pending"), v.literal("committed"), v.literal("undone")),
     commitSha: v.optional(v.string()),
+    publishBranchId: v.optional(v.id("publishBranches")),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -321,6 +322,7 @@ export default defineSchema({
     githubSha: v.optional(v.string()),
     status: v.union(v.literal("pending"), v.literal("committed"), v.literal("undone"), v.literal("failed")),
     commitSha: v.optional(v.string()),
+    publishBranchId: v.optional(v.id("publishBranches")),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -335,7 +337,7 @@ export default defineSchema({
     baseBranch: v.string(),
     prNumber: v.optional(v.number()),
     prUrl: v.optional(v.string()),
-    status: v.union(v.literal("active"), v.literal("merged"), v.literal("closed")),
+    status: v.union(v.literal("active"), v.literal("inactive"), v.literal("merged"), v.literal("closed")),
     lastCommitSha: v.optional(v.string()),
     committedFilePaths: v.optional(v.array(v.string())),
     createdAt: v.number(),
