@@ -287,6 +287,18 @@ export default defineSchema({
     .index("by_userId", ["userId"])
     .index("by_expiresAt", ["expiresAt"]),
 
+  // ─── Deleted Config Projects (tombstone for config-driven project deletion) ─
+  deletedConfigProjects: defineTable({
+    configProjectId: v.string(), // The id field from repopress.config.json
+    repoOwner: v.string(),
+    repoName: v.string(),
+    branch: v.string(),
+    deletedBy: v.string(), // Convex auth user ID
+    deletedAt: v.number(),
+  })
+    .index("by_repo", ["repoOwner", "repoName"])
+    .index("by_repo_configProjectId", ["repoOwner", "repoName", "configProjectId"]),
+
   // ─── Explorer Ops (staged file create/delete for PR-based publish) ─
   explorerOps: defineTable({
     projectId: v.id("projects"),

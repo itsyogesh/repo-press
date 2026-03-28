@@ -513,6 +513,19 @@ export const syncProjectsFromConfig = mutation({
     for (const p of args.projects) {
       const nextBranch = p.branch || args.branch
 
+      // Skip if this configProjectId was previously deleted
+      const isTombstoned = await ctx.db
+        .query("deletedConfigProjects")
+        .withIndex("by_repo_configProjectId", (q) =>
+          q.eq("repoOwner", args.repoOwner).eq("repoName", args.repoName).eq("configProjectId", p.configProjectId),
+        )
+        .first()
+
+      if (isTombstoned) {
+        // Skip this project — it was intentionally deleted
+        continue
+      }
+
       // 1) Preferred match: explicit config project ID (across ALL projects for repo).
       // 2) Legacy migration match: repo + branch + contentRoot when configProjectId was never stored.
       const existing =
@@ -608,7 +621,11 @@ export const update = mutation({
   handler: async (ctx, args) => {
     await resolveProjectAccess(
       ctx,
-      { projectId: args.id, userId: args.userId, projectAccessToken: args.projectAccessToken },
+      {
+        projectId: args.id,
+        userId: args.userId,
+        projectAccessToken: args.projectAccessToken,
+      },
       "editor",
     )
 
@@ -631,7 +648,11 @@ export const updateFramework = mutation({
   handler: async (ctx, args) => {
     await resolveProjectAccess(
       ctx,
-      { projectId: args.id, userId: args.userId, projectAccessToken: args.projectAccessToken },
+      {
+        projectId: args.id,
+        userId: args.userId,
+        projectAccessToken: args.projectAccessToken,
+      },
       "editor",
     )
 
@@ -652,7 +673,11 @@ export const remove = mutation({
   handler: async (ctx, args) => {
     await resolveProjectAccess(
       ctx,
-      { projectId: args.id, userId: args.userId, projectAccessToken: args.projectAccessToken },
+      {
+        projectId: args.id,
+        userId: args.userId,
+        projectAccessToken: args.projectAccessToken,
+      },
       "owner",
     )
 
@@ -683,6 +708,21 @@ export const removeFull = mutation({
       name: `[DELETING] ${project.name}`,
       updatedAt: Date.now(),
     })
+
+    // Tombstone: record config-driven project deletion for downstream sync
+    if (project.frameworkSource === "config" && project.configProjectId) {
+      const callerUserId = args.userId
+      if (callerUserId) {
+        await ctx.db.insert("deletedConfigProjects", {
+          configProjectId: project.configProjectId,
+          repoOwner: project.repoOwner,
+          repoName: project.repoName,
+          branch: project.branch,
+          deletedBy: callerUserId,
+          deletedAt: Date.now(),
+        })
+      }
+    }
 
     // Schedule the batch deletion (runs as a separate transaction)
     await ctx.scheduler.runAfter(0, internal.projects._removeFullBatch, {

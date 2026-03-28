@@ -169,7 +169,7 @@ export default async function SettingsPage({ params }: SettingsPageProps) {
 
                   <Separator className="bg-studio-border/50" />
 
-                  {repoRole === "owner" && (
+                  {(repoRole === "owner" || (actingUserId && project.userId === actingUserId)) && (
                     <div className="pt-2">
                       <DeleteProjectZone project={project} projectAccessToken={projectTokens[project._id]} />
                     </div>
