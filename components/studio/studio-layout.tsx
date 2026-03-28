@@ -40,6 +40,12 @@ import { useStudioSave } from "./hooks/use-studio-save"
 import { Preview } from "./preview"
 import { PublishDialog } from "./publish-dialog"
 import { PublishOpsBar } from "./publish-ops-bar"
+import {
+  buildScrollAnchors,
+  calculateSyncedScrollTop,
+  createScrollSyncCoordinator,
+  type ScrollSyncAnchor,
+} from "./scroll-sync"
 import { SmartCreateFileDialog } from "./smart-create-file-dialog"
 import { StatusActions } from "./status-actions"
 import { StudioAdapterProvider } from "./studio-adapter-context"
@@ -924,12 +930,12 @@ function StudioLayoutInner({
   // Sync scroll
   const editorScrollRef = React.useRef<HTMLDivElement>(null)
   const previewScrollRef = React.useRef<HTMLDivElement>(null)
-  const isSyncingScroll = React.useRef(false)
+  const lastScrollSource = React.useRef<"editor" | "preview">("editor")
+  const scrollSyncSettleTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Heading anchor cache — keyed by container, invalidated when scrollHeight changes
-  type HeadingAnchor = { text: string; fromRoot: number }
+  // Scroll anchor cache — keyed by container, invalidated when scrollHeight or width changes
   const headingsCache = React.useRef<
-    Map<HTMLDivElement, { scrollHeight: number; headings: HeadingAnchor[] }>
+    Map<HTMLDivElement, { scrollHeight: number; clientWidth: number; anchors: ScrollSyncAnchor[] }>
   >(new Map())
 
   // Preserve scroll position when switching between editor and preview modes
@@ -969,7 +975,7 @@ function StudioLayoutInner({
       requestAnimationFrame(restoreScroll)
     })
     return () => cancelAnimationFrame(raf1)
-  }, [viewMode])
+  }, [])
 
   const getScrollSyncMetrics = React.useCallback(
     (container: HTMLDivElement) => {
@@ -977,7 +983,7 @@ function StudioLayoutInner({
       const root = container.querySelector<HTMLElement>("[data-scroll-sync-root]")
 
       if (!root) {
-        return { start: 0, scrollable: maxScroll, maxScroll, headings: [] as HeadingAnchor[] }
+        return { start: 0, scrollable: maxScroll, maxScroll, anchors: [] as ScrollSyncAnchor[] }
       }
 
       const containerRect = container.getBoundingClientRect()
@@ -987,29 +993,26 @@ function StudioLayoutInner({
       // root.scrollHeight slightly underestimates due to padding/margin.
       const end = Math.min(maxScroll, Math.max(start, start + root.scrollHeight - container.clientHeight))
 
-      // Collect heading anchor positions — cached by scrollHeight so we only
-      // re-measure when the content actually changes (images load, edits, etc.)
-      let headings: HeadingAnchor[]
+      // Collect scroll anchors — cached by scrollHeight + clientWidth so we
+      // re-measure on content changes and panel resizes.
+      let anchors: ScrollSyncAnchor[]
       const cached = headingsCache.current.get(container)
-      if (cached && cached.scrollHeight === container.scrollHeight) {
-        headings = cached.headings
+      if (cached && cached.scrollHeight === container.scrollHeight && cached.clientWidth === container.clientWidth) {
+        anchors = cached.anchors
       } else {
-        const els = root.querySelectorAll<HTMLElement>("h1,h2,h3,h4,h5,h6")
-        headings = Array.from(els).map((h) => {
-          const absPos = container.scrollTop + h.getBoundingClientRect().top - containerRect.top
-          return {
-            text: h.innerText?.trim().toLowerCase() ?? "",
-            fromRoot: Math.round(absPos - start),
-          }
+        anchors = buildScrollAnchors(root, container, start)
+        headingsCache.current.set(container, {
+          scrollHeight: container.scrollHeight,
+          clientWidth: container.clientWidth,
+          anchors,
         })
-        headingsCache.current.set(container, { scrollHeight: container.scrollHeight, headings })
       }
 
       return {
         start,
         scrollable: Math.max(0, end - start),
         maxScroll,
-        headings,
+        anchors,
       }
     },
     // headingsCache is a ref — stable reference, no dep needed
@@ -1019,93 +1022,13 @@ function StudioLayoutInner({
 
   const syncScroll = React.useCallback(
     (source: "editor" | "preview") => {
-      if (isSyncingScroll.current) return
-      isSyncingScroll.current = true
-
       const sourceEl = source === "editor" ? editorScrollRef.current : previewScrollRef.current
       const targetEl = source === "editor" ? previewScrollRef.current : editorScrollRef.current
 
       if (sourceEl && targetEl) {
         const sourceMetrics = getScrollSyncMetrics(sourceEl)
         const targetMetrics = getScrollSyncMetrics(targetEl)
-
-        let desiredTargetTop: number
-
-        if (sourceEl.scrollTop < sourceMetrics.start) {
-          // ── Pre-body zone ────────────────────────────────────────────────
-          // Proportionally map the source header scroll to the target header
-          // scroll so both panels stay aligned during header traversal.
-          const preProgress = sourceMetrics.start > 0 ? sourceEl.scrollTop / sourceMetrics.start : 0
-          desiredTargetTop = preProgress * targetMetrics.start
-        } else {
-          // ── Body zone ─────────────────────────────────────────────────────
-          // The preview is ~42% the width of the editor, so text wraps much
-          // more and section heights differ wildly (0.9×–4× ratios). Simple
-          // fractional progress across the full body drifts badly mid-content.
-          //
-          // Heading-based anchor sync: find the two source headings that bracket
-          // the current scroll position, find the matching target headings by
-          // text, then interpolate *within that section* only.
-          // Falls back to fractional if headings are unavailable.
-          const sourceBodyPos = sourceEl.scrollTop - sourceMetrics.start
-          const sHeadings = sourceMetrics.headings
-          const tHeadings = targetMetrics.headings
-
-          // Build a text→fromRoot lookup for target headings
-          const targetByText = new Map<string, number>()
-          for (const th of tHeadings) {
-            // Use first 25 chars as key to handle minor truncation differences
-            targetByText.set(th.text.substring(0, 25), th.fromRoot)
-          }
-
-          const lookupTarget = (h: HeadingAnchor): number | undefined =>
-            targetByText.get(h.text.substring(0, 25))
-
-          // Find the bracketing source headings
-          let prevH: HeadingAnchor | null = null
-          let nextH: HeadingAnchor | null = null
-          for (const h of sHeadings) {
-            if (h.fromRoot <= sourceBodyPos) {
-              prevH = h
-            } else {
-              nextH = h
-              break
-            }
-          }
-
-          const tPrevFromRoot = prevH ? (lookupTarget(prevH) ?? null) : 0
-          const tNextFromRoot = nextH ? (lookupTarget(nextH) ?? null) : null
-          const ePrevFromRoot = prevH?.fromRoot ?? 0
-          const eNextFromRoot = nextH?.fromRoot ?? sourceMetrics.scrollable
-
-          const hasAnchors =
-            sHeadings.length > 1 &&
-            tHeadings.length > 1 &&
-            tPrevFromRoot !== null &&
-            tNextFromRoot !== null
-
-          if (hasAnchors) {
-            const sectionSpan = Math.max(1, eNextFromRoot - ePrevFromRoot)
-            const sectionProgress = Math.min(1, Math.max(0, (sourceBodyPos - ePrevFromRoot) / sectionSpan))
-            const targetBodyPos =
-              (tPrevFromRoot as number) +
-              sectionProgress * ((tNextFromRoot as number) - (tPrevFromRoot as number))
-            desiredTargetTop = targetMetrics.start + targetBodyPos
-          } else {
-            // Fallback: fractional sync (used when headings haven't loaded yet)
-            const rawProgress =
-              sourceMetrics.scrollable > 0
-                ? sourceBodyPos / sourceMetrics.scrollable
-                : sourceMetrics.maxScroll > 0
-                  ? sourceEl.scrollTop / sourceMetrics.maxScroll
-                  : 0
-            const progress = Math.min(1, Math.max(0, rawProgress))
-            desiredTargetTop =
-              targetMetrics.scrollable > 0
-                ? targetMetrics.start + progress * targetMetrics.scrollable
-                : progress * targetMetrics.maxScroll
-          }
-        }
+        const desiredTargetTop = calculateSyncedScrollTop(sourceEl.scrollTop, sourceMetrics, targetMetrics)
 
         const clampedTargetTop = Math.min(targetMetrics.maxScroll, Math.max(0, desiredTargetTop))
 
@@ -1113,16 +1036,66 @@ function StudioLayoutInner({
           targetEl.scrollTop = clampedTargetTop
         }
       }
-
-      requestAnimationFrame(() => {
-        isSyncingScroll.current = false
-      })
     },
     [getScrollSyncMetrics],
   )
 
-  const handleEditorScroll = React.useCallback(() => syncScroll("editor"), [syncScroll])
-  const handlePreviewScroll = React.useCallback(() => syncScroll("preview"), [syncScroll])
+  const scrollSyncCoordinator = React.useMemo(() => createScrollSyncCoordinator(syncScroll), [syncScroll])
+
+  const scheduleScrollSyncSettle = React.useCallback(
+    (source: "editor" | "preview" = lastScrollSource.current) => {
+      lastScrollSource.current = source
+
+      if (scrollSyncSettleTimer.current !== null) {
+        window.clearTimeout(scrollSyncSettleTimer.current)
+      }
+
+      scrollSyncSettleTimer.current = window.setTimeout(() => {
+        scrollSyncSettleTimer.current = null
+        headingsCache.current.clear()
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            scrollSyncCoordinator.schedule(lastScrollSource.current)
+          })
+        })
+      }, 300)
+    },
+    [scrollSyncCoordinator],
+  )
+
+  React.useEffect(() => {
+    return () => {
+      if (scrollSyncSettleTimer.current !== null) {
+        window.clearTimeout(scrollSyncSettleTimer.current)
+      }
+      scrollSyncCoordinator.clear()
+    }
+  }, [scrollSyncCoordinator])
+
+  const handlePreviewCompilingChange = React.useCallback(
+    (isCompiling: boolean) => {
+      if (isCompiling) {
+        if (scrollSyncSettleTimer.current !== null) {
+          window.clearTimeout(scrollSyncSettleTimer.current)
+          scrollSyncSettleTimer.current = null
+        }
+        return
+      }
+
+      scheduleScrollSyncSettle()
+    },
+    [scheduleScrollSyncSettle],
+  )
+
+  const handleEditorScroll = React.useCallback(() => {
+    lastScrollSource.current = "editor"
+    scrollSyncCoordinator.schedule("editor")
+  }, [scrollSyncCoordinator])
+
+  const handlePreviewScroll = React.useCallback(() => {
+    lastScrollSource.current = "preview"
+    scrollSyncCoordinator.schedule("preview")
+  }, [scrollSyncCoordinator])
 
   // Keyboard shortcuts
   React.useEffect(() => {
@@ -1286,7 +1259,11 @@ function StudioLayoutInner({
             </div>
           )}
 
-          <ResizablePanelGroup orientation="horizontal" className="flex-1 min-h-0">
+          <ResizablePanelGroup
+            orientation="horizontal"
+            className="flex-1 min-h-0"
+            onLayoutChanged={() => scheduleScrollSyncSettle()}
+          >
             {showSidebarPanel && (
               <>
                 <ResizablePanel
@@ -1617,6 +1594,7 @@ function StudioLayoutInner({
                         filePath={selectedFile.path}
                         scrollContainerRef={previewScrollRef}
                         onScroll={handlePreviewScroll}
+                        onCompilingChange={handlePreviewCompilingChange}
                         adapter={adapter}
                         adapterDiagnostics={adapterDiagnostics}
                       />
