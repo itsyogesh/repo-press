@@ -212,15 +212,17 @@ export async function POST(request: Request) {
       })
       const operationPaths = new Set(operations.map((op) => op.path))
       const overlaps = openPublishBranches.flatMap((branch) =>
-        (branch.committedFilePaths ?? [])
-          .filter((path) => operationPaths.has(path))
-          .map((path) => ({
-            path,
-            publishBranchId: branch._id,
-            branchName: branch.branchName,
-            prNumber: branch.prNumber,
-            prUrl: branch.prUrl,
-          })),
+        branch._id === publishBranch?._id
+          ? []
+          : (branch.committedFilePaths ?? [])
+              .filter((path) => operationPaths.has(path))
+              .map((path) => ({
+                path,
+                publishBranchId: branch._id,
+                branchName: branch.branchName,
+                prNumber: branch.prNumber,
+                prUrl: branch.prUrl,
+              })),
       )
 
       if (overlaps.length > 0) {

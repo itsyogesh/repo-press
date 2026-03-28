@@ -233,6 +233,7 @@ describe("POST /api/github/publish-ops", () => {
   })
 
   it("creates a new PR when publishMode is create-new", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000)
     mockPublishQueries({
       pendingOps: [],
       dirtyDocs: [
@@ -249,14 +250,14 @@ describe("POST /api/github/publish-ops", () => {
         branchName: "repopress/main/1234",
         prNumber: 42,
         prUrl: "https://github.com/acme/docs-site/pull/42",
-        committedFilePaths: ["content/posts/existing.mdx"],
+        committedFilePaths: ["content/posts/hello.mdx"],
       },
       openPublishBranches: [
         {
           _id: "publish_branch_1",
           branchName: "repopress/main/1234",
           prNumber: 42,
-          committedFilePaths: ["content/posts/existing.mdx"],
+          committedFilePaths: ["content/posts/hello.mdx"],
         },
       ],
       refreshedPublishBranch: {
@@ -280,10 +281,45 @@ describe("POST /api/github/publish-ops", () => {
     expect(payload.ok).toBe(true)
     expect(payload.publishModeUsed).toBe("create-new")
     expect(createBranch).toHaveBeenCalledTimes(1)
+    expect(createBranch).toHaveBeenCalledWith("gh-token", "acme", "docs-site", "main", "repopress/main/1700000000000")
     expect(createPullRequest).toHaveBeenCalledTimes(1)
-    expect(convexMutationMock).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ projectId: "project_123" }),
+    expect(createPullRequest).toHaveBeenCalledWith(
+      "gh-token",
+      "acme",
+      "docs-site",
+      "repopress/main/1700000000000",
+      "main",
+      "Content update via RepoPress (1 updated)",
+      "Automated content update from RepoPress.\n\n- 1 updated",
+    )
+    const deactivateCurrentCall = convexMutationMock.mock.calls.find(
+      ([, args]) =>
+        typeof args === "object" &&
+        args !== null &&
+        "projectId" in args &&
+        args.projectId === "project_123" &&
+        !("branchName" in args),
+    )
+    expect(deactivateCurrentCall?.[1]).toEqual(
+      expect.objectContaining({
+        projectId: "project_123",
+        userId: "user_owner",
+      }),
+    )
+    const createPublishBranchCall = convexMutationMock.mock.calls.find(
+      ([, args]) =>
+        typeof args === "object" &&
+        args !== null &&
+        "branchName" in args &&
+        args.branchName === "repopress/main/1700000000000",
+    )
+    expect(createPublishBranchCall?.[1]).toEqual(
+      expect.objectContaining({
+        projectId: "project_123",
+        userId: "user_owner",
+        branchName: "repopress/main/1700000000000",
+        baseBranch: "main",
+      }),
     )
   })
 
