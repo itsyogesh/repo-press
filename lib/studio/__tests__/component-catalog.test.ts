@@ -172,6 +172,57 @@ describe("groupByCategory", () => {
 })
 
 // ---------------------------------------------------------------------------
+// buildComponentCatalog — hasProjectComponents filtering
+// ---------------------------------------------------------------------------
+
+describe("buildComponentCatalog – hasProjectComponents filtering", () => {
+  const registry: Record<string, RepoComponentDef> = {
+    ConfigOnly: makeDef({ name: "ConfigOnly", source: "config" }),
+    AdapterOnly: makeDef({ name: "AdapterOnly", source: "adapter" }),
+    Merged: makeDef({ name: "Merged", source: "merged" }),
+  }
+
+  it("includes all sources when hasProjectComponents is false (default)", () => {
+    const catalog = buildComponentCatalog(registry)
+    expect(catalog.map((e) => e.name).sort()).toEqual(["AdapterOnly", "ConfigOnly", "Merged"])
+  })
+
+  it("includes all sources when hasProjectComponents is explicitly false", () => {
+    const catalog = buildComponentCatalog(registry, { hasProjectComponents: false })
+    expect(catalog.map((e) => e.name).sort()).toEqual(["AdapterOnly", "ConfigOnly", "Merged"])
+  })
+
+  it("excludes adapter-only components when hasProjectComponents is true", () => {
+    const catalog = buildComponentCatalog(registry, { hasProjectComponents: true })
+    const names = catalog.map((e) => e.name)
+    expect(names).not.toContain("AdapterOnly")
+    expect(names).toContain("ConfigOnly")
+    expect(names).toContain("Merged")
+  })
+
+  it("returns empty array when registry has only adapter components and hasProjectComponents is true", () => {
+    const adapterOnlyRegistry: Record<string, RepoComponentDef> = {
+      Image: makeDef({ name: "Image", source: "adapter" }),
+      Video: makeDef({ name: "Video", source: "adapter" }),
+    }
+    const catalog = buildComponentCatalog(adapterOnlyRegistry, { hasProjectComponents: true })
+    expect(catalog).toHaveLength(0)
+  })
+
+  it("result is still sorted alphabetically by display label after filtering", () => {
+    // Use entries where displayName order differs from name order
+    const registryWithDisplayNames: Record<string, RepoComponentDef> = {
+      ZConfig: makeDef({ name: "ZConfig", source: "config", displayName: "Alpha Block" }),
+      AMerged: makeDef({ name: "AMerged", source: "merged", displayName: "Zeta Block" }),
+    }
+    const catalog = buildComponentCatalog(registryWithDisplayNames, { hasProjectComponents: true })
+    // "Alpha Block" < "Zeta Block" → ZConfig first
+    expect(catalog[0].name).toBe("ZConfig")
+    expect(catalog[1].name).toBe("AMerged")
+  })
+})
+
+// ---------------------------------------------------------------------------
 // ALL_CATEGORIES
 // ---------------------------------------------------------------------------
 
@@ -184,3 +235,4 @@ describe("ALL_CATEGORIES", () => {
     expect(ALL_CATEGORIES).toContain("Custom")
   })
 })
+

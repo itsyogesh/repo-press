@@ -1,7 +1,7 @@
 "use client"
 
 import { AnimatePresence, motion } from "framer-motion"
-import { Box, ChevronDown, ChevronLeft, Code, FileText, Image, Layout, Play, Search, X } from "lucide-react"
+import { Box, ChevronDown, ChevronLeft, Code, FileText, Image, Layout, Search, X } from "lucide-react"
 import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
@@ -21,6 +21,7 @@ import { serializeComponentNode } from "@/lib/studio/component-serializer"
 import { cn } from "@/lib/utils"
 import { ComponentPreview } from "./component-preview"
 import { ComponentPropForm, type PropFormState, validateFormState } from "./component-prop-form"
+import { VideoPreview as StudioVideoPreview } from "./video-preview"
 
 // ---------------------------------------------------------------------------
 // LiveConfigurePreview — reacts to formState for known component types
@@ -56,7 +57,7 @@ function LiveConfigurePreview({ def, formState }: { def: RepoComponentDef; formS
     )
   }
 
-  // DocsVideo / video component — show a placeholder video box with URL hint
+  // DocsVideo / video component — show actual embedded player
   if (
     (normalizedName === "docsvideo" || normalizedName === "video") &&
     typeof formState.src === "string" &&
@@ -64,11 +65,8 @@ function LiveConfigurePreview({ def, formState }: { def: RepoComponentDef; formS
   ) {
     return (
       <div className="w-full max-w-sm space-y-3">
-        <div className="w-full aspect-video rounded-xl border border-studio-border bg-studio-canvas-inset flex items-center justify-center">
-          <div className="flex flex-col items-center gap-2 text-center px-4">
-            <Play className="h-8 w-8 text-studio-accent/40" />
-            <p className="text-xs text-studio-fg-muted line-clamp-2 break-all">{formState.src}</p>
-          </div>
+        <div className="w-full aspect-video rounded-xl border border-studio-border overflow-hidden bg-studio-canvas-inset">
+          <StudioVideoPreview url={formState.src} className="w-full h-full rounded-xl" />
         </div>
         {typeof formState.title === "string" && formState.title && (
           <p className="text-xs font-medium text-studio-fg text-center">{formState.title}</p>
@@ -195,7 +193,10 @@ export function ComponentInsertModal({
     () => buildComponentRegistry(adapterComponents, projectComponents),
     [adapterComponents, projectComponents],
   )
-  const catalog = React.useMemo(() => buildComponentCatalog(registry), [registry])
+  const catalog = React.useMemo(() => {
+    const hasProjectComponents = !!projectComponents && Object.keys(projectComponents).length > 0
+    return buildComponentCatalog(registry, { hasProjectComponents })
+  }, [registry, projectComponents])
 
   // -- Modal state --
   const [step, setStep] = React.useState<ModalStep>("pick")
