@@ -1,7 +1,7 @@
 "use client"
 
 import { AnimatePresence, motion } from "framer-motion"
-import { Box, ChevronDown, ChevronLeft, Code, FileText, Image, Layout, Search, X } from "lucide-react"
+import { Box, ChevronDown, ChevronLeft, Code, FileText, Image, Layout, Play, Search, X } from "lucide-react"
 import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
@@ -21,6 +21,95 @@ import { serializeComponentNode } from "@/lib/studio/component-serializer"
 import { cn } from "@/lib/utils"
 import { ComponentPreview } from "./component-preview"
 import { ComponentPropForm, type PropFormState, validateFormState } from "./component-prop-form"
+
+// ---------------------------------------------------------------------------
+// LiveConfigurePreview — reacts to formState for known component types
+// ---------------------------------------------------------------------------
+
+function LiveConfigurePreview({ def, formState }: { def: RepoComponentDef; formState: PropFormState }) {
+  const normalizedName = def.name.replace(/Adapter$/i, "").toLowerCase()
+
+  // DocsImage / image component — show actual image when src is provided
+  if (
+    (normalizedName === "docsimage" || normalizedName === "image") &&
+    typeof formState.src === "string" &&
+    formState.src
+  ) {
+    return (
+      <div className="w-full max-w-sm flex flex-col items-center gap-3">
+        <div className="w-full rounded-xl border border-studio-border overflow-hidden bg-studio-canvas-inset">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            key={formState.src as string}
+            src={formState.src}
+            alt={typeof formState.alt === "string" ? formState.alt : "Preview"}
+            className="w-full h-auto max-h-64 object-contain"
+          />
+        </div>
+        {typeof formState.alt === "string" && formState.alt && (
+          <p className="text-xs text-studio-fg-muted text-center italic">{formState.alt}</p>
+        )}
+        {typeof formState.caption === "string" && formState.caption && (
+          <p className="text-xs text-studio-fg/60 text-center">{formState.caption}</p>
+        )}
+      </div>
+    )
+  }
+
+  // DocsVideo / video component — show a placeholder video box with URL hint
+  if (
+    (normalizedName === "docsvideo" || normalizedName === "video") &&
+    typeof formState.src === "string" &&
+    formState.src
+  ) {
+    return (
+      <div className="w-full max-w-sm space-y-3">
+        <div className="w-full aspect-video rounded-xl border border-studio-border bg-studio-canvas-inset flex items-center justify-center">
+          <div className="flex flex-col items-center gap-2 text-center px-4">
+            <Play className="h-8 w-8 text-studio-accent/40" />
+            <p className="text-xs text-studio-fg-muted line-clamp-2 break-all">{formState.src}</p>
+          </div>
+        </div>
+        {typeof formState.title === "string" && formState.title && (
+          <p className="text-xs font-medium text-studio-fg text-center">{formState.title}</p>
+        )}
+      </div>
+    )
+  }
+
+  // Callout — show a styled live callout preview
+  if (normalizedName === "callout") {
+    const type = typeof formState.type === "string" ? formState.type : "info"
+    const title = typeof formState.title === "string" ? formState.title : ""
+
+    const typeStyles: Record<string, { bg: string; border: string; icon: string }> = {
+      info: { bg: "bg-studio-accent/5", border: "border-studio-accent/20", icon: "ℹ" },
+      warning: { bg: "bg-studio-attention/5", border: "border-studio-attention/20", icon: "⚠" },
+      error: { bg: "bg-studio-danger/5", border: "border-studio-danger/20", icon: "✕" },
+      tip: { bg: "bg-studio-success/5", border: "border-studio-success/20", icon: "✓" },
+    }
+    const s = typeStyles[type] ?? typeStyles.info
+
+    return (
+      <div className={cn("w-full max-w-sm rounded-xl border p-4 space-y-2", s.bg, s.border)}>
+        <div className="flex items-center gap-2">
+          <span className="text-sm">{s.icon}</span>
+          <p className="text-xs font-semibold text-studio-fg">
+            {title || type.charAt(0).toUpperCase() + type.slice(1)}
+          </p>
+        </div>
+        <div className="space-y-1.5 pl-5">
+          <div className="w-full h-1.5 rounded-full bg-studio-fg/10" />
+          <div className="w-4/5 h-1.5 rounded-full bg-studio-fg/10" />
+          <div className="w-3/5 h-1.5 rounded-full bg-studio-fg/10" />
+        </div>
+      </div>
+    )
+  }
+
+  // Default fallback — static wireframe preview
+  return <ComponentPreview name={def.name} className="shadow-none border-none bg-transparent" />
+}
 
 // ---------------------------------------------------------------------------
 // Recently-used localStorage helpers
@@ -220,15 +309,10 @@ export function ComponentInsertModal({
       return
     }
     try {
-      console.log("ComponentInsertModal.handleInsert - building node", { selectedDef: selectedDef.name, formState })
       const node = buildComponentNode(selectedDef, formState)
-      console.log("Built component node", { node })
       const jsx = serializeComponentNode(node)
-      console.log("Serialized JSX", { jsx })
-      console.log("Calling onInsert callback...")
       addRecentComponent(selectedDef.name)
       onInsert(jsx, selectedDef, node)
-      console.log("onInsert callback completed, closing modal")
       onOpenChange(false)
     } catch (error) {
       console.error("Error in handleInsert:", error)
@@ -380,8 +464,8 @@ export function ComponentInsertModal({
                   <div className="absolute inset-0 bg-grid-small-black/[0.02] dark:bg-grid-small-white/[0.02] pointer-events-none" />
                   <div className="w-full max-w-sm aspect-video relative z-10 flex items-center justify-center border border-dashed border-studio-border-muted rounded-xl bg-studio-canvas/50">
                     {selectedDef && (
-                      <div className="scale-125 transition-transform duration-500">
-                        <ComponentPreview name={selectedDef.name} className="shadow-none border-none bg-transparent" />
+                      <div className="transition-transform duration-500 flex items-center justify-center p-4 w-full">
+                        <LiveConfigurePreview def={selectedDef} formState={formState} />
                       </div>
                     )}
                   </div>
