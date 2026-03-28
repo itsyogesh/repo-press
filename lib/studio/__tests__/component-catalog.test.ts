@@ -235,4 +235,3 @@ describe("ALL_CATEGORIES", () => {
     expect(ALL_CATEGORIES).toContain("Custom")
   })
 })
-

@@ -1,5 +1,6 @@
 "use client"
 
+import { Info } from "lucide-react"
 import React, { useMemo } from "react"
 import { REAL_DOCS_SETUP_MEDIA } from "@/lib/repopress/standard-library"
 import { resolveStudioAssetUrl } from "@/lib/studio/media-resolve"
@@ -7,6 +8,33 @@ import { GenericJsxEditor } from "./jsx-component-descriptors"
 import { safeEvalJsExpression } from "./safe-jsx-prop-eval"
 import { useStudioAdapter } from "./studio-adapter-context"
 import { useStudio } from "./studio-context"
+
+// Components whose adapter versions depend on CSS variables / dark-mode tokens
+// that don't exist in the studio editor context, causing black/broken rendering.
+// Use these studio-safe versions instead.
+const STUDIO_SAFE_RENDERERS: Record<string, React.ComponentType<any>> = {
+  Callout: ({ children, type, title }: { children?: React.ReactNode; type?: string; title?: string }) => {
+    const styles: Record<string, { border: string; bg: string }> = {
+      info: { border: "border-studio-accent/20", bg: "bg-studio-accent/5" },
+      warning: { border: "border-studio-attention/20", bg: "bg-studio-attention/5" },
+      error: { border: "border-studio-danger/20", bg: "bg-studio-danger/5" },
+      tip: { border: "border-studio-success/20", bg: "bg-studio-success/5" },
+    }
+    const t = type ?? "info"
+    const s = styles[t] ?? styles.info
+    return (
+      <div className={`my-4 flex gap-3 rounded-lg border p-4 text-sm font-sans ${s.border} ${s.bg}`}>
+        <div className="mt-0.5 shrink-0">
+          <Info className="h-4 w-4 text-studio-accent" />
+        </div>
+        <div className="flex-1 min-w-0 text-foreground">
+          {title && <p className="font-semibold mb-1">{title}</p>}
+          {children ?? <span className="text-muted-foreground italic text-xs">Callout content</span>}
+        </div>
+      </div>
+    )
+  },
+}
 
 interface RepoJsxBridgeProps {
   mdastNode: any
@@ -63,19 +91,10 @@ export function RepoJsxBridge({ mdastNode, descriptor }: RepoJsxBridgeProps) {
   const { projectId, userId, selectedFilePath } = useStudio()
   const { adapter, components: componentSchema } = useStudioAdapter()
 
-  const Component = adapter?.components?.[descriptor.name]
+  // Prefer studio-safe renderer over adapter component when adapter version
+  // uses CSS variables or dark-mode tokens not available in the studio context.
+  const Component = STUDIO_SAFE_RENDERERS[descriptor.name] ?? adapter?.components?.[descriptor.name]
   const schema = componentSchema?.[descriptor.name]
-
-  // Debug: log available components
-  React.useEffect(() => {
-    if (descriptor.name === "DocsImage" || descriptor.name === "DocsVideo") {
-      console.log(`[RepoJsxBridge] ${descriptor.name}:`, {
-        found: !!Component,
-        adapterComponentNames: Object.keys(adapter?.components || {}).sort(),
-        schemaNames: Object.keys(componentSchema || {}).sort(),
-      })
-    }
-  }, [Component, descriptor.name, adapter, componentSchema])
 
   // Extract props from MDAST node attributes
   const { props, propWarnings } = useMemo(() => {
