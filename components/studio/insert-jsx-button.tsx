@@ -3,6 +3,7 @@
 import { insertJsx$, usePublisher } from "@mdxeditor/editor"
 import { Box, Plus } from "lucide-react"
 import * as React from "react"
+import { toast } from "sonner"
 import { buildEditorInsertOperation } from "@/lib/studio/component-insert-operation"
 import type { ComponentNode } from "@/lib/studio/component-node"
 import type { RepoComponentDef } from "@/lib/studio/component-registry"
@@ -32,13 +33,12 @@ export function InsertJsxButton({ owner, repo, branch, projectId, userId }: Inse
 
   const handleInsert = (_jsx: string, def: RepoComponentDef, node: ComponentNode) => {
     try {
-      console.log("ComponentInsertModal.onInsert called", { def: def.name, node })
       const operation = buildEditorInsertOperation(def, node)
-      console.log("Built editor operation", { operation, payload: operation.payload })
       insertJsx(operation.payload)
-      console.log("insertJsx$ published successfully")
+      toast.success(`${def.displayName ?? def.name} inserted`)
     } catch (error) {
       console.error("Error inserting JSX:", error)
+      toast.error("Failed to insert component")
     }
   }
 
