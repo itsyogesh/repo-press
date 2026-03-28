@@ -84,6 +84,9 @@ export default async function RepoPage({ params }: RepoPageProps) {
           detectedFramework: p.detectedFramework,
           contentType: p.contentType,
           frameworkSource: p.frameworkSource,
+          configProjectId: p.configProjectId,
+          configRemoved: p.configRemoved,
+          configRemovedAt: p.configRemovedAt,
           createdAt: p.createdAt,
           updatedAt: p.updatedAt,
         }))}
