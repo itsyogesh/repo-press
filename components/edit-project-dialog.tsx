@@ -1,7 +1,7 @@
 "use client"
 
 import { Loader2, Save } from "lucide-react"
-import { useState, useTransition } from "react"
+import { useEffect, useState, useTransition } from "react"
 import { toast } from "sonner"
 import { updateProjectInConfigAction } from "@/app/dashboard/[owner]/[repo]/config-actions"
 import { Button } from "./ui/button"
@@ -76,9 +76,15 @@ export function EditProjectDialog({
     setError(null)
   }
 
-  // Reset when dialog opens with a project
+  // Reset form when dialog opens or project identity changes.
+  // Radix controlled Dialog does NOT call onOpenChange(true) when the parent
+  // sets open=true, so we must use useEffect instead of relying on handleOpenChange.
+  useEffect(() => {
+    if (open && project) resetToProject(project)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, project?._id])
+
   const handleOpenChange = (o: boolean) => {
-    if (o && project) resetToProject(project)
     if (!o) setError(null)
     onOpenChange(o)
   }
