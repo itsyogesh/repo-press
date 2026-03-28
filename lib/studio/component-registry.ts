@@ -11,6 +11,10 @@ export type RepoComponentPropDef = {
   type: RepoComponentPropType
   label?: string
   default?: unknown
+  required?: boolean
+  description?: string
+  options?: string[]
+  placeholder?: string
 }
 
 /** Optional capability flags computed from a component definition. */
@@ -73,6 +77,10 @@ export type ConfigComponentEntry = {
     type: string
     label?: string
     default?: unknown
+    required?: boolean
+    description?: string
+    options?: string[]
+    placeholder?: string
   }>
   hasChildren?: boolean
   kind?: "flow" | "text"
@@ -98,8 +106,8 @@ export type AdapterComponentEntry = {
 const KNOWN_ADAPTER_FALLBACKS: Record<string, ConfigComponentEntry> = {
   DocsImage: {
     props: [
-      { name: "src", type: "image", label: "Source" },
-      { name: "alt", type: "string", label: "Alt text" },
+      { name: "src", type: "image", label: "Source", required: true },
+      { name: "alt", type: "string", label: "Alt text", description: "Accessible description for screen readers" },
       { name: "caption", type: "string", label: "Caption" },
     ],
     hasChildren: false,
@@ -109,7 +117,7 @@ const KNOWN_ADAPTER_FALLBACKS: Record<string, ConfigComponentEntry> = {
   },
   DocsVideo: {
     props: [
-      { name: "src", type: "string", label: "Video URL" },
+      { name: "src", type: "string", label: "Video URL", required: true, placeholder: "https://youtube.com/..." },
       { name: "title", type: "string", label: "Title" },
     ],
     hasChildren: false,
@@ -119,7 +127,7 @@ const KNOWN_ADAPTER_FALLBACKS: Record<string, ConfigComponentEntry> = {
   },
   Callout: {
     props: [
-      { name: "type", type: "string", label: "Type", default: "info" },
+      { name: "type", type: "string", label: "Type", default: "info", options: ["info", "warning", "error", "tip"] },
       { name: "title", type: "string", label: "Title" },
     ],
     hasChildren: true,
@@ -163,6 +171,10 @@ function normalizeProps(
     type: string
     label?: string
     default?: unknown
+    required?: boolean
+    description?: string
+    options?: string[]
+    placeholder?: string
   }>,
 ): RepoComponentPropDef[] {
   if (!raw || !Array.isArray(raw)) return []
@@ -171,6 +183,10 @@ function normalizeProps(
     type: normalizePropType(p.type),
     ...(p.label !== undefined ? { label: p.label } : {}),
     ...(p.default !== undefined ? { default: p.default } : {}),
+    ...(p.required !== undefined ? { required: p.required } : {}),
+    ...(p.description !== undefined ? { description: p.description } : {}),
+    ...(p.options !== undefined ? { options: p.options } : {}),
+    ...(p.placeholder !== undefined ? { placeholder: p.placeholder } : {}),
   }))
 }
 
