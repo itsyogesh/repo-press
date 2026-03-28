@@ -7,14 +7,20 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { ALL_CATEGORIES, buildComponentCatalog, deriveCategory, getComponentLabel, type ComponentCategory } from "@/lib/studio/component-catalog"
-import { cn } from "@/lib/utils"
+import {
+  ALL_CATEGORIES,
+  buildComponentCatalog,
+  type ComponentCategory,
+  deriveCategory,
+  getComponentLabel,
+} from "@/lib/studio/component-catalog"
 import { buildComponentNode, type ComponentNode } from "@/lib/studio/component-node"
 import type { RepoComponentDef } from "@/lib/studio/component-registry"
 import { buildComponentRegistry } from "@/lib/studio/component-registry"
 import { serializeComponentNode } from "@/lib/studio/component-serializer"
+import { cn } from "@/lib/utils"
 import { ComponentPreview } from "./component-preview"
-import { ComponentPropForm, validateFormState, type PropFormState } from "./component-prop-form"
+import { ComponentPropForm, type PropFormState, validateFormState } from "./component-prop-form"
 
 // ---------------------------------------------------------------------------
 // Recently-used localStorage helpers
