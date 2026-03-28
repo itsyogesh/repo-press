@@ -23,6 +23,7 @@ import { useMemo, useState, useTransition } from "react"
 import { toast } from "sonner"
 import { retrySyncAction } from "@/lib/sync-projects"
 import { AddProjectDialog } from "./add-project-dialog"
+import { DeleteProjectDialog } from "./delete-project-dialog"
 import { type EditableProject, EditProjectDialog } from "./edit-project-dialog"
 import { OrphanWarningCard } from "./orphan-warning-card"
 import { RawConfigEditor } from "./raw-config-editor"
@@ -88,6 +89,7 @@ export function RepoProjectHub({
   const [addOpen, setAddOpen] = useState(false)
   const [editProject, setEditProject] = useState<EditableProject | null>(null)
   const [removeProject, setRemoveProject] = useState<HubProject | null>(null)
+  const [deleteProject, setDeleteProject] = useState<HubProject | null>(null)
 
   const { activeProjects, orphanedProjects } = useMemo(() => {
     const active: HubProject[] = []
@@ -241,7 +243,7 @@ export function RepoProjectHub({
               <Card key={project._id} className="flex flex-col h-full">
                 <CardHeader className="pb-3 relative">
                   {/* Three-dot menu anchored to top-right — absolute so badges get the full row width */}
-                  {isWriter && project.frameworkSource === "config" && (
+                  {isWriter && (project.frameworkSource === "config" || canRemove) && (
                     <div className="absolute top-3 right-3">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
@@ -251,37 +253,48 @@ export function RepoProjectHub({
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem
-                            onSelect={() =>
-                              // Defer past the DropdownMenu close/focus-return cycle to avoid
-                              // the Radix aria-hidden race: the dropdown returns focus to its
-                              // trigger *before* it finishes cleanup, so opening a Dialog in
-                              // the same tick leaves aria-hidden stuck on the page container.
-                              setTimeout(
-                                () =>
-                                  setEditProject({
-                                    _id: project._id,
-                                    name: project.name,
-                                    contentRoot: project.contentRoot,
-                                    detectedFramework: project.detectedFramework,
-                                    contentType: project.contentType,
-                                    branch: project.branch,
-                                    configProjectId: project.configProjectId,
-                                  }),
-                                0,
-                              )
-                            }
-                          >
-                            <Pencil className="h-4 w-4 mr-2" />
-                            Edit
-                          </DropdownMenuItem>
-                          {canRemove && (
+                          {project.frameworkSource === "config" && (
+                            <DropdownMenuItem
+                              onSelect={() =>
+                                // Defer past the DropdownMenu close/focus-return cycle to avoid
+                                // the Radix aria-hidden race: the dropdown returns focus to its
+                                // trigger *before* it finishes cleanup, so opening a Dialog in
+                                // the same tick leaves aria-hidden stuck on the page container.
+                                setTimeout(
+                                  () =>
+                                    setEditProject({
+                                      _id: project._id,
+                                      name: project.name,
+                                      contentRoot: project.contentRoot,
+                                      detectedFramework: project.detectedFramework,
+                                      contentType: project.contentType,
+                                      branch: project.branch,
+                                      configProjectId: project.configProjectId,
+                                    }),
+                                  0,
+                                )
+                              }
+                            >
+                              <Pencil className="h-4 w-4 mr-2" />
+                              Edit
+                            </DropdownMenuItem>
+                          )}
+                          {project.frameworkSource === "config" && canRemove && (
                             <DropdownMenuItem
                               className="text-destructive focus:text-destructive"
                               onSelect={() => setTimeout(() => setRemoveProject(project), 0)}
                             >
                               <Trash2 className="h-4 w-4 mr-2" />
                               Remove
+                            </DropdownMenuItem>
+                          )}
+                          {project.frameworkSource !== "config" && canRemove && (
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              onSelect={() => setTimeout(() => setDeleteProject(project), 0)}
+                            >
+                              <Trash2 className="h-4 w-4 mr-2" />
+                              Delete
                             </DropdownMenuItem>
                           )}
                         </DropdownMenuContent>
@@ -412,6 +425,15 @@ export function RepoProjectHub({
         open={!!removeProject}
         onOpenChange={(open) => {
           if (!open) setRemoveProject(null)
+        }}
+        onSuccess={handleDialogSuccess}
+      />
+      <DeleteProjectDialog
+        project={deleteProject}
+        userId={actingUserId}
+        open={!!deleteProject}
+        onOpenChange={(open) => {
+          if (!open) setDeleteProject(null)
         }}
         onSuccess={handleDialogSuccess}
       />
