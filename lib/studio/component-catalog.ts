@@ -12,15 +12,41 @@ import type { RepoComponentDef } from "./component-registry"
 /** Catalog entry — same shape as `RepoComponentDef` (identity projection). */
 export type CatalogEntry = RepoComponentDef
 
+/** Options for {@link buildComponentCatalog}. */
+export type BuildComponentCatalogOptions = {
+  /**
+   * When `true`, the catalog is filtered to only components with
+   * `source === "config"` or `source === "merged"`.
+   *
+   * Set this when `repopress.config.json` explicitly lists at least one
+   * component — adapter-only auto-discovered components become noise for
+   * non-technical users writing blog posts.
+   */
+  hasProjectComponents?: boolean
+}
+
 /**
  * Build a sorted catalog array from the registry map.
  *
  * - Sorted alphabetically by display label.
  * - Display label: `displayName ?? name`.
  * - Description: passthrough from registry (may be `undefined`).
+ *
+ * When `options.hasProjectComponents` is `true`, only `"config"` and
+ * `"merged"` source components are included — adapter-only auto-discovered
+ * components are excluded.
  */
-export function buildComponentCatalog(registry: Record<string, RepoComponentDef>): CatalogEntry[] {
-  return Object.values(registry).sort((a, b) => {
+export function buildComponentCatalog(
+  registry: Record<string, RepoComponentDef>,
+  options?: BuildComponentCatalogOptions,
+): CatalogEntry[] {
+  const defs = Object.values(registry)
+
+  const filtered = options?.hasProjectComponents
+    ? defs.filter((def) => def.source === "config" || def.source === "merged")
+    : defs
+
+  return filtered.sort((a, b) => {
     const labelA = a.displayName ?? a.name
     const labelB = b.displayName ?? b.name
     return labelA.localeCompare(labelB)
