@@ -39,7 +39,7 @@ export const repoPressConfigSchema = z.object({
       preview: previewConfigSchema.optional(),
     })
     .optional(),
-  projects: z.array(projectConfigSchema).min(1, "At least one project must be defined in the config."),
+  projects: z.array(projectConfigSchema),
   plugins: z.record(z.string(), z.string()).optional(), // map of pluginId -> path
 })
 

@@ -59,8 +59,9 @@ export function updateProject(
 }
 
 /**
- * Removes a project from the config. Throws if removing the last project
- * (Zod enforces min 1).
+ * Removes a project from the config. Removing the last project produces
+ * a valid config with an empty projects array — callers should then delete
+ * the config file rather than committing an empty list.
  */
 export function removeProject(config: RepoPressConfig, configProjectId: string): RepoPressConfig {
   const filtered = config.projects.filter((p) => p.id !== configProjectId)
@@ -69,7 +70,6 @@ export function removeProject(config: RepoPressConfig, configProjectId: string):
   }
 
   const updated: RepoPressConfig = { ...config, projects: filtered }
-  // Zod will throw if projects.length < 1
   return repoPressConfigSchema.parse(updated)
 }
 

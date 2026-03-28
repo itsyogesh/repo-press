@@ -122,9 +122,10 @@ describe("removeProject", () => {
     expect(() => removeProject(config, "nonexistent")).toThrow('Project "nonexistent" not found in config')
   })
 
-  it("throws when removing the last project (Zod min 1)", () => {
+  it("allows removing the last project, returning an empty-projects config", () => {
     const config = makeConfig()
-    expect(() => removeProject(config, "docs")).toThrow()
+    const result = removeProject(config, "docs")
+    expect(result.projects).toHaveLength(0)
   })
 
   it("preserves other config fields", () => {
