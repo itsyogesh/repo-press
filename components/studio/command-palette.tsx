@@ -1,6 +1,6 @@
 "use client"
 
-import { Code, FileText, History, Home, Moon, PanelLeft, Save, Split, Sun } from "lucide-react"
+import { Code, FileText, History, Home, Moon, PanelLeft, Plus, Save, Split, Sun } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useTheme } from "next-themes"
 import * as React from "react"
@@ -19,6 +19,7 @@ import type { FileTreeNode } from "@/lib/github"
 import { buildHistoryHref } from "@/lib/studio/history-link"
 
 import { useStudio } from "./studio-context"
+import { useInsertComponentModal } from "./studio-layout"
 import { useViewMode } from "./view-mode-context"
 
 interface CommandPaletteProps {
@@ -83,6 +84,7 @@ export function CommandPalette({
   const [query, setQuery] = React.useState("")
   const { owner, repo, branch, projectId } = useStudio()
   const { viewMode, setViewMode, sidebarState, setSidebarState } = useViewMode()
+  const insertComponentModal = useInsertComponentModal()
   const { theme, setTheme } = useTheme()
   const router = useRouter()
 
@@ -242,6 +244,18 @@ export function CommandPalette({
         <CommandSeparator />
 
         <CommandGroup heading="Actions">
+          {insertComponentModal && (
+            <CommandItem
+              onSelect={() => {
+                insertComponentModal.setOpen(true)
+                onOpenChange(false)
+              }}
+            >
+              <Plus className="h-4 w-4" />
+              Insert component
+              <CommandShortcut>⌘J</CommandShortcut>
+            </CommandItem>
+          )}
           <CommandItem onSelect={() => handleSelect("save")}>
             <Save className="h-4 w-4" />
             Save draft
