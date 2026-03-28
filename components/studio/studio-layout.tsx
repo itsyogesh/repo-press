@@ -980,7 +980,9 @@ function StudioLayoutInner({
     const containerRect = container.getBoundingClientRect()
     const rootRect = root.getBoundingClientRect()
     const start = Math.max(0, rootRect.top - containerRect.top + container.scrollTop)
-    const end = Math.max(start, start + root.scrollHeight - container.clientHeight)
+    // Clamp end to maxScroll to avoid a small unmapped bottom gap when
+    // root.scrollHeight slightly underestimates due to padding/margin.
+    const end = Math.min(maxScroll, Math.max(start, start + root.scrollHeight - container.clientHeight))
 
     return {
       start,
@@ -1001,18 +1003,35 @@ function StudioLayoutInner({
         const sourceMetrics = getScrollSyncMetrics(sourceEl)
         const targetMetrics = getScrollSyncMetrics(targetEl)
 
-        const rawProgress =
-          sourceMetrics.scrollable > 0
-            ? (sourceEl.scrollTop - sourceMetrics.start) / sourceMetrics.scrollable
-            : sourceMetrics.maxScroll > 0
-              ? sourceEl.scrollTop / sourceMetrics.maxScroll
-              : 0
+        let desiredTargetTop: number
 
-        const progress = Math.min(1, Math.max(0, rawProgress))
-        const desiredTargetTop =
-          targetMetrics.scrollable > 0
-            ? targetMetrics.start + progress * targetMetrics.scrollable
-            : progress * targetMetrics.maxScroll
+        if (sourceEl.scrollTop < sourceMetrics.start) {
+          // ── Pre-body zone ────────────────────────────────────────────────
+          // The editor has a FrontmatterPanel above the MDX body; the preview
+          // has a metadata header (title/date/image) above PreviewRuntime.
+          // Proportionally map the source header scroll to the target header
+          // scroll so both panels stay aligned during header traversal.
+          // Without this, all positions in the pre-body zone would clamp to
+          // progress=0 and hard-snap the target to its body start offset.
+          const preProgress = sourceMetrics.start > 0 ? sourceEl.scrollTop / sourceMetrics.start : 0
+          desiredTargetTop = preProgress * targetMetrics.start
+        } else {
+          // ── Body zone ─────────────────────────────────────────────────────
+          // Both panels are past their respective header offsets.
+          // Fractionally map progress through each panel's scrollable body.
+          const rawProgress =
+            sourceMetrics.scrollable > 0
+              ? (sourceEl.scrollTop - sourceMetrics.start) / sourceMetrics.scrollable
+              : sourceMetrics.maxScroll > 0
+                ? sourceEl.scrollTop / sourceMetrics.maxScroll
+                : 0
+
+          const progress = Math.min(1, Math.max(0, rawProgress))
+          desiredTargetTop =
+            targetMetrics.scrollable > 0
+              ? targetMetrics.start + progress * targetMetrics.scrollable
+              : progress * targetMetrics.maxScroll
+        }
 
         const clampedTargetTop = Math.min(targetMetrics.maxScroll, Math.max(0, desiredTargetTop))
 
