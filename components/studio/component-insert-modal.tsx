@@ -46,16 +46,14 @@ function LiveConfigurePreview({ def, formState }: { def: RepoComponentDef; formS
       studio.selectedFilePath,
     )
     return (
-      <div className="w-full max-w-sm flex flex-col items-center gap-3">
-        <div className="w-full rounded-xl border border-studio-border overflow-hidden bg-studio-canvas-inset">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            key={resolvedSrc}
-            src={resolvedSrc}
-            alt={typeof formState.alt === "string" ? formState.alt : "Preview"}
-            className="w-full h-auto max-h-64 object-contain"
-          />
-        </div>
+      <div className="w-full flex flex-col items-center gap-2">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          key={resolvedSrc}
+          src={resolvedSrc}
+          alt={typeof formState.alt === "string" ? formState.alt : "Preview"}
+          className="w-full h-auto max-h-56 object-contain rounded-lg"
+        />
         {typeof formState.alt === "string" && formState.alt && (
           <p className="text-xs text-studio-fg-muted text-center italic">{formState.alt}</p>
         )}
