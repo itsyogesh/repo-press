@@ -395,3 +395,61 @@ describe("buildComponentRegistry — React function components", () => {
     expect(registry.ArrayComp.props).toEqual([])
   })
 })
+
+// ---------------------------------------------------------------------------
+// Extended prop fields
+// ---------------------------------------------------------------------------
+
+describe("extended prop fields", () => {
+  it("normalizes required field from config", () => {
+    const config: Record<string, ConfigComponentEntry> = {
+      TestComp: {
+        props: [
+          { name: "src", type: "image", label: "Source", required: true },
+          { name: "alt", type: "string", label: "Alt text" },
+        ],
+        hasChildren: false,
+        kind: "flow",
+      },
+    }
+    const registry = buildComponentRegistry(undefined, config)
+    expect(registry.TestComp.props[0].required).toBe(true)
+    expect(registry.TestComp.props[1].required).toBeUndefined()
+  })
+
+  it("normalizes options field from config", () => {
+    const config: Record<string, ConfigComponentEntry> = {
+      Callout: {
+        props: [
+          { name: "type", type: "string", label: "Type", options: ["info", "warning", "error", "tip"] },
+        ],
+        hasChildren: true,
+        kind: "flow",
+      },
+    }
+    const registry = buildComponentRegistry(undefined, config)
+    expect(registry.Callout.props[0].options).toEqual(["info", "warning", "error", "tip"])
+  })
+
+  it("normalizes description and placeholder from config", () => {
+    const config: Record<string, ConfigComponentEntry> = {
+      Hero: {
+        props: [
+          { name: "title", type: "string", label: "Title", description: "The main heading", placeholder: "Enter title..." },
+        ],
+        hasChildren: false,
+        kind: "flow",
+      },
+    }
+    const registry = buildComponentRegistry(undefined, config)
+    expect(registry.Hero.props[0].description).toBe("The main heading")
+    expect(registry.Hero.props[0].placeholder).toBe("Enter title...")
+  })
+
+  it("preserves required on known adapter fallbacks", () => {
+    const adapterComponents = { DocsImage: () => null }
+    const registry = buildComponentRegistry(adapterComponents as any, undefined)
+    const srcProp = registry.DocsImage.props.find((p: any) => p.name === "src")
+    expect(srcProp?.required).toBe(true)
+  })
+})

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest"
-import { buildComponentCatalog, getComponentLabel } from "../component-catalog"
+import {
+  ALL_CATEGORIES,
+  buildComponentCatalog,
+  deriveCategory,
+  getComponentLabel,
+  groupByCategory,
+} from "../component-catalog"
 import type { RepoComponentDef } from "../component-registry"
 
 // ---------------------------------------------------------------------------
@@ -97,5 +103,84 @@ describe("getComponentLabel", () => {
   it("falls back to name when displayName is absent", () => {
     const def = makeDef({ name: "DocsImage" })
     expect(getComponentLabel(def)).toBe("DocsImage")
+  })
+})
+
+// ---------------------------------------------------------------------------
+// deriveCategory
+// ---------------------------------------------------------------------------
+
+describe("deriveCategory", () => {
+  it("returns Media for components with media capability", () => {
+    const def = makeDef({ name: "DocsImage", props: [{ name: "src", type: "image" }], capabilities: { media: true } })
+    expect(deriveCategory(def)).toBe("Media")
+  })
+
+  it("returns Content for text-kind components", () => {
+    const def = makeDef({ name: "Badge", kind: "text", capabilities: { inline: true } })
+    expect(deriveCategory(def)).toBe("Content")
+  })
+
+  it("returns Layout for components with children and no media", () => {
+    const def = makeDef({ name: "Card", hasChildren: true })
+    expect(deriveCategory(def)).toBe("Layout")
+  })
+
+  it("returns Custom for flow components without media or children", () => {
+    const def = makeDef({ name: "Counter", hasChildren: false, props: [{ name: "start", type: "number" }] })
+    expect(deriveCategory(def)).toBe("Custom")
+  })
+
+  it("Media takes priority over Layout when component has both media and children", () => {
+    const def = makeDef({ name: "MediaCard", hasChildren: true, capabilities: { media: true } })
+    expect(deriveCategory(def)).toBe("Media")
+  })
+})
+
+// ---------------------------------------------------------------------------
+// groupByCategory
+// ---------------------------------------------------------------------------
+
+describe("groupByCategory", () => {
+  it("groups catalog entries by derived category", () => {
+    const entries = [
+      makeDef({ name: "DocsImage", capabilities: { media: true } }),
+      makeDef({ name: "Card", hasChildren: true }),
+      makeDef({ name: "Badge", kind: "text", capabilities: { inline: true } }),
+      makeDef({ name: "Counter", hasChildren: false }),
+    ]
+    const groups = groupByCategory(entries)
+    expect(groups.get("Media")).toHaveLength(1)
+    expect(groups.get("Layout")).toHaveLength(1)
+    expect(groups.get("Content")).toHaveLength(1)
+    expect(groups.get("Custom")).toHaveLength(1)
+  })
+
+  it("returns empty map for empty catalog", () => {
+    const groups = groupByCategory([])
+    expect(groups.size).toBe(0)
+  })
+
+  it("groups multiple components in same category", () => {
+    const entries = [
+      makeDef({ name: "DocsImage", capabilities: { media: true } }),
+      makeDef({ name: "DocsVideo", capabilities: { media: true } }),
+    ]
+    const groups = groupByCategory(entries)
+    expect(groups.get("Media")).toHaveLength(2)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// ALL_CATEGORIES
+// ---------------------------------------------------------------------------
+
+describe("ALL_CATEGORIES", () => {
+  it("contains exactly 4 categories", () => {
+    expect(ALL_CATEGORIES).toHaveLength(4)
+    expect(ALL_CATEGORIES).toContain("Media")
+    expect(ALL_CATEGORIES).toContain("Layout")
+    expect(ALL_CATEGORIES).toContain("Content")
+    expect(ALL_CATEGORIES).toContain("Custom")
   })
 })
