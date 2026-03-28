@@ -14,11 +14,13 @@ const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { projectId, title, description } = body as {
+    const { projectId, title, description, publishMode } = body as {
       projectId: string
       title?: string
       description?: string
+      publishMode?: "reuse-current" | "create-new"
     }
+    const publishModeUsed = publishMode === "create-new" ? "create-new" : "reuse-current"
 
     if (!projectId) {
       return NextResponse.json({ error: "Missing projectId" }, { status: 400 })
@@ -197,14 +199,43 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No valid operations to publish" }, { status: 400 })
     }
 
-    // Branch reuse strategy: If an active PR already exists for this project,
-    // reuse its branch to update the existing PR rather than creating a new one.
-    // This is the industry-standard best practice for git-based CMSes (like TinaCMS, Statamic).
-    // Benefits: Single source of truth, preserved review history, clean commit history.
-    let publishBranch = await convex.query(api.publishBranches.getActiveForProject, {
+    // By default, reuse the current active lane. Callers can opt into a fresh lane/PR.
+    let publishBranch = await convex.query(api.publishBranches.getCurrentForProject, {
       projectId: project._id,
       ...queryAuth,
     })
+
+    if (publishModeUsed === "create-new") {
+      const openPublishBranches = await convex.query(api.publishBranches.listOpenForProject, {
+        projectId: project._id,
+        ...queryAuth,
+      })
+      const operationPaths = new Set(operations.map((op) => op.path))
+      const overlaps = openPublishBranches.flatMap((branch) =>
+        (branch.committedFilePaths ?? [])
+          .filter((path) => operationPaths.has(path))
+          .map((path) => ({
+            path,
+            publishBranchId: branch._id,
+            branchName: branch.branchName,
+            prNumber: branch.prNumber,
+            prUrl: branch.prUrl,
+          })),
+      )
+
+      if (overlaps.length > 0) {
+        return NextResponse.json({ ok: false, overlaps }, { status: 409 })
+      }
+
+      if (publishBranch) {
+        await convex.mutation(api.publishBranches.deactivateCurrentForProject, {
+          projectId: project._id,
+          userId: actingUserId,
+          projectAccessToken,
+        })
+        publishBranch = null
+      }
+    }
 
     // If no active branch exists, create a new publish branch with timestamp-based name.
     // Branch naming: repopress/${baseBranch}/${timestamp} e.g., repopress/main/1710681600000
@@ -219,7 +250,7 @@ export async function POST(request: Request) {
         branchName,
         baseBranch,
       })
-      publishBranch = await convex.query(api.publishBranches.getActiveForProject, {
+      publishBranch = await convex.query(api.publishBranches.getCurrentForProject, {
         projectId: project._id,
         ...queryAuth,
       })
@@ -270,6 +301,7 @@ export async function POST(request: Request) {
       await convex.mutation(api.explorerOps.markCommitted, {
         ids: pendingOps.map((op) => op._id),
         commitSha,
+        publishBranchId: publishBranch._id,
         userId: actingUserId,
         projectAccessToken,
       })
@@ -279,6 +311,7 @@ export async function POST(request: Request) {
       await convex.mutation(api.mediaOps.markCommitted, {
         ids: pendingMediaOps.map((op) => op._id),
         commitSha,
+        publishBranchId: publishBranch._id,
         userId: actingUserId,
         projectAccessToken,
       })
@@ -315,6 +348,7 @@ export async function POST(request: Request) {
       ok: true,
       prUrl,
       prNumber,
+      publishModeUsed,
       commitSha,
       summary: parts.join(", "),
       media: {

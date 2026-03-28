@@ -38,9 +38,62 @@ vi.mock("@/lib/github-permissions", () => ({
 process.env.NEXT_PUBLIC_CONVEX_URL = process.env.NEXT_PUBLIC_CONVEX_URL || "https://example.convex.cloud"
 
 import { fetchAuthQuery, getGitHubToken, getPatAuthUserId } from "@/lib/auth-server"
-import { batchCommit, createGitHubClient, getFile } from "@/lib/github"
+import { batchCommit, createBranch, createGitHubClient, createPullRequest, getFile } from "@/lib/github"
 import { getRepoRole } from "@/lib/github-permissions"
 import { POST } from "../route"
+
+const baseProject = {
+  _id: "project_123",
+  userId: "user_owner",
+  repoOwner: "acme",
+  repoName: "docs-site",
+  branch: "main",
+  contentRoot: "content",
+}
+
+function mockPublishQueries({
+  pendingOps = [],
+  dirtyDocs = [
+    {
+      _id: "doc_1",
+      filePath: "posts/hello.mdx",
+      body: "# Hello",
+      frontmatter: { title: "Hello" },
+    },
+  ],
+  pendingMediaOps = [],
+  currentPublishBranch = {
+    _id: "publish_branch_1",
+    branchName: "repopress/main/1234",
+    prNumber: 42,
+    prUrl: "https://github.com/acme/docs-site/pull/42",
+  },
+  openPublishBranches,
+  refreshedPublishBranch,
+}: {
+  pendingOps?: Array<Record<string, unknown>>
+  dirtyDocs?: Array<Record<string, unknown>>
+  pendingMediaOps?: Array<Record<string, unknown>>
+  currentPublishBranch?: Record<string, unknown> | null
+  openPublishBranches?: Array<Record<string, unknown>>
+  refreshedPublishBranch?: Record<string, unknown>
+}) {
+  convexQueryMock.mockReset()
+  convexQueryMock
+    .mockResolvedValueOnce(baseProject)
+    .mockResolvedValueOnce(pendingOps)
+    .mockResolvedValueOnce(dirtyDocs)
+    .mockResolvedValueOnce(pendingMediaOps)
+    .mockResolvedValueOnce(currentPublishBranch)
+
+  if (openPublishBranches !== undefined) {
+    convexQueryMock.mockResolvedValueOnce(openPublishBranches)
+  }
+
+  if (refreshedPublishBranch !== undefined) {
+    convexQueryMock.mockResolvedValueOnce(refreshedPublishBranch)
+  }
+}
 
 function buildRequest(body: Record<string, unknown>) {
   return new Request("http://localhost/api/github/publish-ops", {
@@ -70,32 +123,13 @@ describe("POST /api/github/publish-ops", () => {
     } as never)
     vi.mocked(batchCommit).mockResolvedValue({ commitSha: "commit-sha-1" } as never)
     vi.mocked(getFile).mockResolvedValue({ sha: "new-sha-1" } as never)
+    vi.mocked(createBranch).mockResolvedValue(undefined as never)
+    vi.mocked(createPullRequest).mockResolvedValue({
+      number: 99,
+      htmlUrl: "https://github.com/acme/docs-site/pull/99",
+    } as never)
 
-    convexQueryMock
-      .mockResolvedValueOnce({
-        _id: "project_123",
-        userId: "user_owner",
-        repoOwner: "acme",
-        repoName: "docs-site",
-        branch: "main",
-        contentRoot: "content",
-      })
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([
-        {
-          _id: "doc_1",
-          filePath: "posts/hello.mdx",
-          body: "# Hello",
-          frontmatter: { title: "Hello" },
-        },
-      ])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce({
-        _id: "publish_branch_1",
-        branchName: "repopress/main/1234",
-        prNumber: 42,
-        prUrl: "https://github.com/acme/docs-site/pull/42",
-      })
+    mockPublishQueries({})
   })
 
   afterEach(() => {
@@ -177,5 +211,208 @@ describe("POST /api/github/publish-ops", () => {
     expect(response.status).toBe(200)
     expect(payload.ok).toBe(true)
     expect(batchCommit).toHaveBeenCalled()
+  })
+
+  it("reuses the current PR by default when publishMode is omitted", async () => {
+    const response = await POST(
+      buildRequest({
+        projectId: "project_123",
+      }),
+    )
+    const payload = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(payload.ok).toBe(true)
+    expect(payload.publishModeUsed).toBe("reuse-current")
+    expect(createBranch).not.toHaveBeenCalled()
+    expect(createPullRequest).not.toHaveBeenCalled()
+    expect(convexMutationMock).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ projectId: "project_123" }),
+    )
+  })
+
+  it("creates a new PR when publishMode is create-new", async () => {
+    mockPublishQueries({
+      pendingOps: [],
+      dirtyDocs: [
+        {
+          _id: "doc_1",
+          filePath: "posts/hello.mdx",
+          body: "# Hello",
+          frontmatter: { title: "Hello" },
+        },
+      ],
+      pendingMediaOps: [],
+      currentPublishBranch: {
+        _id: "publish_branch_1",
+        branchName: "repopress/main/1234",
+        prNumber: 42,
+        prUrl: "https://github.com/acme/docs-site/pull/42",
+        committedFilePaths: ["content/posts/existing.mdx"],
+      },
+      openPublishBranches: [
+        {
+          _id: "publish_branch_1",
+          branchName: "repopress/main/1234",
+          prNumber: 42,
+          committedFilePaths: ["content/posts/existing.mdx"],
+        },
+      ],
+      refreshedPublishBranch: {
+        _id: "publish_branch_2",
+        branchName: "repopress/main/5678",
+        prNumber: undefined,
+        prUrl: undefined,
+        committedFilePaths: [],
+      },
+    })
+
+    const response = await POST(
+      buildRequest({
+        projectId: "project_123",
+        publishMode: "create-new",
+      }),
+    )
+    const payload = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(payload.ok).toBe(true)
+    expect(payload.publishModeUsed).toBe("create-new")
+    expect(createBranch).toHaveBeenCalledTimes(1)
+    expect(createPullRequest).toHaveBeenCalledTimes(1)
+    expect(convexMutationMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ projectId: "project_123" }),
+    )
+  })
+
+  it("returns 409 when create-new overlaps files tracked by another open PR", async () => {
+    vi.mocked(getFile).mockResolvedValue(null as never)
+    mockPublishQueries({
+      pendingOps: [
+        {
+          _id: "explorer_op_1",
+          opType: "create",
+          filePath: "posts/new-lane.mdx",
+          initialBody: "# New lane",
+          initialFrontmatter: { title: "New lane" },
+        },
+      ],
+      dirtyDocs: [],
+      pendingMediaOps: [],
+      currentPublishBranch: {
+        _id: "publish_branch_1",
+        branchName: "repopress/main/1234",
+        prNumber: 42,
+        prUrl: "https://github.com/acme/docs-site/pull/42",
+        committedFilePaths: ["content/posts/existing.mdx"],
+      },
+      openPublishBranches: [
+        {
+          _id: "publish_branch_1",
+          branchName: "repopress/main/1234",
+          prNumber: 42,
+          committedFilePaths: ["content/posts/existing.mdx"],
+        },
+        {
+          _id: "publish_branch_9",
+          branchName: "repopress/main/9999",
+          prNumber: 77,
+          prUrl: "https://github.com/acme/docs-site/pull/77",
+          committedFilePaths: ["content/posts/new-lane.mdx"],
+        },
+      ],
+    })
+
+    const response = await POST(
+      buildRequest({
+        projectId: "project_123",
+        publishMode: "create-new",
+      }),
+    )
+    const payload = await response.json()
+
+    expect(response.status).toBe(409)
+    expect(payload.ok).toBe(false)
+    expect(createBranch).not.toHaveBeenCalled()
+    expect(createPullRequest).not.toHaveBeenCalled()
+    expect(batchCommit).not.toHaveBeenCalled()
+  })
+
+  it("marks committed explorer and media ops with the new publishBranchId", async () => {
+    vi.mocked(getFile).mockResolvedValue(null as never)
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      arrayBuffer: vi.fn().mockResolvedValue(Uint8Array.from([1, 2, 3]).buffer),
+    } as never)
+
+    mockPublishQueries({
+      pendingOps: [
+        {
+          _id: "explorer_op_1",
+          opType: "create",
+          filePath: "posts/new-lane.mdx",
+          initialBody: "# New lane",
+          initialFrontmatter: { title: "New lane" },
+        },
+      ],
+      dirtyDocs: [],
+      pendingMediaOps: [
+        {
+          _id: "media_op_1",
+          repoPath: "/public/uploads/hero.png",
+          sourceType: "blob",
+          blobUrl: "https://blob.example/hero.png",
+        },
+      ],
+      currentPublishBranch: {
+        _id: "publish_branch_1",
+        branchName: "repopress/main/1234",
+        prNumber: 42,
+        prUrl: "https://github.com/acme/docs-site/pull/42",
+        committedFilePaths: ["content/posts/existing.mdx"],
+      },
+      openPublishBranches: [
+        {
+          _id: "publish_branch_1",
+          branchName: "repopress/main/1234",
+          prNumber: 42,
+          committedFilePaths: ["content/posts/existing.mdx"],
+        },
+      ],
+      refreshedPublishBranch: {
+        _id: "publish_branch_2",
+        branchName: "repopress/main/5678",
+        prNumber: undefined,
+        prUrl: undefined,
+        committedFilePaths: [],
+      },
+    })
+
+    const response = await POST(
+      buildRequest({
+        projectId: "project_123",
+        publishMode: "create-new",
+      }),
+    )
+
+    expect(response.status).toBe(200)
+    expect(convexMutationMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        ids: ["explorer_op_1"],
+        commitSha: "commit-sha-1",
+        publishBranchId: "publish_branch_2",
+      }),
+    )
+    expect(convexMutationMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        ids: ["media_op_1"],
+        commitSha: "commit-sha-1",
+        publishBranchId: "publish_branch_2",
+      }),
+    )
   })
 })
