@@ -147,6 +147,8 @@ interface ComponentInsertModalProps {
   adapterComponents?: Record<string, any> | null
   /** Project config components (from repopress.config.json). */
   projectComponents?: Record<string, any> | null
+  /** Detected framework (e.g. "fumadocs", "nextra", "astro") — used for fallback component schemas. */
+  framework?: string
   /** Optional repo context for image uploads in prop form. */
   repoContext?: {
     projectId: string
@@ -185,13 +187,14 @@ export function ComponentInsertModal({
   onOpenChange,
   adapterComponents,
   projectComponents,
+  framework,
   repoContext,
   onInsert,
 }: ComponentInsertModalProps) {
   // -- Registry & catalog (recomputed when inputs change) --
   const registry = React.useMemo(
-    () => buildComponentRegistry(adapterComponents, projectComponents),
-    [adapterComponents, projectComponents],
+    () => buildComponentRegistry(adapterComponents, projectComponents, framework),
+    [adapterComponents, projectComponents, framework],
   )
   const catalog = React.useMemo(() => {
     const hasProjectComponents = !!projectComponents && Object.keys(projectComponents).length > 0

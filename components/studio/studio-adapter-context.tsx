@@ -9,6 +9,7 @@ interface StudioAdapterContextValue {
   adapterError: string | null
   adapterDiagnostics: string[]
   components: Record<string, any> | undefined
+  detectedFramework?: string
 }
 
 const StudioAdapterContext = React.createContext<StudioAdapterContextValue | null>(null)
