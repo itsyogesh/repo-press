@@ -233,9 +233,9 @@ export function RepoProjectHub({
       {activeProjects.length > 0 ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {activeProjects.map((project) => (
-            <Card key={project._id} className="flex flex-col h-full">
+            <Card key={project._id} className="flex flex-col h-full overflow-hidden">
               <CardHeader className="pb-3">
-                <div className="flex items-start justify-between">
+                <div className="flex items-start justify-between gap-2">
                   <div className="space-y-1 min-w-0 flex-1">
                     <CardTitle className="text-lg truncate">{project.name}</CardTitle>
                     <CardDescription className="flex items-center gap-2 text-xs">
@@ -253,7 +253,7 @@ export function RepoProjectHub({
                       )}
                     </CardDescription>
                   </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
+                  <div className="flex items-center gap-1 shrink-0 relative z-10">
                     {project.detectedFramework && project.detectedFramework !== "custom" && (
                       <Badge variant="secondary" className="text-[10px]">
                         {project.detectedFramework}
@@ -265,23 +265,31 @@ export function RepoProjectHub({
                     {isWriter && project.frameworkSource === "config" && (
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-7 w-7 -mr-1">
+                          <Button variant="ghost" size="icon" className="h-7 w-7 ml-0.5">
                             <MoreHorizontal className="h-4 w-4" />
                             <span className="sr-only">Project actions</span>
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem
-                            onClick={() =>
-                              setEditProject({
-                                _id: project._id,
-                                name: project.name,
-                                contentRoot: project.contentRoot,
-                                detectedFramework: project.detectedFramework,
-                                contentType: project.contentType,
-                                branch: project.branch,
-                                configProjectId: project.configProjectId,
-                              })
+                            onSelect={() =>
+                              // Defer past the DropdownMenu close/focus-return cycle to avoid
+                              // the Radix aria-hidden race: the dropdown returns focus to its
+                              // trigger *before* it finishes cleanup, so opening a Dialog in
+                              // the same tick leaves aria-hidden stuck on the page container.
+                              setTimeout(
+                                () =>
+                                  setEditProject({
+                                    _id: project._id,
+                                    name: project.name,
+                                    contentRoot: project.contentRoot,
+                                    detectedFramework: project.detectedFramework,
+                                    contentType: project.contentType,
+                                    branch: project.branch,
+                                    configProjectId: project.configProjectId,
+                                  }),
+                                0,
+                              )
                             }
                           >
                             <Pencil className="h-4 w-4 mr-2" />
@@ -290,7 +298,7 @@ export function RepoProjectHub({
                           {role === "owner" && (
                             <DropdownMenuItem
                               className="text-destructive focus:text-destructive"
-                              onClick={() => setRemoveProject(project)}
+                              onSelect={() => setTimeout(() => setRemoveProject(project), 0)}
                             >
                               <Trash2 className="h-4 w-4 mr-2" />
                               Remove

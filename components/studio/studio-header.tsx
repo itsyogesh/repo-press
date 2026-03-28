@@ -198,7 +198,7 @@ export function StudioHeader({
               )}
               {sidebarState === "expanded" ? "Collapse to Rail" : "Expand Sidebar"}
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setShowShortcuts(true)}>
+            <DropdownMenuItem onSelect={() => setTimeout(() => setShowShortcuts(true), 0)}>
               <Keyboard className="h-4 w-4 mr-2" />
               Keyboard Shortcuts
             </DropdownMenuItem>
@@ -228,7 +228,11 @@ export function StudioHeader({
         </DropdownMenu>
 
         <Dialog open={showShortcuts} onOpenChange={setShowShortcuts}>
-          <DialogContent className="max-w-md">
+          <DialogContent
+            className="max-w-md"
+            // Same Radix aria-hidden race fix — opened from DropdownMenuItem, see edit-project-dialog.tsx for details.
+            onCloseAutoFocus={(e) => e.preventDefault()}
+          >
             <DialogHeader>
               <DialogTitle>Keyboard Shortcuts</DialogTitle>
               <DialogDescription>Use shortcuts to navigate and edit without leaving the keyboard.</DialogDescription>

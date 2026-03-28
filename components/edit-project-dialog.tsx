@@ -121,7 +121,14 @@ export function EditProjectDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent
+        className="sm:max-w-lg"
+        // Prevent Radix from restoring focus to the dropdown trigger after close.
+        // When this dialog is opened via a DropdownMenuItem, the trigger no longer
+        // holds meaningful focus context — auto-focus return causes aria-hidden to
+        // persist on the page container, freezing the UI.
+        onCloseAutoFocus={(e) => e.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle>Edit Project</DialogTitle>
           <DialogDescription>

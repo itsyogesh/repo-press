@@ -83,7 +83,11 @@ export function RemoveProjectDialog({
         onOpenChange(o)
       }}
     >
-      <DialogContent className="sm:max-w-md">
+      <DialogContent
+        className="sm:max-w-md"
+        // Same Radix aria-hidden race fix as EditProjectDialog — see that file for details.
+        onCloseAutoFocus={(e) => e.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-destructive">
             <AlertTriangle className="h-5 w-5" />
