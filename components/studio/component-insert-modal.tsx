@@ -1,7 +1,7 @@
 "use client"
 
-import { AnimatePresence, motion, type Variants } from "framer-motion"
-import { ChevronDown, ChevronLeft, Code, Search } from "lucide-react"
+import { AnimatePresence, motion } from "framer-motion"
+import { Box, ChevronDown, ChevronLeft, Code, FileText, Image, Layout, Search, X } from "lucide-react"
 import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
@@ -163,6 +163,16 @@ export function ComponentInsertModal({
     return result
   }, [catalog, searchQuery, activeCategory])
 
+  // Main catalog — excludes recently-used items when the recently-used section
+  // is visible, so components don't appear in both sections simultaneously.
+  const mainCatalog = React.useMemo(() => {
+    if (recentCatalog.length === 0 || searchQuery || activeCategory !== "All") {
+      return filteredCatalog
+    }
+    const recentNameSet = new Set(recentCatalog.map((c) => c.name))
+    return filteredCatalog.filter((c) => !recentNameSet.has(c.name))
+  }, [filteredCatalog, recentCatalog, searchQuery, activeCategory])
+
   // Reset state when modal opens/closes
   React.useEffect(() => {
     if (open) {
@@ -236,7 +246,10 @@ export function ComponentInsertModal({
   // -- Render --
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-4xl h-[80vh] flex flex-col p-0 overflow-hidden gap-0 border-studio-border bg-studio-canvas shadow-2xl">
+      <DialogContent
+        showCloseButton={false}
+        className="sm:max-w-4xl h-[80vh] flex flex-col p-0 overflow-hidden gap-0 border-studio-border bg-studio-canvas shadow-2xl"
+      >
         <AnimatePresence mode="wait">
           {step === "pick" ? (
             <motion.div
@@ -256,15 +269,26 @@ export function ComponentInsertModal({
                       Select a component to extend your document.
                     </DialogDescription>
                   </div>
-                  <div className="relative w-full sm:w-[280px]">
-                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-studio-fg-muted" />
-                    <Input
-                      placeholder="Search..."
-                      className="h-8 pl-8 pr-3 text-xs bg-studio-canvas border-studio-border-muted focus:ring-1 focus:ring-studio-accent/50"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      autoFocus
-                    />
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <div className="relative flex-1 sm:w-[280px]">
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-studio-fg-muted" />
+                      <Input
+                        placeholder="Search..."
+                        className="h-8 pl-8 pr-3 text-xs bg-studio-canvas border-studio-border-muted focus:ring-1 focus:ring-studio-accent/50"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        autoFocus
+                      />
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 shrink-0"
+                      onClick={() => onOpenChange(false)}
+                    >
+                      <X className="h-4 w-4" />
+                      <span className="sr-only">Close</span>
+                    </Button>
                   </div>
                 </div>
               </div>
@@ -294,7 +318,15 @@ export function ComponentInsertModal({
                     <CatalogGallery catalog={recentCatalog} onSelect={handleSelectComponent} />
                   </div>
                 )}
-                <CatalogGallery catalog={filteredCatalog} onSelect={handleSelectComponent} />
+                {/* Suppress main grid when all components are already shown in Recently used */}
+                {(mainCatalog.length > 0 || recentCatalog.length === 0 || searchQuery || activeCategory !== "All") && (
+                  <>
+                    {recentCatalog.length > 0 && !searchQuery && activeCategory === "All" && mainCatalog.length > 0 && (
+                      <h4 className="text-xs font-medium text-muted-foreground mb-2 px-1">All components</h4>
+                    )}
+                    <CatalogGallery catalog={mainCatalog} onSelect={handleSelectComponent} />
+                  </>
+                )}
               </ScrollArea>
             </motion.div>
           ) : (
@@ -421,25 +453,59 @@ export function ComponentInsertModal({
 // Catalog gallery sub-component
 // ---------------------------------------------------------------------------
 
-const galleryVariants: Variants = {
-  hidden: { opacity: 1 },
-  visible: {
-    transition: {
-      staggerChildren: 0.03,
-    },
+const categoryStyles = {
+  Media: {
+    icon: Image,
+    bg: "bg-studio-accent-muted",
+    iconColor: "text-studio-accent",
+    border: "border-studio-accent/20",
   },
-}
+  Content: {
+    icon: FileText,
+    bg: "bg-studio-success-muted",
+    iconColor: "text-studio-success",
+    border: "border-studio-success/20",
+  },
+  Layout: {
+    icon: Layout,
+    bg: "bg-studio-attention-muted",
+    iconColor: "text-studio-attention",
+    border: "border-studio-attention/20",
+  },
+  Custom: {
+    icon: Box,
+    bg: "bg-studio-danger-muted",
+    iconColor: "text-studio-danger",
+    border: "border-studio-danger/20",
+  },
+} as const
 
-const itemVariants: Variants = {
-  hidden: { opacity: 0, y: 5 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: {
-      duration: 0.2,
-      ease: "easeOut",
-    },
-  },
+function ComponentCard({ def, onSelect }: { def: RepoComponentDef; onSelect: (def: RepoComponentDef) => void }) {
+  const category = deriveCategory(def)
+  const label = getComponentLabel(def)
+  const style = categoryStyles[category]
+  const Icon = style.icon
+
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(def)}
+      className="group flex flex-col gap-3 p-3.5 rounded-xl border border-studio-border bg-studio-canvas hover:border-studio-accent/40 hover:bg-studio-canvas-inset/50 transition-all duration-150 text-left outline-none focus-visible:ring-2 focus-visible:ring-studio-accent"
+    >
+      <div className={cn("w-10 h-10 rounded-lg border flex items-center justify-center", style.bg, style.border)}>
+        <Icon className={cn("h-5 w-5", style.iconColor)} />
+      </div>
+      <div className="space-y-0.5 min-w-0">
+        <p className="text-xs font-semibold text-studio-fg leading-tight truncate">{label}</p>
+        {def.description && (
+          <p className="text-[11px] text-studio-fg-muted leading-snug line-clamp-2">{def.description}</p>
+        )}
+        <p className="text-[10px] text-studio-fg/30 mt-1">
+          {def.props.length} {def.props.length === 1 ? "prop" : "props"}
+        </p>
+      </div>
+    </button>
+  )
 }
 
 function CatalogGallery({
@@ -449,65 +515,22 @@ function CatalogGallery({
   catalog: RepoComponentDef[]
   onSelect: (def: RepoComponentDef) => void
 }) {
-  // Re-trigger stagger on search results update
-  const catalogKey = React.useMemo(() => catalog.map((c) => c.name).join(","), [catalog])
-
   if (catalog.length === 0) {
     return (
-      <div className="py-12 text-center">
-        <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-studio-canvas-inset border border-studio-border-muted mb-4">
-          <Search className="h-6 w-6 text-studio-fg-muted" />
-        </div>
-        <p className="text-sm font-medium text-studio-fg">No components found</p>
-        <p className="text-xs text-studio-fg-muted mt-1">Try a different search term or check your config.</p>
+      <div className="flex flex-col items-center justify-center py-12 text-center">
+        <Box className="h-8 w-8 text-studio-fg/20 mb-3" />
+        <p className="text-sm text-studio-fg-muted">No components found</p>
+        <p className="text-xs text-studio-fg-muted/60 mt-1">Try a different search term or check your config.</p>
       </div>
     )
   }
 
   return (
-    <motion.div
-      key={catalogKey}
-      variants={galleryVariants}
-      initial="hidden"
-      animate="visible"
-      className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3"
-    >
+    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
       {catalog.map((def) => (
-        <motion.div key={def.name} variants={itemVariants}>
-          <button
-            type="button"
-            onClick={() => onSelect(def)}
-            className="w-full group relative flex flex-col gap-2 p-2 rounded-xl border border-studio-border-muted bg-studio-canvas hover:border-studio-accent/30 hover:bg-studio-canvas-inset transition-all outline-none focus-visible:ring-2 focus-visible:ring-studio-accent text-left shadow-sm hover:shadow-md"
-          >
-            <div className="aspect-[4/3] rounded-lg border border-studio-border-muted/30 bg-studio-canvas-inset/20 overflow-hidden relative flex items-center justify-center studio-transition group-hover:bg-studio-canvas-inset/40">
-              <ComponentPreview name={def.name} className="scale-90" />
-              {/* Corner accent for technical feel */}
-              <div className="absolute top-1.5 left-1.5 w-1 h-1 rounded-full bg-studio-accent/10 group-hover:bg-studio-accent/30 studio-transition" />
-              {/* Props indicator badge */}
-              {def.props && def.props.length > 0 && (
-                <div className="absolute bottom-1.5 right-1.5 bg-studio-accent/20 border border-studio-accent/40 rounded-full px-2 py-0.5 text-[9px] font-medium text-studio-accent group-hover:bg-studio-accent/30 transition-colors">
-                  {def.props.length}
-                </div>
-              )}
-            </div>
-            <div className="px-1 pb-1 min-w-0">
-              <div className="text-[13px] font-bold text-studio-fg truncate leading-tight">
-                {getComponentLabel(def)}
-              </div>
-              {def.description ? (
-                <div className="text-[11px] text-studio-fg-muted truncate mt-0.5 opacity-60 group-hover:opacity-100 transition-opacity">
-                  {def.description}
-                </div>
-              ) : (
-                <div className="text-[10px] font-mono text-studio-fg-muted/40 truncate mt-0.5">
-                  &lt;{def.name} /&gt;
-                </div>
-              )}
-            </div>
-          </button>
-        </motion.div>
+        <ComponentCard key={def.name} def={def} onSelect={onSelect} />
       ))}
-    </motion.div>
+    </div>
   )
 }
 
