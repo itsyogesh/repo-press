@@ -421,9 +421,7 @@ describe("extended prop fields", () => {
   it("normalizes options field from config", () => {
     const config: Record<string, ConfigComponentEntry> = {
       Callout: {
-        props: [
-          { name: "type", type: "string", label: "Type", options: ["info", "warning", "error", "tip"] },
-        ],
+        props: [{ name: "type", type: "string", label: "Type", options: ["info", "warning", "error", "tip"] }],
         hasChildren: true,
         kind: "flow",
       },
@@ -436,7 +434,13 @@ describe("extended prop fields", () => {
     const config: Record<string, ConfigComponentEntry> = {
       Hero: {
         props: [
-          { name: "title", type: "string", label: "Title", description: "The main heading", placeholder: "Enter title..." },
+          {
+            name: "title",
+            type: "string",
+            label: "Title",
+            description: "The main heading",
+            placeholder: "Enter title...",
+          },
         ],
         hasChildren: false,
         kind: "flow",

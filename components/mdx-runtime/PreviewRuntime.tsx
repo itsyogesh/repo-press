@@ -380,10 +380,12 @@ export function PreviewRuntime({
           }
         }
 
-        // Studio preview: keep our own DocsImage fallback — adapter versions often have
-        // production-specific sizing (e.g. next/image width=1600 height=900) that forces
-        // a 16:9 crop and breaks aspect ratio for non-landscape images.
-        const STUDIO_PREFERRED_FALLBACKS = new Set(["DocsImage"])
+        // Studio preview: keep our own fallbacks for components whose adapter versions
+        // rely on CSS variables / dark-mode tokens not present in the studio iframe,
+        // or have production-specific sizing that breaks preview fidelity.
+        // DocsImage: adapter forces 16:9 crop via next/image width=1600 height=900
+        // Callout: adapter uses dark-themed CSS vars that render black in studio light theme
+        const STUDIO_PREFERRED_FALLBACKS = new Set(["DocsImage", "Callout"])
         const componentsContext: Record<string, React.ComponentType<any>> = {
           ...standardComponents,
           ...Object.fromEntries(
