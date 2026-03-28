@@ -256,6 +256,12 @@ export async function POST(request: Request) {
         })
       } catch (error) {
         if (isActivePublishBranchConflict(error)) {
+          await cleanupOrphanedPublishBranch({
+            token,
+            owner,
+            repo,
+            branchName,
+          })
           return NextResponse.json(
             {
               ok: false,
@@ -381,6 +387,29 @@ export async function POST(request: Request) {
 
 function isActivePublishBranchConflict(error: unknown) {
   return error instanceof Error && error.message.includes(ACTIVE_PUBLISH_BRANCH_CONFLICT_MESSAGE)
+}
+
+async function cleanupOrphanedPublishBranch({
+  token,
+  owner,
+  repo,
+  branchName,
+}: {
+  token: string
+  owner: string
+  repo: string
+  branchName: string
+}) {
+  try {
+    const octokit = createGitHubClient(token)
+    await octokit.git.deleteRef({
+      owner,
+      repo,
+      ref: `heads/${branchName}`,
+    })
+  } catch (cleanupError) {
+    console.error("Failed to clean up orphaned publish branch after conflict:", cleanupError)
+  }
 }
 
 function normalizeMediaPath(repoPath: string) {

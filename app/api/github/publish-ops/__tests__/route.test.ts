@@ -5,6 +5,10 @@ const { convexQueryMock, convexMutationMock } = vi.hoisted(() => ({
   convexMutationMock: vi.fn(),
 }))
 
+const { deleteRefMock } = vi.hoisted(() => ({
+  deleteRefMock: vi.fn(),
+}))
+
 vi.mock("convex/browser", () => ({
   ConvexHttpClient: class {
     query = convexQueryMock
@@ -108,12 +112,17 @@ describe("POST /api/github/publish-ops", () => {
     vi.clearAllMocks()
     convexQueryMock.mockReset()
     convexMutationMock.mockReset()
+    deleteRefMock.mockReset()
     process.env.BETTER_AUTH_SECRET = "test-secret"
     vi.mocked(getGitHubToken).mockResolvedValue("gh-token")
     vi.mocked(fetchAuthQuery!).mockResolvedValue({ _id: "user_owner" } as never)
     vi.mocked(getPatAuthUserId).mockResolvedValue("user_owner")
     vi.mocked(getRepoRole).mockResolvedValue({ role: "owner", defaultBranch: "main", defaultBranchInferred: false })
+    deleteRefMock.mockResolvedValue(undefined as never)
     vi.mocked(createGitHubClient).mockReturnValue({
+      git: {
+        deleteRef: deleteRefMock,
+      },
       repos: {
         get: vi.fn().mockResolvedValue({}),
       },
@@ -480,6 +489,63 @@ describe("POST /api/github/publish-ops", () => {
     expect(payload.ok).toBe(false)
     expect(payload.error).toContain("active publish lane")
     expect(createBranch).toHaveBeenCalledWith("gh-token", "acme", "docs-site", "main", "repopress/main/1700000000002")
+    expect(createGitHubClient).toHaveBeenCalledWith("gh-token")
+    expect(deleteRefMock).toHaveBeenCalledWith({
+      owner: "acme",
+      repo: "docs-site",
+      ref: "heads/repopress/main/1700000000002",
+    })
+    expect(createPullRequest).not.toHaveBeenCalled()
+    expect(batchCommit).not.toHaveBeenCalled()
+  })
+
+  it("still returns 409 when orphaned branch cleanup fails after the active-lane race", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_003)
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+    deleteRefMock.mockRejectedValueOnce(new Error("cleanup failed"))
+    mockPublishQueries({
+      currentPublishBranch: {
+        _id: "publish_branch_1",
+        branchName: "repopress/main/1234",
+        prNumber: 42,
+        prUrl: "https://github.com/acme/docs-site/pull/42",
+      },
+      openPublishBranches: [
+        {
+          _id: "publish_branch_1",
+          branchName: "repopress/main/1234",
+          prNumber: 42,
+          status: "active",
+          committedFilePaths: [],
+        },
+      ],
+    })
+    convexMutationMock.mockImplementation(async (_ref, args) => {
+      if (typeof args === "object" && args !== null && "branchName" in args) {
+        throw new Error("Active publish branch already exists for project")
+      }
+      return undefined
+    })
+
+    const response = await POST(
+      buildRequest({
+        projectId: "project_123",
+        publishMode: "create-new",
+      }),
+    )
+    const payload = await response.json()
+
+    expect(response.status).toBe(409)
+    expect(payload.ok).toBe(false)
+    expect(deleteRefMock).toHaveBeenCalledWith({
+      owner: "acme",
+      repo: "docs-site",
+      ref: "heads/repopress/main/1700000000003",
+    })
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      "Failed to clean up orphaned publish branch after conflict:",
+      expect.any(Error),
+    )
     expect(createPullRequest).not.toHaveBeenCalled()
     expect(batchCommit).not.toHaveBeenCalled()
   })
