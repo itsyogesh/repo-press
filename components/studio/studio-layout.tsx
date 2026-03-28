@@ -927,6 +927,12 @@ function StudioLayoutInner({
   const previewScrollRef = React.useRef<HTMLDivElement>(null)
   const isSyncingScroll = React.useRef(false)
 
+  // Heading anchor cache — keyed by container, invalidated when scrollHeight changes
+  type HeadingAnchor = { text: string; fromRoot: number }
+  const headingsCache = React.useRef<
+    Map<HTMLDivElement, { scrollHeight: number; headings: HeadingAnchor[] }>
+  >(new Map())
+
   // Preserve scroll position when switching between editor and preview modes
   const savedEditorScrollRatio = React.useRef(0)
   const savedPreviewScrollRatio = React.useRef(0)
@@ -965,31 +971,51 @@ function StudioLayoutInner({
     return () => cancelAnimationFrame(raf1)
   }, [viewMode])
 
-  const getScrollSyncMetrics = React.useCallback((container: HTMLDivElement) => {
-    const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight)
-    const root = container.querySelector<HTMLElement>("[data-scroll-sync-root]")
+  const getScrollSyncMetrics = React.useCallback(
+    (container: HTMLDivElement) => {
+      const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight)
+      const root = container.querySelector<HTMLElement>("[data-scroll-sync-root]")
 
-    if (!root) {
-      return {
-        start: 0,
-        scrollable: maxScroll,
-        maxScroll,
+      if (!root) {
+        return { start: 0, scrollable: maxScroll, maxScroll, headings: [] as HeadingAnchor[] }
       }
-    }
 
-    const containerRect = container.getBoundingClientRect()
-    const rootRect = root.getBoundingClientRect()
-    const start = Math.max(0, rootRect.top - containerRect.top + container.scrollTop)
-    // Clamp end to maxScroll to avoid a small unmapped bottom gap when
-    // root.scrollHeight slightly underestimates due to padding/margin.
-    const end = Math.min(maxScroll, Math.max(start, start + root.scrollHeight - container.clientHeight))
+      const containerRect = container.getBoundingClientRect()
+      const rootRect = root.getBoundingClientRect()
+      const start = Math.max(0, rootRect.top - containerRect.top + container.scrollTop)
+      // Clamp end to maxScroll to avoid a small unmapped bottom gap when
+      // root.scrollHeight slightly underestimates due to padding/margin.
+      const end = Math.min(maxScroll, Math.max(start, start + root.scrollHeight - container.clientHeight))
 
-    return {
-      start,
-      scrollable: Math.max(0, end - start),
-      maxScroll,
-    }
-  }, [])
+      // Collect heading anchor positions — cached by scrollHeight so we only
+      // re-measure when the content actually changes (images load, edits, etc.)
+      let headings: HeadingAnchor[]
+      const cached = headingsCache.current.get(container)
+      if (cached && cached.scrollHeight === container.scrollHeight) {
+        headings = cached.headings
+      } else {
+        const els = root.querySelectorAll<HTMLElement>("h1,h2,h3,h4,h5,h6")
+        headings = Array.from(els).map((h) => {
+          const absPos = container.scrollTop + h.getBoundingClientRect().top - containerRect.top
+          return {
+            text: h.innerText?.trim().toLowerCase() ?? "",
+            fromRoot: Math.round(absPos - start),
+          }
+        })
+        headingsCache.current.set(container, { scrollHeight: container.scrollHeight, headings })
+      }
+
+      return {
+        start,
+        scrollable: Math.max(0, end - start),
+        maxScroll,
+        headings,
+      }
+    },
+    // headingsCache is a ref — stable reference, no dep needed
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  )
 
   const syncScroll = React.useCallback(
     (source: "editor" | "preview") => {
@@ -1007,30 +1033,78 @@ function StudioLayoutInner({
 
         if (sourceEl.scrollTop < sourceMetrics.start) {
           // ── Pre-body zone ────────────────────────────────────────────────
-          // The editor has a FrontmatterPanel above the MDX body; the preview
-          // has a metadata header (title/date/image) above PreviewRuntime.
           // Proportionally map the source header scroll to the target header
           // scroll so both panels stay aligned during header traversal.
-          // Without this, all positions in the pre-body zone would clamp to
-          // progress=0 and hard-snap the target to its body start offset.
           const preProgress = sourceMetrics.start > 0 ? sourceEl.scrollTop / sourceMetrics.start : 0
           desiredTargetTop = preProgress * targetMetrics.start
         } else {
           // ── Body zone ─────────────────────────────────────────────────────
-          // Both panels are past their respective header offsets.
-          // Fractionally map progress through each panel's scrollable body.
-          const rawProgress =
-            sourceMetrics.scrollable > 0
-              ? (sourceEl.scrollTop - sourceMetrics.start) / sourceMetrics.scrollable
-              : sourceMetrics.maxScroll > 0
-                ? sourceEl.scrollTop / sourceMetrics.maxScroll
-                : 0
+          // The preview is ~42% the width of the editor, so text wraps much
+          // more and section heights differ wildly (0.9×–4× ratios). Simple
+          // fractional progress across the full body drifts badly mid-content.
+          //
+          // Heading-based anchor sync: find the two source headings that bracket
+          // the current scroll position, find the matching target headings by
+          // text, then interpolate *within that section* only.
+          // Falls back to fractional if headings are unavailable.
+          const sourceBodyPos = sourceEl.scrollTop - sourceMetrics.start
+          const sHeadings = sourceMetrics.headings
+          const tHeadings = targetMetrics.headings
 
-          const progress = Math.min(1, Math.max(0, rawProgress))
-          desiredTargetTop =
-            targetMetrics.scrollable > 0
-              ? targetMetrics.start + progress * targetMetrics.scrollable
-              : progress * targetMetrics.maxScroll
+          // Build a text→fromRoot lookup for target headings
+          const targetByText = new Map<string, number>()
+          for (const th of tHeadings) {
+            // Use first 25 chars as key to handle minor truncation differences
+            targetByText.set(th.text.substring(0, 25), th.fromRoot)
+          }
+
+          const lookupTarget = (h: HeadingAnchor): number | undefined =>
+            targetByText.get(h.text.substring(0, 25))
+
+          // Find the bracketing source headings
+          let prevH: HeadingAnchor | null = null
+          let nextH: HeadingAnchor | null = null
+          for (const h of sHeadings) {
+            if (h.fromRoot <= sourceBodyPos) {
+              prevH = h
+            } else {
+              nextH = h
+              break
+            }
+          }
+
+          const tPrevFromRoot = prevH ? (lookupTarget(prevH) ?? null) : 0
+          const tNextFromRoot = nextH ? (lookupTarget(nextH) ?? null) : null
+          const ePrevFromRoot = prevH?.fromRoot ?? 0
+          const eNextFromRoot = nextH?.fromRoot ?? sourceMetrics.scrollable
+
+          const hasAnchors =
+            sHeadings.length > 1 &&
+            tHeadings.length > 1 &&
+            tPrevFromRoot !== null &&
+            tNextFromRoot !== null
+
+          if (hasAnchors) {
+            const sectionSpan = Math.max(1, eNextFromRoot - ePrevFromRoot)
+            const sectionProgress = Math.min(1, Math.max(0, (sourceBodyPos - ePrevFromRoot) / sectionSpan))
+            const targetBodyPos =
+              (tPrevFromRoot as number) +
+              sectionProgress * ((tNextFromRoot as number) - (tPrevFromRoot as number))
+            desiredTargetTop = targetMetrics.start + targetBodyPos
+          } else {
+            // Fallback: fractional sync (used when headings haven't loaded yet)
+            const rawProgress =
+              sourceMetrics.scrollable > 0
+                ? sourceBodyPos / sourceMetrics.scrollable
+                : sourceMetrics.maxScroll > 0
+                  ? sourceEl.scrollTop / sourceMetrics.maxScroll
+                  : 0
+            const progress = Math.min(1, Math.max(0, rawProgress))
+            desiredTargetTop =
+              targetMetrics.scrollable > 0
+                ? targetMetrics.start + progress * targetMetrics.scrollable
+                : progress * targetMetrics.maxScroll
+          }
         }
 
         const clampedTargetTop = Math.min(targetMetrics.maxScroll, Math.max(0, desiredTargetTop))
