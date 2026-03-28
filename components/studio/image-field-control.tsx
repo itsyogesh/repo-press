@@ -163,15 +163,25 @@ export function ImageFieldControl({
   const branch = repoContext?.branch ?? studio.branch
   const selectedFilePath = selectedFilePathProp ?? studio.selectedFilePath
   const [browserOpen, setBrowserOpen] = React.useState(false)
+  const [editValue, setEditValue] = React.useState(value)
   const resolvedValuePreview = value ? resolveStudioAssetUrl(value, projectId, userId, selectedFilePath) : value
+
+  // Keep editValue in sync when value changes externally (e.g. on image select)
+  React.useEffect(() => {
+    setEditValue(value)
+  }, [value])
 
   const handleSelectImage = (path: string) => {
     onChange(path)
     setBrowserOpen(false)
   }
 
+  const commitEdit = (raw: string) => {
+    const trimmed = raw.trim()
+    if (trimmed !== value) onChange(trimmed)
+  }
+
   const pathHint = selectedFilePath ? getSuggestedImagePath(selectedFilePath) : "public/images"
-  const displayValue = value ? (value.startsWith("/") ? value : `/${value}`) : ""
 
   if (value && isSafeImageSrc(value)) {
     return (
@@ -182,9 +192,24 @@ export function ImageFieldControl({
             className,
           )}
         >
-          <span className="text-[10px] font-mono text-studio-fg-muted truncate flex-1 min-w-0" title={value}>
-            {displayValue}
-          </span>
+          <input
+            type="text"
+            value={editValue}
+            onChange={(e) => setEditValue(e.target.value)}
+            onBlur={(e) => commitEdit(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault()
+                commitEdit(editValue)
+              }
+              if (e.key === "Escape") {
+                setEditValue(value)
+              }
+            }}
+            className="text-[10px] font-mono text-studio-fg-muted flex-1 min-w-0 bg-transparent border-none outline-none focus:text-studio-fg placeholder:text-studio-fg-muted/50"
+            placeholder={placeholder}
+            title={value}
+          />
           <div className="flex items-center gap-1 shrink-0">
             <Button
               type="button"
@@ -192,7 +217,7 @@ export function ImageFieldControl({
               size="icon"
               className="h-7 w-7"
               onClick={() => setBrowserOpen(true)}
-              title="Replace"
+              title="Replace via picker"
             >
               <RefreshCw className="h-3.5 w-3.5" />
             </Button>

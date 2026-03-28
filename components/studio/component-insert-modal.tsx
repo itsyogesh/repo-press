@@ -18,9 +18,11 @@ import { buildComponentNode, type ComponentNode } from "@/lib/studio/component-n
 import type { RepoComponentDef } from "@/lib/studio/component-registry"
 import { buildComponentRegistry } from "@/lib/studio/component-registry"
 import { serializeComponentNode } from "@/lib/studio/component-serializer"
+import { resolveStudioAssetUrl } from "@/lib/studio/media-resolve"
 import { cn } from "@/lib/utils"
 import { ComponentPreview } from "./component-preview"
 import { ComponentPropForm, type PropFormState, validateFormState } from "./component-prop-form"
+import { useStudio } from "./studio-context"
 import { VideoPreview as StudioVideoPreview } from "./video-preview"
 
 // ---------------------------------------------------------------------------
@@ -28,6 +30,7 @@ import { VideoPreview as StudioVideoPreview } from "./video-preview"
 // ---------------------------------------------------------------------------
 
 function LiveConfigurePreview({ def, formState }: { def: RepoComponentDef; formState: PropFormState }) {
+  const studio = useStudio()
   const normalizedName = def.name.replace(/Adapter$/i, "").toLowerCase()
 
   // DocsImage / image component — show actual image when src is provided
@@ -36,13 +39,19 @@ function LiveConfigurePreview({ def, formState }: { def: RepoComponentDef; formS
     typeof formState.src === "string" &&
     formState.src
   ) {
+    const resolvedSrc = resolveStudioAssetUrl(
+      formState.src as string,
+      studio.projectId,
+      studio.userId,
+      studio.selectedFilePath,
+    )
     return (
       <div className="w-full max-w-sm flex flex-col items-center gap-3">
         <div className="w-full rounded-xl border border-studio-border overflow-hidden bg-studio-canvas-inset">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            key={formState.src as string}
-            src={formState.src}
+            key={resolvedSrc}
+            src={resolvedSrc}
             alt={typeof formState.alt === "string" ? formState.alt : "Preview"}
             className="w-full h-auto max-h-64 object-contain"
           />
