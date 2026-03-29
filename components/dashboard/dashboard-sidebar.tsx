@@ -80,11 +80,14 @@ export function DashboardSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               {recentProjects === undefined ? (
-                Array.from({ length: 3 }).map((_, i) => (
-                  <SidebarMenuItem key={`skeleton-${i}`}>
-                    <SidebarMenuSkeleton showIcon />
-                  </SidebarMenuItem>
-                ))
+                (() => {
+                  const skeletonWidths = ["68%", "74%", "81%"]
+                  return Array.from({ length: 3 }).map((_, i) => (
+                    <SidebarMenuItem key={`skeleton-${i}`}>
+                      <SidebarMenuSkeleton showIcon width={skeletonWidths[i % skeletonWidths.length]} />
+                    </SidebarMenuItem>
+                  ))
+                })()
               ) : recentProjects.length === 0 ? (
                 <p className="px-2 py-3 text-xs text-muted-foreground">No projects yet</p>
               ) : (
