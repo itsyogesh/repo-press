@@ -7,7 +7,6 @@ import { usePathname } from "next/navigation"
 import {
   Sidebar,
   SidebarContent,
-  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
@@ -37,14 +36,18 @@ export function DashboardSidebar() {
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" asChild>
+            <SidebarMenuButton asChild tooltip="RepoPress">
               <Link href="/dashboard">
-                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                  <Box className="size-4" />
-                </div>
-                <div className="grid flex-1 text-left text-sm leading-tight">
-                  <span className="truncate font-semibold">RepoPress</span>
-                  <span className="truncate text-xs text-muted-foreground">Content Management</span>
+                {/* In collapsed (icon) mode only the svg is visible; in expanded mode the branded wrapper shows */}
+                <Box className="size-4 shrink-0 group-data-[collapsible=icon]:block hidden" />
+                <div className="flex items-center gap-2 group-data-[collapsible=icon]:hidden">
+                  <div className="flex aspect-square size-6 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
+                    <Box className="size-3.5" />
+                  </div>
+                  <div className="grid flex-1 text-left text-sm leading-tight">
+                    <span className="truncate font-semibold">RepoPress</span>
+                    <span className="truncate text-xs text-muted-foreground">Content Management</span>
+                  </div>
                 </div>
               </Link>
             </SidebarMenuButton>
@@ -113,16 +116,6 @@ export function DashboardSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-
-      <SidebarFooter>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton asChild tooltip="RepoPress v1">
-              <span className="text-xs text-muted-foreground">v1.0</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarFooter>
 
       <SidebarRail />
     </Sidebar>
