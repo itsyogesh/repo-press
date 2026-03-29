@@ -4,7 +4,6 @@ export type PublishLaneLike = {
   _id?: string
   prNumber?: number | null
   prUrl?: string | null
-  status?: string | null
 }
 
 export type PublishLaneViewModel = {
@@ -24,20 +23,12 @@ export type PublishLaneViewModel = {
       submitLabel: string
     }
   >
-  olderOpenPrReferences: Array<{
-    _id?: string
-    prNumber: number
-    prUrl: string
-    label: string
-  }>
 }
 
 export function getPublishLaneViewModel({
   currentLane,
-  openLanes,
 }: {
   currentLane?: PublishLaneLike | null
-  openLanes?: PublishLaneLike[] | null
 }): PublishLaneViewModel {
   const currentLaneSummary =
     currentLane == null
@@ -79,16 +70,5 @@ export function getPublishLaneViewModel({
         submitLabel: "Create new PR →",
       },
     },
-    olderOpenPrReferences: (openLanes ?? [])
-      .filter(
-        (lane) =>
-          lane.status === "inactive" && lane.prNumber != null && Boolean(lane.prUrl) && lane._id !== currentLane?._id,
-      )
-      .map((lane) => ({
-        _id: lane._id,
-        prNumber: lane.prNumber as number,
-        prUrl: lane.prUrl as string,
-        label: `PR #${lane.prNumber as number}`,
-      })),
   }
 }

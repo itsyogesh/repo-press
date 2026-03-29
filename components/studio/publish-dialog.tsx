@@ -45,7 +45,7 @@ export function PublishDialog({
   const [title, setTitle] = React.useState("")
   const [description, setDescription] = React.useState("")
   const isCreateNewMode = publishMode === "create-new"
-  const { currentLane, modeOptions, olderOpenPrReferences } = publishLaneViewModel
+  const { currentLane, modeOptions } = publishLaneViewModel
 
   const { creates, deletes, edits } = pendingCounts
   const _total = creates + deletes + edits
@@ -141,9 +141,9 @@ export function PublishDialog({
           </div>
         )}
 
-        {(currentLane || olderOpenPrReferences.length > 0) && (
+        {currentLane && (
           <div className="space-y-4">
-            {currentLane ? (
+            {
               <RadioGroup value={publishMode} onValueChange={(value) => onPublishModeChange(value as PublishMode)}>
                 {(["reuse-current", "create-new"] as const).map((mode) => {
                   const option = modeOptions[mode]
@@ -172,35 +172,14 @@ export function PublishDialog({
                   )
                 })}
               </RadioGroup>
-            ) : (
-              <div className="rounded-lg border border-studio-border bg-studio-canvas-inset p-3">
-                <p className="text-sm font-medium text-studio-fg">{modeOptions["create-new"].label}</p>
-                <p className="text-xs text-studio-fg-muted">{modeOptions["create-new"].description}</p>
-              </div>
-            )}
+            }
+          </div>
+        )}
 
-            {olderOpenPrReferences.length > 0 && (
-              <div className="rounded-lg border border-studio-border bg-studio-canvas-inset p-3 space-y-2">
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-studio-fg">Older open PRs</p>
-                  <p className="text-xs text-studio-fg-muted">Reference only in this iteration.</p>
-                </div>
-                <div className="space-y-1">
-                  {olderOpenPrReferences.map((reference) => (
-                    <a
-                      key={reference._id ?? reference.prNumber}
-                      href={reference.prUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-sm text-studio-accent hover:underline"
-                    >
-                      <ExternalLink className="h-4 w-4" />
-                      {reference.label}
-                    </a>
-                  ))}
-                </div>
-              </div>
-            )}
+        {!currentLane && (
+          <div className="rounded-lg border border-studio-border bg-studio-canvas-inset p-3">
+            <p className="text-sm font-medium text-studio-fg">{modeOptions["create-new"].label}</p>
+            <p className="text-xs text-studio-fg-muted">{modeOptions["create-new"].description}</p>
           </div>
         )}
 

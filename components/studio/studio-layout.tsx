@@ -34,6 +34,7 @@ import { getPublishLaneViewModel } from "@/lib/studio/publish-lane-view-model"
 import { CommandPalette } from "./command-palette"
 import { Editor } from "./editor"
 import { FileTree } from "./file-tree"
+import { usePrStatusSync } from "./hooks/use-pr-status-sync"
 import { useStudioFile } from "./hooks/use-studio-file"
 import { useStudioPublish } from "./hooks/use-studio-publish"
 import { useStudioQueries } from "./hooks/use-studio-queries"
@@ -510,7 +511,6 @@ function StudioLayoutInner({
     overlayTree,
     opCounts,
     currentPublishLane,
-    openPublishLanes,
     dirtyDocs,
     frontmatterSchema,
     fieldVariants,
@@ -520,9 +520,8 @@ function StudioLayoutInner({
     () =>
       getPublishLaneViewModel({
         currentLane: currentPublishLane,
-        openLanes: openPublishLanes ?? [],
       }),
-    [currentPublishLane, openPublishLanes],
+    [currentPublishLane],
   )
 
   const canMutateExplorer = Boolean(userId || projectAccessToken)
@@ -1732,6 +1731,18 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
     userId,
     components: componentSchema,
   } = studioQueries
+
+  // Verify the active publish lane's PR is still open on GitHub.
+  // Corrects state drift when the closed/merged webhook was never delivered.
+  usePrStatusSync({
+    laneId: currentPublishLane?._id as any,
+    prNumber: currentPublishLane?.prNumber,
+    laneStatus: currentPublishLane?.status,
+    owner,
+    repo,
+    userId: userId ?? undefined,
+    projectAccessToken: projectAccessToken ?? undefined,
+  })
 
   // 3. Preview Context hook
   const previewContext = usePreviewContext({
