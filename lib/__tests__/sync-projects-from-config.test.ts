@@ -316,10 +316,7 @@ describe("syncProjectsFromConfig", () => {
       const result = await (syncProjectsFromConfig as any).handler(ctx, configWithoutOldBlog)
 
       // Orphan should be patched with configRemoved: true
-      expect(patch).toHaveBeenCalledWith(
-        "proj_orphan",
-        expect.objectContaining({ configRemoved: true }),
-      )
+      expect(patch).toHaveBeenCalledWith("proj_orphan", expect.objectContaining({ configRemoved: true }))
       // Return value must include the orphaned project ID
       expect(result.orphaned).toContain("proj_orphan")
     })
@@ -370,9 +367,7 @@ describe("syncProjectsFromConfig", () => {
       })
 
       // patch must not be called for orphan marking
-      const orphanPatch = patch.mock.calls.find(
-        (call) => call[0] === "manual_proj" && call[1]?.configRemoved === true,
-      )
+      const orphanPatch = patch.mock.calls.find((call) => call[0] === "manual_proj" && call[1]?.configRemoved === true)
       expect(orphanPatch).toBeUndefined()
     })
 
@@ -433,9 +428,27 @@ describe("syncProjectsFromConfig", () => {
       const result = await (syncProjectsFromConfig as any).handler(ctx, {
         ...BASE_ARGS,
         projects: [
-          { configProjectId: "docs", name: "Documentation", contentRoot: "content/docs", framework: "fumadocs", contentType: "docs" },
-          { configProjectId: "blog", name: "Blog", contentRoot: "content/blog", framework: "custom", contentType: "blog" },
-          { configProjectId: "new-section", name: "New", contentRoot: "content/new", framework: "custom", contentType: "custom" },
+          {
+            configProjectId: "docs",
+            name: "Documentation",
+            contentRoot: "content/docs",
+            framework: "fumadocs",
+            contentType: "docs",
+          },
+          {
+            configProjectId: "blog",
+            name: "Blog",
+            contentRoot: "content/blog",
+            framework: "custom",
+            contentType: "blog",
+          },
+          {
+            configProjectId: "new-section",
+            name: "New",
+            contentRoot: "content/new",
+            framework: "custom",
+            contentType: "custom",
+          },
         ],
       })
 
