@@ -131,18 +131,12 @@ export function ComponentInsertModal({
 
   const handleInsert = React.useCallback(() => {
     if (!selectedDef) {
-      console.warn("handleInsert called but no selectedDef")
       return
     }
     try {
-      console.log("ComponentInsertModal.handleInsert - building node", { selectedDef: selectedDef.name, formState })
       const node = buildComponentNode(selectedDef, formState)
-      console.log("Built component node", { node })
       const jsx = serializeComponentNode(node)
-      console.log("Serialized JSX", { jsx })
-      console.log("Calling onInsert callback...")
       onInsert(jsx, selectedDef, node)
-      console.log("onInsert callback completed, closing modal")
       onOpenChange(false)
     } catch (error) {
       console.error("Error in handleInsert:", error)

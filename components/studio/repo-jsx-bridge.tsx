@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useMemo } from "react"
+import { useMemo } from "react"
 import { REAL_DOCS_SETUP_MEDIA } from "@/lib/repopress/standard-library"
 import { resolveStudioAssetUrl } from "@/lib/studio/media-resolve"
 import { GenericJsxEditor } from "./jsx-component-descriptors"
@@ -66,17 +66,6 @@ export function RepoJsxBridge({ mdastNode, descriptor }: RepoJsxBridgeProps) {
   const Component = adapter?.components?.[descriptor.name]
   const schema = componentSchema?.[descriptor.name]
 
-  // Debug: log available components
-  React.useEffect(() => {
-    if (descriptor.name === "DocsImage" || descriptor.name === "DocsVideo") {
-      console.log(`[RepoJsxBridge] ${descriptor.name}:`, {
-        found: !!Component,
-        adapterComponentNames: Object.keys(adapter?.components || {}).sort(),
-        schemaNames: Object.keys(componentSchema || {}).sort(),
-      })
-    }
-  }, [Component, descriptor.name, adapter, componentSchema])
-
   // Extract props from MDAST node attributes
   const { props, propWarnings } = useMemo(() => {
     const attrs = mdastNode.attributes || []
@@ -127,13 +116,6 @@ export function RepoJsxBridge({ mdastNode, descriptor }: RepoJsxBridgeProps) {
       propWarnings: [...evalWarnings, ...schemaWarnings],
     }
   }, [mdastNode, projectId, userId, selectedFilePath, adapter, descriptor.name, schema])
-
-  // Log actionable warnings (non-crashing)
-  React.useEffect(() => {
-    for (const w of propWarnings) {
-      console.warn(`[RepoPress] ${w}`)
-    }
-  }, [propWarnings])
 
   if (!Component) {
     return <GenericJsxEditor descriptor={descriptor} mdastNode={mdastNode} />
