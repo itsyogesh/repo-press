@@ -45,8 +45,6 @@ interface RepoProjectHubProps {
   hasConfig: boolean
   configSynced: boolean
   syncError: string | null
-  isWriter: boolean
-  role: "owner" | "editor" | "viewer"
 }
 
 export function RepoProjectHub({
@@ -58,8 +56,6 @@ export function RepoProjectHub({
   hasConfig,
   configSynced,
   syncError,
-  isWriter,
-  role,
 }: RepoProjectHubProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()

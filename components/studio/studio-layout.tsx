@@ -487,7 +487,6 @@ function StudioLayoutInner({
     opCounts,
     activeBranch,
     dirtyDocs,
-    editCount,
     frontmatterSchema,
     fieldVariants,
   } = studioQueries
@@ -927,6 +926,7 @@ function StudioLayoutInner({
 
   // Restore scroll position after mode switch completes
   React.useLayoutEffect(() => {
+    void viewMode
     // Double requestAnimationFrame: first frame commits layout, second applies after
     // MDX async compilation finishes updating scrollHeight.
     const restoreScroll = () => {
@@ -946,7 +946,6 @@ function StudioLayoutInner({
     })
     return () => cancelAnimationFrame(raf1)
   }, [viewMode])
-
 
   const getScrollSyncMetrics = React.useCallback((container: HTMLDivElement) => {
     const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight)
@@ -1087,18 +1086,16 @@ function StudioLayoutInner({
   const shouldShowProjectDataSkeleton =
     Boolean(projectId) && resolvedProjectDataId !== projectId && isProjectDataLoading
   const isSelectedDocumentLoading = isFileLoading
-  
+
   // Filter out documents that are already tracked in pending creates
   // This prevents "new" files from also showing as "modified"
   const creatingFilePaths = React.useMemo(() => {
     if (!pendingOps) return new Set<string>()
     return new Set(
-      pendingOps
-        .filter((op: any) => op.opType === "create" && op.status === "pending")
-        .map((op: any) => op.filePath)
+      pendingOps.filter((op: any) => op.opType === "create" && op.status === "pending").map((op: any) => op.filePath),
     )
   }, [pendingOps])
-  
+
   const adjustedEditCount = dirtyDocs ? dirtyDocs.filter((doc: any) => !creatingFilePaths.has(doc.filePath)).length : 0
   const totalPendingCount = opCounts.creates + opCounts.deletes + adjustedEditCount
   const flatFiles = React.useMemo(() => flattenFiles(overlayTree, titleMap), [overlayTree, titleMap])

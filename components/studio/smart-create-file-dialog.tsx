@@ -200,6 +200,10 @@ export function SmartCreateFileDialog({
   }, [parentPath, adapter])
 
   const sibling = React.useMemo(() => findSiblingContentFile(folderChildNodes), [folderChildNodes])
+  const dialogContextKey = React.useMemo(
+    () => JSON.stringify({ parentPath, owner, repo, branch }),
+    [parentPath, owner, repo, branch],
+  )
 
   const siblingInferenceKey = React.useMemo(() => {
     if (!open || !sibling) return null
@@ -209,7 +213,7 @@ export function SmartCreateFileDialog({
       branch,
       path: sibling.path,
     })
-  }, [open, owner, repo, branch, sibling?.path])
+  }, [open, owner, repo, branch, sibling])
 
   const siblingSnapshot = React.useSyncExternalStore(
     (listener) =>
@@ -238,6 +242,7 @@ export function SmartCreateFileDialog({
   }, [parentPath, contentRoot])
 
   React.useEffect(() => {
+    void dialogContextKey
     if (!open) return undefined
     setTitle("")
     setSiblingFields([])
@@ -245,7 +250,7 @@ export function SmartCreateFileDialog({
     setReady(false)
     userTouched.current = false
     return undefined
-  }, [open, parentPath, owner, repo, branch])
+  }, [open, dialogContextKey])
 
   React.useEffect(() => {
     if (!open) return undefined
@@ -277,7 +282,7 @@ export function SmartCreateFileDialog({
     return () => {
       window.clearTimeout(timer)
     }
-  }, [open, sibling?.path, siblingSnapshot.status, siblingSnapshot.fields])
+  }, [open, sibling, siblingSnapshot.status, siblingSnapshot.fields, context.requiredFields])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
