@@ -32,6 +32,7 @@ import { usePreviewContext } from "@/lib/hooks/use-preview-context"
 import { buildHistoryHref } from "@/lib/studio/history-link"
 import { getPublishLaneViewModel } from "@/lib/studio/publish-lane-view-model"
 import { CommandPalette } from "./command-palette"
+import { getDiscardPlan } from "./discard-pending-changes"
 import { Editor } from "./editor"
 import { FileTree } from "./file-tree"
 import { usePrStatusSync } from "./hooks/use-pr-status-sync"
@@ -39,6 +40,7 @@ import { useStudioFile } from "./hooks/use-studio-file"
 import { useStudioPublish } from "./hooks/use-studio-publish"
 import { useStudioQueries } from "./hooks/use-studio-queries"
 import { useStudioSave } from "./hooks/use-studio-save"
+import { getPendingChangeSummary, hasDiscardableChanges } from "./pending-change-summary"
 import { Preview } from "./preview"
 import { PublishDialog } from "./publish-dialog"
 import { PublishOpsBar } from "./publish-ops-bar"
@@ -496,6 +498,7 @@ function StudioLayoutInner({
     navigateToFile,
     closeFile,
     discardFileFromClientState,
+    reloadFileFromRemote,
     primeFileSnapshot,
     setContent,
     setFrontmatterKey,
@@ -508,8 +511,8 @@ function StudioLayoutInner({
     document,
     titleMap,
     pendingOps,
+    pendingMediaOps,
     overlayTree,
-    opCounts,
     currentPublishLane,
     dirtyDocs,
     frontmatterSchema,
@@ -547,11 +550,13 @@ function StudioLayoutInner({
   const stageCreate = useMutation(api.explorerOps.stageCreate)
   const stageDelete = useMutation(api.explorerOps.stageDelete)
   const undoOp = useMutation(api.explorerOps.undoOp)
+  const discardAllPendingChanges = useMutation(api.explorerOps.discardAll)
 
   // Dialog state
   const [createDialogOpen, setCreateDialogOpen] = React.useState(false)
   const [createDialogParent, setCreateDialogParent] = React.useState("")
   const [discardDialogOpen, setDiscardDialogOpen] = React.useState(false)
+  const [isDiscarding, setIsDiscarding] = React.useState(false)
   const [commandPaletteOpen, setCommandPaletteOpen] = React.useState(false)
   const [insertComponentModalOpen, setInsertComponentModalOpen] = React.useState(false)
   const [emptySearch, setEmptySearch] = React.useState("")
@@ -737,18 +742,71 @@ function StudioLayoutInner({
   )
 
   const handleDiscardAll = React.useCallback(async () => {
-    if (!pendingOps || !canMutateExplorer) return
+    if (!projectId || !canMutateExplorer) return
+
+    const plan = getDiscardPlan({
+      pendingOps: (pendingOps ?? []).map((op: any) => ({
+        _id: String(op._id),
+        opType: op.opType,
+        filePath: op.filePath,
+        status: op.status,
+      })),
+      dirtyDocs: (dirtyDocs ?? []).map((doc: any) => ({
+        _id: String(doc._id),
+        filePath: doc.filePath,
+      })),
+      pendingMediaOps: (pendingMediaOps ?? []).map((op: any) => ({
+        _id: String(op._id),
+        repoPath: op.repoPath,
+        status: op.status,
+        sourceFilePath: op.sourceFilePath,
+      })),
+    })
+
+    if (!hasDiscardableChanges(plan)) {
+      toast.success("No pending changes to discard")
+      return
+    }
+
+    const createdPaths = new Set(
+      (pendingOps ?? [])
+        .filter((op: any) => op.status === "pending" && op.opType === "create")
+        .map((op: any) => op.filePath),
+    )
+
+    setIsDiscarding(true)
     try {
-      for (const op of pendingOps) {
-        if (op.status === "pending") {
-          await undoOp({ id: op._id, userId, projectAccessToken })
+      await discardAllPendingChanges({
+        projectId: projectId as Id<"projects">,
+        userId,
+        projectAccessToken,
+      })
+
+      for (const filePath of plan.filePathsToReset) {
+        if (createdPaths.has(filePath)) {
+          discardFileFromClientState(filePath)
+        } else {
+          reloadFileFromRemote(filePath)
         }
       }
       toast.success("All pending changes discarded")
     } catch (error: any) {
       toast.error(error.message || "Failed to discard changes")
+    } finally {
+      setIsDiscarding(false)
     }
-  }, [pendingOps, canMutateExplorer, userId, projectAccessToken, undoOp])
+  }, [
+    projectId,
+    pendingOps,
+    dirtyDocs,
+    pendingMediaOps,
+    canMutateExplorer,
+    userId,
+    projectAccessToken,
+    discardAllPendingChanges,
+    discardFileFromClientState,
+    reloadFileFromRemote,
+  ])
 
   const resolveRelocatePayload = React.useCallback(
     async (oldPath: string) => {
@@ -1185,27 +1243,40 @@ function StudioLayoutInner({
       setResolvedProjectDataId("none")
       return
     }
-    if (pendingOps !== undefined && dirtyDocs !== undefined) {
+    if (pendingOps !== undefined && dirtyDocs !== undefined && pendingMediaOps !== undefined) {
       setResolvedProjectDataId(projectId)
     }
-  }, [projectId, pendingOps, dirtyDocs])
+  }, [projectId, pendingOps, dirtyDocs, pendingMediaOps])
 
-  const isProjectDataLoading = Boolean(projectId) && (pendingOps === undefined || dirtyDocs === undefined)
+  const isProjectDataLoading =
+    Boolean(projectId) && (pendingOps === undefined || dirtyDocs === undefined || pendingMediaOps === undefined)
   const shouldShowProjectDataSkeleton =
     Boolean(projectId) && resolvedProjectDataId !== projectId && isProjectDataLoading
   const isSelectedDocumentLoading = isFileLoading
 
-  // Filter out documents that are already tracked in pending creates
-  // This prevents "new" files from also showing as "modified"
-  const creatingFilePaths = React.useMemo(() => {
-    if (!pendingOps) return new Set<string>()
-    return new Set(
-      pendingOps.filter((op: any) => op.opType === "create" && op.status === "pending").map((op: any) => op.filePath),
-    )
-  }, [pendingOps])
-
-  const adjustedEditCount = dirtyDocs ? dirtyDocs.filter((doc: any) => !creatingFilePaths.has(doc.filePath)).length : 0
-  const totalPendingCount = opCounts.creates + opCounts.deletes + adjustedEditCount
+  const pendingSummary = React.useMemo(
+    () =>
+      getPendingChangeSummary({
+        pendingOps: (pendingOps ?? []).map((op: any) => ({
+          _id: String(op._id),
+          opType: op.opType,
+          filePath: op.filePath,
+          status: op.status,
+        })),
+        dirtyDocs: (dirtyDocs ?? []).map((doc: any) => ({
+          _id: String(doc._id),
+          filePath: doc.filePath,
+        })),
+        pendingMediaOps: (pendingMediaOps ?? []).map((op: any) => ({
+          _id: String(op._id),
+          repoPath: op.repoPath,
+          status: op.status,
+          sourceFilePath: op.sourceFilePath,
+        })),
+      }),
+    [pendingOps, dirtyDocs, pendingMediaOps],
+  )
+  const totalPendingCount = pendingSummary.total
   const flatFiles = React.useMemo(() => flattenFiles(overlayTree, titleMap), [overlayTree, titleMap])
   const flatFilesByPath = React.useMemo(() => {
     const map = new Map<string, FlatFileEntry>()
@@ -1352,14 +1423,17 @@ function StudioLayoutInner({
                         </div>
                         {projectId && (
                           <PublishOpsBar
-                            creates={opCounts.creates}
-                            deletes={opCounts.deletes}
-                            edits={adjustedEditCount}
+                            creates={pendingSummary.creates}
+                            deletes={pendingSummary.deletes}
+                            edits={pendingSummary.edits}
+                            media={pendingSummary.media}
                             pendingOps={pendingOps}
                             dirtyDocs={dirtyDocs}
+                            pendingMediaOps={pendingMediaOps}
                             hasCurrentLane={Boolean(currentPublishLane)}
                             currentPrNumber={publishLaneViewModel.currentLane?.prNumber ?? currentPublishLane?.prNumber}
                             currentPrUrl={publishLaneViewModel.currentLane?.prUrl ?? currentPublishLane?.prUrl}
+                            isDiscarding={isDiscarding}
                             onPublish={() => {
                               openPublishDialog()
                             }}
@@ -1654,9 +1728,10 @@ function StudioLayoutInner({
           open={publishDialogOpen}
           onOpenChange={setPublishDialogOpen}
           pendingCounts={{
-            creates: opCounts.creates,
-            deletes: opCounts.deletes,
-            edits: adjustedEditCount,
+            creates: pendingSummary.creates,
+            deletes: pendingSummary.deletes,
+            edits: pendingSummary.edits,
+            media: pendingSummary.media,
           }}
           publishLaneViewModel={publishLaneViewModel}
           publishMode={publishMode}

@@ -18,61 +18,84 @@ import {
 export const runtime = "nodejs"
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
+const MAX_EXTERNAL_IMAGE_BYTES = 10 * 1024 * 1024
 
-type StoragePreference = "auto" | "blob" | "github"
-
-// Fix #3: Maximum upload size — 50MB (base64 string is ~33% larger than binary)
-const MAX_UPLOAD_BASE64_LENGTH = Math.ceil(50 * 1024 * 1024 * (4 / 3))
-
-interface UploadRequest {
+interface DownloadExternalRequest {
   projectId?: string
   owner: string
   repo: string
   branch: string
   pathHint?: string
+  fileName?: string
   sourceFilePath?: string
-  fileName: string
-  contentBase64: string
-  storagePreference?: StoragePreference
+  url: string
 }
 
-interface UploadResponse {
-  storage: "blob" | "github"
-  repoPath: string
-  previewUrl: string
-  staged: true
-  mediaOpId: string
-  url: string
-  diagnostics?: Record<string, string>
+function isSafeExternalUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url)
+    return parsed.protocol === "https:" || parsed.protocol === "http:"
+  } catch {
+    return false
+  }
+}
+
+function extensionFromContentType(contentType: string): string {
+  const clean = contentType.split(";")[0]?.trim().toLowerCase()
+  const map: Record<string, string> = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/gif": "gif",
+    "image/webp": "webp",
+    "image/svg+xml": "svg",
+    "image/avif": "avif",
+  }
+  return map[clean] || "png"
+}
+
+function deriveFileName(url: string, providedFileName: string | undefined, contentType: string): string {
+  if (providedFileName?.trim()) {
+    return sanitizeFileName(providedFileName.trim())
+  }
+
+  try {
+    const parsed = new URL(url)
+    const lastSegment = parsed.pathname.split("/").filter(Boolean).pop()
+    if (lastSegment) {
+      const decoded = decodeURIComponent(lastSegment)
+      if (decoded.includes(".")) {
+        return sanitizeFileName(decoded)
+      }
+      return sanitizeFileName(`${decoded}.${extensionFromContentType(contentType)}`)
+    }
+  } catch {
+    // ignore
+  }
+
+  return `image.${extensionFromContentType(contentType)}`
+}
+
+function shouldTryBlob(preference: "auto" | "blob" | "github" = "auto"): boolean {
+  if (preference === "github") return false
+  return true
 }
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as UploadRequest
-    const {
-      projectId,
-      owner,
-      repo,
-      branch,
-      pathHint,
-      sourceFilePath,
-      fileName,
-      contentBase64,
-      storagePreference = "auto",
-    } = body
+    const body = (await request.json()) as DownloadExternalRequest
+    const { projectId, owner, repo, branch, pathHint, fileName, sourceFilePath, url } = body
 
-    if (!owner || !repo || !branch || !fileName || !contentBase64) {
+    if (!owner || !repo || !branch || !url) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
     }
 
-    // Fix #3: Validate upload size before decoding base64 to prevent OOM
-    if (contentBase64.length > MAX_UPLOAD_BASE64_LENGTH) {
-      return NextResponse.json({ error: "Upload exceeds maximum file size of 50MB" }, { status: 413 })
+    if (!isSafeExternalUrl(url)) {
+      return NextResponse.json({ error: "Invalid external image URL" }, { status: 400 })
     }
 
     const project = await resolveProject({ convex, api, projectId, owner, repo, branch })
     if (!project) {
-      return NextResponse.json({ error: "Project not found. Pass a valid projectId for uploads." }, { status: 404 })
+      return NextResponse.json({ error: "Project not found. Pass a valid projectId for downloads." }, { status: 404 })
     }
 
     let auth: Awaited<ReturnType<typeof resolveRouteAuth>>
@@ -90,25 +113,39 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error:
-            "Upload repo context does not match project settings. Refresh Studio and retry with the active project branch.",
+            "Download repo context does not match project settings. Refresh Studio and retry with the active project branch.",
         },
         { status: 400 },
       )
     }
 
-    const repoPath = buildRepoPath(pathHint, fileName)
+    const externalResponse = await fetch(url)
+    if (!externalResponse.ok) {
+      return NextResponse.json({ error: "Failed to fetch external image" }, { status: 502 })
+    }
+
+    const contentType = externalResponse.headers.get("content-type") || ""
+    if (!contentType.toLowerCase().startsWith("image/")) {
+      return NextResponse.json({ error: "External image must resolve to an image content type" }, { status: 400 })
+    }
+
+    const arrayBuffer = await externalResponse.arrayBuffer()
+    const contentBuffer = Buffer.from(arrayBuffer)
+    if (contentBuffer.byteLength > MAX_EXTERNAL_IMAGE_BYTES) {
+      return NextResponse.json({ error: "External image exceeds maximum file size of 10MB" }, { status: 413 })
+    }
+
+    const resolvedFileName = deriveFileName(url, fileName, contentType)
+    const repoPath = buildRepoPath(pathHint, resolvedFileName)
     const githubPath = repoPath.replace(/^\/+/, "")
-    const contentBuffer = Buffer.from(contentBase64, "base64")
-    const contentType = getContentType(fileName)
+    const contentBase64 = contentBuffer.toString("base64")
     const sizeBytes = contentBuffer.byteLength
     const imageMetadata = await getImageMetadata(contentBuffer)
-
-    // Capture base-branch SHA at staging time for later publish conflict detection.
     const baseShaAtStage = await getExistingFileShaSafe(token, owner, repo, githubPath, project.branch)
 
     let blobDiagnostics: Record<string, string> | undefined
 
-    if (shouldTryBlob(storagePreference)) {
+    if (shouldTryBlob()) {
       const blobResult = await uploadToBlobWithRetry({
         owner: project.repoOwner,
         repo: project.repoName,
@@ -125,8 +162,8 @@ export async function POST(request: Request) {
           userId: convexUserId,
           projectAccessToken,
           repoPath,
-          fileName: sanitizeFileName(fileName),
-          mimeType: contentType,
+          fileName: sanitizeFileName(resolvedFileName),
+          mimeType: contentType || getContentType(resolvedFileName),
           sizeBytes,
           sourceFilePath,
           sourceType: "blob",
@@ -141,11 +178,12 @@ export async function POST(request: Request) {
           projectId: project._id,
           userId: convexUserId,
           projectAccessToken,
-          fileName,
+          fileName: resolvedFileName,
           filePath: repoPath,
-          mimeType: contentType,
+          mimeType: contentType || getContentType(resolvedFileName),
           sizeBytes,
           githubSha: baseShaAtStage ?? undefined,
+          originalUrl: url,
           metadata: imageMetadata,
         })
 
@@ -157,18 +195,8 @@ export async function POST(request: Request) {
           staged: true,
           mediaOpId,
           url: previewUrl,
-          diagnostics: blobResult.diagnostics,
-        } satisfies UploadResponse)
-      }
-
-      if (storagePreference === "blob") {
-        return NextResponse.json(
-          {
-            error: blobResult.error || "Blob upload failed",
-            diagnostics: blobResult.diagnostics,
-          },
-          { status: 502 },
-        )
+          diagnostics: blobDiagnostics,
+        })
       }
     }
 
@@ -183,8 +211,8 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error: isBlobTokenMissing
-            ? "Image upload requires either Vercel Blob storage (configure BLOB_READ_WRITE_TOKEN) or an active publish branch on GitHub. Please set up one of these options."
-            : "Image upload requires an active publish branch. Start a publish draft first, then retry upload.",
+            ? "Image download requires either Vercel Blob storage (configure BLOB_READ_WRITE_TOKEN) or an active publish branch on GitHub. Please set up one of these options."
+            : "Image download requires an active publish branch. Start a publish draft first, then retry download.",
           diagnostics: blobDiagnostics,
         },
         { status: 409 },
@@ -197,7 +225,7 @@ export async function POST(request: Request) {
       repo: project.repoName,
       branch: activePublishBranch.branchName,
       path: githubPath,
-      fileName,
+      fileName: resolvedFileName,
       contentBase64,
     })
 
@@ -206,8 +234,8 @@ export async function POST(request: Request) {
       userId: convexUserId,
       projectAccessToken,
       repoPath,
-      fileName: sanitizeFileName(fileName),
-      mimeType: contentType,
+      fileName: sanitizeFileName(resolvedFileName),
+      mimeType: contentType || getContentType(resolvedFileName),
       sizeBytes,
       sourceFilePath,
       sourceType: "githubBranch",
@@ -222,11 +250,12 @@ export async function POST(request: Request) {
       projectId: project._id,
       userId: convexUserId,
       projectAccessToken,
-      fileName,
+      fileName: resolvedFileName,
       filePath: repoPath,
-      mimeType: contentType,
+      mimeType: contentType || getContentType(resolvedFileName),
       sizeBytes,
       githubSha: githubUpload.sha ?? baseShaAtStage ?? undefined,
+      originalUrl: url,
       metadata: imageMetadata,
     })
 
@@ -243,14 +272,9 @@ export async function POST(request: Request) {
         githubUploadSha: githubUpload.sha || "",
         githubCommitSha: githubUpload.commitSha || "",
       },
-    } satisfies UploadResponse)
+    })
   } catch (error) {
-    console.error("[media-upload] failed", error)
-    return NextResponse.json({ error: "Failed to upload media" }, { status: 500 })
+    console.error("[media-download-external] failed", error)
+    return NextResponse.json({ error: "Failed to download external image" }, { status: 500 })
   }
-}
-
-function shouldTryBlob(preference: StoragePreference): boolean {
-  if (preference === "github") return false
-  return true
 }

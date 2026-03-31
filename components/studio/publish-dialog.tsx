@@ -22,7 +22,7 @@ import { cn } from "@/lib/utils"
 interface PublishDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  pendingCounts: { creates: number; deletes: number; edits: number }
+  pendingCounts: { creates: number; deletes: number; edits: number; media?: number }
   publishLaneViewModel: PublishLaneViewModel
   publishMode: PublishMode
   onPublishModeChange: (mode: PublishMode) => void
@@ -47,12 +47,13 @@ export function PublishDialog({
   const isCreateNewMode = publishMode === "create-new"
   const { currentLane, modeOptions } = publishLaneViewModel
 
-  const { creates, deletes, edits } = pendingCounts
-  const _total = creates + deletes + edits
+  const { creates, deletes, edits, media = 0 } = pendingCounts
+  const _total = creates + deletes + edits + media
   const summaryParts: string[] = []
   if (creates > 0) summaryParts.push(`${creates} new`)
   if (edits > 0) summaryParts.push(`${edits} modified`)
   if (deletes > 0) summaryParts.push(`${deletes} deleted`)
+  if (media > 0) summaryParts.push(`${media} media`)
 
   React.useEffect(() => {
     if (open) return
@@ -95,6 +96,12 @@ export function PublishDialog({
               <Badge variant="secondary" className="gap-1 bg-red-500/15 text-studio-danger border-0">
                 <FileMinus className="h-3 w-3" />
                 {deletes} file{deletes !== 1 ? "s" : ""} deleted
+              </Badge>
+            )}
+            {media > 0 && (
+              <Badge variant="secondary" className="gap-1 bg-studio-accent-muted text-studio-accent border-0">
+                <FileEdit className="h-3 w-3" />
+                {media} media
               </Badge>
             )}
           </div>

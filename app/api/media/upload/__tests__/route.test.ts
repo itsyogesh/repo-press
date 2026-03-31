@@ -47,6 +47,9 @@ import { createGitHubClient } from "@/lib/github"
 import { getRepoRole } from "@/lib/github-permissions"
 import { POST } from "../route"
 
+const VALID_PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aF9sAAAAASUVORK5CYII="
+const VALID_PNG_BYTES = Buffer.from(VALID_PNG_BASE64, "base64")
+
 function buildRequest(body: Record<string, unknown>) {
   return new Request("http://localhost/api/media/upload", {
     method: "POST",
@@ -63,7 +66,7 @@ function baseBody() {
     branch: "main",
     pathHint: "public/images",
     fileName: "hero.png",
-    contentBase64: Buffer.from("image-bytes").toString("base64"),
+    contentBase64: VALID_PNG_BASE64,
     storagePreference: "auto",
   }
 }
@@ -122,6 +125,42 @@ describe("POST /api/media/upload", () => {
     expect(payload.previewUrl).toBe("/api/media/resolve?projectId=project_123&path=%2Fpublic%2Fimages%2Fhero.png")
     expect(vi.mocked(put).mock.calls[0]?.[2]).toEqual(expect.objectContaining({ allowOverwrite: true }))
     expect(convexMutationMock).toHaveBeenCalled()
+    const mediaAssetCall = convexMutationMock.mock.calls.find(
+      ([, args]) =>
+        args && typeof args === "object" && (args as Record<string, unknown>).filePath === "/public/images/hero.png",
+    )
+    expect(mediaAssetCall?.[1]).toEqual(
+      expect.objectContaining({
+        projectId: "project_123",
+        userId: "user_1",
+        fileName: "hero.png",
+        filePath: "/public/images/hero.png",
+        mimeType: "image/png",
+        sizeBytes: VALID_PNG_BYTES.byteLength,
+        width: 1,
+        height: 1,
+      }),
+    )
+  })
+
+  it("threads sourceFilePath into staged media ops", async () => {
+    vi.mocked(put).mockResolvedValue({ url: "https://blob.vercel-storage.com/repo-press/hero.png" } as any)
+
+    const response = await POST(
+      buildRequest({
+        ...baseBody(),
+        sourceFilePath: "content/blog/hero-guide.mdx",
+      }),
+    )
+
+    expect(response.status).toBe(200)
+    expect(convexMutationMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        repoPath: "/public/images/hero.png",
+        sourceFilePath: "content/blog/hero-guide.mdx",
+      }),
+    )
   })
 
   it("rejects uploads when request repo context does not match the project", async () => {

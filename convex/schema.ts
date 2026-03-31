@@ -245,6 +245,7 @@ export default defineSchema({
     height: v.optional(v.number()),
     sizeBytes: v.optional(v.number()),
     githubSha: v.optional(v.string()),
+    originalUrl: v.optional(v.string()),
     // Which documents reference this asset
     usedInDocumentIds: v.optional(v.array(v.id("documents"))),
     createdAt: v.number(),
@@ -330,6 +331,7 @@ export default defineSchema({
     fileName: v.string(),
     mimeType: v.string(),
     sizeBytes: v.optional(v.number()),
+    sourceFilePath: v.optional(v.string()),
     sourceType: v.union(v.literal("blob"), v.literal("githubBranch")),
     blobUrl: v.optional(v.string()),
     blobAccess: v.optional(v.union(v.literal("public"), v.literal("private"))),

@@ -175,6 +175,11 @@ export function useStudioQueries(
     projectId ? { projectId: projectId as Id<"projects">, ...queryAuth } : "skip",
   )
 
+  const pendingMediaOps = useQuery(
+    api.mediaOps.listPending,
+    projectId ? { projectId: projectId as Id<"projects">, ...queryAuth } : "skip",
+  )
+
   const currentPublishLane = useQuery(
     api.publishBranches.getCurrentForProject,
     projectId ? { projectId: projectId as Id<"projects">, ...queryAuth } : "skip",
@@ -267,6 +272,7 @@ export function useStudioQueries(
     document,
     titleMap,
     pendingOps,
+    pendingMediaOps,
     overlayTree,
     opCounts,
     currentPublishLane,

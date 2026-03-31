@@ -55,13 +55,29 @@ type ScrollSyncCoordinatorOptions = {
   clearTimer?: typeof clearTimeout
 }
 
+function fallbackRequestAnimationFrame(callback: FrameRequestCallback) {
+  return setTimeout(() => callback(Date.now()), 16) as unknown as number
+}
+
+function fallbackCancelAnimationFrame(id: number) {
+  clearTimeout(id)
+}
+
 export function createScrollSyncCoordinator(
   sync: (source: ScrollSyncSource) => void,
   options: ScrollSyncCoordinatorOptions = {},
 ) {
   const lockMs = options.lockMs ?? DEFAULT_SCROLL_SOURCE_LOCK_MS
-  const requestFrame = options.requestFrame ?? requestAnimationFrame
-  const cancelFrame = options.cancelFrame ?? cancelAnimationFrame
+  const requestFrame =
+    options.requestFrame ??
+    (typeof globalThis.requestAnimationFrame === "function"
+      ? globalThis.requestAnimationFrame.bind(globalThis)
+      : fallbackRequestAnimationFrame)
+  const cancelFrame =
+    options.cancelFrame ??
+    (typeof globalThis.cancelAnimationFrame === "function"
+      ? globalThis.cancelAnimationFrame.bind(globalThis)
+      : fallbackCancelAnimationFrame)
   const setTimer = options.setTimer ?? setTimeout
   const clearTimer = options.clearTimer ?? clearTimeout
 

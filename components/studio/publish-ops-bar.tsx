@@ -18,15 +18,26 @@ interface DirtyDoc {
   title?: string
 }
 
+interface PendingMediaOp {
+  _id: string
+  repoPath: string
+  fileName: string
+  status: string
+  sourceFilePath?: string
+}
+
 interface PublishOpsBarProps {
   creates: number
   deletes: number
   edits: number
+  media?: number
   pendingOps?: PendingOp[]
   dirtyDocs?: DirtyDoc[]
+  pendingMediaOps?: PendingMediaOp[]
   hasCurrentLane?: boolean
   currentPrNumber?: number | null
   currentPrUrl?: string | null
+  isDiscarding?: boolean
   onPublish: () => void
   onDiscard: () => void
   onSelectFile?: (path: string) => void
@@ -36,21 +47,25 @@ export function PublishOpsBar({
   creates,
   deletes,
   edits,
+  media = 0,
   pendingOps = [],
   dirtyDocs = [],
+  pendingMediaOps = [],
   hasCurrentLane = false,
   currentPrNumber,
   currentPrUrl,
+  isDiscarding = false,
   onPublish,
   onDiscard,
   onSelectFile,
 }: PublishOpsBarProps) {
   const [isExpanded, setIsExpanded] = useState(false)
-  const total = creates + deletes + edits
+  const total = creates + deletes + edits + media
   if (total === 0) return null
 
   const newFiles = pendingOps.filter((op) => op.opType === "create" && op.status === "pending")
   const deletedFiles = pendingOps.filter((op) => op.opType === "delete" && op.status === "pending")
+  const mediaFiles = pendingMediaOps.filter((op) => op.status === "pending")
 
   // Filter out documents that are already in newFiles to avoid duplication
   const newFilePaths = new Set(newFiles.map((f) => f.filePath))
@@ -150,6 +165,26 @@ export function PublishOpsBar({
               ))}
             </div>
           )}
+
+          {mediaFiles.length > 0 && (
+            <div className="space-y-1">
+              <div className="flex items-center gap-1 text-studio-accent">
+                <FileEdit className="h-3 w-3" />
+                <span className="font-medium">{mediaFiles.length} media</span>
+              </div>
+              {mediaFiles.map((file) => (
+                <button
+                  type="button"
+                  key={file._id}
+                  className="w-full text-left pl-4 py-1 hover:bg-studio-accent/10 cursor-pointer rounded truncate text-studio-fg"
+                  onClick={() => file.sourceFilePath && handleFileClick(file.sourceFilePath)}
+                  title={file.repoPath}
+                >
+                  {file.fileName}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -170,6 +205,11 @@ export function PublishOpsBar({
               -{deletes} deleted
             </Badge>
           )}
+          {media > 0 && (
+            <Badge variant="secondary" className="h-5 text-[10px] bg-studio-accent-muted text-studio-accent border-0">
+              +{media} media
+            </Badge>
+          )}
         </div>
       )}
 
@@ -178,10 +218,11 @@ export function PublishOpsBar({
           variant="ghost"
           size="sm"
           className="flex-1 h-7 text-xs text-studio-fg-muted hover:text-studio-danger"
+          disabled={isDiscarding}
           onClick={onDiscard}
         >
           <X className="h-3 w-3 mr-1" />
-          Discard
+          {isDiscarding ? "Discarding..." : "Discard"}
         </Button>
         <Button size="sm" className="flex-1 h-7 text-xs bg-studio-accent hover:bg-studio-accent/90" onClick={onPublish}>
           {hasCurrentLane

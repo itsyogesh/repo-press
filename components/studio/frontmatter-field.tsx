@@ -101,7 +101,13 @@ export function FrontmatterField({ field, value, onChange, selectedFilePath }: F
         <div className="grid gap-1">
           {labelEl}
           {helperEl}
-          <ImageField value={value || ""} onChange={onChange} selectedFilePath={selectedFilePath} />
+          <ImageField
+            value={value || ""}
+            onChange={onChange}
+            selectedFilePath={selectedFilePath}
+            fieldName={field.actualFieldName}
+            semanticRole={field.semanticRole}
+          />
         </div>
       )
 
@@ -171,7 +177,13 @@ export function FrontmatterField({ field, value, onChange, selectedFilePath }: F
           <div className="grid gap-1">
             {labelEl}
             {helperEl}
-            <ImageField value={value || ""} onChange={onChange} selectedFilePath={selectedFilePath} />
+            <ImageField
+              value={value || ""}
+              onChange={onChange}
+              selectedFilePath={selectedFilePath}
+              fieldName={field.actualFieldName}
+              semanticRole={field.semanticRole}
+            />
           </div>
         )
       }

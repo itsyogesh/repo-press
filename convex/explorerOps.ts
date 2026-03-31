@@ -218,6 +218,90 @@ export const undoOp = mutation({
 })
 
 /**
+ * Discard all pending explorer ops and edited draft documents for a project.
+ * Existing files keep their document record, but draft body/frontmatter are cleared
+ * so the Studio reloads the canonical GitHub content.
+ */
+export const discardAll = mutation({
+  args: {
+    projectId: v.id("projects"),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await resolveProjectAccess(ctx, args, "editor")
+
+    const now = Date.now()
+    const pendingOps = await ctx.db
+      .query("explorerOps")
+      .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", "pending"))
+      .collect()
+    const pendingMediaOps = await ctx.db
+      .query("mediaOps")
+      .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", "pending"))
+      .collect()
+
+    const pendingCreatePaths = new Set(
+      pendingOps.filter((op) => op.opType === "create" && op.status === "pending").map((op) => op.filePath),
+    )
+
+    for (const op of pendingOps) {
+      await ctx.db.patch(op._id, {
+        status: "undone",
+        updatedAt: now,
+      })
+
+      if (op.opType === "create") {
+        const doc = await ctx.db
+          .query("documents")
+          .withIndex("by_projectId_filePath", (q) => q.eq("projectId", op.projectId).eq("filePath", op.filePath))
+          .first()
+
+        if (doc && doc.status === "draft") {
+          await ctx.db.delete(doc._id)
+        }
+      }
+    }
+
+    for (const mediaOp of pendingMediaOps) {
+      await ctx.db.patch(mediaOp._id, {
+        status: "undone",
+        updatedAt: now,
+      })
+    }
+
+    const draftDocs = await ctx.db
+      .query("documents")
+      .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", "draft"))
+      .collect()
+    const approvedDocs = await ctx.db
+      .query("documents")
+      .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", "approved"))
+      .collect()
+
+    const dirtyDocs = [...draftDocs, ...approvedDocs].filter(
+      (doc) => !pendingCreatePaths.has(doc.filePath) && (doc.body != null || doc.frontmatter != null),
+    )
+
+    for (const doc of dirtyDocs) {
+      await ctx.db.patch(doc._id, {
+        body: undefined,
+        frontmatter: undefined,
+        updatedAt: now,
+      })
+    }
+
+    return {
+      discardedOpIds: pendingOps.map((op) => op._id),
+      discardedMediaOpIds: pendingMediaOps.map((op) => op._id),
+      discardedDirtyDocIds: dirtyDocs.map((doc) => doc._id),
+      discardedDirtyPaths: dirtyDocs.map((doc) => doc.filePath),
+      discardedCreatePaths: Array.from(pendingCreatePaths),
+    }
+  },
+})
+
+/**
  * Mark a batch of explorer ops as committed after a successful GitHub commit.
  */
 export const markCommitted = mutation({

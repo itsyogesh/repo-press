@@ -25,7 +25,8 @@ import "@mdxeditor/editor/style.css"
 import "./mdxeditor-theme.css"
 
 import type { FieldVariantMap, FrontmatterFieldDef } from "@/lib/framework-adapters"
-import { resolveStudioAssetUrl } from "@/lib/studio/media-resolve"
+import { getAuthoredImageValue } from "@/lib/studio/image-authoring"
+import { getSuggestedImagePath, resolveStudioAssetUrl } from "@/lib/studio/media-resolve"
 import { uploadMedia } from "@/lib/studio/media-upload"
 import { shouldResetEditorBoundary } from "./editor-error-boundary-utils"
 import { EditorErrorFallback } from "./error-boundary"
@@ -158,21 +159,6 @@ export function Editor({
     )
   }, [adapter, componentSchema])
 
-  // Determine image upload path based on project structure
-  const getImageUploadPath = React.useCallback(
-    (fileName: string): string => {
-      const possibleDirs = ["public/images", "static/images", "images", "assets/images", "src/assets/images"]
-
-      const existingDirs = possibleDirs.filter((dir) =>
-        tree.some((node) => node.type === "dir" && (node.path === dir || node.path.startsWith(`${dir}/`))),
-      )
-
-      const baseDir = existingDirs[0] || "public/images"
-      return `${baseDir}/${fileName}`
-    },
-    [tree],
-  )
-
   // Image upload handler - Blob-first with GitHub fallback
   const handleImageUpload = React.useCallback(
     async (file: File): Promise<string> => {
@@ -180,8 +166,7 @@ export function Editor({
         if (!projectId) {
           throw new Error("Missing project context for media upload")
         }
-        const fileName = file.name || `image-${Date.now()}.png`
-        const pathHint = getImageUploadPath(fileName).split("/").slice(0, -1).join("/")
+        const pathHint = filePath ? getSuggestedImagePath(filePath) : "public/images"
 
         // Use Blob-first upload with GitHub fallback
         const result = await uploadMedia({
@@ -192,16 +177,21 @@ export function Editor({
           repo,
           branch,
           pathHint,
+          sourceFilePath: filePath,
           storagePreference: "auto",
         })
 
-        return result.repoPath
+        return getAuthoredImageValue({
+          repoPath: result.repoPath,
+          selectedFilePath: filePath,
+          usage: "editor",
+        })
       } catch (error) {
         console.error("Error uploading image:", error)
         throw error
       }
     },
-    [projectId, userId, owner, repo, branch, getImageUploadPath],
+    [projectId, userId, owner, repo, branch, filePath],
   )
 
   // Extract image paths from tree for autocomplete
