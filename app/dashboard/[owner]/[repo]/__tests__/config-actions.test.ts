@@ -340,9 +340,7 @@ describe("removeProjectFromConfigAction", () => {
 describe("commitRawConfigAction", () => {
   const VALID_JSON = JSON.stringify({
     version: 1,
-    projects: [
-      { id: "blog", name: "Blog", contentRoot: "content/blog", framework: "custom", contentType: "blog" },
-    ],
+    projects: [{ id: "blog", name: "Blog", contentRoot: "content/blog", framework: "custom", contentType: "blog" }],
   })
   const SHA = "current_sha_abc"
 
