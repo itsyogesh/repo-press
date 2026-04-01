@@ -18,8 +18,8 @@ export async function GET(request: Request) {
   }
 
   const prNumber = parseInt(prNumberStr, 10)
-  if (Number.isNaN(prNumber)) {
-    return NextResponse.json({ error: "prNumber must be an integer" }, { status: 400 })
+  if (Number.isNaN(prNumber) || prNumber <= 0 || prNumber > Number.MAX_SAFE_INTEGER) {
+    return NextResponse.json({ error: "prNumber must be a positive integer" }, { status: 400 })
   }
 
   try {

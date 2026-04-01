@@ -54,8 +54,10 @@ export function usePrStatusSync({
           void markClosed({ id: laneId, userId, projectAccessToken })
         }
       })
-      .catch(() => {
-        // Silently ignore — network errors should not break the editor.
+      .catch((err: unknown) => {
+        if (err instanceof DOMException && err.name === "AbortError") return
+        // Log non-network errors so auth/server failures are visible in dev
+        console.warn("[usePrStatusSync] failed to verify PR status:", err)
       })
 
     return () => controller.abort()
