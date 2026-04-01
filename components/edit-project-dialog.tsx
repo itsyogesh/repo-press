@@ -4,7 +4,6 @@ import { Loader2, Save } from "lucide-react"
 import { useEffect, useState, useTransition } from "react"
 import { toast } from "sonner"
 import { updateProjectInConfigAction } from "@/app/dashboard/[owner]/[repo]/config-actions"
-import { buildUpdateProjectActionInput } from "@/components/project-config-action-input"
 import { Button } from "./ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog"
 import { Input } from "./ui/input"
@@ -68,18 +67,22 @@ export function EditProjectDialog({
   const [branch, setBranch] = useState("")
   const [error, setError] = useState<string | null>(null)
 
+  // Sync form state when project changes
+  const resetToProject = (p: EditableProject) => {
+    setName(p.name)
+    setFramework(p.detectedFramework || "auto")
+    setContentType(p.contentType)
+    setBranch(p.branch === defaultBranch ? "" : p.branch)
+    setError(null)
+  }
+
   // Reset form when dialog opens or project identity changes.
   // Radix controlled Dialog does NOT call onOpenChange(true) when the parent
   // sets open=true, so we must use useEffect instead of relying on handleOpenChange.
   useEffect(() => {
-    if (!open || !project) return
-
-    setName(project.name)
-    setFramework(project.detectedFramework || "auto")
-    setContentType(project.contentType)
-    setBranch(project.branch === defaultBranch ? "" : project.branch)
-    setError(null)
-  }, [defaultBranch, open, project])
+    if (open && project) resetToProject(project)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, project?._id])
 
   const handleOpenChange = (o: boolean) => {
     if (!o) setError(null)
@@ -103,15 +106,13 @@ export function EditProjectDialog({
 
     setError(null)
     startTransition(async () => {
-      const { configBranch, updates } = buildUpdateProjectActionInput({
-        configProjectId,
-        defaultBranch,
-        name,
+      // Config file always lives on the default branch — not the project's content branch
+      const result = await updateProjectInConfigAction(owner, repo, defaultBranch, configProjectId, {
+        name: name.trim(),
         framework,
         contentType: contentType as "blog" | "docs" | "pages" | "changelog" | "custom",
-        branchInput: branch,
+        ...(branch.trim() ? { branch: branch.trim() } : {}),
       })
-      const result = await updateProjectInConfigAction(owner, repo, configBranch, configProjectId, updates)
 
       if (result.success) {
         toast.success(`Project "${name.trim()}" updated`)
