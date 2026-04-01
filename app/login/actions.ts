@@ -21,3 +21,8 @@ export async function loginWithPAT(formData: FormData) {
 
   redirect("/dashboard")
 }
+
+export async function clearGitHubPAT() {
+  const cookieStore = await cookies()
+  cookieStore.delete("github_pat")
+}
