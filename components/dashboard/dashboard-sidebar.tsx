@@ -86,6 +86,7 @@ export function DashboardSidebar() {
                 (() => {
                   const skeletonWidths = ["68%", "74%", "81%"]
                   return Array.from({ length: 3 }).map((_, i) => (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholders
                     <SidebarMenuItem key={`skeleton-${i}`}>
                       <SidebarMenuSkeleton showIcon width={skeletonWidths[i % skeletonWidths.length]} />
                     </SidebarMenuItem>

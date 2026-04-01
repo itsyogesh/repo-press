@@ -1,10 +1,9 @@
 import * as React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
-
-import { getAuthoredImageValue } from "@/lib/studio/image-authoring"
 import { FrontmatterField } from "@/components/studio/frontmatter-field"
 import { StudioProvider } from "@/components/studio/studio-context"
+import { getAuthoredImageValue } from "@/lib/studio/image-authoring"
 
 // Minimal mock field definitions covering meta fields requested by user
 const metaFields = [
@@ -59,7 +58,12 @@ describe("Image authoring and frontmatter metadata", () => {
       <StudioProvider value={providerValue as any}>
         <div>
           {fields.map((f) => (
-            <FrontmatterField key={f.actualFieldName} field={f as any} value={f.type === "date" ? "2026-01-01" : ""} onChange={() => {}} />
+            <FrontmatterField
+              key={f.actualFieldName}
+              field={f as any}
+              value={f.type === "date" ? "2026-01-01" : ""}
+              onChange={() => {}}
+            />
           ))}
         </div>
       </StudioProvider>,
@@ -70,7 +74,7 @@ describe("Image authoring and frontmatter metadata", () => {
       expect(html).toContain(f.actualFieldName)
     }
 
-    // Ensure image fields render the "Replace" control text or image control
-    expect(html.toLowerCase()).toContain("replace")
+    // Ensure image fields render the upload control
+    expect(html.toLowerCase()).toContain("select or upload image")
   })
 })
