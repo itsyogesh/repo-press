@@ -87,10 +87,18 @@ describe("review regression guards", () => {
     expect(source).toMatch(/finally\s*{[\s\S]*?clearInterval\(/)
   })
 
-  it("normalizes external image URLs before saving", () => {
-    const source = read("components/studio/image-field.tsx")
-    expect(source).toMatch(/normalizeExternalImageUrl/)
-    expect(source).toMatch(/onSelect\(\s*normalizeExternalImageUrl\(/)
+  it("routes external image URLs through staged media downloads", () => {
+    const imageFieldSource = read("components/studio/image-field.tsx")
+    const imageFieldControlSource = read("components/studio/image-field-control.tsx")
+    expect(imageFieldSource).toMatch(/downloadExternalImage/)
+    expect(imageFieldControlSource).toMatch(/downloadExternalImage/)
+    expect(imageFieldSource).not.toMatch(/onSelect\(\s*normalizeExternalImageUrl\(/)
+    expect(imageFieldControlSource).not.toMatch(/onSelect\(\s*normalizeExternalImageUrl\(/)
+  })
+
+  it("uses document-aware upload folders for editor image uploads", () => {
+    const source = read("components/studio/editor.tsx")
+    expect(source).toContain("getSuggestedImagePath(filePath)")
   })
 
   it("keeps studio component previews self-hosted", () => {

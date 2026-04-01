@@ -127,10 +127,7 @@ function getRecentComponents(): string[] {
   if (typeof window === "undefined") return []
   try {
     const stored = localStorage.getItem(RECENT_KEY)
-    if (!stored) return []
-    const parsed: unknown = JSON.parse(stored)
-    if (!Array.isArray(parsed)) return []
-    return parsed.filter((item): item is string => typeof item === "string")
+    return stored ? JSON.parse(stored) : []
   } catch {
     return []
   }
@@ -319,6 +316,7 @@ export function ComponentInsertModal({
 
   const handleInsert = React.useCallback(() => {
     if (!selectedDef) {
+      console.warn("handleInsert called but no selectedDef")
       return
     }
     try {

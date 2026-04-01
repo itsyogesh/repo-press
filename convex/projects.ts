@@ -513,6 +513,19 @@ export const syncProjectsFromConfig = mutation({
     for (const p of args.projects) {
       const nextBranch = p.branch || args.branch
 
+      // Skip if this configProjectId was previously deleted
+      const isTombstoned = await ctx.db
+        .query("deletedConfigProjects")
+        .withIndex("by_repo_configProjectId", (q) =>
+          q.eq("repoOwner", args.repoOwner).eq("repoName", args.repoName).eq("configProjectId", p.configProjectId),
+        )
+        .first()
+
+      if (isTombstoned) {
+        // Skip this project — it was intentionally deleted
+        continue
+      }
+
       // 1) Preferred match: explicit config project ID (across ALL projects for repo).
       // 2) Legacy migration match: repo + branch + contentRoot when configProjectId was never stored.
       const existing =
@@ -537,7 +550,9 @@ export const syncProjectsFromConfig = mutation({
           JSON.stringify(existing.enabledPlugins) !== JSON.stringify(p.enabledPlugins) ||
           JSON.stringify(existing.pluginRegistry) !== JSON.stringify(args.pluginRegistry) ||
           JSON.stringify(existing.components) !== JSON.stringify(p.components) ||
-          existing.frameworkSource !== "config"
+          existing.frameworkSource !== "config" ||
+          // Re-added orphan: configRemoved was set but project is back in config
+          existing.configRemoved !== undefined
 
         if (needsUpdate) {
           await ctx.db.patch(existing._id, {
@@ -554,6 +569,9 @@ export const syncProjectsFromConfig = mutation({
             pluginRegistry: args.pluginRegistry,
             components: p.components,
             frameworkSource: "config",
+            // Clear orphan flag if it was previously set
+            configRemoved: undefined,
+            configRemovedAt: undefined,
             updatedAt: Date.now(),
           })
           synced.push(existing._id)
@@ -587,7 +605,32 @@ export const syncProjectsFromConfig = mutation({
       }
     }
 
-    return { synced, created, unchanged }
+    // ── Orphan detection ─────────────────────────────────────────
+    // Flag config-driven projects that are no longer in the config.
+    // Clear the flag for projects that were re-added.
+    const configIds = new Set(args.projects.map((p) => p.configProjectId))
+    const orphaned: string[] = []
+
+    for (const project of repoProjects) {
+      if (project.frameworkSource !== "config" || !project.configProjectId) continue
+      if (project.name.startsWith("[DELETING]")) continue
+
+      if (!configIds.has(project.configProjectId)) {
+        // Project is no longer in config — flag it as orphaned
+        if (!project.configRemoved) {
+          await ctx.db.patch(project._id, {
+            configRemoved: true,
+            configRemovedAt: Date.now(),
+            updatedAt: Date.now(),
+          })
+        }
+        orphaned.push(project._id)
+        // Note: re-added orphans (configRemoved → cleared) are handled in the
+        // main upsert loop above via the needsUpdate check on configRemoved.
+      }
+    }
+
+    return { synced, created, unchanged, orphaned }
   },
 })
 
@@ -608,7 +651,11 @@ export const update = mutation({
   handler: async (ctx, args) => {
     await resolveProjectAccess(
       ctx,
-      { projectId: args.id, userId: args.userId, projectAccessToken: args.projectAccessToken },
+      {
+        projectId: args.id,
+        userId: args.userId,
+        projectAccessToken: args.projectAccessToken,
+      },
       "editor",
     )
 
@@ -631,13 +678,43 @@ export const updateFramework = mutation({
   handler: async (ctx, args) => {
     await resolveProjectAccess(
       ctx,
-      { projectId: args.id, userId: args.userId, projectAccessToken: args.projectAccessToken },
+      {
+        projectId: args.id,
+        userId: args.userId,
+        projectAccessToken: args.projectAccessToken,
+      },
       "editor",
     )
 
     await ctx.db.patch(args.id, {
       detectedFramework: args.detectedFramework,
       frontmatterSchema: args.frontmatterSchema,
+      updatedAt: Date.now(),
+    })
+  },
+})
+
+/**
+ * Clears the configRemoved flag and converts a config-driven project to a
+ * manual project. Used when the owner wants to keep a project that was
+ * removed from the config file.
+ */
+export const keepAsManual = mutation({
+  args: {
+    projectId: v.id("projects"),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await resolveProjectAccess(ctx, args, "owner")
+
+    await ctx.db.patch(args.projectId, {
+      configRemoved: undefined,
+      configRemovedAt: undefined,
+      frameworkSource: undefined,
+      configProjectId: undefined,
+      configVersion: undefined,
+      configPath: undefined,
       updatedAt: Date.now(),
     })
   },
@@ -652,7 +729,11 @@ export const remove = mutation({
   handler: async (ctx, args) => {
     await resolveProjectAccess(
       ctx,
-      { projectId: args.id, userId: args.userId, projectAccessToken: args.projectAccessToken },
+      {
+        projectId: args.id,
+        userId: args.userId,
+        projectAccessToken: args.projectAccessToken,
+      },
       "owner",
     )
 
@@ -683,6 +764,21 @@ export const removeFull = mutation({
       name: `[DELETING] ${project.name}`,
       updatedAt: Date.now(),
     })
+
+    // Tombstone: record config-driven project deletion for downstream sync
+    if (project.frameworkSource === "config" && project.configProjectId) {
+      const callerUserId = args.userId
+      if (callerUserId) {
+        await ctx.db.insert("deletedConfigProjects", {
+          configProjectId: project.configProjectId,
+          repoOwner: project.repoOwner,
+          repoName: project.repoName,
+          branch: project.branch,
+          deletedBy: callerUserId,
+          deletedAt: Date.now(),
+        })
+      }
+    }
 
     // Schedule the batch deletion (runs as a separate transaction)
     await ctx.scheduler.runAfter(0, internal.projects._removeFullBatch, {

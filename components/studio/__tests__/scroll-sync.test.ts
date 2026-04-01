@@ -124,6 +124,29 @@ describe("createScrollSyncCoordinator", () => {
     vi.useRealTimers()
   })
 
+  it("creates a coordinator when requestAnimationFrame is unavailable during SSR", () => {
+    const globalScope = globalThis as typeof globalThis & {
+      requestAnimationFrame?: typeof requestAnimationFrame
+      cancelAnimationFrame?: typeof cancelAnimationFrame
+    }
+    const originalRequestFrame = globalScope.requestAnimationFrame
+    const originalCancelFrame = globalScope.cancelAnimationFrame
+
+    delete globalScope.requestAnimationFrame
+    delete globalScope.cancelAnimationFrame
+
+    try {
+      expect(() => createScrollSyncCoordinator(() => {})).not.toThrow()
+    } finally {
+      if (originalRequestFrame) {
+        globalScope.requestAnimationFrame = originalRequestFrame
+      }
+      if (originalCancelFrame) {
+        globalScope.cancelAnimationFrame = originalCancelFrame
+      }
+    }
+  })
+
   it("coalesces repeated same-source scroll events into one frame", () => {
     vi.useFakeTimers()
 

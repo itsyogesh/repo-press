@@ -455,6 +455,16 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
     [closeFile],
   )
 
+  const reloadFileFromRemote = React.useCallback(
+    (path: string) => {
+      fileCacheRef.current.delete(path)
+      if (selectedFile?.path === path) {
+        void openFile(path, "replace")
+      }
+    },
+    [selectedFile?.path, openFile],
+  )
+
   const hydrateFromDocument = React.useCallback(
     (doc: { body?: unknown; frontmatter?: unknown }) => {
       try {
@@ -561,6 +571,7 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
     clearSelection,
     closeFile,
     discardFileFromClientState,
+    reloadFileFromRemote,
     primeFileSnapshot,
     setContent: handleContentChange,
     setFrontmatterKey: handleFrontmatterChangeKey,

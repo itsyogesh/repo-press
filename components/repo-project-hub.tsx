@@ -9,28 +9,43 @@ import {
   Folder,
   GitBranch,
   Loader2,
+  MoreHorizontal,
+  Pencil,
+  Plus,
   RefreshCw,
   Settings,
+  Trash2,
   Wrench,
 } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { useTransition } from "react"
+import { useMemo, useState, useTransition } from "react"
 import { toast } from "sonner"
 import { retrySyncAction } from "@/lib/sync-projects"
+import { AddProjectDialog } from "./add-project-dialog"
+import { DeleteProjectDialog } from "./delete-project-dialog"
+import { type EditableProject, EditProjectDialog } from "./edit-project-dialog"
+import { OrphanWarningCard } from "./orphan-warning-card"
+import { RawConfigEditor } from "./raw-config-editor"
+import { RemoveProjectDialog } from "./remove-project-dialog"
 import { Alert, AlertDescription, AlertTitle } from "./ui/alert"
 import { Badge } from "./ui/badge"
 import { Button } from "./ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu"
 
-interface HubProject {
+export interface HubProject {
   _id: string
+  userId: string
   name: string
   branch: string
   contentRoot: string
   detectedFramework?: string
   contentType: string
   frameworkSource?: string
+  configProjectId?: string
+  configRemoved?: boolean
+  configRemovedAt?: number
   createdAt: number
   updatedAt: number
 }
@@ -45,6 +60,11 @@ interface RepoProjectHubProps {
   hasConfig: boolean
   configSynced: boolean
   syncError: string | null
+  isWriter: boolean
+  role: "owner" | "editor" | "viewer"
+  configJson: string | null
+  configSha: string | null
+  actingUserId?: string | null
 }
 
 export function RepoProjectHub({
@@ -56,9 +76,32 @@ export function RepoProjectHub({
   hasConfig,
   configSynced,
   syncError,
+  isWriter,
+  role,
+  configJson,
+  configSha,
+  actingUserId,
 }: RepoProjectHubProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
+
+  // Dialog state
+  const [addOpen, setAddOpen] = useState(false)
+  const [editProject, setEditProject] = useState<EditableProject | null>(null)
+  const [removeProject, setRemoveProject] = useState<HubProject | null>(null)
+  const [deleteProject, setDeleteProject] = useState<HubProject | null>(null)
+
+  const { activeProjects, orphanedProjects } = useMemo(() => {
+    const active: HubProject[] = []
+    const orphaned: HubProject[] = []
+    for (const p of projects) {
+      if (p.configRemoved) orphaned.push(p)
+      else active.push(p)
+    }
+    active.sort((a, b) => b.updatedAt - a.updatedAt)
+    orphaned.sort((a, b) => (b.configRemovedAt ?? b.updatedAt) - (a.configRemovedAt ?? a.updatedAt))
+    return { activeProjects: active, orphanedProjects: orphaned }
+  }, [projects])
 
   const handleRetrySync = () => {
     startTransition(async () => {
@@ -70,6 +113,10 @@ export function RepoProjectHub({
         toast.error(err.message || "Failed to sync projects")
       }
     })
+  }
+
+  const handleDialogSuccess = () => {
+    router.refresh()
   }
 
   return (
@@ -117,11 +164,20 @@ export function RepoProjectHub({
               )}
             </div>
             <p className="text-sm text-muted-foreground mt-0.5">
-              {projects.length} project{projects.length !== 1 ? "s" : ""}
+              {activeProjects.length} project{activeProjects.length !== 1 ? "s" : ""}
+              {orphanedProjects.length > 0 && (
+                <span className="text-studio-attention ml-1">· {orphanedProjects.length} removed from config</span>
+              )}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {isWriter && hasConfig && (
+            <Button variant="default" size="sm" onClick={() => setAddOpen(true)}>
+              <Plus className="h-4 w-4 mr-1.5" />
+              Add Project
+            </Button>
+          )}
           <Button variant="outline" size="sm" asChild>
             <Link href={`/dashboard/${owner}/${repo}/files?branch=${defaultBranch}`}>
               <Files className="h-4 w-4 mr-1.5" />
@@ -164,33 +220,91 @@ export function RepoProjectHub({
         </Alert>
       )}
 
+      {/* Orphan warnings */}
+      {orphanedProjects.length > 0 && (
+        <div className="flex flex-col gap-3">
+          {orphanedProjects.map((project) => (
+            <OrphanWarningCard
+              key={project._id}
+              project={project}
+              isOwner={role === "owner" || project.userId === actingUserId}
+              onResolved={handleDialogSuccess}
+            />
+          ))}
+        </div>
+      )}
+
       {/* Project cards */}
-      {projects.length > 0 ? (
+      {activeProjects.length > 0 ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {projects
-            .sort((a, b) => b.updatedAt - a.updatedAt)
-            .map((project) => (
+          {activeProjects.map((project) => {
+            const canRemove = role === "owner" || project.userId === actingUserId
+            return (
               <Card key={project._id} className="flex flex-col h-full">
-                <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between">
-                    <div className="space-y-1 min-w-0 flex-1">
-                      <CardTitle className="text-lg truncate">{project.name}</CardTitle>
-                      <CardDescription className="flex items-center gap-2 text-xs">
-                        {project.contentRoot && (
-                          <span className="flex items-center gap-1">
-                            <Folder className="h-3 w-3" />
-                            {project.contentRoot}
-                          </span>
-                        )}
-                        {project.branch !== defaultBranch && (
-                          <span className="flex items-center gap-1">
-                            <GitBranch className="h-3 w-3" />
-                            {project.branch}
-                          </span>
-                        )}
-                      </CardDescription>
+                <CardHeader className="pb-3 relative">
+                  {/* Three-dot menu anchored to top-right — absolute so badges get the full row width */}
+                  {isWriter && (project.frameworkSource === "config" || canRemove) && (
+                    <div className="absolute top-3 right-3">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-7 w-7">
+                            <MoreHorizontal className="h-4 w-4" />
+                            <span className="sr-only">Project actions</span>
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          {project.frameworkSource === "config" && (
+                            <DropdownMenuItem
+                              onSelect={() =>
+                                // Defer past the DropdownMenu close/focus-return cycle to avoid
+                                // the Radix aria-hidden race: the dropdown returns focus to its
+                                // trigger *before* it finishes cleanup, so opening a Dialog in
+                                // the same tick leaves aria-hidden stuck on the page container.
+                                setTimeout(
+                                  () =>
+                                    setEditProject({
+                                      _id: project._id,
+                                      name: project.name,
+                                      contentRoot: project.contentRoot,
+                                      detectedFramework: project.detectedFramework,
+                                      contentType: project.contentType,
+                                      branch: project.branch,
+                                      configProjectId: project.configProjectId,
+                                    }),
+                                  0,
+                                )
+                              }
+                            >
+                              <Pencil className="h-4 w-4 mr-2" />
+                              Edit
+                            </DropdownMenuItem>
+                          )}
+                          {project.frameworkSource === "config" && canRemove && (
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              onSelect={() => setTimeout(() => setRemoveProject(project), 0)}
+                            >
+                              <Trash2 className="h-4 w-4 mr-2" />
+                              Remove
+                            </DropdownMenuItem>
+                          )}
+                          {project.frameworkSource !== "config" && canRemove && (
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              onSelect={() => setTimeout(() => setDeleteProject(project), 0)}
+                            >
+                              <Trash2 className="h-4 w-4 mr-2" />
+                              Delete
+                            </DropdownMenuItem>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
-                    <div className="flex items-center gap-1.5 shrink-0">
+                  )}
+
+                  <div className="space-y-2 pr-8">
+                    <CardTitle className="text-lg leading-tight truncate">{project.name}</CardTitle>
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       {project.detectedFramework && project.detectedFramework !== "custom" && (
                         <Badge variant="secondary" className="text-[10px]">
                           {project.detectedFramework}
@@ -200,6 +314,20 @@ export function RepoProjectHub({
                         {project.contentType}
                       </Badge>
                     </div>
+                    <CardDescription className="flex items-center gap-2 text-xs flex-wrap">
+                      {project.contentRoot && (
+                        <span className="flex items-center gap-1">
+                          <Folder className="h-3 w-3" />
+                          {project.contentRoot}
+                        </span>
+                      )}
+                      {project.branch !== defaultBranch && (
+                        <span className="flex items-center gap-1">
+                          <GitBranch className="h-3 w-3" />
+                          {project.branch}
+                        </span>
+                      )}
+                    </CardDescription>
                   </div>
                 </CardHeader>
                 <CardContent className="flex-1 flex flex-col gap-3 pt-0">
@@ -224,10 +352,11 @@ export function RepoProjectHub({
                   </Link>
                 </CardContent>
               </Card>
-            ))}
+            )
+          })}
         </div>
-      ) : (
-        /* Empty state */
+      ) : !orphanedProjects.length ? (
+        /* Empty state — only when no active AND no orphaned projects */
         <div className="flex flex-col items-center justify-center py-16 border rounded-lg bg-muted/10">
           <div className="flex flex-col items-center gap-3 text-center max-w-md">
             <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center">
@@ -253,7 +382,61 @@ export function RepoProjectHub({
             )}
           </div>
         </div>
+      ) : null}
+
+      {/* Raw Config Editor (advanced) */}
+      {hasConfig && configJson && configSha && (
+        <RawConfigEditor
+          owner={owner}
+          repo={repo}
+          branch={defaultBranch}
+          initialJson={configJson}
+          initialSha={configSha}
+          isWriter={isWriter}
+          onCommitted={handleDialogSuccess}
+        />
       )}
+
+      {/* Dialogs */}
+      <AddProjectDialog
+        owner={owner}
+        repo={repo}
+        defaultBranch={defaultBranch}
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        onSuccess={handleDialogSuccess}
+      />
+      <EditProjectDialog
+        owner={owner}
+        repo={repo}
+        defaultBranch={defaultBranch}
+        project={editProject}
+        open={!!editProject}
+        onOpenChange={(open) => {
+          if (!open) setEditProject(null)
+        }}
+        onSuccess={handleDialogSuccess}
+      />
+      <RemoveProjectDialog
+        owner={owner}
+        repo={repo}
+        defaultBranch={defaultBranch}
+        project={removeProject}
+        open={!!removeProject}
+        onOpenChange={(open) => {
+          if (!open) setRemoveProject(null)
+        }}
+        onSuccess={handleDialogSuccess}
+      />
+      <DeleteProjectDialog
+        project={deleteProject}
+        userId={actingUserId}
+        open={!!deleteProject}
+        onOpenChange={(open) => {
+          if (!open) setDeleteProject(null)
+        }}
+        onSuccess={handleDialogSuccess}
+      />
     </div>
   )
 }

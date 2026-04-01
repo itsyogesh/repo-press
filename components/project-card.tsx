@@ -65,7 +65,16 @@ export function ProjectCard({ project }: ProjectCardProps) {
             <span>Manual</span>
           )}
           <span>&middot;</span>
-          <span>Updated {new Date(project.updatedAt).toLocaleDateString()}</span>
+          <span>
+            Updated{" "}
+            {project.updatedAt ? (
+              <time dateTime={new Date(project.updatedAt).toISOString()}>
+                {new Date(project.updatedAt).toISOString().slice(0, 10)}
+              </time>
+            ) : (
+              "N/A"
+            )}
+          </span>
         </div>
 
         <Link

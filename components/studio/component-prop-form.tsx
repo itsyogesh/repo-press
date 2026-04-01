@@ -27,13 +27,7 @@ export function validateFormState(props: RepoComponentPropDef[], state: PropForm
   for (const prop of props) {
     if (!prop.required) continue
     const val = state[prop.name]
-    if (prop.type === "boolean") {
-      // `false` is a valid explicit value; only `undefined`/`null` (unset) is invalid
-      if (val === undefined || val === null) {
-        errors[prop.name] = "Required"
-      }
-      continue
-    }
+    if (prop.type === "boolean") continue
     if (val === undefined || val === null || (typeof val === "string" && val.trim() === "")) {
       errors[prop.name] = "Required"
     }

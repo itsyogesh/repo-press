@@ -1,137 +1,124 @@
 # RepoPress Pull Request Workflow
 
-This document explains how RepoPress handles pull requests when publishing documents from the headless CMS to GitHub repositories.
+RepoPress publishes content changes through GitHub pull requests instead of pushing directly to the base branch. This document describes the current behavior implemented in Studio and the publish route.
 
 ## Overview
 
-When content is published in RepoPress, the system automatically creates a pull request in the connected GitHub repository to propose the changes for review before merging.
+RepoPress keeps one **current publish lane** per project.
 
-## PR Creation Process
+- By default, Studio updates the current RepoPress PR.
+- Users can explicitly choose **Create new PR** when the next set of changes should be reviewed separately.
+- When a new PR is created, it becomes the new current publish lane.
+- Older still-open RepoPress PRs remain visible as references, but Studio does not let you switch back to them as the active lane in this iteration.
 
-Based on the actual implementation in `/app/api/github/publish-ops/route.ts`:
+## Current publish lane model
 
-1. **Publish Trigger**: When a user initiates a publish action (via Studio editor or API)
-2. **Change Detection**: RepoPress identifies pending operations:
-   - Pending file operations (create/update/delete) from Explorer
-   - Dirty documents with content changes
-   - Pending media operations
-3. **Content Preparation**: Files are prepared with proper frontmatter using gray-matter
-4. **Branch Management**:
-   - Uses active publish branch or creates temporary branch: `repopress/${baseBranch}/${timestamp}`
-   - Creates branch via GitHub API if needed
-5. **GitHub Operations**: Uses Octokit to:
-   - Prefetch existing files to detect conflicts (returns 409 Conflict if files have been modified externally)
-   - Create/update/delete files in the temporary branch
-   - Commit changes with message: `chore(content): [summary] via RepoPress`
-   - Create pull request targeting base branch
-6. **Post-Commit Processing**:
-   - Updates document GitHub SHA in Convex to match published branch
-   - Marks operations as committed in Convex
-   - Returns PR URL/number to caller
+Publish lanes are tracked in Convex through the `publishBranches` table.
 
-## PR Title Generation
+- `active`: the current publish lane for the project
+- `inactive`: an older still-open RepoPress PR kept as a reference
+- `merged`: a RepoPress PR that was merged
+- `closed`: a RepoPress PR that was closed without merging
 
-From the code analysis (lines 236-239):
+Studio reads:
 
-- If custom title provided: Uses that title
-- Otherwise: `"Content update via RepoPress (${parts.join(", ")})"`
-- Where parts are: "X created", "Y updated", "Z deleted", etc.
+- `publishBranches.getCurrentForProject` for the current lane
+- `publishBranches.listOpenForProject` for the current lane plus older inactive references
 
-This differs from the initial research findings - RepoPress actually uses descriptive titles based on the changes made, not strictly static formats.
+## Publish behavior
 
-## PR Description Population
+When a publish is triggered from Studio:
 
-From the code analysis (lines 237-238):
+1. RepoPress collects pending explorer ops, dirty documents, and pending media ops.
+2. It saves the current draft first when a file is actively being edited.
+3. It chooses a publish target:
+   - **Default:** reuse the current publish lane
+   - **Explicit choice:** create a new publish lane and new PR
+4. If no current lane exists, RepoPress creates a branch named `repopress/<baseBranch>/<timestamp>`.
+5. RepoPress batches the file changes into that branch and creates a commit.
+6. If the lane does not have a PR yet, RepoPress creates one and stores the PR URL and PR number on the lane.
+7. RepoPress marks committed explorer/media ops with the `publishBranchId` that created them.
 
-- If custom description provided: Uses that description
-- Otherwise:
+## Reusing the current PR
 
-  ```
-  Automated content update from RepoPress.
+Current PR reuse remains the default behavior.
 
-  - [list of changes: created/updated/deleted files and media]
-  ```
+- Publishing again without changing the mode adds another commit to the current RepoPress lane.
+- If that lane already has a GitHub PR, the same PR is updated.
+- Studio surfaces the current PR clearly in the publish dialog and ops bar so the user knows later publishes will keep targeting it.
 
-The description is generated based on the actual operations performed during the publish process.
+This keeps related changes together and preserves the existing review conversation when the work is part of the same subject.
 
-## Branch Strategy
+## Creating a new PR
 
-- **Base Branch**: Configured per project (usually `main` or `master`)
-- **Publish Branch**: Auto-generated as `repopress/${baseBranch}/${timestamp}` or reused from active record stored in Convex
-- **Branch Reuse**: Intentional design - when publishing to an existing active PR, the same branch is reused and new commits are pushed to that PR rather than creating duplicate PRs
-- **Branch Cleanup**: Handled via publish branch tracking in Convex (active branch per project)
-- **Media Handling**: Separate tracking for media assets (images, files) with create/update operations
+Studio also offers **Create new PR** when the next changes should be reviewed separately.
 
-## Why Update Existing PRs?
+When the user chooses that option:
 
-This approach is the industry-standard best practice for git-based headless CMSes:
+1. RepoPress checks whether the new publish would overlap files already tracked by another still-open RepoPress PR.
+2. If there is no overlap, the current active lane is demoted to `inactive`.
+3. RepoPress creates a fresh `repopress/<baseBranch>/<timestamp>` branch.
+4. RepoPress creates a fresh PR for that branch.
+5. The new PR becomes the current publish lane for future publishes.
 
-| Approach                            | Pros                                                                                                     | Cons                                                                            |
-| ----------------------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| **Update Existing PR** (Current ✅) | Single source of truth, preserves review history, clean commit history, aligns with GitHub's native flow | PR can become large if many changes                                             |
-| Create New PR                       | Isolated changes per PR                                                                                  | Review fragmentation, confusing history, merge conflicts between concurrent PRs |
+Older still-open RepoPress PRs remain visible in Studio as reference-only links.
 
-Tools like TinaCMS, Statamic, and GitHub CLI automation workflows use this exact pattern.
+## Overlap protection
 
-## Review and Merge Process
+RepoPress blocks unsafe multi-PR publishing across still-open lanes.
 
-1. **PR Creation**: Automatic via GitHub API (Octokit)
-2. **URL Tracking**: PR URL and number stored in Convex (`publishBranches` table)
-3. **Post-Commit Updates**: After commit, RepoPress:
-   - Updates document GitHub SHA to match published branch
-   - Marks operations as committed
-   - Returns PR URL/number to caller
+- When a user chooses **Create new PR**, RepoPress compares the new publish's file paths against file paths already committed in other still-open RepoPress lanes.
+- If any file path overlaps, the publish route returns `409`.
+- Studio shows the overlap details and prevents the publish until the conflict is resolved.
 
-## Configuration Reference
+This protects against silently splitting the same file across multiple open RepoPress PRs.
 
-While the core PR mechanism is implemented in the publish-ops route, projects can influence behavior through:
+## Webhook merge and close handling
 
-### Project Settings (stored in Convex `projects` table):
+GitHub webhooks update the matching publish lane by PR number.
 
-- `branch`: Target branch for PRs (default: usually main/master)
-- `contentRoot`: Root path for content in repository
+- On merge:
+  - the matched lane is marked `merged`
+  - only committed explorer/media ops tagged with that lane's `publishBranchId` are deleted
+  - document publish transitions still use the merged lane's `committedFilePaths`
+- On close without merge:
+  - the matched lane is marked `closed`
+  - committed ops for unrelated lanes are left untouched
 
-### Indirect Customization:
+Cleanup is lane-scoped; it no longer assumes one project-wide committed-op bucket.
 
-- Custom titles/descriptions can be passed via the publish API
-- Workflow can be extended via GitHub webhooks and Convex actions
+## Current limitations
 
-## Files Involved
+This iteration intentionally does **not** support:
 
-Key files in the PR workflow:
+- reactivating an older inactive PR as the current Studio target
+- full branch-local draft isolation
+- editing the project's base branch from the publish dialog
+- treating older open PRs as selectable publish targets
 
-- `/app/api/github/publish-ops/route.ts` - Main PR creation logic with branch/PR reuse
-- `/lib/github.ts` - GitHub API wrapper functions (`createBranch`, `createPullRequest`, `batchCommit`)
-- Convex schema: `publishBranches` table for tracking active PRs per project
-- Convex functions: `publishBranches.getActiveForProject`, `publishBranches.updateAfterCommit`
+Older open PRs are references only until a future iteration adds explicit lane reactivation.
 
-## Implementation Details
+## Files involved
 
-The system uses:
+The workflow is primarily implemented in:
 
-- **Octokit** (`@octokit/rest`) for all GitHub API interactions
-- **Convex transactions** for atomic operations
-- **Branch-based workflow** instead of direct pushes to main
-- **Conflict detection** by prefetching files before operations
-- **Media asset handling** separate from content files
+- `app/api/github/publish-ops/route.ts`
+- `convex/publishBranches.ts`
+- `convex/githubWebhook.ts`
+- `convex/explorerOps.ts`
+- `convex/mediaOps.ts`
+- `components/studio/publish-dialog.tsx`
+- `components/studio/publish-ops-bar.tsx`
+- `components/studio/hooks/use-studio-publish.ts`
+- `components/studio/hooks/use-studio-queries.ts`
 
-## Error Handling
+## Verification checklist
 
-- Returns 409 Conflict if files have been modified externally (conflicts detected during prefetch)
-- Returns 400 Bad Request if no pending changes to publish
-- Returns 400 Bad Request if missing projectId
-- Returns 404 Not Found if project not found
-- Returns 401/403 for authentication/authorization errors
-- Returns 500 Internal Error for unexpected failures
-- All GitHub API errors are caught and returned as 500 with message
+To validate the workflow manually:
 
-## Verification
-
-To verify a PR was created:
-
-1. Check Convex `publishBranches` table for PR URL/number (updated after PR creation)
-2. Look for branch `repopress/${baseBranch}/${timestamp}` in GitHub (created via `createBranch`)
-3. Review the PR in GitHub UI showing all changes made (URL returned in API response)
-4. Verify document GitHub SHAs were updated in Convex (post-commit processing)
-5. Confirm operations were marked as committed in Convex (post-commit processing)
-   EOF
+1. Create a file and publish it. A RepoPress PR should be created and shown as the current PR.
+2. Edit a different file and publish again with the default option. The same PR should update.
+3. Edit another different file and choose **Create new PR**. A fresh PR should be created and become current.
+4. Confirm the older PR still exists in GitHub and is shown as a reference in Studio.
+5. Try to create a new PR with a file path already tracked by another still-open RepoPress PR. The publish should be blocked with an overlap message.
+6. Merge or close an older PR. The current PR should remain usable.

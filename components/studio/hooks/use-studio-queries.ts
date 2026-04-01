@@ -175,8 +175,18 @@ export function useStudioQueries(
     projectId ? { projectId: projectId as Id<"projects">, ...queryAuth } : "skip",
   )
 
-  const activeBranch = useQuery(
-    api.publishBranches.getActiveForProject,
+  const pendingMediaOps = useQuery(
+    api.mediaOps.listPending,
+    projectId ? { projectId: projectId as Id<"projects">, ...queryAuth } : "skip",
+  )
+
+  const currentPublishLane = useQuery(
+    api.publishBranches.getCurrentForProject,
+    projectId ? { projectId: projectId as Id<"projects">, ...queryAuth } : "skip",
+  )
+
+  const openPublishLanes = useQuery(
+    api.publishBranches.listOpenForProject,
     projectId ? { projectId: projectId as Id<"projects">, ...queryAuth } : "skip",
   )
 
@@ -262,9 +272,12 @@ export function useStudioQueries(
     document,
     titleMap,
     pendingOps,
+    pendingMediaOps,
     overlayTree,
     opCounts,
-    activeBranch,
+    currentPublishLane,
+    openPublishLanes,
+    activeBranch: currentPublishLane,
     dirtyDocs,
     editCount,
     frontmatterSchema,

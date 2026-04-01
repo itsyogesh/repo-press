@@ -11,6 +11,7 @@ export const stage = mutation({
     fileName: v.string(),
     mimeType: v.string(),
     sizeBytes: v.optional(v.number()),
+    sourceFilePath: v.optional(v.string()),
     sourceType: v.union(v.literal("blob"), v.literal("githubBranch")),
     blobUrl: v.optional(v.string()),
     blobAccess: v.optional(v.union(v.literal("public"), v.literal("private"))),
@@ -33,6 +34,7 @@ export const stage = mutation({
         fileName: args.fileName,
         mimeType: args.mimeType,
         sizeBytes: args.sizeBytes,
+        sourceFilePath: args.sourceFilePath,
         sourceType: args.sourceType,
         blobUrl: args.blobUrl,
         blobAccess: args.blobAccess,
@@ -98,6 +100,7 @@ export const markCommitted = mutation({
   args: {
     ids: v.array(v.id("mediaOps")),
     commitSha: v.string(),
+    publishBranchId: v.optional(v.id("publishBranches")),
     userId: v.optional(v.string()),
     projectAccessToken: v.optional(v.string()),
   },
@@ -116,6 +119,7 @@ export const markCommitted = mutation({
       await ctx.db.patch(id, {
         status: "committed",
         commitSha: args.commitSha,
+        publishBranchId: args.publishBranchId,
         updatedAt: now,
       })
     }

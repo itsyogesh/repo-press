@@ -5,6 +5,7 @@ import * as React from "react"
 import { toast } from "sonner"
 import { BorderBeam } from "@/components/magicui/border-beam"
 import { Progress } from "@/components/ui/progress"
+import { getAuthoredImageValue } from "@/lib/studio/image-authoring"
 import { uploadMedia } from "@/lib/studio/media-upload"
 import { cn } from "@/lib/utils"
 
@@ -15,10 +16,15 @@ interface ImageUploadZoneProps {
   repo: string
   branch: string
   pathHint?: string
-  onUploadComplete: (repoPath: string) => void
+  onUploadComplete: (value: string) => void
   className?: string
   /** When false, the global paste listener is detached. Prevents capturing pastes site-wide. */
   active?: boolean
+  authoredValueUsage?: "frontmatter" | "component" | "editor"
+  fieldName?: string
+  semanticRole?: string
+  selectedFilePath?: string
+  sourceFilePath?: string
 }
 
 export function ImageUploadZone({
@@ -31,6 +37,11 @@ export function ImageUploadZone({
   onUploadComplete,
   className,
   active = true,
+  authoredValueUsage = "component",
+  fieldName,
+  semanticRole,
+  selectedFilePath,
+  sourceFilePath,
 }: ImageUploadZoneProps) {
   const [isDragging, setIsDragging] = React.useState(false)
   const [isUploading, setIsUploading] = React.useState(false)
@@ -63,12 +74,21 @@ export function ImageUploadZone({
           repo,
           branch,
           pathHint,
+          sourceFilePath,
         })
 
         setProgress(100)
 
         setTimeout(() => {
-          onUploadComplete(result.repoPath)
+          onUploadComplete(
+            getAuthoredImageValue({
+              repoPath: result.repoPath,
+              selectedFilePath,
+              usage: authoredValueUsage,
+              fieldName,
+              semanticRole,
+            }),
+          )
           setIsUploading(false)
           setProgress(0)
           toast.success(`Uploaded ${file.name}`)
@@ -84,7 +104,20 @@ export function ImageUploadZone({
         }
       }
     },
-    [projectId, userId, owner, repo, branch, pathHint, onUploadComplete],
+    [
+      projectId,
+      userId,
+      owner,
+      repo,
+      branch,
+      pathHint,
+      onUploadComplete,
+      authoredValueUsage,
+      fieldName,
+      semanticRole,
+      selectedFilePath,
+      sourceFilePath,
+    ],
   )
 
   const onDragOver = (e: React.DragEvent) => {

@@ -2,13 +2,17 @@
 
 import { ExternalLink, ImageIcon, Link as LinkIcon, RefreshCw, Trash2, Upload } from "lucide-react"
 import * as React from "react"
+import { toast } from "sonner"
 import { BlurFade } from "@/components/magicui/blur-fade"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Progress } from "@/components/ui/progress"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { downloadExternalImage } from "@/lib/studio/download-external-image"
+import { getAuthoredImageValue } from "@/lib/studio/image-authoring"
 import { isSafeImageSrc, normalizeExternalImageUrl } from "@/lib/studio/image-url"
 import { getSuggestedImagePath, resolveStudioAssetUrl } from "@/lib/studio/media-resolve"
 import { cn } from "@/lib/utils"
@@ -21,6 +25,8 @@ interface ImageFieldProps {
   placeholder?: string
   className?: string
   selectedFilePath?: string
+  fieldName?: string
+  semanticRole?: string
 }
 
 export function ImageField({
@@ -29,6 +35,8 @@ export function ImageField({
   placeholder = "Select or upload image...",
   className,
   selectedFilePath: selectedFilePathProp,
+  fieldName,
+  semanticRole,
 }: ImageFieldProps) {
   const { projectId, userId, selectedFilePath: selectedFilePathContext, owner, repo, branch } = useStudio()
   const selectedFilePath = selectedFilePathProp ?? selectedFilePathContext
@@ -121,6 +129,10 @@ export function ImageField({
           repo={repo}
           branch={branch}
           pathHint={pathHint}
+          selectedFilePath={selectedFilePath}
+          authoredValueUsage="frontmatter"
+          fieldName={fieldName}
+          semanticRole={semanticRole}
         />
       </BlurFade>
     )
@@ -153,6 +165,10 @@ export function ImageField({
         repo={repo}
         branch={branch}
         pathHint={pathHint}
+        selectedFilePath={selectedFilePath}
+        authoredValueUsage="frontmatter"
+        fieldName={fieldName}
+        semanticRole={semanticRole}
       />
     </>
   )
@@ -168,6 +184,10 @@ interface ImageSelectorDialogProps {
   repo?: string
   branch?: string
   pathHint: string
+  selectedFilePath?: string
+  authoredValueUsage?: "frontmatter" | "component" | "editor"
+  fieldName?: string
+  semanticRole?: string
 }
 
 function ImageSelectorDialog({
@@ -180,10 +200,85 @@ function ImageSelectorDialog({
   repo,
   branch,
   pathHint,
+  selectedFilePath,
+  authoredValueUsage = "frontmatter",
+  fieldName,
+  semanticRole,
 }: ImageSelectorDialogProps) {
   const [urlValue, setUrlValue] = React.useState("")
+  const [isDownloading, setIsDownloading] = React.useState(false)
+  const [downloadProgress, setDownloadProgress] = React.useState(0)
   const normalizedUrlValue = normalizeExternalImageUrl(urlValue)
   const canUseUrl = Boolean(normalizedUrlValue) && isSafeImageSrc(normalizedUrlValue)
+
+  const handleUseUrl = React.useCallback(async () => {
+    const normalized = normalizeExternalImageUrl(urlValue)
+    if (!normalized || !isSafeImageSrc(normalized)) return
+
+    if (
+      !projectId ||
+      !owner ||
+      !repo ||
+      !branch ||
+      (!normalized.startsWith("http://") && !normalized.startsWith("https://"))
+    ) {
+      onSelect(normalized)
+      return
+    }
+
+    setIsDownloading(true)
+    setDownloadProgress(15)
+    let progressInterval: ReturnType<typeof setInterval> | undefined
+
+    try {
+      progressInterval = setInterval(() => {
+        setDownloadProgress((prev) => (prev < 90 ? prev + 10 : prev))
+      }, 400)
+
+      const result = await downloadExternalImage({
+        url: normalized,
+        projectId,
+        userId,
+        owner,
+        repo,
+        branch,
+        pathHint,
+        sourceFilePath: selectedFilePath,
+      })
+
+      setDownloadProgress(100)
+      onSelect(
+        getAuthoredImageValue({
+          repoPath: result.repoPath,
+          selectedFilePath,
+          usage: authoredValueUsage,
+          fieldName,
+          semanticRole,
+        }),
+      )
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to download image")
+    } finally {
+      if (progressInterval) {
+        clearInterval(progressInterval)
+      }
+      setIsDownloading(false)
+      setDownloadProgress(0)
+    }
+  }, [
+    urlValue,
+    projectId,
+    owner,
+    repo,
+    branch,
+    onSelect,
+    userId,
+    pathHint,
+    selectedFilePath,
+    authoredValueUsage,
+    fieldName,
+    semanticRole,
+  ])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -226,6 +321,11 @@ function ImageSelectorDialog({
                     pathHint={pathHint}
                     onUploadComplete={onSelect}
                     active={open}
+                    selectedFilePath={selectedFilePath}
+                    sourceFilePath={selectedFilePath}
+                    authoredValueUsage={authoredValueUsage}
+                    fieldName={fieldName}
+                    semanticRole={semanticRole}
                   />
                 ) : (
                   <div className="flex flex-col items-center justify-center h-48 text-studio-fg-muted">
@@ -246,12 +346,19 @@ function ImageSelectorDialog({
                         placeholder="https://example.com/image.jpg"
                         className="border-studio-border"
                       />
-                      <Button onClick={() => onSelect(normalizeExternalImageUrl(urlValue))} disabled={!canUseUrl}>
+                      <Button onClick={() => void handleUseUrl()} disabled={!canUseUrl || isDownloading}>
                         Use URL
                       </Button>
                     </div>
                     <p className="text-[10px] text-studio-fg-muted">Paste a direct link to an image.</p>
                   </div>
+
+                  {isDownloading && (
+                    <div className="space-y-2">
+                      <p className="text-xs text-studio-fg-muted">Downloading and staging image...</p>
+                      <Progress value={downloadProgress} className="h-1" />
+                    </div>
+                  )}
 
                   {canUseUrl && (
                     <div className="rounded-lg border border-studio-border overflow-hidden bg-studio-canvas-inset aspect-video">

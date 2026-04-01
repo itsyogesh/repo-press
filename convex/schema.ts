@@ -86,6 +86,10 @@ export default defineSchema({
     components: v.optional(v.any()), // Map of componentName -> { props, hasChildren, kind }
     frameworkSource: v.optional(v.union(v.literal("config"), v.literal("detected"))),
 
+    // Orphan detection: set when a config-driven project is no longer in the config
+    configRemoved: v.optional(v.boolean()),
+    configRemovedAt: v.optional(v.number()),
+
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -241,6 +245,7 @@ export default defineSchema({
     height: v.optional(v.number()),
     sizeBytes: v.optional(v.number()),
     githubSha: v.optional(v.string()),
+    originalUrl: v.optional(v.string()),
     // Which documents reference this asset
     usedInDocumentIds: v.optional(v.array(v.id("documents"))),
     createdAt: v.number(),
@@ -287,6 +292,18 @@ export default defineSchema({
     .index("by_userId", ["userId"])
     .index("by_expiresAt", ["expiresAt"]),
 
+  // ─── Deleted Config Projects (tombstone for config-driven project deletion) ─
+  deletedConfigProjects: defineTable({
+    configProjectId: v.string(), // The id field from repopress.config.json
+    repoOwner: v.string(),
+    repoName: v.string(),
+    branch: v.string(),
+    deletedBy: v.string(), // Convex auth user ID
+    deletedAt: v.number(),
+  })
+    .index("by_repo", ["repoOwner", "repoName"])
+    .index("by_repo_configProjectId", ["repoOwner", "repoName", "configProjectId"]),
+
   // ─── Explorer Ops (staged file create/delete for PR-based publish) ─
   explorerOps: defineTable({
     projectId: v.id("projects"),
@@ -298,6 +315,7 @@ export default defineSchema({
     previousSha: v.optional(v.string()),
     status: v.union(v.literal("pending"), v.literal("committed"), v.literal("undone")),
     commitSha: v.optional(v.string()),
+    publishBranchId: v.optional(v.id("publishBranches")),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -313,6 +331,7 @@ export default defineSchema({
     fileName: v.string(),
     mimeType: v.string(),
     sizeBytes: v.optional(v.number()),
+    sourceFilePath: v.optional(v.string()),
     sourceType: v.union(v.literal("blob"), v.literal("githubBranch")),
     blobUrl: v.optional(v.string()),
     blobAccess: v.optional(v.union(v.literal("public"), v.literal("private"))),
@@ -321,6 +340,7 @@ export default defineSchema({
     githubSha: v.optional(v.string()),
     status: v.union(v.literal("pending"), v.literal("committed"), v.literal("undone"), v.literal("failed")),
     commitSha: v.optional(v.string()),
+    publishBranchId: v.optional(v.id("publishBranches")),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -335,7 +355,7 @@ export default defineSchema({
     baseBranch: v.string(),
     prNumber: v.optional(v.number()),
     prUrl: v.optional(v.string()),
-    status: v.union(v.literal("active"), v.literal("merged"), v.literal("closed")),
+    status: v.union(v.literal("active"), v.literal("inactive"), v.literal("merged"), v.literal("closed")),
     lastCommitSha: v.optional(v.string()),
     committedFilePaths: v.optional(v.array(v.string())),
     createdAt: v.number(),

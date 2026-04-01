@@ -1,6 +1,21 @@
 import { v } from "convex/values"
+import type { Id } from "./_generated/dataModel"
+import type { QueryCtx } from "./_generated/server"
 import { mutation, query } from "./_generated/server"
 import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
+
+async function getCurrentBranchForProject(
+  ctx: QueryCtx,
+  args: { projectId: Id<"projects">; userId?: string; projectAccessToken?: string },
+) {
+  const access = await resolveProjectReader(ctx, args)
+  if (!access) return null
+
+  return await ctx.db
+    .query("publishBranches")
+    .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", "active"))
+    .first()
+}
 
 /** Returns the active publish branch for a project (at most one). */
 export const getActiveForProject = query({
@@ -9,14 +24,42 @@ export const getActiveForProject = query({
     userId: v.optional(v.string()),
     projectAccessToken: v.optional(v.string()),
   },
+  handler: getCurrentBranchForProject,
+})
+
+/** Returns the current publish branch for a project (at most one). */
+export const getCurrentForProject = query({
+  args: {
+    projectId: v.id("projects"),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
+  },
+  handler: getCurrentBranchForProject,
+})
+
+/** Lists the current and inactive publish branches that are still open for a project. */
+export const listOpenForProject = query({
+  args: {
+    projectId: v.id("projects"),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
     const access = await resolveProjectReader(ctx, args)
-    if (!access) return null
+    if (!access) return []
 
-    return await ctx.db
-      .query("publishBranches")
-      .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", "active"))
-      .first()
+    const [activeBranches, inactiveBranches] = await Promise.all([
+      ctx.db
+        .query("publishBranches")
+        .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", "active"))
+        .collect(),
+      ctx.db
+        .query("publishBranches")
+        .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", "inactive"))
+        .collect(),
+    ])
+
+    return [...activeBranches, ...inactiveBranches]
   },
 })
 
@@ -38,9 +81,30 @@ export const create = mutation({
     projectAccessToken: v.optional(v.string()),
     branchName: v.string(),
     baseBranch: v.string(),
+    deactivateBranchId: v.optional(v.id("publishBranches")),
   },
   handler: async (ctx, args) => {
     await resolveProjectAccess(ctx, args, "editor")
+
+    const existingActiveBranch = await ctx.db
+      .query("publishBranches")
+      .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", "active"))
+      .first()
+
+    if (existingActiveBranch && existingActiveBranch._id !== args.deactivateBranchId) {
+      throw new Error("Active publish branch already exists for project")
+    }
+
+    if (args.deactivateBranchId) {
+      if (!existingActiveBranch || existingActiveBranch._id !== args.deactivateBranchId) {
+        throw new Error("Active publish branch already exists for project")
+      }
+
+      await ctx.db.patch(args.deactivateBranchId, {
+        status: "inactive",
+        updatedAt: Date.now(),
+      })
+    }
 
     const now = Date.now()
     return await ctx.db.insert("publishBranches", {
@@ -135,5 +199,33 @@ export const markClosed = mutation({
       status: "closed",
       updatedAt: Date.now(),
     })
+  },
+})
+
+/** Demotes the current publish branch to inactive before creating a new current branch. */
+export const deactivateCurrentForProject = mutation({
+  args: {
+    projectId: v.id("projects"),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await resolveProjectAccess(ctx, args, "editor")
+
+    const current = await ctx.db
+      .query("publishBranches")
+      .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", "active"))
+      .first()
+
+    if (!current) {
+      return null
+    }
+
+    await ctx.db.patch(current._id, {
+      status: "inactive",
+      updatedAt: Date.now(),
+    })
+
+    return current._id
   },
 })
