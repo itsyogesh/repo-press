@@ -205,6 +205,7 @@ export async function POST(request: Request) {
       projectId: project._id,
       ...queryAuth,
     })
+    const currentPublishBranchId = publishBranch?._id
 
     if (publishModeUsed === "create-new") {
       const openPublishBranches = await convex.query(api.publishBranches.listOpenForProject, {
@@ -230,14 +231,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: false, overlaps }, { status: 409 })
       }
 
-      if (publishBranch) {
-        await convex.mutation(api.publishBranches.deactivateCurrentForProject, {
-          projectId: project._id,
-          userId: actingUserId,
-          projectAccessToken,
-        })
-        publishBranch = null
-      }
+      publishBranch = null
     }
 
     // If no active branch exists, create a new publish branch with timestamp-based name.
@@ -253,6 +247,7 @@ export async function POST(request: Request) {
           projectAccessToken,
           branchName,
           baseBranch,
+          deactivateBranchId: publishModeUsed === "create-new" ? (currentPublishBranchId ?? undefined) : undefined,
         })
       } catch (error) {
         if (isActivePublishBranchConflict(error)) {

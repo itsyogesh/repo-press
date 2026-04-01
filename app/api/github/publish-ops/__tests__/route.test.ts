@@ -301,20 +301,6 @@ describe("POST /api/github/publish-ops", () => {
       "Content update via RepoPress (1 updated)",
       "Automated content update from RepoPress.\n\n- 1 updated",
     )
-    const deactivateCurrentCall = convexMutationMock.mock.calls.find(
-      ([, args]) =>
-        typeof args === "object" &&
-        args !== null &&
-        "projectId" in args &&
-        args.projectId === "project_123" &&
-        !("branchName" in args),
-    )
-    expect(deactivateCurrentCall?.[1]).toEqual(
-      expect.objectContaining({
-        projectId: "project_123",
-        userId: "user_owner",
-      }),
-    )
     const createPublishBranchCall = convexMutationMock.mock.calls.find(
       ([, args]) =>
         typeof args === "object" &&
@@ -495,6 +481,16 @@ describe("POST /api/github/publish-ops", () => {
       repo: "docs-site",
       ref: "heads/repopress/main/1700000000002",
     })
+    expect(
+      convexMutationMock.mock.calls.some(
+        ([, args]) =>
+          typeof args === "object" &&
+          args !== null &&
+          "projectId" in args &&
+          args.projectId === "project_123" &&
+          !("branchName" in args),
+      ),
+    ).toBe(false)
     expect(createPullRequest).not.toHaveBeenCalled()
     expect(batchCommit).not.toHaveBeenCalled()
   })

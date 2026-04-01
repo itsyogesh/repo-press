@@ -81,6 +81,7 @@ export const create = mutation({
     projectAccessToken: v.optional(v.string()),
     branchName: v.string(),
     baseBranch: v.string(),
+    deactivateBranchId: v.optional(v.id("publishBranches")),
   },
   handler: async (ctx, args) => {
     await resolveProjectAccess(ctx, args, "editor")
@@ -90,8 +91,19 @@ export const create = mutation({
       .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", "active"))
       .first()
 
-    if (existingActiveBranch) {
+    if (existingActiveBranch && existingActiveBranch._id !== args.deactivateBranchId) {
       throw new Error("Active publish branch already exists for project")
+    }
+
+    if (args.deactivateBranchId) {
+      if (!existingActiveBranch || existingActiveBranch._id !== args.deactivateBranchId) {
+        throw new Error("Active publish branch already exists for project")
+      }
+
+      await ctx.db.patch(args.deactivateBranchId, {
+        status: "inactive",
+        updatedAt: Date.now(),
+      })
     }
 
     const now = Date.now()

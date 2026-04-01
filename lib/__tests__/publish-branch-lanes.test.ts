@@ -124,6 +124,41 @@ describe("Publish branch lanes", () => {
     expect(ctx.db.insert).not.toHaveBeenCalled()
   })
 
+  it("atomically replaces the current active lane when requested", async () => {
+    const ctx = createCtx({
+      get: vi.fn().mockResolvedValue(createProject()),
+      insert: vi.fn().mockResolvedValue("publish_branch_next"),
+      query: vi.fn().mockReturnValue({
+        withIndex: () => ({
+          first: vi.fn().mockResolvedValue({
+            _id: "publish_branch_current",
+            projectId: "project_1",
+            status: "active",
+          }),
+        }),
+      }),
+      patch: vi.fn(),
+    })
+
+    await (create as any).handler(ctx, {
+      projectId: "project_1",
+      userId: "user_owner",
+      branchName: "repopress/main/5678",
+      baseBranch: "main",
+      deactivateBranchId: "publish_branch_current",
+    })
+
+    expect(ctx.db.patch).toHaveBeenCalledWith("publish_branch_current", expect.objectContaining({ status: "inactive" }))
+    expect(ctx.db.insert).toHaveBeenCalledWith(
+      "publishBranches",
+      expect.objectContaining({
+        projectId: "project_1",
+        branchName: "repopress/main/5678",
+        status: "active",
+      }),
+    )
+  })
+
   it("lists current and inactive open lanes for a project", async () => {
     const ctx = createCtx({
       get: vi.fn().mockResolvedValue(createProject()),
