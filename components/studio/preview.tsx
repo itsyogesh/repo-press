@@ -116,9 +116,10 @@ export function Preview({
   const [imageError, setImageError] = React.useState(false)
 
   // Reset image error when image URL changes
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional reset-on-change pattern
   React.useEffect(() => {
     setImageError(false)
-  }, [])
+  }, [image])
 
   // Stabilize the asset resolver to prevent infinite re-renders in PreviewRuntime
   const resolveAssetUrl = React.useMemo(() => {

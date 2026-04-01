@@ -127,7 +127,10 @@ function getRecentComponents(): string[] {
   if (typeof window === "undefined") return []
   try {
     const stored = localStorage.getItem(RECENT_KEY)
-    return stored ? JSON.parse(stored) : []
+    if (!stored) return []
+    const parsed: unknown = JSON.parse(stored)
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((item): item is string => typeof item === "string")
   } catch {
     return []
   }

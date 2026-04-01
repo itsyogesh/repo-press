@@ -52,4 +52,11 @@ describe("validateFormState", () => {
     const errors = validateFormState(props, state)
     expect(errors).toEqual({})
   })
+
+  it("missing required boolean prop produces validation error", () => {
+    const props = [{ name: "enabled", type: "boolean" as const, required: true }]
+    const state: Record<string, unknown> = {}
+    const errors = validateFormState(props, state)
+    expect(errors).toEqual({ enabled: "Required" })
+  })
 })

@@ -1105,13 +1105,13 @@ function StudioLayoutInner({
         e.target instanceof HTMLTextAreaElement ||
         (e.target as HTMLElement).isContentEditable
 
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "j") {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "j" && !isEditableTarget) {
         e.preventDefault()
         setInsertComponentModalOpen(true)
         return
       }
 
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k" && !isEditableTarget) {
         e.preventDefault()
         setCommandPaletteOpen(true)
         return
