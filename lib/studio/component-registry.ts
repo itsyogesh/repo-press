@@ -11,6 +11,10 @@ export type RepoComponentPropDef = {
   type: RepoComponentPropType
   label?: string
   default?: unknown
+  required?: boolean
+  description?: string
+  options?: string[]
+  placeholder?: string
 }
 
 /** Optional capability flags computed from a component definition. */
@@ -73,6 +77,10 @@ export type ConfigComponentEntry = {
     type: string
     label?: string
     default?: unknown
+    required?: boolean
+    description?: string
+    options?: string[]
+    placeholder?: string
   }>
   hasChildren?: boolean
   kind?: "flow" | "text"
@@ -89,45 +97,261 @@ export type AdapterComponentEntry = {
 }
 
 /**
- * Hybrid fallback schemas for common components when adapter metadata is
- * function-only and project config schema has not synced yet.
+ * Returns framework-appropriate fallback component schemas when adapter
+ * metadata is function-only and project config schema has not synced yet.
  *
- * These keep insertion UX usable for legacy projects while schema-first
+ * These keep insertion UX usable for any connected repo while schema-first
  * remains the preferred path.
  */
-const KNOWN_ADAPTER_FALLBACKS: Record<string, ConfigComponentEntry> = {
-  DocsImage: {
-    props: [
-      { name: "src", type: "image", label: "Source" },
-      { name: "alt", type: "string", label: "Alt text" },
-      { name: "caption", type: "string", label: "Caption" },
-    ],
-    hasChildren: false,
-    kind: "flow",
-    displayName: "Docs Image",
-    description: "Documentation image with optional caption.",
-  },
-  DocsVideo: {
-    props: [
-      { name: "src", type: "string", label: "Video URL" },
-      { name: "title", type: "string", label: "Title" },
-    ],
-    hasChildren: false,
-    kind: "flow",
-    displayName: "Docs Video",
-    description: "Documentation video embed (YouTube/direct URL).",
-  },
-  Callout: {
-    props: [
-      { name: "type", type: "string", label: "Type", default: "info" },
-      { name: "title", type: "string", label: "Title" },
-    ],
-    hasChildren: true,
-    kind: "flow",
-    displayName: "Callout",
-    description: "Highlighted callout block with optional title.",
-  },
+export function getFrameworkFallbacks(framework?: string): Record<string, ConfigComponentEntry> {
+  const fw = framework?.toLowerCase() ?? ""
+
+  // fumadocs / fumadocs-core
+  if (fw.includes("fumadocs")) {
+    return {
+      DocsImage: {
+        props: [
+          { name: "src", type: "image", label: "Source", required: true },
+          { name: "alt", type: "string", label: "Alt text", description: "Accessible description for screen readers" },
+          { name: "caption", type: "string", label: "Caption" },
+        ],
+        hasChildren: false,
+        kind: "flow",
+        displayName: "Docs Image",
+        description: "Documentation image with optional caption.",
+      },
+      DocsVideo: {
+        props: [
+          { name: "src", type: "string", label: "Video URL", required: true, placeholder: "https://youtube.com/..." },
+          { name: "title", type: "string", label: "Title" },
+        ],
+        hasChildren: false,
+        kind: "flow",
+        displayName: "Docs Video",
+        description: "Documentation video embed (YouTube/direct URL).",
+      },
+      Callout: {
+        props: [
+          {
+            name: "type",
+            type: "string",
+            label: "Type",
+            default: "info",
+            options: ["info", "warning", "error", "tip"],
+          },
+          { name: "title", type: "string", label: "Title" },
+        ],
+        hasChildren: true,
+        kind: "flow",
+        displayName: "Callout",
+        description: "Highlighted callout block with optional title.",
+      },
+    }
+  }
+
+  // nextra
+  if (fw.includes("nextra")) {
+    return {
+      Callout: {
+        props: [
+          {
+            name: "type",
+            type: "string",
+            label: "Type",
+            options: ["default", "info", "warning", "error"],
+            default: "default",
+          },
+          { name: "emoji", type: "string", label: "Emoji", placeholder: "💡" },
+        ],
+        hasChildren: true,
+        kind: "flow",
+        displayName: "Callout",
+        description: "Highlighted callout block.",
+      },
+      Steps: {
+        props: [],
+        hasChildren: true,
+        kind: "flow",
+        displayName: "Steps",
+        description: "Numbered step list.",
+      },
+      Card: {
+        props: [
+          { name: "title", type: "string", label: "Title", required: true },
+          { name: "href", type: "string", label: "URL", placeholder: "/docs/page" },
+          { name: "icon", type: "string", label: "Icon", placeholder: "Emoji or icon name" },
+        ],
+        hasChildren: true,
+        kind: "flow",
+        displayName: "Card",
+        description: "Navigation card with link.",
+      },
+      Cards: {
+        props: [],
+        hasChildren: true,
+        kind: "flow",
+        displayName: "Cards",
+        description: "Grid container for Card components.",
+      },
+      Tab: {
+        props: [{ name: "label", type: "string", label: "Label", required: true }],
+        hasChildren: true,
+        kind: "flow",
+        displayName: "Tab",
+        description: "Single tab panel.",
+      },
+      Tabs: {
+        props: [{ name: "items", type: "string", label: "Tab Labels", placeholder: '["Tab 1", "Tab 2"]' }],
+        hasChildren: true,
+        kind: "flow",
+        displayName: "Tabs",
+        description: "Tabbed content container.",
+      },
+    }
+  }
+
+  // astro / starlight
+  if (fw.includes("astro") || fw.includes("starlight")) {
+    return {
+      Aside: {
+        props: [
+          {
+            name: "type",
+            type: "string",
+            label: "Type",
+            options: ["note", "tip", "caution", "danger"],
+            default: "note",
+          },
+          { name: "title", type: "string", label: "Title", placeholder: "Optional title" },
+        ],
+        hasChildren: true,
+        kind: "flow",
+        displayName: "Aside",
+        description: "Callout block (note, tip, caution, danger).",
+      },
+      Card: {
+        props: [
+          { name: "title", type: "string", label: "Title", required: true },
+          { name: "icon", type: "string", label: "Icon", placeholder: "rocket" },
+        ],
+        hasChildren: true,
+        kind: "flow",
+        displayName: "Card",
+        description: "Feature or content card.",
+      },
+      CardGrid: {
+        props: [{ name: "stagger", type: "boolean", label: "Stagger animation" }],
+        hasChildren: true,
+        kind: "flow",
+        displayName: "Card Grid",
+        description: "Grid layout for Card components.",
+      },
+      LinkCard: {
+        props: [
+          { name: "title", type: "string", label: "Title", required: true },
+          { name: "href", type: "string", label: "URL", required: true, placeholder: "/docs/page" },
+          { name: "description", type: "string", label: "Description" },
+        ],
+        hasChildren: false,
+        kind: "flow",
+        displayName: "Link Card",
+        description: "Navigation card with link and description.",
+      },
+    }
+  }
+
+  // docusaurus
+  if (fw.includes("docusaurus")) {
+    return {
+      Admonition: {
+        props: [
+          {
+            name: "type",
+            type: "string",
+            label: "Type",
+            options: ["note", "tip", "info", "caution", "danger"],
+            default: "note",
+          },
+          { name: "title", type: "string", label: "Title", placeholder: "Optional custom title" },
+        ],
+        hasChildren: true,
+        kind: "flow",
+        displayName: "Admonition",
+        description: "Highlighted note, tip, info, warning, or danger block.",
+      },
+      Tabs: {
+        props: [{ name: "groupId", type: "string", label: "Group ID", placeholder: "Sync tabs with same group" }],
+        hasChildren: true,
+        kind: "flow",
+        displayName: "Tabs",
+        description: "Tabbed content container.",
+      },
+      TabItem: {
+        props: [
+          { name: "value", type: "string", label: "Value", required: true },
+          { name: "label", type: "string", label: "Label" },
+          { name: "default", type: "boolean", label: "Default tab" },
+        ],
+        hasChildren: true,
+        kind: "flow",
+        displayName: "Tab Item",
+        description: "Single tab panel inside Tabs.",
+      },
+    }
+  }
+
+  // jekyll / hugo — markdown-first, no JSX components
+  if (fw.includes("jekyll") || fw.includes("hugo")) {
+    return {}
+  }
+
+  // generic / custom / contentlayer / next-mdx / unknown — safe common defaults
+  return {
+    Callout: {
+      props: [
+        {
+          name: "type",
+          type: "string",
+          label: "Type",
+          options: ["default", "info", "warning", "error"],
+          default: "default",
+        },
+        { name: "title", type: "string", label: "Title", placeholder: "Optional title" },
+      ],
+      hasChildren: true,
+      kind: "flow",
+      displayName: "Callout",
+      description: "Highlighted note or warning block.",
+    },
+    Image: {
+      props: [
+        { name: "src", type: "image", label: "Image Source", required: true },
+        { name: "alt", type: "string", label: "Alt Text", required: true },
+        { name: "caption", type: "string", label: "Caption" },
+      ],
+      hasChildren: false,
+      kind: "flow",
+      displayName: "Image",
+      description: "Inline image with optional caption.",
+    },
+    Video: {
+      props: [
+        { name: "src", type: "string", label: "Video URL", required: true, placeholder: "https://youtube.com/..." },
+        { name: "title", type: "string", label: "Title" },
+      ],
+      hasChildren: false,
+      kind: "flow",
+      displayName: "Video",
+      description: "Video embed (YouTube or direct URL).",
+    },
+  }
 }
+
+/**
+ * @deprecated Use `getFrameworkFallbacks("fumadocs")` instead.
+ * Kept for backwards compatibility with existing tests and callers.
+ */
+export const KNOWN_ADAPTER_FALLBACKS = getFrameworkFallbacks("fumadocs")
 
 // ---------------------------------------------------------------------------
 // Normalization helpers
@@ -163,6 +387,10 @@ function normalizeProps(
     type: string
     label?: string
     default?: unknown
+    required?: boolean
+    description?: string
+    options?: string[]
+    placeholder?: string
   }>,
 ): RepoComponentPropDef[] {
   if (!raw || !Array.isArray(raw)) return []
@@ -171,6 +399,10 @@ function normalizeProps(
     type: normalizePropType(p.type),
     ...(p.label !== undefined ? { label: p.label } : {}),
     ...(p.default !== undefined ? { default: p.default } : {}),
+    ...(p.required !== undefined ? { required: p.required } : {}),
+    ...(p.description !== undefined ? { description: p.description } : {}),
+    ...(p.options !== undefined ? { options: p.options } : {}),
+    ...(p.placeholder !== undefined ? { placeholder: p.placeholder } : {}),
   }))
 }
 
@@ -198,6 +430,7 @@ function normalizeProps(
 export function buildComponentRegistry(
   adapterComponents?: Record<string, AdapterComponentEntry | unknown> | null,
   projectComponents?: Record<string, ConfigComponentEntry> | null,
+  framework?: string,
 ): Record<string, RepoComponentDef> {
   const registry: Record<string, RepoComponentDef> = {}
 
@@ -216,7 +449,13 @@ export function buildComponentRegistry(
         : {} // React function → existence-only, no schema metadata
       : undefined
 
-    const fallback = !fromConfig && !hasAdapterSchema(fromAdapter) ? KNOWN_ADAPTER_FALLBACKS[name] : undefined
+    const frameworkFallbacks = getFrameworkFallbacks(framework)
+    // When no framework is detected, also check KNOWN_ADAPTER_FALLBACKS (fumadocs-era
+    // component names like DocsImage/DocsVideo) so existing projects aren't regressed.
+    const fallback =
+      !fromConfig && !hasAdapterSchema(fromAdapter)
+        ? (frameworkFallbacks[name] ?? (framework == null ? KNOWN_ADAPTER_FALLBACKS[name] : undefined))
+        : undefined
 
     let source: RepoComponentDef["source"]
     if (fromConfig && fromAdapter !== undefined) {

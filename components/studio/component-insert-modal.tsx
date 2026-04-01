@@ -1,19 +1,150 @@
 "use client"
 
-import { AnimatePresence, motion, type Variants } from "framer-motion"
-import { ChevronLeft, Search } from "lucide-react"
+import { AnimatePresence, motion } from "framer-motion"
+import { Box, ChevronDown, ChevronLeft, Code, FileText, Image, Layout, Search, X } from "lucide-react"
 import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { buildComponentCatalog, getComponentLabel } from "@/lib/studio/component-catalog"
+import {
+  ALL_CATEGORIES,
+  buildComponentCatalog,
+  type ComponentCategory,
+  deriveCategory,
+  getComponentLabel,
+} from "@/lib/studio/component-catalog"
 import { buildComponentNode, type ComponentNode } from "@/lib/studio/component-node"
 import type { RepoComponentDef } from "@/lib/studio/component-registry"
 import { buildComponentRegistry } from "@/lib/studio/component-registry"
 import { serializeComponentNode } from "@/lib/studio/component-serializer"
+import { resolveStudioAssetUrl } from "@/lib/studio/media-resolve"
+import { cn } from "@/lib/utils"
 import { ComponentPreview } from "./component-preview"
-import { ComponentPropForm, type PropFormState } from "./component-prop-form"
+import { ComponentPropForm, type PropFormState, validateFormState } from "./component-prop-form"
+import { useStudio } from "./studio-context"
+import { VideoPreview as StudioVideoPreview } from "./video-preview"
+
+// ---------------------------------------------------------------------------
+// LiveConfigurePreview — reacts to formState for known component types
+// ---------------------------------------------------------------------------
+
+function LiveConfigurePreview({ def, formState }: { def: RepoComponentDef; formState: PropFormState }) {
+  const studio = useStudio()
+  const normalizedName = def.name.replace(/Adapter$/i, "").toLowerCase()
+
+  // DocsImage / image component — show actual image when src is provided
+  if (
+    (normalizedName === "docsimage" || normalizedName === "image") &&
+    typeof formState.src === "string" &&
+    formState.src
+  ) {
+    const resolvedSrc = resolveStudioAssetUrl(
+      formState.src as string,
+      studio.projectId,
+      studio.userId,
+      studio.selectedFilePath,
+    )
+    return (
+      <div className="w-full flex flex-col items-center gap-2">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          key={resolvedSrc}
+          src={resolvedSrc}
+          alt={typeof formState.alt === "string" ? formState.alt : "Preview"}
+          className="w-full h-auto max-h-56 object-contain rounded-lg"
+        />
+        {typeof formState.alt === "string" && formState.alt && (
+          <p className="text-xs text-studio-fg-muted text-center italic">{formState.alt}</p>
+        )}
+        {typeof formState.caption === "string" && formState.caption && (
+          <p className="text-xs text-studio-fg/60 text-center">{formState.caption}</p>
+        )}
+      </div>
+    )
+  }
+
+  // DocsVideo / video component — show actual embedded player
+  if (
+    (normalizedName === "docsvideo" || normalizedName === "video") &&
+    typeof formState.src === "string" &&
+    formState.src
+  ) {
+    return (
+      <div className="w-full max-w-sm space-y-3">
+        <div className="w-full aspect-video rounded-xl border border-studio-border overflow-hidden bg-studio-canvas-inset">
+          <StudioVideoPreview url={formState.src} className="w-full h-full rounded-xl" />
+        </div>
+        {typeof formState.title === "string" && formState.title && (
+          <p className="text-xs font-medium text-studio-fg text-center">{formState.title}</p>
+        )}
+      </div>
+    )
+  }
+
+  // Callout — show a styled live callout preview
+  if (normalizedName === "callout") {
+    const type = typeof formState.type === "string" ? formState.type : "info"
+    const title = typeof formState.title === "string" ? formState.title : ""
+
+    const typeStyles: Record<string, { bg: string; border: string; icon: string }> = {
+      info: { bg: "bg-studio-accent/5", border: "border-studio-accent/20", icon: "ℹ" },
+      warning: { bg: "bg-studio-attention/5", border: "border-studio-attention/20", icon: "⚠" },
+      error: { bg: "bg-studio-danger/5", border: "border-studio-danger/20", icon: "✕" },
+      tip: { bg: "bg-studio-success/5", border: "border-studio-success/20", icon: "✓" },
+    }
+    const s = typeStyles[type] ?? typeStyles.info
+
+    return (
+      <div className={cn("w-full max-w-sm rounded-xl border p-4 space-y-2", s.bg, s.border)}>
+        <div className="flex items-center gap-2">
+          <span className="text-sm">{s.icon}</span>
+          <p className="text-xs font-semibold text-studio-fg">
+            {title || type.charAt(0).toUpperCase() + type.slice(1)}
+          </p>
+        </div>
+        <div className="space-y-1.5 pl-5">
+          <div className="w-full h-1.5 rounded-full bg-studio-fg/10" />
+          <div className="w-4/5 h-1.5 rounded-full bg-studio-fg/10" />
+          <div className="w-3/5 h-1.5 rounded-full bg-studio-fg/10" />
+        </div>
+      </div>
+    )
+  }
+
+  // Default fallback — static wireframe preview
+  return <ComponentPreview name={def.name} className="shadow-none border-none bg-transparent" />
+}
+
+// ---------------------------------------------------------------------------
+// Recently-used localStorage helpers
+// ---------------------------------------------------------------------------
+
+const RECENT_KEY = "repopress:recent-components"
+const MAX_RECENT = 5
+
+function getRecentComponents(): string[] {
+  if (typeof window === "undefined") return []
+  try {
+    const stored = localStorage.getItem(RECENT_KEY)
+    if (!stored) return []
+    const parsed: unknown = JSON.parse(stored)
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((item): item is string => typeof item === "string")
+  } catch {
+    return []
+  }
+}
+
+function addRecentComponent(name: string): void {
+  try {
+    const recent = getRecentComponents().filter((n) => n !== name)
+    recent.unshift(name)
+    localStorage.setItem(RECENT_KEY, JSON.stringify(recent.slice(0, MAX_RECENT)))
+  } catch {
+    // localStorage unavailable
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -26,6 +157,8 @@ interface ComponentInsertModalProps {
   adapterComponents?: Record<string, any> | null
   /** Project config components (from repopress.config.json). */
   projectComponents?: Record<string, any> | null
+  /** Detected framework (e.g. "fumadocs", "nextra", "astro") — used for fallback component schemas. */
+  framework?: string
   /** Optional repo context for image uploads in prop form. */
   repoContext?: {
     projectId: string
@@ -64,33 +197,84 @@ export function ComponentInsertModal({
   onOpenChange,
   adapterComponents,
   projectComponents,
+  framework,
   repoContext,
   onInsert,
 }: ComponentInsertModalProps) {
   // -- Registry & catalog (recomputed when inputs change) --
   const registry = React.useMemo(
-    () => buildComponentRegistry(adapterComponents, projectComponents),
-    [adapterComponents, projectComponents],
+    () => buildComponentRegistry(adapterComponents, projectComponents, framework),
+    [adapterComponents, projectComponents, framework],
   )
-  const catalog = React.useMemo(() => buildComponentCatalog(registry), [registry])
+  const catalog = React.useMemo(() => {
+    const hasProjectComponents = !!projectComponents && Object.keys(projectComponents).length > 0
+    return buildComponentCatalog(registry, { hasProjectComponents })
+  }, [registry, projectComponents])
 
   // -- Modal state --
   const [step, setStep] = React.useState<ModalStep>("pick")
   const [selectedDef, setSelectedDef] = React.useState<RepoComponentDef | null>(null)
   const [formState, setFormState] = React.useState<PropFormState>({})
   const [searchQuery, setSearchQuery] = React.useState("")
+  const [activeCategory, setActiveCategory] = React.useState<ComponentCategory | "All">("All")
+
+  // -- Recently-used components --
+  const [recentNames, setRecentNames] = React.useState<string[]>([])
+
+  const recentCatalog = React.useMemo(() => {
+    if (!catalog) return []
+    return recentNames
+      .map((name) => catalog.find((c) => c.name === name))
+      .filter((c): c is RepoComponentDef => c !== undefined)
+  }, [recentNames, catalog])
+
+  // Real-time validation for the configure step
+  const formErrors = React.useMemo(() => {
+    if (!selectedDef) return {}
+    return validateFormState(selectedDef.props, formState)
+  }, [selectedDef, formState])
+  const hasErrors = Object.keys(formErrors).length > 0
+
+  // -- JSX preview (reuses the same pipeline as handleInsert) --
+  const [showPreview, setShowPreview] = React.useState(false)
+
+  const jsxPreview = React.useMemo(() => {
+    if (!selectedDef) return ""
+    try {
+      const node = buildComponentNode(selectedDef, formState)
+      return serializeComponentNode(node)
+    } catch {
+      return ""
+    }
+  }, [selectedDef, formState])
 
   // Filtered catalog
   const filteredCatalog = React.useMemo(() => {
-    if (!searchQuery) return catalog
-    const q = searchQuery.toLowerCase()
-    return catalog.filter(
-      (def) =>
-        getComponentLabel(def).toLowerCase().includes(q) ||
-        def.name.toLowerCase().includes(q) ||
-        def.description?.toLowerCase().includes(q),
-    )
-  }, [catalog, searchQuery])
+    let result = catalog
+    if (activeCategory !== "All") {
+      result = result.filter((def) => deriveCategory(def) === activeCategory)
+    }
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase()
+      result = result.filter(
+        (def) =>
+          getComponentLabel(def).toLowerCase().includes(q) ||
+          def.name.toLowerCase().includes(q) ||
+          def.description?.toLowerCase().includes(q),
+      )
+    }
+    return result
+  }, [catalog, searchQuery, activeCategory])
+
+  // Main catalog — excludes recently-used items when the recently-used section
+  // is visible, so components don't appear in both sections simultaneously.
+  const mainCatalog = React.useMemo(() => {
+    if (recentCatalog.length === 0 || searchQuery || activeCategory !== "All") {
+      return filteredCatalog
+    }
+    const recentNameSet = new Set(recentCatalog.map((c) => c.name))
+    return filteredCatalog.filter((c) => !recentNameSet.has(c.name))
+  }, [filteredCatalog, recentCatalog, searchQuery, activeCategory])
 
   // Reset state when modal opens/closes
   React.useEffect(() => {
@@ -99,6 +283,9 @@ export function ComponentInsertModal({
       setSelectedDef(null)
       setFormState({})
       setSearchQuery("")
+      setActiveCategory("All")
+      setShowPreview(false)
+      setRecentNames(getRecentComponents())
     }
   }, [open])
 
@@ -119,6 +306,7 @@ export function ComponentInsertModal({
       if (def.props.length === 0 && !def.hasChildren) {
         const node = buildComponentNode(def, defaults)
         const jsx = serializeComponentNode(node)
+        addRecentComponent(def.name)
         onInsert(jsx, def, node)
         onOpenChange(false)
         return
@@ -136,6 +324,7 @@ export function ComponentInsertModal({
     try {
       const node = buildComponentNode(selectedDef, formState)
       const jsx = serializeComponentNode(node)
+      addRecentComponent(selectedDef.name)
       onInsert(jsx, selectedDef, node)
       onOpenChange(false)
     } catch (error) {
@@ -148,12 +337,16 @@ export function ComponentInsertModal({
     setStep("pick")
     setSelectedDef(null)
     setFormState({})
+    setShowPreview(false)
   }, [])
 
   // -- Render --
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-4xl h-[80vh] flex flex-col p-0 overflow-hidden gap-0 border-studio-border bg-studio-canvas shadow-2xl">
+      <DialogContent
+        showCloseButton={false}
+        className="sm:max-w-4xl h-[80vh] flex flex-col p-0 overflow-hidden gap-0 border-studio-border bg-studio-canvas shadow-2xl"
+      >
         <AnimatePresence mode="wait">
           {step === "pick" ? (
             <motion.div
@@ -173,21 +366,64 @@ export function ComponentInsertModal({
                       Select a component to extend your document.
                     </DialogDescription>
                   </div>
-                  <div className="relative w-full sm:w-[280px]">
-                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-studio-fg-muted" />
-                    <Input
-                      placeholder="Search..."
-                      className="h-8 pl-8 pr-3 text-xs bg-studio-canvas border-studio-border-muted focus:ring-1 focus:ring-studio-accent/50"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      autoFocus
-                    />
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <div className="relative flex-1 sm:w-[280px]">
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-studio-fg-muted" />
+                      <Input
+                        placeholder="Search..."
+                        className="h-8 pl-8 pr-3 text-xs bg-studio-canvas border-studio-border-muted focus:ring-1 focus:ring-studio-accent/50"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        autoFocus
+                      />
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 shrink-0"
+                      onClick={() => onOpenChange(false)}
+                    >
+                      <X className="h-4 w-4" />
+                      <span className="sr-only">Close</span>
+                    </Button>
                   </div>
                 </div>
               </div>
 
+              <div className="flex items-center gap-1.5 px-5 py-2 border-b border-studio-border bg-studio-canvas">
+                {(["All", ...ALL_CATEGORIES] as const).map((cat) => (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => setActiveCategory(cat)}
+                    className={cn(
+                      "px-2.5 py-1 rounded-full text-xs font-medium transition-colors",
+                      activeCategory === cat
+                        ? "bg-studio-accent text-white"
+                        : "bg-studio-canvas-inset text-studio-fg-muted hover:text-studio-fg",
+                    )}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+
               <ScrollArea className="flex-1 px-5 py-5 min-h-0">
-                <CatalogGallery catalog={filteredCatalog} onSelect={handleSelectComponent} />
+                {recentCatalog.length > 0 && !searchQuery && activeCategory === "All" && (
+                  <div className="mb-4">
+                    <h4 className="text-xs font-medium text-muted-foreground mb-2 px-1">Recently used</h4>
+                    <CatalogGallery catalog={recentCatalog} onSelect={handleSelectComponent} />
+                  </div>
+                )}
+                {/* Suppress main grid when all components are already shown in Recently used */}
+                {(mainCatalog.length > 0 || recentCatalog.length === 0 || searchQuery || activeCategory !== "All") && (
+                  <>
+                    {recentCatalog.length > 0 && !searchQuery && activeCategory === "All" && mainCatalog.length > 0 && (
+                      <h4 className="text-xs font-medium text-muted-foreground mb-2 px-1">All components</h4>
+                    )}
+                    <CatalogGallery catalog={mainCatalog} onSelect={handleSelectComponent} />
+                  </>
+                )}
               </ScrollArea>
             </motion.div>
           ) : (
@@ -241,8 +477,8 @@ export function ComponentInsertModal({
                   <div className="absolute inset-0 bg-grid-small-black/[0.02] dark:bg-grid-small-white/[0.02] pointer-events-none" />
                   <div className="w-full max-w-sm aspect-video relative z-10 flex items-center justify-center border border-dashed border-studio-border-muted rounded-xl bg-studio-canvas/50">
                     {selectedDef && (
-                      <div className="scale-125 transition-transform duration-500">
-                        <ComponentPreview name={selectedDef.name} className="shadow-none border-none bg-transparent" />
+                      <div className="transition-transform duration-500 flex items-center justify-center p-4 w-full">
+                        <LiveConfigurePreview def={selectedDef} formState={formState} />
                       </div>
                     )}
                   </div>
@@ -261,10 +497,29 @@ export function ComponentInsertModal({
                           formState={formState}
                           onFormChange={setFormState}
                           repoContext={repoContext}
+                          errors={formErrors}
                         />
                       )}
                     </div>
                   </ScrollArea>
+
+                  {/* Collapsible JSX Preview */}
+                  <div className="px-5 py-3 border-t border-studio-border">
+                    <button
+                      type="button"
+                      onClick={() => setShowPreview(!showPreview)}
+                      className="flex items-center gap-1.5 text-xs text-studio-fg-muted hover:text-studio-fg transition-colors"
+                    >
+                      <Code className="h-3.5 w-3.5" />
+                      {showPreview ? "Hide" : "Show"} JSX preview
+                      <ChevronDown className={cn("h-3 w-3 transition-transform", showPreview && "rotate-180")} />
+                    </button>
+                    {showPreview && (
+                      <pre className="mt-2 p-3 bg-studio-canvas-inset rounded-md text-xs font-mono overflow-x-auto border border-studio-border-muted">
+                        <code>{jsxPreview}</code>
+                      </pre>
+                    )}
+                  </div>
 
                   <div className="p-4 border-t border-studio-border bg-studio-canvas-inset/30 flex items-center justify-between gap-3 shrink-0">
                     <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)} className="text-xs h-8">
@@ -272,7 +527,11 @@ export function ComponentInsertModal({
                     </Button>
                     <Button
                       onClick={handleInsert}
-                      className="h-8 px-5 rounded-md text-[11px] font-bold uppercase tracking-wider shadow-sm"
+                      disabled={hasErrors}
+                      className={cn(
+                        "h-8 px-5 rounded-md text-[11px] font-bold uppercase tracking-wider shadow-sm",
+                        hasErrors && "opacity-50 cursor-not-allowed",
+                      )}
                     >
                       Insert
                     </Button>
@@ -291,25 +550,59 @@ export function ComponentInsertModal({
 // Catalog gallery sub-component
 // ---------------------------------------------------------------------------
 
-const galleryVariants: Variants = {
-  hidden: { opacity: 1 },
-  visible: {
-    transition: {
-      staggerChildren: 0.03,
-    },
+const categoryStyles = {
+  Media: {
+    icon: Image,
+    bg: "bg-studio-accent-muted",
+    iconColor: "text-studio-accent",
+    border: "border-studio-accent/20",
   },
-}
+  Content: {
+    icon: FileText,
+    bg: "bg-studio-success-muted",
+    iconColor: "text-studio-success",
+    border: "border-studio-success/20",
+  },
+  Layout: {
+    icon: Layout,
+    bg: "bg-studio-attention-muted",
+    iconColor: "text-studio-attention",
+    border: "border-studio-attention/20",
+  },
+  Custom: {
+    icon: Box,
+    bg: "bg-studio-danger-muted",
+    iconColor: "text-studio-danger",
+    border: "border-studio-danger/20",
+  },
+} as const
 
-const itemVariants: Variants = {
-  hidden: { opacity: 0, y: 5 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: {
-      duration: 0.2,
-      ease: "easeOut",
-    },
-  },
+function ComponentCard({ def, onSelect }: { def: RepoComponentDef; onSelect: (def: RepoComponentDef) => void }) {
+  const category = deriveCategory(def)
+  const label = getComponentLabel(def)
+  const style = categoryStyles[category]
+  const Icon = style.icon
+
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(def)}
+      className="group flex flex-col gap-3 p-3.5 rounded-xl border border-studio-border bg-studio-canvas hover:border-studio-accent/40 hover:bg-studio-canvas-inset/50 transition-all duration-150 text-left outline-none focus-visible:ring-2 focus-visible:ring-studio-accent"
+    >
+      <div className={cn("w-10 h-10 rounded-lg border flex items-center justify-center", style.bg, style.border)}>
+        <Icon className={cn("h-5 w-5", style.iconColor)} />
+      </div>
+      <div className="space-y-0.5 min-w-0">
+        <p className="text-xs font-semibold text-studio-fg leading-tight truncate">{label}</p>
+        {def.description && (
+          <p className="text-[11px] text-studio-fg-muted leading-snug line-clamp-2">{def.description}</p>
+        )}
+        <p className="text-[10px] text-studio-fg/30 mt-1">
+          {def.props.length} {def.props.length === 1 ? "prop" : "props"}
+        </p>
+      </div>
+    </button>
+  )
 }
 
 function CatalogGallery({
@@ -319,65 +612,22 @@ function CatalogGallery({
   catalog: RepoComponentDef[]
   onSelect: (def: RepoComponentDef) => void
 }) {
-  // Re-trigger stagger on search results update
-  const catalogKey = React.useMemo(() => catalog.map((c) => c.name).join(","), [catalog])
-
   if (catalog.length === 0) {
     return (
-      <div className="py-12 text-center">
-        <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-studio-canvas-inset border border-studio-border-muted mb-4">
-          <Search className="h-6 w-6 text-studio-fg-muted" />
-        </div>
-        <p className="text-sm font-medium text-studio-fg">No components found</p>
-        <p className="text-xs text-studio-fg-muted mt-1">Try a different search term or check your config.</p>
+      <div className="flex flex-col items-center justify-center py-12 text-center">
+        <Box className="h-8 w-8 text-studio-fg/20 mb-3" />
+        <p className="text-sm text-studio-fg-muted">No components found</p>
+        <p className="text-xs text-studio-fg-muted/60 mt-1">Try a different search term or check your config.</p>
       </div>
     )
   }
 
   return (
-    <motion.div
-      key={catalogKey}
-      variants={galleryVariants}
-      initial="hidden"
-      animate="visible"
-      className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3"
-    >
+    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
       {catalog.map((def) => (
-        <motion.div key={def.name} variants={itemVariants}>
-          <button
-            type="button"
-            onClick={() => onSelect(def)}
-            className="w-full group relative flex flex-col gap-2 p-2 rounded-xl border border-studio-border-muted bg-studio-canvas hover:border-studio-accent/30 hover:bg-studio-canvas-inset transition-all outline-none focus-visible:ring-2 focus-visible:ring-studio-accent text-left shadow-sm hover:shadow-md"
-          >
-            <div className="aspect-[4/3] rounded-lg border border-studio-border-muted/30 bg-studio-canvas-inset/20 overflow-hidden relative flex items-center justify-center studio-transition group-hover:bg-studio-canvas-inset/40">
-              <ComponentPreview name={def.name} className="scale-90" />
-              {/* Corner accent for technical feel */}
-              <div className="absolute top-1.5 left-1.5 w-1 h-1 rounded-full bg-studio-accent/10 group-hover:bg-studio-accent/30 studio-transition" />
-              {/* Props indicator badge */}
-              {def.props && def.props.length > 0 && (
-                <div className="absolute bottom-1.5 right-1.5 bg-studio-accent/20 border border-studio-accent/40 rounded-full px-2 py-0.5 text-[9px] font-medium text-studio-accent group-hover:bg-studio-accent/30 transition-colors">
-                  {def.props.length}
-                </div>
-              )}
-            </div>
-            <div className="px-1 pb-1 min-w-0">
-              <div className="text-[13px] font-bold text-studio-fg truncate leading-tight">
-                {getComponentLabel(def)}
-              </div>
-              {def.description ? (
-                <div className="text-[11px] text-studio-fg-muted truncate mt-0.5 opacity-60 group-hover:opacity-100 transition-opacity">
-                  {def.description}
-                </div>
-              ) : (
-                <div className="text-[10px] font-mono text-studio-fg-muted/40 truncate mt-0.5">
-                  &lt;{def.name} /&gt;
-                </div>
-              )}
-            </div>
-          </button>
-        </motion.div>
+        <ComponentCard key={def.name} def={def} onSelect={onSelect} />
       ))}
-    </motion.div>
+    </div>
   )
 }
 
