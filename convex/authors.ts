@@ -60,7 +60,11 @@ export const update = mutation({
     const record = await ctx.db.get(args.id)
     if (!record) throw new Error("Author not found")
 
-    await resolveProjectAccess(ctx, { projectId: record.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken }, "editor")
+    await resolveProjectAccess(
+      ctx,
+      { projectId: record.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken },
+      "editor",
+    )
 
     const { id, userId: _u, projectAccessToken: _pat, ...updates } = args
     await ctx.db.patch(id, { ...updates, updatedAt: Date.now() })
@@ -77,7 +81,11 @@ export const remove = mutation({
     const record = await ctx.db.get(args.id)
     if (!record) throw new Error("Author not found")
 
-    await resolveProjectAccess(ctx, { projectId: record.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken }, "editor")
+    await resolveProjectAccess(
+      ctx,
+      { projectId: record.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken },
+      "editor",
+    )
 
     await ctx.db.delete(args.id)
   },

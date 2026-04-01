@@ -130,11 +130,18 @@ export function ComponentInsertModal({
   )
 
   const handleInsert = React.useCallback(() => {
-    if (!selectedDef) return
-    const node = buildComponentNode(selectedDef, formState)
-    const jsx = serializeComponentNode(node)
-    onInsert(jsx, selectedDef, node)
-    onOpenChange(false)
+    if (!selectedDef) {
+      return
+    }
+    try {
+      const node = buildComponentNode(selectedDef, formState)
+      const jsx = serializeComponentNode(node)
+      onInsert(jsx, selectedDef, node)
+      onOpenChange(false)
+    } catch (error) {
+      console.error("Error in handleInsert:", error)
+      throw error
+    }
   }, [selectedDef, formState, onInsert, onOpenChange])
 
   const handleBack = React.useCallback(() => {
@@ -213,6 +220,14 @@ export function ComponentInsertModal({
                         <>
                           <span className="text-studio-border-muted">•</span>
                           <span className="text-[10px] text-studio-fg-muted truncate">{selectedDef.description}</span>
+                        </>
+                      )}
+                      {selectedDef?.props && selectedDef.props.length > 0 && (
+                        <>
+                          <span className="text-studio-border-muted">•</span>
+                          <span className="text-[10px] font-medium text-studio-accent">
+                            {selectedDef.props.length} prop{selectedDef.props.length !== 1 ? "s" : ""}
+                          </span>
                         </>
                       )}
                     </div>
@@ -338,6 +353,12 @@ function CatalogGallery({
               <ComponentPreview name={def.name} className="scale-90" />
               {/* Corner accent for technical feel */}
               <div className="absolute top-1.5 left-1.5 w-1 h-1 rounded-full bg-studio-accent/10 group-hover:bg-studio-accent/30 studio-transition" />
+              {/* Props indicator badge */}
+              {def.props && def.props.length > 0 && (
+                <div className="absolute bottom-1.5 right-1.5 bg-studio-accent/20 border border-studio-accent/40 rounded-full px-2 py-0.5 text-[9px] font-medium text-studio-accent group-hover:bg-studio-accent/30 transition-colors">
+                  {def.props.length}
+                </div>
+              )}
             </div>
             <div className="px-1 pb-1 min-w-0">
               <div className="text-[13px] font-bold text-studio-fg truncate leading-tight">

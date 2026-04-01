@@ -38,7 +38,8 @@ export default async function HistoryPage({ params, searchParams }: PageProps) {
     if (project && (!branch || project.branch === branch)) {
       // Resolve role: GitHub API → ownership → cache → content probe
       const { role: githubRole } = await getRepoRole(token, owner, repo)
-      let repoRole: "owner" | "editor" | "viewer" | null = githubRole ?? (project.userId === actingUserId ? "owner" : null)
+      let repoRole: "owner" | "editor" | "viewer" | null =
+        githubRole ?? (project.userId === actingUserId ? "owner" : null)
       if (!repoRole) {
         try {
           const cached = await convex.query(api.repoAccessCache.getForUserPublic, {

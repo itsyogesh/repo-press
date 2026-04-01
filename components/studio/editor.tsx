@@ -331,7 +331,7 @@ export function Editor({
             frontmatterSchema={frontmatterSchema}
             fieldVariants={fieldVariants}
             onChangeFrontmatter={onChangeFrontmatter}
-            tree={tree}
+            filePath={filePath}
           />
 
           {/* MDXEditor */}

@@ -2,7 +2,7 @@ import { ConvexHttpClient } from "convex/browser"
 import { api } from "@/convex/_generated/api"
 import type { Doc } from "@/convex/_generated/dataModel"
 import { fetchAuthQuery, getGitHubToken, getPatAuthUserId } from "@/lib/auth-server"
-import { getRepoRole, probeRepoReadAccess, roleAtLeast, type Role } from "@/lib/github-permissions"
+import { getRepoRole, probeRepoReadAccess, type Role, roleAtLeast } from "@/lib/github-permissions"
 import { mintProjectAccessToken, mintServerQueryToken } from "@/lib/project-access-token"
 
 interface RouteAuthResult {

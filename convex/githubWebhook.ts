@@ -1,6 +1,6 @@
 import { v } from "convex/values"
-import { mutation } from "./_generated/server"
 import { verifyServerQueryToken } from "../lib/project-access-token"
+import { mutation } from "./_generated/server"
 
 /**
  * Handle a GitHub PR merge event.

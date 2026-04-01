@@ -15,14 +15,7 @@ interface FileBrowserProps {
   basePath?: string
 }
 
-export function FileBrowser({
-  files,
-  currentPath = "",
-  owner,
-  repo,
-  branch = "main",
-  basePath,
-}: FileBrowserProps) {
+export function FileBrowser({ files, currentPath = "", owner, repo, branch = "main", basePath }: FileBrowserProps) {
   const resolvedBasePath = basePath || `/dashboard/${owner}/${repo}/files`
 
   // Sort files: directories first, then files
@@ -62,14 +55,7 @@ export function FileBrowser({
           </div>
         )}
         {sortedFiles.map((file) => (
-          <FileItem
-            key={file.path}
-            file={file}
-            owner={owner}
-            repo={repo}
-            branch={branch}
-            basePath={resolvedBasePath}
-          />
+          <FileItem key={file.path} file={file} owner={owner} repo={repo} branch={branch} basePath={resolvedBasePath} />
         ))}
       </div>
     </div>

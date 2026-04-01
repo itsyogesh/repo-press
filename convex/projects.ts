@@ -149,9 +149,7 @@ export const findByRepo = query({
       .query("projects")
       .withIndex("by_repo", (q) => q.eq("repoOwner", args.repoOwner).eq("repoName", args.repoName))
 
-    const project = args.branch
-      ? await q.filter((q) => q.eq(q.field("branch"), args.branch)).first()
-      : await q.first()
+    const project = args.branch ? await q.filter((q) => q.eq(q.field("branch"), args.branch)).first() : await q.first()
 
     if (!project) return null
 
@@ -509,9 +507,7 @@ export const syncProjectsFromConfig = mutation({
     // Repo-scoped lookup: find ALL projects for this repo, regardless of creator
     const repoProjects = await ctx.db
       .query("projects")
-      .withIndex("by_repo", (q) =>
-        q.eq("repoOwner", args.repoOwner).eq("repoName", args.repoName),
-      )
+      .withIndex("by_repo", (q) => q.eq("repoOwner", args.repoOwner).eq("repoName", args.repoName))
       .collect()
 
     for (const p of args.projects) {
@@ -610,7 +606,11 @@ export const update = mutation({
     components: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
-    await resolveProjectAccess(ctx, { projectId: args.id, userId: args.userId, projectAccessToken: args.projectAccessToken }, "editor")
+    await resolveProjectAccess(
+      ctx,
+      { projectId: args.id, userId: args.userId, projectAccessToken: args.projectAccessToken },
+      "editor",
+    )
 
     const { id, userId: _userId, projectAccessToken: _pat, ...updates } = args
     await ctx.db.patch(id, {
@@ -629,7 +629,11 @@ export const updateFramework = mutation({
     frontmatterSchema: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
-    await resolveProjectAccess(ctx, { projectId: args.id, userId: args.userId, projectAccessToken: args.projectAccessToken }, "editor")
+    await resolveProjectAccess(
+      ctx,
+      { projectId: args.id, userId: args.userId, projectAccessToken: args.projectAccessToken },
+      "editor",
+    )
 
     await ctx.db.patch(args.id, {
       detectedFramework: args.detectedFramework,
@@ -646,7 +650,11 @@ export const remove = mutation({
     projectAccessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await resolveProjectAccess(ctx, { projectId: args.id, userId: args.userId, projectAccessToken: args.projectAccessToken }, "owner")
+    await resolveProjectAccess(
+      ctx,
+      { projectId: args.id, userId: args.userId, projectAccessToken: args.projectAccessToken },
+      "owner",
+    )
 
     await ctx.db.delete(args.id)
   },

@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useSyncExternalStore } from "react"
+import { useCallback, useMemo, useSyncExternalStore } from "react"
 import { fetchAdapterSourceAction } from "@/app/dashboard/[owner]/[repo]/adapter-actions"
 import { fetchPluginAction } from "@/app/dashboard/[owner]/[repo]/plugin-actions"
 import {
@@ -33,6 +33,7 @@ interface PreviewStoreEntry {
   adapter: RepoPressPreviewAdapter | null
   plugins: Record<string, RepoPressPreviewAdapter>
   loading: boolean
+  loaded: boolean
   error: string | null
   diagnostics: string[]
   listeners: Set<() => void>
@@ -56,6 +57,8 @@ const EMPTY_RESULT: UsePreviewContextResult = {
   diagnostics: [],
 }
 
+const PREVIEW_CONTEXT_REVALIDATE_MS = 15_000
+
 function getStoreEntry(key: string) {
   let entry = previewStore.get(key)
   if (!entry) {
@@ -63,6 +66,7 @@ function getStoreEntry(key: string) {
       adapter: null,
       plugins: {},
       loading: false,
+      loaded: false,
       error: null,
       diagnostics: [],
       listeners: new Set(),
@@ -114,9 +118,13 @@ function hashSource(source: string) {
   return String(hash >>> 0)
 }
 
-async function loadPreviewContext(key: string, options: Required<UsePreviewContextOptions>) {
+async function loadPreviewContext(
+  key: string,
+  options: Required<UsePreviewContextOptions>,
+  { force = false }: { force?: boolean } = {},
+) {
   const entry = getStoreEntry(key)
-  if (entry.promise || entry.loading) return
+  if (entry.promise || entry.loading || (entry.loaded && !entry.error && !force)) return
 
   entry.loading = true
   entry.error = null
@@ -189,7 +197,9 @@ async function loadPreviewContext(key: string, options: Required<UsePreviewConte
                 const pluginEntryPath = ("entryPath" in result ? result.entryPath : null) || path!
                 const transpiled = await transpileAdapter({
                   entryPath: pluginEntryPath,
-                  sources: ("sources" in result ? result.sources : null) || { [path!]: result.source },
+                  sources: ("sources" in result ? result.sources : null) || {
+                    [path!]: result.source,
+                  },
                 })
                 return { id, adapter: evaluateAdapter(transpiled) }
               }
@@ -222,6 +232,7 @@ async function loadPreviewContext(key: string, options: Required<UsePreviewConte
       entry.diagnostics = diagnostics
     } finally {
       entry.loading = false
+      entry.loaded = true
       entry.promise = null
       emit(entry)
     }
@@ -238,8 +249,12 @@ function subscribePreviewContext(
   const entry = getStoreEntry(key)
   entry.listeners.add(listener)
   void loadPreviewContext(key, options)
+  const refreshInterval = window.setInterval(() => {
+    void loadPreviewContext(key, options, { force: true })
+  }, PREVIEW_CONTEXT_REVALIDATE_MS)
 
   return () => {
+    window.clearInterval(refreshInterval)
     entry.listeners.delete(listener)
   }
 }
@@ -266,8 +281,13 @@ export function usePreviewContext({
   enabledPlugins,
   pluginRegistry,
 }: UsePreviewContextOptions): UsePreviewContextResult {
-  const normalizedPlugins = useMemo(() => [...(enabledPlugins || [])].sort(), [enabledPlugins])
-  const normalizedRegistry = useMemo(() => pluginRegistry || {}, [pluginRegistry])
+  // Stabilize array/object refs from Convex queries — they return new references
+  // on every subscription fire even when the data is identical, which would
+  // otherwise cascade into a new `key` → new store subscription every time.
+  const pluginsKey = useMemo(() => JSON.stringify(enabledPlugins || []), [enabledPlugins])
+  const registryKey = useMemo(() => JSON.stringify(pluginRegistry || {}), [pluginRegistry])
+  const normalizedPlugins = useMemo(() => JSON.parse(pluginsKey) as string[], [pluginsKey])
+  const normalizedRegistry = useMemo(() => JSON.parse(registryKey) as Record<string, string>, [registryKey])
   const key = useMemo(
     () =>
       JSON.stringify({
@@ -281,21 +301,27 @@ export function usePreviewContext({
     [owner, repo, branch, adapterPath, normalizedPlugins, normalizedRegistry],
   )
 
-  return useSyncExternalStore(
-    (listener) =>
+  const normalizedAdapterPath = adapterPath || null
+
+  const subscribe = useCallback(
+    (listener: () => void) =>
       subscribePreviewContext(
         key,
         {
           owner,
           repo,
           branch,
-          adapterPath: adapterPath || null,
+          adapterPath: normalizedAdapterPath,
           enabledPlugins: normalizedPlugins,
           pluginRegistry: normalizedRegistry,
         },
         listener,
       ),
-    () => getSnapshot(key),
-    () => EMPTY_RESULT,
+    [key, owner, repo, branch, normalizedAdapterPath, normalizedPlugins, normalizedRegistry],
   )
+
+  const snap = useCallback(() => getSnapshot(key), [key])
+  const serverSnap = useCallback(() => EMPTY_RESULT, [])
+
+  return useSyncExternalStore(subscribe, snap, serverSnap)
 }

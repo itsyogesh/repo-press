@@ -78,7 +78,11 @@ export const remove = mutation({
     const record = await ctx.db.get(args.id)
     if (!record) throw new Error("FolderMeta not found")
 
-    await resolveProjectAccess(ctx, { projectId: record.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken }, "editor")
+    await resolveProjectAccess(
+      ctx,
+      { projectId: record.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken },
+      "editor",
+    )
 
     await ctx.db.delete(args.id)
   },

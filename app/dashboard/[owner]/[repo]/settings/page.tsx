@@ -171,10 +171,7 @@ export default async function SettingsPage({ params }: SettingsPageProps) {
 
                   {repoRole === "owner" && (
                     <div className="pt-2">
-                      <DeleteProjectZone
-                        project={project}
-                        projectAccessToken={projectTokens[project._id]}
-                      />
+                      <DeleteProjectZone project={project} projectAccessToken={projectTokens[project._id]} />
                     </div>
                   )}
                 </CardContent>
