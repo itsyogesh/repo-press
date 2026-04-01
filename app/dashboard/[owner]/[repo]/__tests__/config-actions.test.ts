@@ -42,6 +42,16 @@ vi.mock("next/cache", () => ({
   revalidatePath: vi.fn(),
 }))
 
+const { resolveRepoRoleMock, roleAtLeastMock } = vi.hoisted(() => ({
+  resolveRepoRoleMock: vi.fn(),
+  roleAtLeastMock: vi.fn(),
+}))
+
+vi.mock("@/lib/github-permissions", () => ({
+  resolveRepoRole: resolveRepoRoleMock,
+  roleAtLeast: roleAtLeastMock,
+}))
+
 vi.mock("@/convex/_generated/api", () => ({
   api: {
     auth: { getCurrentUser: "auth:getCurrentUser" },
@@ -75,6 +85,8 @@ const BASE_CONFIG = {
 function setupHappyPath() {
   getGitHubTokenMock.mockResolvedValue(TOKEN)
   fetchAuthQueryMock.mockResolvedValue({ _id: USER_ID })
+  resolveRepoRoleMock.mockResolvedValue({ role: "owner", defaultBranch: "main", defaultBranchInferred: false })
+  roleAtLeastMock.mockReturnValue(true)
   readConfigMock.mockResolvedValue({ config: BASE_CONFIG, sha: "abc123sha" })
   commitConfigMock.mockResolvedValue(undefined)
   syncProjectsServerSideMock.mockResolvedValue({ synced: [], created: ["proj_1"], unchanged: [] })
@@ -132,6 +144,22 @@ describe("addProjectToConfigAction", () => {
     })
 
     expect(result).toEqual({ success: false, error: "Not authenticated with GitHub" })
+    expect(commitConfigMock).not.toHaveBeenCalled()
+  })
+
+  it("returns { success: false } when user lacks write access", async () => {
+    resolveRepoRoleMock.mockResolvedValue({ role: "viewer", defaultBranch: "main", defaultBranchInferred: false })
+    roleAtLeastMock.mockReturnValue(false)
+
+    const result = await addProjectToConfigAction(OWNER, REPO, BRANCH, {
+      id: "blog",
+      name: "Blog",
+      contentRoot: "content/blog",
+      framework: "custom",
+      contentType: "blog",
+    })
+
+    expect(result).toEqual({ success: false, error: "Unauthorized: write access required to modify project config" })
     expect(commitConfigMock).not.toHaveBeenCalled()
   })
 
