@@ -202,9 +202,13 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
       setIsFileLoading(true)
       const requestVersion = ++requestVersionRef.current
 
-      if (!resolvedNode.sha && !shouldTryRemoteForLocalCache) {
-        fileCacheRef.current.set(filePath, emptySnapshot)
-        applySnapshot(filePath, emptySnapshot)
+      if (!resolvedNode.sha) {
+        if (cached) {
+          applySnapshot(filePath, cached)
+        } else {
+          fileCacheRef.current.set(filePath, emptySnapshot)
+          applySnapshot(filePath, emptySnapshot)
+        }
         setIsFileLoading(false)
         return
       }

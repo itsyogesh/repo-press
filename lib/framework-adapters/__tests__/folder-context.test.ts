@@ -94,9 +94,9 @@ describe("getFolderContext", () => {
     expect(ctx.primaryFieldLabel).toBe("Release Title")
   })
 
-  it("returns 'New Page' for empty path (root)", () => {
+  it("returns 'Page' for empty path (root)", () => {
     const ctx = getFolderContext("", baseAdapter)
-    expect(ctx.contentLabel).toBe("New Page")
+    expect(ctx.contentLabel).toBe("Page")
     expect(ctx.primaryFieldLabel).toBe("Page Title")
   })
 
