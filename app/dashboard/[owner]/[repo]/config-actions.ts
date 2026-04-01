@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { api } from "@/convex/_generated/api"
 import { fetchAuthQuery, getGitHubToken, getPatAuthUserId } from "@/lib/auth-server"
 import type { ProjectConfig } from "@/lib/config-schema"
+import { resolveRepoRole, roleAtLeast } from "@/lib/github-permissions"
 import {
   addProject,
   commitConfig,
@@ -27,6 +28,14 @@ async function resolveAuthContext() {
   if (!actingUserId) throw new Error("No authenticated user found")
 
   return { token, actingUserId }
+}
+
+/** Verify the caller has write-level access to the repo before mutating config. */
+async function requireWriteAccess(token: string, owner: string, repo: string, actingUserId: string) {
+  const { role } = await resolveRepoRole(token, owner, repo, actingUserId)
+  if (!role || !roleAtLeast(role, "editor")) {
+    throw new Error("Unauthorized: write access required to modify project config")
+  }
 }
 
 async function fetchConfigOrThrow(token: string, owner: string, repo: string, branch: string) {
@@ -54,6 +63,7 @@ export async function addProjectToConfigAction(
 ): Promise<ConfigActionResult> {
   try {
     const { token, actingUserId } = await resolveAuthContext()
+    await requireWriteAccess(token, owner, repo, actingUserId)
 
     // Validate that contentRoot exists as a directory in the repo before committing.
     // Empty contentRoot means repo root — always valid, skip the check.
@@ -119,6 +129,7 @@ export async function updateProjectInConfigAction(
 ): Promise<ConfigActionResult> {
   try {
     const { token, actingUserId } = await resolveAuthContext()
+    await requireWriteAccess(token, owner, repo, actingUserId)
     const { config, sha } = await fetchConfigOrThrow(token, owner, repo, branch)
 
     const updatedConfig = updateProject(config, configProjectId, updates)
@@ -152,6 +163,7 @@ export async function removeProjectFromConfigAction(
 ): Promise<ConfigActionResult> {
   try {
     const { token, actingUserId } = await resolveAuthContext()
+    await requireWriteAccess(token, owner, repo, actingUserId)
     const { config, sha } = await fetchConfigOrThrow(token, owner, repo, branch)
 
     const updatedConfig = removeProject(config, configProjectId)
@@ -186,6 +198,7 @@ export async function commitRawConfigAction(
 ): Promise<ConfigActionResult> {
   try {
     const { token, actingUserId } = await resolveAuthContext()
+    await requireWriteAccess(token, owner, repo, actingUserId)
 
     // Parse and validate before committing
     let parsed: unknown

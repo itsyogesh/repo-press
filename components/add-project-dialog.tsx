@@ -57,7 +57,6 @@ export function AddProjectDialog({ owner, repo, defaultBranch, open, onOpenChang
   const [error, setError] = useState<string | null>(null)
 
   const projectId = slugify(name)
-  const effectiveBranch = branch || defaultBranch
 
   const resetForm = () => {
     setName("")
@@ -80,7 +79,8 @@ export function AddProjectDialog({ owner, repo, defaultBranch, open, onOpenChang
 
     setError(null)
     startTransition(async () => {
-      const result = await addProjectToConfigAction(owner, repo, effectiveBranch, {
+      // Config file always lives on the default branch — not the project's content branch
+      const result = await addProjectToConfigAction(owner, repo, defaultBranch, {
         id: projectId,
         name: name.trim(),
         contentRoot: contentRoot.trim(),

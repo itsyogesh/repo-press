@@ -106,8 +106,8 @@ export function EditProjectDialog({
 
     setError(null)
     startTransition(async () => {
-      const effectiveBranch = branch.trim() || defaultBranch
-      const result = await updateProjectInConfigAction(owner, repo, effectiveBranch, configProjectId, {
+      // Config file always lives on the default branch — not the project's content branch
+      const result = await updateProjectInConfigAction(owner, repo, defaultBranch, configProjectId, {
         name: name.trim(),
         framework,
         contentType: contentType as "blog" | "docs" | "pages" | "changelog" | "custom",
