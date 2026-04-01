@@ -32,6 +32,7 @@ export function ProjectList({ serverProjects }: ProjectListProps) {
         </div>
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 3 }).map((_, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholders
             <div key={`project-skeleton-${i}`} className="rounded-lg border bg-card p-6 space-y-4">
               <div className="space-y-2">
                 <Skeleton className="h-5 w-3/4" />
