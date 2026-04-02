@@ -45,9 +45,9 @@ describe("media-resolve helpers", () => {
   })
 
   it("resolves bare file names using getSuggestedImagePath when contentRoot is provided", () => {
-    expect(resolveStudioAssetUrl("hero.png", "project_123", "user_1", "content/blog/post.mdx", undefined, "content/blog")).toBe(
-      "/api/media/resolve?projectId=project_123&path=%2Fpublic%2Fimages%2Fblog%2Fpost%2Fhero.png&userId=user_1",
-    )
+    expect(
+      resolveStudioAssetUrl("hero.png", "project_123", "user_1", "content/blog/post.mdx", undefined, "content/blog"),
+    ).toBe("/api/media/resolve?projectId=project_123&path=%2Fpublic%2Fimages%2Fblog%2Fpost%2Fhero.png&userId=user_1")
   })
 
   it("keeps non-blog bare file names relative to their local directory when no contentRoot", () => {
@@ -80,10 +80,7 @@ describe("getSuggestedImagePath", () => {
     ["src/content/docs/intro.mdx", "src/content/docs", "public/images/docs/intro"],
     ["apps/docs/content/intro.mdx", "apps/docs/content", "public/images/intro"],
     ["docs/intro.mdx", "", "public/images/docs/intro"],
-  ] as [string, string, string][])(
-    "%s (root=%s) → %s",
-    (filePath, contentRoot, expected) => {
-      expect(getSuggestedImagePath(filePath, contentRoot)).toBe(expected)
-    },
-  )
+  ] as [string, string, string][])("%s (root=%s) → %s", (filePath, contentRoot, expected) => {
+    expect(getSuggestedImagePath(filePath, contentRoot)).toBe(expected)
+  })
 })
