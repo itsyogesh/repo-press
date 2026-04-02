@@ -35,14 +35,38 @@ interface GalleryTabProps {
 const PAGE_SIZE = 24
 
 /**
- * Derives the first-level folder segment from a file path relative to contentRoot.
- * e.g. "content/blog/post.mdx" + contentRoot "content" → "blog"
- * e.g. "post.mdx" (root-level) → undefined (no scoping)
+ * Derives the section slug (e.g. "blog") from a file path relative to contentRoot.
+ *
+ * When contentRoot is set (e.g. "content"):
+ *   "content/blog/post.mdx" + "content" → "blog"
+ *
+ * When contentRoot is empty (content lives at repo root):
+ *   "content/blog/post.mdx" + "" → "blog" (skips the first segment as the container dir)
+ *   "blog/post.mdx" + "" → undefined (single-level, no section)
+ *
+ * Returns undefined when section cannot be determined (root-level files, no subdirectory).
  */
 function deriveSectionSlug(filePath: string | undefined, contentRoot: string | undefined): string | undefined {
   if (!filePath) return undefined
-  const root = contentRoot ? contentRoot.replace(/\/+$/, "") + "/" : ""
-  const relative = root && filePath.startsWith(root) ? filePath.slice(root.length) : filePath
+
+  const normalizedRoot = contentRoot ? contentRoot.replace(/\/+$/, "") : ""
+  const root = normalizedRoot ? normalizedRoot + "/" : ""
+
+  let relative: string
+  if (root && filePath.startsWith(root)) {
+    // Strip the known contentRoot prefix, then take the first folder segment
+    relative = filePath.slice(root.length)
+  } else if (!root) {
+    // No contentRoot configured — skip the first segment (assumed to be the top-level
+    // content container, e.g. "content/" or "docs/") and look one level deeper
+    const firstSlash = filePath.indexOf("/")
+    if (firstSlash === -1) return undefined
+    relative = filePath.slice(firstSlash + 1)
+  } else {
+    // contentRoot doesn't match this path — cannot determine section reliably
+    return undefined
+  }
+
   const parts = relative.split("/")
   return parts.length > 1 ? parts[0] : undefined
 }
