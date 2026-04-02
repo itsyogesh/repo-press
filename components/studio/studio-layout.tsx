@@ -519,15 +519,11 @@ function StudioLayoutInner({
     fieldVariants,
   } = studioQueries
 
-  // Build a set of full repo-relative paths for documents with pending edits
+  // Build a set of full repo-relative paths for documents with pending edits.
+  // doc.filePath is already the full tree path (set from selectedFile.path on save).
   const dirtyPaths = React.useMemo(() => {
-    const set = new Set<string>()
-    for (const doc of dirtyDocs ?? []) {
-      const fullPath = contentRoot ? `${contentRoot}/${doc.filePath}` : doc.filePath
-      set.add(fullPath)
-    }
-    return set
-  }, [dirtyDocs, contentRoot])
+    return new Set((dirtyDocs ?? []).map((doc: any) => doc.filePath))
+  }, [dirtyDocs])
 
   const publishLaneViewModel = React.useMemo(
     () =>
