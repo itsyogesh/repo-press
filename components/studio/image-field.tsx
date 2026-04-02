@@ -1,6 +1,6 @@
 "use client"
 
-import { ExternalLink, ImageIcon, Link as LinkIcon, RefreshCw, Trash2, Upload } from "lucide-react"
+import { ExternalLink, ImageIcon, Images, Link as LinkIcon, RefreshCw, Trash2, Upload } from "lucide-react"
 import * as React from "react"
 import { toast } from "sonner"
 import { BlurFade } from "@/components/magicui/blur-fade"
@@ -9,13 +9,13 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Progress } from "@/components/ui/progress"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { downloadExternalImage } from "@/lib/studio/download-external-image"
 import { getAuthoredImageValue } from "@/lib/studio/image-authoring"
 import { isSafeImageSrc, normalizeExternalImageUrl } from "@/lib/studio/image-url"
 import { getSuggestedImagePath, resolveStudioAssetUrl } from "@/lib/studio/media-resolve"
 import { cn } from "@/lib/utils"
+import { GalleryTab } from "./gallery-tab"
 import { ImageUploadZone } from "./image-upload-zone"
 import { useStudio } from "./studio-context"
 
@@ -38,7 +38,16 @@ export function ImageField({
   fieldName,
   semanticRole,
 }: ImageFieldProps) {
-  const { projectId, userId, selectedFilePath: selectedFilePathContext, owner, repo, branch, contentRoot } = useStudio()
+  const {
+    projectId,
+    userId,
+    selectedFilePath: selectedFilePathContext,
+    owner,
+    repo,
+    branch,
+    contentRoot,
+    projectAccessToken,
+  } = useStudio()
   const selectedFilePath = selectedFilePathProp ?? selectedFilePathContext
   const [browserOpen, setBrowserOpen] = React.useState(false)
   const resolvedValuePreview = value
@@ -171,6 +180,7 @@ export function ImageField({
         authoredValueUsage="frontmatter"
         fieldName={fieldName}
         semanticRole={semanticRole}
+        projectAccessToken={projectAccessToken}
       />
     </>
   )
@@ -190,6 +200,7 @@ interface ImageSelectorDialogProps {
   authoredValueUsage?: "frontmatter" | "component" | "editor"
   fieldName?: string
   semanticRole?: string
+  projectAccessToken?: string
 }
 
 function ImageSelectorDialog({
@@ -206,6 +217,7 @@ function ImageSelectorDialog({
   authoredValueUsage = "frontmatter",
   fieldName,
   semanticRole,
+  projectAccessToken,
 }: ImageSelectorDialogProps) {
   const [urlValue, setUrlValue] = React.useState("")
   const [isDownloading, setIsDownloading] = React.useState(false)
@@ -284,7 +296,7 @@ function ImageSelectorDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg overflow-hidden flex flex-col max-h-[90vh] p-0">
+      <DialogContent className="sm:max-w-xl overflow-hidden flex flex-col max-h-[90vh] p-0">
         <DialogHeader className="px-6 pt-6 pb-2">
           <DialogTitle>Select Image</DialogTitle>
           <DialogDescription>Choose an image for your content</DialogDescription>
@@ -307,78 +319,103 @@ function ImageSelectorDialog({
                 <LinkIcon className="h-3.5 w-3.5 mr-2" />
                 External URL
               </TabsTrigger>
+              {projectId && (
+                <TabsTrigger
+                  value="gallery"
+                  className="rounded-none border-b-2 border-transparent data-[state=active]:border-studio-accent data-[state=active]:bg-transparent px-0 h-10 shadow-none"
+                >
+                  <Images className="h-3.5 w-3.5 mr-2" />
+                  Gallery
+                </TabsTrigger>
+              )}
             </TabsList>
           </div>
 
-          <ScrollArea className="flex-1">
+          <TabsContent value="upload" className="flex-1 overflow-y-auto mt-0">
             <div className="p-6">
-              <TabsContent value="upload" className="mt-0">
-                {projectId && owner && repo && branch ? (
-                  <ImageUploadZone
-                    projectId={projectId}
-                    userId={userId}
-                    owner={owner}
-                    repo={repo}
-                    branch={branch}
-                    pathHint={pathHint}
-                    onUploadComplete={onSelect}
-                    active={open}
-                    selectedFilePath={selectedFilePath}
-                    sourceFilePath={selectedFilePath}
-                    authoredValueUsage={authoredValueUsage}
-                    fieldName={fieldName}
-                    semanticRole={semanticRole}
-                  />
-                ) : (
-                  <div className="flex flex-col items-center justify-center h-48 text-studio-fg-muted">
-                    <p className="text-sm">Upload context unavailable</p>
-                  </div>
-                )}
-              </TabsContent>
-
-              <TabsContent value="url" className="mt-0">
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="image-url">Image URL</Label>
-                    <div className="flex gap-2">
-                      <Input
-                        id="image-url"
-                        value={urlValue}
-                        onChange={(e) => setUrlValue(e.target.value)}
-                        placeholder="https://example.com/image.jpg"
-                        className="border-studio-border"
-                      />
-                      <Button onClick={() => void handleUseUrl()} disabled={!canUseUrl || isDownloading}>
-                        Use URL
-                      </Button>
-                    </div>
-                    <p className="text-[10px] text-studio-fg-muted">Paste a direct link to an image.</p>
-                  </div>
-
-                  {isDownloading && (
-                    <div className="space-y-2">
-                      <p className="text-xs text-studio-fg-muted">Downloading and staging image...</p>
-                      <Progress value={downloadProgress} className="h-1" />
-                    </div>
-                  )}
-
-                  {canUseUrl && (
-                    <div className="rounded-lg border border-studio-border overflow-hidden bg-studio-canvas-inset aspect-video">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={normalizedUrlValue}
-                        alt="External preview"
-                        className="w-full h-full object-contain"
-                        onError={(e) => {
-                          ;(e.target as HTMLImageElement).style.display = "none"
-                        }}
-                      />
-                    </div>
-                  )}
+              {projectId && owner && repo && branch ? (
+                <ImageUploadZone
+                  projectId={projectId}
+                  userId={userId}
+                  owner={owner}
+                  repo={repo}
+                  branch={branch}
+                  pathHint={pathHint}
+                  onUploadComplete={onSelect}
+                  active={open}
+                  selectedFilePath={selectedFilePath}
+                  sourceFilePath={selectedFilePath}
+                  authoredValueUsage={authoredValueUsage}
+                  fieldName={fieldName}
+                  semanticRole={semanticRole}
+                />
+              ) : (
+                <div className="flex flex-col items-center justify-center h-48 text-studio-fg-muted">
+                  <p className="text-sm">Upload context unavailable</p>
                 </div>
-              </TabsContent>
+              )}
             </div>
-          </ScrollArea>
+          </TabsContent>
+
+          <TabsContent value="url" className="flex-1 overflow-y-auto mt-0">
+            <div className="p-6 space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="image-url">Image URL</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="image-url"
+                    value={urlValue}
+                    onChange={(e) => setUrlValue(e.target.value)}
+                    placeholder="https://example.com/image.jpg"
+                    className="border-studio-border"
+                  />
+                  <Button onClick={() => void handleUseUrl()} disabled={!canUseUrl || isDownloading}>
+                    Use URL
+                  </Button>
+                </div>
+                <p className="text-[10px] text-studio-fg-muted">Paste a direct link to an image.</p>
+              </div>
+
+              {isDownloading && (
+                <div className="space-y-2">
+                  <p className="text-xs text-studio-fg-muted">Downloading and staging image...</p>
+                  <Progress value={downloadProgress} className="h-1" />
+                </div>
+              )}
+
+              {canUseUrl && (
+                <div className="rounded-lg border border-studio-border overflow-hidden bg-studio-canvas-inset aspect-video">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={normalizedUrlValue}
+                    alt="External preview"
+                    className="w-full h-full object-contain"
+                    onError={(e) => {
+                      ;(e.target as HTMLImageElement).style.display = "none"
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+          </TabsContent>
+
+          {projectId && (
+            <TabsContent value="gallery" className="flex-1 flex flex-col overflow-hidden mt-0">
+              <GalleryTab
+                projectId={projectId}
+                userId={userId}
+                owner={owner ?? ""}
+                repo={repo ?? ""}
+                branch={branch ?? "main"}
+                projectAccessToken={projectAccessToken}
+                selectedFilePath={selectedFilePath}
+                authoredValueUsage={authoredValueUsage}
+                fieldName={fieldName}
+                semanticRole={semanticRole}
+                onSelect={onSelect}
+              />
+            </TabsContent>
+          )}
         </Tabs>
       </DialogContent>
     </Dialog>
