@@ -519,6 +519,16 @@ function StudioLayoutInner({
     fieldVariants,
   } = studioQueries
 
+  // Build a set of full repo-relative paths for documents with pending edits
+  const dirtyPaths = React.useMemo(() => {
+    const set = new Set<string>()
+    for (const doc of dirtyDocs ?? []) {
+      const fullPath = contentRoot ? `${contentRoot}/${doc.filePath}` : doc.filePath
+      set.add(fullPath)
+    }
+    return set
+  }, [dirtyDocs, contentRoot])
+
   const publishLaneViewModel = React.useMemo(
     () =>
       getPublishLaneViewModel({
@@ -1386,6 +1396,7 @@ function StudioLayoutInner({
                           owner={owner}
                           repo={repo}
                           adapter={frameworkAdapter}
+                          dirtyPaths={dirtyPaths}
                         />
                       </div>
                       <div className="shrink-0 border-t border-studio-border bg-studio-canvas/95 backdrop-blur supports-[backdrop-filter]:bg-studio-canvas/80">

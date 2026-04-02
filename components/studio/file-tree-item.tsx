@@ -35,6 +35,8 @@ export interface TreeItemProps {
   onRenameFile?: (oldPath: string, newPath: string) => void
   owner?: string
   repo?: string
+  /** Set of full repo-relative file paths that have unsaved edits */
+  dirtyPaths?: Set<string>
 }
 
 export function TreeItem({
@@ -57,10 +59,12 @@ export function TreeItem({
   onRenameFile,
   owner,
   repo,
+  dirtyPaths,
 }: TreeItemProps) {
   const overlay = node as OverlayTreeNode
   const isNew = overlay.isNew
   const isDeleted = overlay.isDeleted
+  const isModified = !isNew && !isDeleted && node.type === "file" && !!dirtyPaths?.has(node.path)
   const isOpen = node.type === "dir" ? expandedDirs.has(node.path) : false
   const isRenaming = renamingPath === node.path
 
@@ -228,6 +232,7 @@ export function TreeItem({
                 onCollapseAll={onCollapseAll}
                 owner={owner}
                 repo={repo}
+                dirtyPaths={dirtyPaths}
               />
             ))}
           </div>
@@ -352,6 +357,14 @@ export function TreeItem({
                   className="ml-1 h-4 px-1 text-[10px] bg-studio-success-muted text-studio-success border-0 shrink-0"
                 >
                   NEW
+                </Badge>
+              )}
+              {isModified && (
+                <Badge
+                  variant="secondary"
+                  className="ml-1 h-4 px-1 text-[10px] bg-studio-attention-muted text-studio-attention border-0 shrink-0"
+                >
+                  EDITED
                 </Badge>
               )}
             </div>

@@ -39,6 +39,8 @@ interface FileTreeProps {
   repo?: string
   /** Framework adapter used to derive human-readable folder labels in the + menu */
   adapter?: FrameworkAdapter | null
+  /** Set of full repo-relative file paths that have unsaved edits */
+  dirtyPaths?: Set<string>
 }
 
 type VisibleTreeItem = {
@@ -102,6 +104,7 @@ export function FileTree({
   owner,
   repo,
   adapter,
+  dirtyPaths,
 }: FileTreeProps) {
   const [searchQuery, setSearchQuery] = React.useState("")
   const [activeId, setActiveId] = React.useState<string | null>(null)
@@ -486,6 +489,7 @@ export function FileTree({
                       onCollapseAll={collapseAll}
                       owner={owner}
                       repo={repo}
+                      dirtyPaths={dirtyPaths}
                     />
                   ))}
                 </div>
