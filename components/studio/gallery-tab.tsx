@@ -386,6 +386,8 @@ interface GalleryThumbnailProps {
 }
 
 function GalleryThumbnail({ asset, thumbUrl, isSelected, isStaged, onClick }: GalleryThumbnailProps) {
+  const [imgState, setImgState] = React.useState<"loading" | "loaded" | "error">("loading")
+
   return (
     <button
       type="button"
@@ -398,22 +400,28 @@ function GalleryThumbnail({ asset, thumbUrl, isSelected, isStaged, onClick }: Ga
           : "border-studio-border hover:border-studio-accent/50",
       )}
     >
+      {/* Shimmer while loading */}
+      {imgState === "loading" && <div className="absolute inset-0 animate-pulse bg-studio-canvas-inset" />}
+
+      {/* Error fallback */}
+      {imgState === "error" && (
+        <div className="absolute inset-0 flex items-center justify-center bg-studio-canvas-inset">
+          <ImageIcon className="h-5 w-5 text-studio-fg-muted opacity-40" />
+        </div>
+      )}
+
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={thumbUrl}
         alt={asset.altText ?? asset.fileName}
         loading="lazy"
-        className="w-full h-full object-cover"
-        onError={(e) => {
-          const target = e.target as HTMLImageElement
-          target.style.display = "none"
-          target.nextElementSibling?.classList.remove("hidden")
-        }}
+        className={cn(
+          "w-full h-full object-cover transition-opacity duration-300",
+          imgState === "loaded" ? "opacity-100" : "opacity-0",
+        )}
+        onLoad={() => setImgState("loaded")}
+        onError={() => setImgState("error")}
       />
-      {/* Fallback icon */}
-      <div className="hidden absolute inset-0 flex items-center justify-center bg-studio-canvas-inset">
-        <ImageIcon className="h-6 w-6 text-studio-fg-muted" />
-      </div>
 
       {/* Staged badge */}
       {isStaged && (
@@ -439,6 +447,31 @@ interface GalleryDetailPanelProps {
   onSaveAltText: () => void
   onUseImage: () => void
   onClose: () => void
+}
+
+function DetailPreviewImage({ src, alt }: { src: string; alt: string }) {
+  const [imgState, setImgState] = React.useState<"loading" | "loaded" | "error">("loading")
+  return (
+    <div className="relative aspect-square bg-studio-canvas border-b border-studio-border overflow-hidden shrink-0">
+      {imgState === "loading" && <div className="absolute inset-0 animate-pulse bg-studio-canvas-inset" />}
+      {imgState === "error" && (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <ImageIcon className="h-8 w-8 text-studio-fg-muted opacity-30" />
+        </div>
+      )}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={src}
+        alt={alt}
+        className={cn(
+          "w-full h-full object-contain transition-opacity duration-300",
+          imgState === "loaded" ? "opacity-100" : "opacity-0",
+        )}
+        onLoad={() => setImgState("loaded")}
+        onError={() => setImgState("error")}
+      />
+    </div>
+  )
 }
 
 function GalleryDetailPanel({
@@ -471,10 +504,7 @@ function GalleryDetailPanel({
       </div>
 
       {/* Preview */}
-      <div className="aspect-square bg-studio-canvas border-b border-studio-border overflow-hidden shrink-0">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={thumbUrl} alt={asset.altText ?? asset.fileName} className="w-full h-full object-contain" />
-      </div>
+      <DetailPreviewImage src={thumbUrl} alt={asset.altText ?? asset.fileName} />
 
       {/* Metadata */}
       <div className="flex-1 overflow-y-auto p-3 space-y-3">

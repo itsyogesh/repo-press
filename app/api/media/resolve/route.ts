@@ -43,25 +43,31 @@ export async function GET(request: Request) {
         if (payload?.userId && payload?.projectId === projectId) {
           actingUserId = payload.userId
           projectAccessToken = queryAccessToken
-          // Note: we won't have githubToken for query-param auth, but we don't need it for media resolve
+          // githubToken is not available via projectAccessToken — resolved via cookies below
         }
       } catch {
         // Token verification failed, fall back to cookie-based auth
       }
     }
 
-    // Fallback to cookie-based auth if token auth failed or not provided
-    if (!actingUserId) {
+    // Fallback to cookie-based auth if token auth failed or not provided,
+    // or if githubToken is still null (needed for GitHub API calls below).
+    if (!actingUserId || !githubToken) {
       try {
         const auth = await resolveRouteAuth(project, "viewer")
-        actingUserId = auth.actingUserId
-        projectAccessToken = auth.projectAccessToken
+        if (!actingUserId) actingUserId = auth.actingUserId
+        if (!projectAccessToken) projectAccessToken = auth.projectAccessToken
         githubToken = auth.githubToken
       } catch (e) {
-        if (e instanceof RouteAuthError) {
-          return NextResponse.json({ error: e.message }, { status: e.status })
+        if (!actingUserId) {
+          // No auth at all — reject the request
+          if (e instanceof RouteAuthError) {
+            return NextResponse.json({ error: e.message }, { status: e.status })
+          }
+          throw e
         }
-        throw e
+        // actingUserId from projectAccessToken is valid; githubToken still null.
+        // The githubToken guard below will return 401 if GitHub access is needed.
       }
     }
 
