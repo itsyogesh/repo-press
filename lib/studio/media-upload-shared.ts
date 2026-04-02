@@ -16,6 +16,10 @@ export type GitHubUploadResult = {
   commitSha?: string
 }
 
+export type ConvexStorageUploadResult = {
+  storageId: string
+}
+
 type ConvexMutationClient = {
   mutation: (ref: unknown, args: Record<string, unknown>) => Promise<unknown>
 }
@@ -51,6 +55,48 @@ export function isBlobAccessMismatch(error: unknown): boolean {
     (message.includes("public") &&
       (message.includes("not allowed") || message.includes("does not allow") || message.includes("denied")))
   )
+}
+
+/**
+ * Upload bytes to Convex file storage.
+ * Returns a storageId that can be used with ctx.storage.getUrl() for preview
+ * and must be deleted via ctx.storage.delete() when no longer needed.
+ */
+export async function uploadToConvexStorage({
+  convex,
+  api,
+  projectId,
+  userId,
+  projectAccessToken,
+  content,
+  contentType,
+}: {
+  convex: ConvexMutationClient
+  api: { mediaOps: { generateConvexUploadUrl: unknown } }
+  projectId: Id<"projects">
+  userId?: string
+  projectAccessToken?: string
+  content: Buffer
+  contentType: string
+}): Promise<ConvexStorageUploadResult> {
+  const uploadUrl = (await convex.mutation(api.mediaOps.generateConvexUploadUrl, {
+    projectId,
+    userId,
+    projectAccessToken,
+  })) as string
+
+  const response = await fetch(uploadUrl, {
+    method: "POST",
+    body: content,
+    headers: { "Content-Type": contentType },
+  })
+
+  if (!response.ok) {
+    throw new Error(`Convex storage upload failed: ${response.status} ${response.statusText}`)
+  }
+
+  const result = (await response.json()) as { storageId: string }
+  return { storageId: result.storageId }
 }
 
 export async function uploadToBlobWithRetry({

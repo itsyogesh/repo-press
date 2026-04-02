@@ -12,10 +12,6 @@ vi.mock("convex/browser", () => ({
   },
 }))
 
-vi.mock("@vercel/blob", () => ({
-  put: vi.fn(),
-}))
-
 vi.mock("@/lib/auth-server", () => ({
   fetchAuthQuery: vi.fn(),
   getGitHubToken: vi.fn(),
@@ -39,9 +35,19 @@ vi.mock("@/lib/github-permissions", () => ({
   },
 }))
 
+// Mock uploadToConvexStorage so tests don't need a real Convex instance.
+vi.mock("@/lib/studio/media-upload-shared", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/studio/media-upload-shared")>(
+    "@/lib/studio/media-upload-shared",
+  )
+  return {
+    ...actual,
+    uploadToConvexStorage: vi.fn().mockResolvedValue({ storageId: "storage_abc123" }),
+  }
+})
+
 process.env.NEXT_PUBLIC_CONVEX_URL = process.env.NEXT_PUBLIC_CONVEX_URL || "https://example.convex.cloud"
 
-import { put } from "@vercel/blob"
 import { fetchAuthQuery, getGitHubToken, getPatAuthUserId } from "@/lib/auth-server"
 import { createGitHubClient } from "@/lib/github"
 import { getRepoRole } from "@/lib/github-permissions"
@@ -67,7 +73,6 @@ function baseBody() {
     pathHint: "public/images",
     fileName: "hero.png",
     contentBase64: VALID_PNG_BASE64,
-    storagePreference: "auto",
   }
 }
 
@@ -80,23 +85,18 @@ const projectRecord = {
 }
 
 describe("POST /api/media/upload", () => {
-  const baseGithubClient = {
-    repos: {
-      getContent: vi.fn().mockRejectedValue({ status: 404, message: "Not Found" }),
-      createOrUpdateFileContents: vi.fn(),
-    },
-  }
-
   beforeEach(() => {
     vi.clearAllMocks()
     process.env.BETTER_AUTH_SECRET = "test-secret"
-    process.env.BLOB_READ_WRITE_TOKEN = "blob-token"
     vi.mocked(getGitHubToken).mockResolvedValue("gh-token")
     vi.mocked(fetchAuthQuery!).mockResolvedValue({ _id: "user_1" })
     vi.mocked(getPatAuthUserId).mockResolvedValue("user_1")
     vi.mocked(getRepoRole).mockResolvedValue({ role: "owner", defaultBranch: "main", defaultBranchInferred: false })
     vi.mocked(createGitHubClient).mockReturnValue({
-      ...baseGithubClient,
+      repos: {
+        getContent: vi.fn().mockRejectedValue({ status: 404, message: "Not Found" }),
+        createOrUpdateFileContents: vi.fn(),
+      },
       users: {
         getAuthenticated: vi.fn().mockResolvedValue({ data: { login: "user_1" } }),
       },
@@ -109,43 +109,35 @@ describe("POST /api/media/upload", () => {
     vi.restoreAllMocks()
   })
 
-  it("stages blob-backed media and returns repoPath + previewUrl", async () => {
-    vi.mocked(put).mockResolvedValue({ url: "https://blob.vercel-storage.com/repo-press/hero.png" } as any)
-
+  it("stages Convex-backed media and returns repoPath + previewUrl", async () => {
     const response = await POST(buildRequest(baseBody()))
     const payload = await response.json()
 
     expect(response.status).toBe(200)
     expect(payload).toMatchObject({
-      storage: "blob",
+      storage: "convex",
       repoPath: "/public/images/hero.png",
       staged: true,
       mediaOpId: "media-op-1",
     })
     expect(payload.previewUrl).toBe("/api/media/resolve?projectId=project_123&path=%2Fpublic%2Fimages%2Fhero.png")
-    expect(vi.mocked(put).mock.calls[0]?.[2]).toEqual(expect.objectContaining({ allowOverwrite: true }))
     expect(convexMutationMock).toHaveBeenCalled()
-    const mediaAssetCall = convexMutationMock.mock.calls.find(
-      ([, args]) =>
-        args && typeof args === "object" && (args as Record<string, unknown>).filePath === "/public/images/hero.png",
+  })
+
+  it("stages with sourceType convex and convexStorageId", async () => {
+    const response = await POST(buildRequest(baseBody()))
+    expect(response.status).toBe(200)
+
+    const stagingCall = convexMutationMock.mock.calls.find(
+      ([, args]) => args && typeof args === "object" && (args as Record<string, unknown>).repoPath !== undefined,
     )
-    expect(mediaAssetCall?.[1]).toEqual(
-      expect.objectContaining({
-        projectId: "project_123",
-        userId: "user_1",
-        fileName: "hero.png",
-        filePath: "/public/images/hero.png",
-        mimeType: "image/png",
-        sizeBytes: VALID_PNG_BYTES.byteLength,
-        width: 1,
-        height: 1,
-      }),
-    )
+    expect(stagingCall?.[1]).toMatchObject({
+      sourceType: "convex",
+      convexStorageId: "storage_abc123",
+    })
   })
 
   it("threads sourceFilePath into staged media ops", async () => {
-    vi.mocked(put).mockResolvedValue({ url: "https://blob.vercel-storage.com/repo-press/hero.png" } as any)
-
     const response = await POST(
       buildRequest({
         ...baseBody(),
@@ -163,9 +155,28 @@ describe("POST /api/media/upload", () => {
     )
   })
 
-  it("rejects uploads when request repo context does not match the project", async () => {
-    vi.mocked(put).mockResolvedValue({ url: "https://blob.vercel-storage.com/repo-press/hero.png" } as any)
+  it("records media asset with correct metadata", async () => {
+    const response = await POST(buildRequest(baseBody()))
+    expect(response.status).toBe(200)
 
+    const assetCall = convexMutationMock.mock.calls.find(
+      ([, args]) =>
+        args && typeof args === "object" && (args as Record<string, unknown>).filePath === "/public/images/hero.png",
+    )
+    expect(assetCall?.[1]).toEqual(
+      expect.objectContaining({
+        projectId: "project_123",
+        fileName: "hero.png",
+        filePath: "/public/images/hero.png",
+        mimeType: "image/png",
+        sizeBytes: VALID_PNG_BYTES.byteLength,
+        width: 1,
+        height: 1,
+      }),
+    )
+  })
+
+  it("rejects uploads when request repo context does not match the project", async () => {
     const response = await POST(
       buildRequest({
         ...baseBody(),
@@ -176,8 +187,6 @@ describe("POST /api/media/upload", () => {
 
     expect(response.status).toBe(400)
     expect(payload.error).toContain("repo context")
-    // convexMutationMock may be called once by resolveRouteAuth's cache upsert (best-effort),
-    // but the media staging mutation should NOT have been called.
     const stagingCalls = convexMutationMock.mock.calls.filter((call: any[]) => call[1]?.repoPath !== undefined)
     expect(stagingCalls).toHaveLength(0)
   })
@@ -198,107 +207,10 @@ describe("POST /api/media/upload", () => {
   it("allows PAT-mode uploads when the PAT resolves to the project owner", async () => {
     vi.mocked(fetchAuthQuery!).mockResolvedValue(null as never)
     vi.mocked(getPatAuthUserId).mockResolvedValue("user_1")
-    vi.mocked(put).mockResolvedValue({ url: "https://blob.vercel-storage.com/repo-press/hero.png" } as any)
 
     const response = await POST(buildRequest(baseBody()))
 
     expect(response.status).toBe(200)
     expect(convexMutationMock).toHaveBeenCalled()
-  })
-
-  it("retries blob upload with private access when public upload fails with access issues", async () => {
-    vi.mocked(put)
-      .mockRejectedValueOnce(new Error("public access is not allowed for this token"))
-      .mockResolvedValueOnce({ url: "https://blob.vercel-storage.com/repo-press/hero.png" } as any)
-
-    const response = await POST(buildRequest(baseBody()))
-    const payload = await response.json()
-
-    expect(response.status).toBe(200)
-    expect(payload.storage).toBe("blob")
-    expect(vi.mocked(put)).toHaveBeenCalledTimes(2)
-    expect(vi.mocked(put).mock.calls[0]?.[2]).toEqual(expect.objectContaining({ access: "public" }))
-    expect(vi.mocked(put).mock.calls[1]?.[2]).toEqual(expect.objectContaining({ access: "private" }))
-  })
-
-  it("falls back to active publish branch on blob failure and stages githubBranch source", async () => {
-    vi.mocked(put).mockRejectedValue(new Error("blob unavailable"))
-    convexQueryMock.mockResolvedValueOnce(projectRecord).mockResolvedValueOnce({
-      _id: "publish-branch-1",
-      branchName: "repopress/main/1234",
-    })
-
-    const createOrUpdateFileContents = vi
-      .fn()
-      .mockResolvedValue({ data: { content: { sha: "blob-sha-1" }, commit: { sha: "commit-sha-1" } } })
-    vi.mocked(createGitHubClient).mockReturnValue({
-      repos: {
-        createOrUpdateFileContents,
-        getContent: vi.fn(),
-      },
-      users: {
-        getAuthenticated: vi.fn().mockResolvedValue({ data: { login: "user_1" } }),
-      },
-    } as any)
-
-    const response = await POST(buildRequest(baseBody()))
-    const payload = await response.json()
-
-    expect(response.status).toBe(200)
-    expect(payload).toMatchObject({
-      storage: "github",
-      repoPath: "/public/images/hero.png",
-      staged: true,
-    })
-    expect(createOrUpdateFileContents).toHaveBeenCalledWith(
-      expect.objectContaining({
-        branch: "repopress/main/1234",
-      }),
-    )
-  })
-
-  it("returns 409 when blob fails and no active publish branch exists", async () => {
-    vi.mocked(put).mockRejectedValue(new Error("blob unavailable"))
-    convexQueryMock.mockResolvedValueOnce(projectRecord).mockResolvedValueOnce(null)
-
-    const response = await POST(buildRequest(baseBody()))
-    const payload = await response.json()
-
-    expect(response.status).toBe(409)
-    expect(payload.error).toContain("publish branch")
-  })
-
-  it("handles SHA-required update path on github fallback uploads", async () => {
-    vi.mocked(put).mockRejectedValue(new Error("blob unavailable"))
-    convexQueryMock.mockResolvedValueOnce(projectRecord).mockResolvedValueOnce({
-      _id: "publish-branch-1",
-      branchName: "repopress/main/1234",
-    })
-
-    const createOrUpdateFileContents = vi
-      .fn()
-      .mockRejectedValueOnce({ status: 422, message: "sha is required" })
-      .mockResolvedValueOnce({ data: { content: { sha: "blob-sha-2" }, commit: { sha: "commit-sha-2" } } })
-    const getContent = vi.fn().mockResolvedValue({ data: { sha: "existing-sha" } })
-
-    vi.mocked(createGitHubClient).mockReturnValue({
-      repos: {
-        createOrUpdateFileContents,
-        getContent,
-      },
-      users: {
-        getAuthenticated: vi.fn().mockResolvedValue({ data: { login: "user_1" } }),
-      },
-    } as any)
-
-    const response = await POST(buildRequest(baseBody()))
-
-    expect(response.status).toBe(200)
-    expect(createOrUpdateFileContents).toHaveBeenCalledTimes(2)
-    expect(createOrUpdateFileContents.mock.calls[1]?.[0]).toEqual(
-      expect.objectContaining({
-        sha: "existing-sha",
-      }),
-    )
   })
 })

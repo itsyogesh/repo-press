@@ -7,6 +7,7 @@ const { safeGetAuthUserMock } = vi.hoisted(() => ({
 vi.mock("@/convex/_generated/server", () => ({
   mutation: (definition: unknown) => definition,
   query: (definition: unknown) => definition,
+  internalMutation: (definition: unknown) => definition,
 }))
 
 vi.mock("@/convex/auth", () => ({

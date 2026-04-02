@@ -1,5 +1,6 @@
 import { v } from "convex/values"
 import { verifyServerQueryToken } from "../lib/project-access-token"
+import { internal } from "./_generated/api"
 import { mutation } from "./_generated/server"
 
 /**
@@ -163,8 +164,8 @@ export const handlePRMerged = mutation({
 
 /**
  * Handle a GitHub PR close event (without merge).
- * Marks the publish branch as closed. Explorer ops remain pending
- * so the user can re-publish later.
+ * Marks the publish branch as closed and cleans up any Convex-stored media files.
+ * Explorer ops remain pending so the user can re-publish later.
  */
 export const handlePRClosed = mutation({
   args: {
@@ -186,6 +187,11 @@ export const handlePRClosed = mutation({
     await ctx.db.patch(publishBranch._id, {
       status: "closed",
       updatedAt: Date.now(),
+    })
+
+    // Clean up Convex storage files for all media ops associated with this branch.
+    await ctx.scheduler.runAfter(0, internal.mediaOps.cleanupMediaForBranch, {
+      publishBranchId: publishBranch._id,
     })
   },
 })

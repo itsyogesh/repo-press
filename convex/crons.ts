@@ -6,4 +6,7 @@ const crons = cronJobs()
 // Clean up expired repo access cache entries every 30 minutes
 crons.interval("cleanup expired repo access cache", { minutes: 30 }, internal.repoAccessCache.cleanupExpired)
 
+// Clean up stale Convex storage files for abandoned pending media ops (older than 7 days)
+crons.interval("cleanup stale media uploads", { hours: 24 }, internal.mediaOps.cleanupStaleUploads)
+
 export default crons

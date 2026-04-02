@@ -76,13 +76,8 @@ function ImageSelectorDialog({
     const normalized = normalizeExternalImageUrl(urlValue)
     if (!normalized || !isSafeImageSrc(normalized)) return
 
-    if (
-      !projectId ||
-      !owner ||
-      !repo ||
-      !branch ||
-      (!normalized.startsWith("http://") && !normalized.startsWith("https://"))
-    ) {
+    if (!projectId || !owner || !repo) {
+      // Missing project context — fall back to using the raw URL directly in frontmatter.
       onSelect(normalized)
       return
     }

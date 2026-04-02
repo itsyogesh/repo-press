@@ -11,8 +11,7 @@ import {
   recordMediaAsset,
   resolveProject,
   sanitizeFileName,
-  uploadToBlobWithRetry,
-  uploadToGitHub,
+  uploadToConvexStorage,
 } from "@/lib/studio/media-upload-shared"
 
 export const runtime = "nodejs"
@@ -75,11 +74,6 @@ function deriveFileName(url: string, providedFileName: string | undefined, conte
   return `image.${extensionFromContentType(contentType)}`
 }
 
-function shouldTryBlob(preference: "auto" | "blob" | "github" = "auto"): boolean {
-  if (preference === "github") return false
-  return true
-}
-
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as DownloadExternalRequest
@@ -138,95 +132,19 @@ export async function POST(request: Request) {
     const resolvedFileName = deriveFileName(url, fileName, contentType)
     const repoPath = buildRepoPath(pathHint, resolvedFileName)
     const githubPath = repoPath.replace(/^\/+/, "")
-    const contentBase64 = contentBuffer.toString("base64")
     const sizeBytes = contentBuffer.byteLength
     const imageMetadata = await getImageMetadata(contentBuffer)
     const baseShaAtStage = await getExistingFileShaSafe(token, owner, repo, githubPath, project.branch)
 
-    let blobDiagnostics: Record<string, string> | undefined
-
-    if (shouldTryBlob()) {
-      const blobResult = await uploadToBlobWithRetry({
-        owner: project.repoOwner,
-        repo: project.repoName,
-        githubPath,
-        content: contentBuffer,
-        contentType,
-      })
-
-      blobDiagnostics = blobResult.diagnostics
-
-      if (blobResult.ok) {
-        const mediaOpId = await convex.mutation(api.mediaOps.stage, {
-          projectId: project._id,
-          userId: convexUserId,
-          projectAccessToken,
-          repoPath,
-          fileName: sanitizeFileName(resolvedFileName),
-          mimeType: contentType || getContentType(resolvedFileName),
-          sizeBytes,
-          sourceFilePath,
-          sourceType: "blob",
-          blobUrl: blobResult.value.url,
-          blobAccess: blobResult.value.access,
-          githubSha: baseShaAtStage ?? undefined,
-        })
-
-        await recordMediaAsset({
-          convex,
-          api,
-          projectId: project._id,
-          userId: convexUserId,
-          projectAccessToken,
-          fileName: resolvedFileName,
-          filePath: repoPath,
-          mimeType: contentType || getContentType(resolvedFileName),
-          sizeBytes,
-          githubSha: baseShaAtStage ?? undefined,
-          originalUrl: url,
-          metadata: imageMetadata,
-        })
-
-        const previewUrl = buildMediaResolveUrl(project._id, repoPath)
-        return NextResponse.json({
-          storage: "blob",
-          repoPath,
-          previewUrl,
-          staged: true,
-          mediaOpId,
-          url: previewUrl,
-          diagnostics: blobDiagnostics,
-        })
-      }
-    }
-
-    const activePublishBranch = await convex.query(api.publishBranches.getActiveForProject, {
+    // Upload to Convex file storage — no branch or Blob token required.
+    const { storageId } = await uploadToConvexStorage({
+      convex,
+      api,
       projectId: project._id,
       userId: convexUserId,
       projectAccessToken,
-    })
-
-    if (!activePublishBranch?.branchName) {
-      const isBlobTokenMissing = blobDiagnostics?.blob === "token-missing"
-      return NextResponse.json(
-        {
-          error: isBlobTokenMissing
-            ? "Image download requires either Vercel Blob storage (configure BLOB_READ_WRITE_TOKEN) or an active publish branch on GitHub. Please set up one of these options."
-            : "Image download requires an active publish branch. Start a publish draft first, then retry download.",
-          diagnostics: blobDiagnostics,
-        },
-        { status: 409 },
-      )
-    }
-
-    const githubUpload = await uploadToGitHub({
-      token,
-      owner: project.repoOwner,
-      repo: project.repoName,
-      branch: activePublishBranch.branchName,
-      path: githubPath,
-      fileName: resolvedFileName,
-      contentBase64,
+      content: contentBuffer,
+      contentType: contentType || getContentType(resolvedFileName),
     })
 
     const mediaOpId = await convex.mutation(api.mediaOps.stage, {
@@ -238,9 +156,8 @@ export async function POST(request: Request) {
       mimeType: contentType || getContentType(resolvedFileName),
       sizeBytes,
       sourceFilePath,
-      sourceType: "githubBranch",
-      githubBranch: activePublishBranch.branchName,
-      githubPath,
+      sourceType: "convex",
+      convexStorageId: storageId,
       githubSha: baseShaAtStage ?? undefined,
     })
 
@@ -254,24 +171,19 @@ export async function POST(request: Request) {
       filePath: repoPath,
       mimeType: contentType || getContentType(resolvedFileName),
       sizeBytes,
-      githubSha: githubUpload.sha ?? baseShaAtStage ?? undefined,
+      githubSha: baseShaAtStage ?? undefined,
       originalUrl: url,
       metadata: imageMetadata,
     })
 
     const previewUrl = buildMediaResolveUrl(project._id, repoPath)
     return NextResponse.json({
-      storage: "github",
+      storage: "convex",
       repoPath,
       previewUrl,
       staged: true,
       mediaOpId,
       url: previewUrl,
-      diagnostics: {
-        fallback: "githubBranch",
-        githubUploadSha: githubUpload.sha || "",
-        githubCommitSha: githubUpload.commitSha || "",
-      },
     })
   } catch (error) {
     console.error("[media-download-external] failed", error)

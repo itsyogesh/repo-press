@@ -73,6 +73,19 @@ export async function GET(request: Request) {
       })
     }
 
+    if (pendingOp?.sourceType === "convex" && pendingOp.convexStorageId) {
+      const storageUrl = await convex.query(api.mediaOps.getConvexStorageUrl, {
+        projectId: project._id,
+        repoPath,
+        ...queryAuth,
+      })
+      if (!storageUrl) {
+        return NextResponse.json({ error: "Media not found" }, { status: 404 })
+      }
+      // Redirect to the Convex CDN URL — no need to proxy bytes through Next.js.
+      return NextResponse.redirect(storageUrl, { status: 302 })
+    }
+
     if (pendingOp?.sourceType === "githubBranch" && pendingOp.githubBranch && pendingOp.githubPath) {
       const githubFile = await fetchGitHubFileBytes({
         token,

@@ -20,6 +20,9 @@ function createCtx() {
         }),
       })),
     },
+    scheduler: {
+      runAfter: vi.fn().mockResolvedValue(undefined),
+    },
   } as any
 }
 
@@ -59,6 +62,9 @@ function createWebhookCtx({
           }),
         }),
       })),
+    },
+    scheduler: {
+      runAfter: vi.fn().mockResolvedValue(undefined),
     },
   } as any
 }

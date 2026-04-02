@@ -6,7 +6,7 @@ export interface DownloadExternalImageOptions {
   userId?: string
   owner: string
   repo: string
-  branch: string
+  branch?: string
   pathHint?: string
   fileName?: string
   sourceFilePath?: string

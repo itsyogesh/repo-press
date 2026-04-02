@@ -1,6 +1,42 @@
 import { v } from "convex/values"
-import { mutation, query } from "./_generated/server"
+import { internalMutation, mutation, query } from "./_generated/server"
 import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
+
+/** Generate a one-time upload URL for Convex file storage. The caller POSTs raw bytes to this URL and receives a storageId in response. */
+export const generateConvexUploadUrl = mutation({
+  args: {
+    projectId: v.id("projects"),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await resolveProjectAccess(ctx, args, "editor")
+    return await ctx.storage.generateUploadUrl()
+  },
+})
+
+/** Get the serving URL for a Convex-stored file given the mediaOp's projectId + repoPath. Used by the resolve proxy for preview. */
+export const getConvexStorageUrl = query({
+  args: {
+    projectId: v.id("projects"),
+    repoPath: v.string(),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const access = await resolveProjectReader(ctx, args)
+    if (!access) return null
+
+    const op = await ctx.db
+      .query("mediaOps")
+      .withIndex("by_projectId_repoPath", (q) => q.eq("projectId", args.projectId).eq("repoPath", args.repoPath))
+      .filter((q) => q.eq(q.field("status"), "pending"))
+      .first()
+
+    if (!op?.convexStorageId) return null
+    return await ctx.storage.getUrl(op.convexStorageId)
+  },
+})
 
 export const stage = mutation({
   args: {
@@ -12,12 +48,13 @@ export const stage = mutation({
     mimeType: v.string(),
     sizeBytes: v.optional(v.number()),
     sourceFilePath: v.optional(v.string()),
-    sourceType: v.union(v.literal("blob"), v.literal("githubBranch")),
+    sourceType: v.union(v.literal("blob"), v.literal("githubBranch"), v.literal("convex")),
     blobUrl: v.optional(v.string()),
     blobAccess: v.optional(v.union(v.literal("public"), v.literal("private"))),
     githubBranch: v.optional(v.string()),
     githubPath: v.optional(v.string()),
     githubSha: v.optional(v.string()),
+    convexStorageId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { userId } = await resolveProjectAccess(ctx, args, "editor")
@@ -30,6 +67,14 @@ export const stage = mutation({
       .first()
 
     if (existingPending) {
+      // If replacing a Convex-stored file, delete the old storage entry first.
+      if (existingPending.convexStorageId && existingPending.convexStorageId !== args.convexStorageId) {
+        try {
+          await ctx.storage.delete(existingPending.convexStorageId)
+        } catch {
+          // Storage entry may already be gone; don't block the update.
+        }
+      }
       await ctx.db.patch(existingPending._id, {
         fileName: args.fileName,
         mimeType: args.mimeType,
@@ -41,6 +86,7 @@ export const stage = mutation({
         githubBranch: args.githubBranch,
         githubPath: args.githubPath,
         githubSha: args.githubSha,
+        convexStorageId: args.convexStorageId,
         status: "pending",
         commitSha: undefined,
         updatedAt: now,
@@ -144,6 +190,15 @@ export const undoByRepoPath = mutation({
 
     if (!pending) return null
 
+    // Delete from Convex storage before marking undone — no orphans.
+    if (pending.convexStorageId) {
+      try {
+        await ctx.storage.delete(pending.convexStorageId)
+      } catch {
+        // File may already be gone; don't block the undo.
+      }
+    }
+
     await ctx.db.patch(pending._id, {
       status: "undone",
       updatedAt: Date.now(),
@@ -170,5 +225,81 @@ export const clearCommittedForProject = mutation({
     for (const op of committed) {
       await ctx.db.delete(op._id)
     }
+  },
+})
+
+/**
+ * Delete all Convex storage files for a closed/merged publish branch and mark those ops as undone.
+ * Called by the PR-closed and PR-merged webhook handlers.
+ */
+export const cleanupMediaForBranch = internalMutation({
+  args: {
+    publishBranchId: v.id("publishBranches"),
+  },
+  handler: async (ctx, args) => {
+    const branch = await ctx.db.get(args.publishBranchId)
+    if (!branch) return
+
+    const ops = await ctx.db
+      .query("mediaOps")
+      .withIndex("by_projectId", (q) => q.eq("projectId", branch.projectId))
+      .filter((q) => q.eq(q.field("publishBranchId"), args.publishBranchId))
+      .filter((q) => q.or(q.eq(q.field("status"), "pending"), q.eq(q.field("status"), "committed")))
+      .collect()
+
+    const now = Date.now()
+    for (const op of ops) {
+      if (op.convexStorageId) {
+        try {
+          await ctx.storage.delete(op.convexStorageId)
+        } catch {
+          // Already gone.
+        }
+      }
+      await ctx.db.patch(op._id, { status: "undone", updatedAt: now })
+    }
+  },
+})
+
+/**
+ * Stale cleanup: delete Convex storage files for pending mediaOps older than 7 days
+ * that were never associated with a publish branch (truly abandoned staging files).
+ * Runs nightly via cron.
+ */
+export const cleanupStaleUploads = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000 // 7 days ago
+
+    // Collect stale pending ops — no branch, old createdAt, has Convex storage.
+    // We must scan by status since we don't have a createdAt index.
+    const staleBatchSize = 100
+    let processed = 0
+
+    const allPending = await ctx.db
+      .query("mediaOps")
+      .filter((q) =>
+        q.and(
+          q.eq(q.field("status"), "pending"),
+          q.eq(q.field("sourceType"), "convex"),
+          q.lt(q.field("createdAt"), cutoff),
+        ),
+      )
+      .take(staleBatchSize)
+
+    const now = Date.now()
+    for (const op of allPending) {
+      if (op.convexStorageId) {
+        try {
+          await ctx.storage.delete(op.convexStorageId)
+        } catch {
+          // Already gone.
+        }
+      }
+      await ctx.db.patch(op._id, { status: "undone", updatedAt: now })
+      processed++
+    }
+
+    return { processed }
   },
 })
