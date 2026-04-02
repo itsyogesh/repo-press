@@ -354,62 +354,67 @@ export function ComponentInsertModal({
               exit={{ opacity: 0 }}
               className="flex-1 flex flex-col min-h-0 relative"
             >
-              <div className="p-5 border-b border-studio-border bg-studio-canvas-inset/30 shrink-0">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div className="space-y-0.5">
-                    <DialogTitle className="text-lg font-bold tracking-tight text-studio-fg">
+              <div className="px-6 pt-5 pb-4 border-b border-studio-border shrink-0">
+                <div className="flex items-start justify-between mb-3">
+                  <div>
+                    <DialogTitle className="text-xl font-bold tracking-tight text-studio-fg">
                       Insert Component
                     </DialogTitle>
-                    <DialogDescription className="text-xs">
-                      Select a component to extend your document.
+                    <DialogDescription className="text-xs text-studio-fg-muted mt-0.5">
+                      Extend your document with a reusable component
                     </DialogDescription>
                   </div>
-                  <div className="flex items-center gap-2 w-full sm:w-auto">
-                    <div className="relative flex-1 sm:w-[280px]">
-                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-studio-fg-muted" />
-                      <Input
-                        placeholder="Search..."
-                        className="h-8 pl-8 pr-3 text-xs bg-studio-canvas border-studio-border-muted focus:ring-1 focus:ring-studio-accent/50"
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        autoFocus
-                      />
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 shrink-0"
-                      onClick={() => onOpenChange(false)}
-                    >
-                      <X className="h-4 w-4" />
-                      <span className="sr-only">Close</span>
-                    </Button>
-                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 shrink-0 -mt-0.5 -mr-1 text-studio-fg-muted hover:text-studio-fg"
+                    onClick={() => onOpenChange(false)}
+                  >
+                    <X className="h-4 w-4" />
+                    <span className="sr-only">Close</span>
+                  </Button>
+                </div>
+                <div className="relative">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-studio-fg-muted pointer-events-none" />
+                  <Input
+                    placeholder="Search components..."
+                    className="h-10 pl-11 pr-4 text-sm bg-studio-canvas-inset border-studio-border rounded-lg focus:border-studio-accent focus:ring-1 focus:ring-studio-accent/30"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    autoFocus
+                  />
                 </div>
               </div>
 
-              <div className="flex items-center gap-1.5 px-5 py-2 border-b border-studio-border bg-studio-canvas">
-                {(["All", ...ALL_CATEGORIES] as const).map((cat) => (
-                  <button
-                    key={cat}
-                    type="button"
-                    onClick={() => setActiveCategory(cat)}
-                    className={cn(
-                      "px-2.5 py-1 rounded-full text-xs font-medium transition-colors",
-                      activeCategory === cat
-                        ? "bg-studio-accent text-white"
-                        : "bg-studio-canvas-inset text-studio-fg-muted hover:text-studio-fg",
-                    )}
-                  >
-                    {cat}
-                  </button>
-                ))}
+              <div className="flex items-center gap-1.5 px-6 py-2.5 border-b border-studio-border/60 shrink-0 overflow-x-auto">
+                {(["All", ...ALL_CATEGORIES] as const).map((cat) => {
+                  const catStyle = cat !== "All" ? categoryStyles[cat as keyof typeof categoryStyles] : null
+                  const CatIcon = catStyle?.icon ?? null
+                  return (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => setActiveCategory(cat)}
+                      className={cn(
+                        "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold transition-all duration-150 whitespace-nowrap shrink-0",
+                        activeCategory === cat
+                          ? "bg-studio-accent text-white shadow-sm"
+                          : "text-studio-fg-muted hover:text-studio-fg hover:bg-studio-canvas-inset",
+                      )}
+                    >
+                      {CatIcon && <CatIcon className="h-3 w-3 shrink-0" />}
+                      {cat}
+                    </button>
+                  )
+                })}
               </div>
 
-              <ScrollArea className="flex-1 px-5 py-5 min-h-0">
+              <ScrollArea className="flex-1 px-6 py-5 min-h-0">
                 {recentCatalog.length > 0 && !searchQuery && activeCategory === "All" && (
-                  <div className="mb-4">
-                    <h4 className="text-xs font-medium text-muted-foreground mb-2 px-1">Recently used</h4>
+                  <div className="mb-5">
+                    <h4 className="text-[10px] font-bold uppercase tracking-widest text-studio-fg/35 mb-3 px-1 select-none">
+                      Recently used
+                    </h4>
                     <CatalogGallery catalog={recentCatalog} onSelect={handleSelectComponent} />
                   </div>
                 )}
@@ -417,7 +422,9 @@ export function ComponentInsertModal({
                 {(mainCatalog.length > 0 || recentCatalog.length === 0 || searchQuery || activeCategory !== "All") && (
                   <>
                     {recentCatalog.length > 0 && !searchQuery && activeCategory === "All" && mainCatalog.length > 0 && (
-                      <h4 className="text-xs font-medium text-muted-foreground mb-2 px-1">All components</h4>
+                      <h4 className="text-[10px] font-bold uppercase tracking-widest text-studio-fg/35 mb-3 px-1 select-none">
+                        All components
+                      </h4>
                     )}
                     <CatalogGallery catalog={mainCatalog} onSelect={handleSelectComponent} />
                   </>
@@ -432,62 +439,73 @@ export function ComponentInsertModal({
               exit={{ opacity: 0, x: -10 }}
               className="flex-1 flex flex-col min-h-0"
             >
-              <div className="p-4 border-b border-studio-border bg-studio-canvas-inset/50 shrink-0">
+              <div className="px-6 py-4 border-b border-studio-border shrink-0">
                 <div className="flex items-center gap-3">
                   <button
                     type="button"
                     onClick={handleBack}
-                    className="rounded-md p-1.5 hover:bg-studio-accent-muted text-studio-fg-muted hover:text-studio-accent transition-all border border-transparent hover:border-studio-accent/20"
+                    className={cn(
+                      "h-8 w-8 rounded-lg flex items-center justify-center shrink-0",
+                      "border border-studio-border text-studio-fg-muted",
+                      "hover:bg-studio-accent-muted hover:border-studio-accent/30 hover:text-studio-accent",
+                      "transition-all duration-150",
+                    )}
                     aria-label="Back to component list"
                   >
                     <ChevronLeft className="h-4 w-4" />
                   </button>
-                  <div className="min-w-0">
-                    <DialogTitle className="text-base font-bold truncate">
-                      {selectedDef ? getComponentLabel(selectedDef) : "Configure"}
-                    </DialogTitle>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <span className="text-[10px] font-mono text-studio-fg-muted opacity-60">
-                        &lt;{selectedDef?.name} /&gt;
-                      </span>
-                      {selectedDef?.description && (
-                        <>
-                          <span className="text-studio-border-muted">•</span>
-                          <span className="text-[10px] text-studio-fg-muted truncate">{selectedDef.description}</span>
-                        </>
-                      )}
-                      {selectedDef?.props && selectedDef.props.length > 0 && (
-                        <>
-                          <span className="text-studio-border-muted">•</span>
-                          <span className="text-[10px] font-medium text-studio-accent">
-                            {selectedDef.props.length} prop{selectedDef.props.length !== 1 ? "s" : ""}
-                          </span>
-                        </>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <DialogTitle className="text-base font-bold text-studio-fg truncate">
+                        {selectedDef ? getComponentLabel(selectedDef) : "Configure"}
+                      </DialogTitle>
+                      {selectedDef && selectedDef.props.length > 0 && (
+                        <span className="shrink-0 inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full bg-studio-accent/10 text-studio-accent border border-studio-accent/15">
+                          {selectedDef.props.length} prop{selectedDef.props.length !== 1 ? "s" : ""}
+                        </span>
                       )}
                     </div>
+                    {selectedDef?.description && (
+                      <p className="text-[11px] text-studio-fg-muted mt-0.5 truncate">{selectedDef.description}</p>
+                    )}
                   </div>
                 </div>
               </div>
 
-              <div className="flex-1 flex overflow-hidden min-h-0 bg-studio-canvas">
-                {/* Visual Preview Area - Subtle and technical */}
-                <div className="hidden md:flex flex-1 items-center justify-center p-8 border-r border-studio-border bg-studio-canvas-inset/10 relative overflow-hidden">
-                  <div className="absolute inset-0 bg-grid-small-black/[0.02] dark:bg-grid-small-white/[0.02] pointer-events-none" />
-                  <div className="w-full max-w-sm aspect-video relative z-10 flex items-center justify-center border border-dashed border-studio-border-muted rounded-xl bg-studio-canvas/50">
+              <div className="flex-1 flex overflow-hidden min-h-0">
+                {/* Left panel — live preview */}
+                <div className="hidden md:flex flex-1 items-center justify-center p-10 border-r border-studio-border bg-studio-canvas-inset/20 relative overflow-hidden">
+                  <div
+                    className="absolute inset-0 opacity-[0.03] dark:opacity-[0.06] pointer-events-none"
+                    style={{
+                      backgroundImage: "radial-gradient(circle, currentColor 1px, transparent 1px)",
+                      backgroundSize: "20px 20px",
+                    }}
+                  />
+                  <div className="relative z-10 w-full max-w-xs flex items-center justify-center">
                     {selectedDef && (
-                      <div className="transition-transform duration-500 flex items-center justify-center p-4 w-full">
+                      <motion.div
+                        key={selectedDef.name}
+                        initial={{ opacity: 0, scale: 0.94 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ duration: 0.18, ease: "easeOut" }}
+                        className="w-full flex items-center justify-center p-4"
+                      >
                         <LiveConfigurePreview def={selectedDef} formState={formState} />
-                      </div>
+                      </motion.div>
                     )}
                   </div>
                 </div>
 
-                <div className="w-full md:w-[380px] flex flex-col min-h-0 border-l border-studio-border shadow-[inset_1px_0_0_0_rgba(0,0,0,0.05)] dark:shadow-[inset_1px_0_0_0_rgba(255,255,255,0.02)]">
-                  <ScrollArea className="flex-1 p-5 min-h-0">
-                    <div className="space-y-6">
-                      <div className="space-y-1">
-                        <h4 className="text-[11px] font-bold uppercase tracking-wider text-studio-fg/40">Properties</h4>
-                        <div className="h-px bg-studio-border-muted/50 w-full" />
+                {/* Right panel — form */}
+                <div className="w-full md:w-[360px] flex flex-col min-h-0">
+                  <ScrollArea className="flex-1 min-h-0">
+                    <div className="p-5 space-y-5">
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-[10px] font-bold uppercase tracking-widest text-studio-fg/35 select-none">
+                          Properties
+                        </h4>
+                        <div className="flex-1 h-px bg-studio-border-muted/60" />
                       </div>
                       {selectedDef && (
                         <ComponentPropForm
@@ -502,36 +520,42 @@ export function ComponentInsertModal({
                   </ScrollArea>
 
                   {/* Collapsible JSX Preview */}
-                  <div className="px-5 py-3 border-t border-studio-border">
+                  <div className="px-5 py-3 border-t border-studio-border/60">
                     <button
                       type="button"
                       onClick={() => setShowPreview(!showPreview)}
-                      className="flex items-center gap-1.5 text-xs text-studio-fg-muted hover:text-studio-fg transition-colors"
+                      className="flex items-center gap-1.5 text-[11px] text-studio-fg-muted hover:text-studio-fg transition-colors"
                     >
                       <Code className="h-3.5 w-3.5" />
                       {showPreview ? "Hide" : "Show"} JSX preview
                       <ChevronDown className={cn("h-3 w-3 transition-transform", showPreview && "rotate-180")} />
                     </button>
                     {showPreview && (
-                      <pre className="mt-2 p-3 bg-studio-canvas-inset rounded-md text-xs font-mono overflow-x-auto border border-studio-border-muted">
-                        <code>{jsxPreview}</code>
+                      <pre className="mt-2 p-3 bg-studio-canvas-inset rounded-lg text-[11px] font-mono overflow-x-auto border border-studio-border-muted">
+                        <code className="text-studio-fg/80">{jsxPreview}</code>
                       </pre>
                     )}
                   </div>
 
-                  <div className="p-4 border-t border-studio-border bg-studio-canvas-inset/30 flex items-center justify-between gap-3 shrink-0">
-                    <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)} className="text-xs h-8">
+                  <div className="p-4 border-t border-studio-border flex items-center justify-between gap-3 shrink-0">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => onOpenChange(false)}
+                      className="text-xs text-studio-fg-muted hover:text-studio-fg h-9"
+                    >
                       Cancel
                     </Button>
                     <Button
                       onClick={handleInsert}
                       disabled={hasErrors}
+                      size="sm"
                       className={cn(
-                        "h-8 px-5 rounded-md text-[11px] font-bold uppercase tracking-wider shadow-sm",
-                        hasErrors && "opacity-50 cursor-not-allowed",
+                        "h-9 px-6 text-xs font-semibold tracking-wide",
+                        hasErrors ? "opacity-40 cursor-not-allowed" : "shadow-sm",
                       )}
                     >
-                      Insert
+                      Insert Component
                     </Button>
                   </div>
                 </div>
@@ -585,17 +609,25 @@ function ComponentCard({ def, onSelect }: { def: RepoComponentDef; onSelect: (de
     <button
       type="button"
       onClick={() => onSelect(def)}
-      className="group flex flex-col gap-3 p-3.5 rounded-xl border border-studio-border bg-studio-canvas hover:border-studio-accent/40 hover:bg-studio-canvas-inset/50 transition-all duration-150 text-left outline-none focus-visible:ring-2 focus-visible:ring-studio-accent"
+      className={cn(
+        "group relative flex flex-col rounded-xl border border-studio-border bg-studio-canvas overflow-hidden text-left outline-none cursor-pointer",
+        "hover:border-studio-accent/50 hover:shadow-md hover:shadow-studio-accent/5 hover:-translate-y-0.5",
+        "active:translate-y-0 active:shadow-sm",
+        "transition-all duration-200",
+        "focus-visible:ring-2 focus-visible:ring-studio-accent focus-visible:ring-offset-1",
+      )}
     >
-      <div className={cn("w-10 h-10 rounded-lg border flex items-center justify-center", style.bg, style.border)}>
-        <Icon className={cn("h-5 w-5", style.iconColor)} />
+      {/* Visual preview strip */}
+      <div className={cn("w-full h-[72px] flex items-center justify-center border-b", style.bg, style.border)}>
+        <Icon className={cn("h-7 w-7 transition-transform duration-200 group-hover:scale-110", style.iconColor)} />
       </div>
-      <div className="space-y-0.5 min-w-0">
-        <p className="text-xs font-semibold text-studio-fg leading-tight truncate">{label}</p>
+      {/* Info */}
+      <div className="p-3 space-y-1">
+        <p className="text-[12px] font-semibold text-studio-fg leading-tight truncate">{label}</p>
         {def.description && (
           <p className="text-[11px] text-studio-fg-muted leading-snug line-clamp-2">{def.description}</p>
         )}
-        <p className="text-[10px] text-studio-fg/30 mt-1">
+        <p className="text-[10px] text-studio-fg/30 font-medium pt-0.5">
           {def.props.length} {def.props.length === 1 ? "prop" : "props"}
         </p>
       </div>
@@ -621,7 +653,7 @@ function CatalogGallery({
   }
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
       {catalog.map((def) => (
         <ComponentCard key={def.name} def={def} onSelect={onSelect} />
       ))}
