@@ -51,7 +51,13 @@ function resolvePathAgainstBase(path: string, baseFilePath?: string): string {
   return normalizeRepoMediaPath(baseSegments.join("/"))
 }
 
-export function buildMediaResolveUrl(projectId: string, path: string, userId?: string, baseFilePath?: string): string {
+export function buildMediaResolveUrl(
+  projectId: string,
+  path: string,
+  userId?: string,
+  baseFilePath?: string,
+  projectAccessToken?: string,
+): string {
   const repoPath = resolvePathAgainstBase(path, baseFilePath)
   const searchParams = new URLSearchParams({
     projectId,
@@ -59,6 +65,9 @@ export function buildMediaResolveUrl(projectId: string, path: string, userId?: s
   })
   if (userId) {
     searchParams.set("userId", userId)
+  }
+  if (projectAccessToken) {
+    searchParams.set("projectAccessToken", projectAccessToken)
   }
   return `/api/media/resolve?${searchParams.toString()}`
 }
@@ -68,11 +77,12 @@ export function resolveStudioAssetUrl(
   projectId?: string,
   userId?: string,
   baseFilePath?: string,
+  projectAccessToken?: string,
 ): string {
   if (!path) return path
   if (isAbsoluteUrl(path) || isStudioMediaResolveUrl(path)) return path
   if (!projectId) return path
-  return buildMediaResolveUrl(projectId, path, userId, baseFilePath)
+  return buildMediaResolveUrl(projectId, path, userId, baseFilePath, projectAccessToken)
 }
 
 /**
