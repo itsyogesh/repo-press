@@ -397,10 +397,10 @@ export function ComponentInsertModal({
                       type="button"
                       onClick={() => setActiveCategory(cat)}
                       className={cn(
-                        "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold transition-all duration-150 whitespace-nowrap shrink-0",
+                        "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold transition-all duration-150 whitespace-nowrap shrink-0 border",
                         activeCategory === cat
-                          ? "bg-studio-accent text-white shadow-sm"
-                          : "text-studio-fg-muted hover:text-studio-fg hover:bg-studio-canvas-inset",
+                          ? "bg-studio-accent text-white shadow-sm border-studio-accent"
+                          : "text-studio-fg hover:text-studio-accent hover:bg-studio-canvas-inset hover:border-studio-accent/30 border-studio-border/40",
                       )}
                     >
                       {CatIcon && <CatIcon className="h-3 w-3 shrink-0" />}
@@ -521,43 +521,52 @@ export function ComponentInsertModal({
                   </ScrollArea>
 
                   {/* Collapsible JSX Preview */}
-                  <div className="px-5 py-3 border-t border-studio-border/60">
+                  <div className="px-5 py-4 border-t border-studio-border/60 bg-studio-canvas-inset/40">
                     <button
                       type="button"
                       onClick={() => setShowPreview(!showPreview)}
-                      className="flex items-center gap-1.5 text-[11px] text-studio-fg-muted hover:text-studio-fg transition-colors"
+                      className="flex items-center gap-1.5 text-[12px] font-semibold text-studio-fg-muted hover:text-studio-fg transition-colors group"
+                      title="Preview the generated JSX code"
                     >
-                      <Code className="h-3.5 w-3.5" />
-                      {showPreview ? "Hide" : "Show"} JSX preview
+                      <Code className="h-4 w-4 transition-colors group-hover:text-studio-accent" />
+                      {showPreview ? "Hide" : "Show"} JSX Preview
                       <ChevronDown className={cn("h-3 w-3 transition-transform", showPreview && "rotate-180")} />
                     </button>
                     {showPreview && (
-                      <pre className="mt-2 p-3 bg-studio-canvas-inset rounded-lg text-[11px] font-mono overflow-x-auto border border-studio-border-muted">
+                      <pre className="mt-3 p-4 bg-studio-canvas rounded-lg text-[11px] font-mono overflow-x-auto border border-studio-border shadow-sm">
                         <code className="text-studio-fg/80">{jsxPreview}</code>
                       </pre>
                     )}
                   </div>
 
-                  <div className="p-4 border-t border-studio-border flex items-center justify-between gap-3 shrink-0">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => onOpenChange(false)}
-                      className="text-xs text-studio-fg-muted hover:text-studio-fg h-9"
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      onClick={handleInsert}
-                      disabled={hasErrors}
-                      size="sm"
-                      className={cn(
-                        "h-9 px-6 text-xs font-semibold tracking-wide",
-                        hasErrors ? "opacity-40 cursor-not-allowed" : "shadow-sm",
-                      )}
-                    >
-                      Insert Component
-                    </Button>
+                  <div className="p-4 border-t border-studio-border space-y-3 shrink-0">
+                    {hasErrors && (
+                      <div className="text-xs text-destructive bg-destructive/10 px-3 py-2 rounded-md">
+                        <p className="font-medium">Please fill all required fields before inserting.</p>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between gap-3">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => onOpenChange(false)}
+                        className="text-xs text-studio-fg-muted hover:text-studio-fg h-9"
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        onClick={handleInsert}
+                        disabled={hasErrors}
+                        size="sm"
+                        className={cn(
+                          "h-9 px-6 text-xs font-semibold tracking-wide",
+                          hasErrors ? "opacity-50 cursor-not-allowed" : "shadow-sm",
+                        )}
+                        title={hasErrors ? "Fill all required fields" : "Insert this component"}
+                      >
+                        Insert Component
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </div>
