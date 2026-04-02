@@ -185,7 +185,7 @@ export function TreeItem({
                 {isNew && (
                   <Badge
                     variant="secondary"
-                    className="ml-1 h-4 px-1 text-[10px] bg-studio-success-muted text-studio-success border-0"
+                    className="ml-1 h-4 px-2 text-[10px] bg-studio-success-muted text-studio-success border-0"
                   >
                     NEW
                   </Badge>
@@ -354,7 +354,7 @@ export function TreeItem({
               {isNew && (
                 <Badge
                   variant="secondary"
-                  className="ml-1 h-4 px-1 text-[10px] bg-studio-success-muted text-studio-success border-0 shrink-0"
+                  className="ml-1 h-4 px-2 text-[10px] bg-studio-success-muted text-studio-success border-0 shrink-0"
                 >
                   NEW
                 </Badge>
@@ -362,7 +362,7 @@ export function TreeItem({
               {isModified && (
                 <Badge
                   variant="secondary"
-                  className="ml-1 h-4 px-1 text-[10px] bg-studio-attention-muted text-studio-attention border-0 shrink-0"
+                  className="ml-1 h-4 px-2 text-[10px] bg-studio-attention-muted text-studio-attention border-0 shrink-0"
                 >
                   EDITED
                 </Badge>
