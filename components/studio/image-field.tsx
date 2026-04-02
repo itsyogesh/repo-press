@@ -38,17 +38,19 @@ export function ImageField({
   fieldName,
   semanticRole,
 }: ImageFieldProps) {
-  const { projectId, userId, selectedFilePath: selectedFilePathContext, owner, repo, branch } = useStudio()
+  const { projectId, userId, selectedFilePath: selectedFilePathContext, owner, repo, branch, contentRoot } = useStudio()
   const selectedFilePath = selectedFilePathProp ?? selectedFilePathContext
   const [browserOpen, setBrowserOpen] = React.useState(false)
-  const resolvedValuePreview = value ? resolveStudioAssetUrl(value, projectId, userId, selectedFilePath) : value
+  const resolvedValuePreview = value
+    ? resolveStudioAssetUrl(value, projectId, userId, selectedFilePath, undefined, contentRoot)
+    : value
 
   const handleSelectImage = (path: string) => {
     onChange(path)
     setBrowserOpen(false)
   }
 
-  const pathHint = selectedFilePath ? getSuggestedImagePath(selectedFilePath) : "public/images"
+  const pathHint = selectedFilePath ? getSuggestedImagePath(selectedFilePath, contentRoot) : "public/images"
 
   const displayValue = value ? (value.startsWith("/") ? value : `/${value}`) : ""
 

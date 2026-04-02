@@ -1693,6 +1693,7 @@ function StudioLayoutInner({
                         projectId={projectId}
                         userId={userId}
                         filePath={selectedFile.path}
+                        contentRoot={contentRoot}
                         scrollContainerRef={previewScrollRef}
                         onScroll={handlePreviewScroll}
                         onCompilingChange={handlePreviewCompilingChange}

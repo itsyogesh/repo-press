@@ -254,7 +254,9 @@ export function ImageFieldControl({
   const selectedFilePath = selectedFilePathProp ?? studio.selectedFilePath
   const [browserOpen, setBrowserOpen] = React.useState(false)
   const [editValue, setEditValue] = React.useState(value)
-  const resolvedValuePreview = value ? resolveStudioAssetUrl(value, projectId, userId, selectedFilePath) : value
+  const resolvedValuePreview = value
+    ? resolveStudioAssetUrl(value, projectId, userId, selectedFilePath, undefined, studio.contentRoot)
+    : value
 
   // Keep editValue in sync when value changes externally (e.g. on image select)
   React.useEffect(() => {
@@ -271,7 +273,7 @@ export function ImageFieldControl({
     if (trimmed !== value) onChange(trimmed)
   }
 
-  const pathHint = selectedFilePath ? getSuggestedImagePath(selectedFilePath) : "public/images"
+  const pathHint = selectedFilePath ? getSuggestedImagePath(selectedFilePath, studio.contentRoot) : "public/images"
 
   if (value && isSafeImageSrc(value)) {
     return (

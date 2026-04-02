@@ -129,7 +129,7 @@ export function Editor({
   projectId,
   userId,
   filePath = "",
-  contentRoot: _contentRoot = "",
+  contentRoot = "",
   tree = [],
 }: EditorProps) {
   const { adapter, components: componentSchema } = useStudioAdapter()
@@ -166,7 +166,7 @@ export function Editor({
         if (!projectId) {
           throw new Error("Missing project context for media upload")
         }
-        const pathHint = filePath ? getSuggestedImagePath(filePath) : "public/images"
+        const pathHint = filePath ? getSuggestedImagePath(filePath, contentRoot) : "public/images"
 
         // Use Blob-first upload with GitHub fallback
         const result = await uploadMedia({
@@ -191,7 +191,7 @@ export function Editor({
         throw error
       }
     },
-    [projectId, userId, owner, repo, branch, filePath],
+    [projectId, userId, owner, repo, branch, filePath, contentRoot],
   )
 
   // Extract image paths from tree for autocomplete
@@ -203,9 +203,9 @@ export function Editor({
 
   const handleImagePreview = React.useCallback(
     async (imageSource: string): Promise<string> => {
-      return resolveStudioAssetUrl(imageSource, projectId, userId, filePath)
+      return resolveStudioAssetUrl(imageSource, projectId, userId, filePath, undefined, contentRoot)
     },
-    [projectId, userId, filePath],
+    [projectId, userId, filePath, contentRoot],
   )
 
   // Build MDXEditor plugins — memoized to avoid re-creating on every render

@@ -129,7 +129,7 @@ function validateProps(componentName: string, props: Record<string, any>, schema
 }
 
 export function RepoJsxBridge({ mdastNode, descriptor }: RepoJsxBridgeProps) {
-  const { projectId, userId, selectedFilePath } = useStudio()
+  const { projectId, userId, selectedFilePath, contentRoot } = useStudio()
   const { adapter, components: componentSchema } = useStudioAdapter()
 
   // Prefer studio-safe renderer over adapter component when adapter version
@@ -179,14 +179,14 @@ export function RepoJsxBridge({ mdastNode, descriptor }: RepoJsxBridgeProps) {
 
     // Inject the asset resolver
     result.resolveAssetUrl = (path: string) => {
-      return resolveStudioAssetUrl(path, projectId, userId, selectedFilePath)
+      return resolveStudioAssetUrl(path, projectId, userId, selectedFilePath, undefined, contentRoot)
     }
 
     return {
       props: result,
       propWarnings: [...evalWarnings, ...schemaWarnings],
     }
-  }, [mdastNode, projectId, userId, selectedFilePath, adapter, descriptor.name, schema])
+  }, [mdastNode, projectId, userId, selectedFilePath, contentRoot, adapter, descriptor.name, schema])
 
   if (!Component) {
     return <GenericJsxEditor descriptor={descriptor} mdastNode={mdastNode} />

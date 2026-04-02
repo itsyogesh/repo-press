@@ -70,6 +70,7 @@ interface PreviewProps {
   projectId?: string
   userId?: string
   filePath?: string
+  contentRoot?: string
   scrollContainerRef?: React.RefObject<HTMLDivElement | null>
   onScroll?: () => void
   onCompilingChange?: (isCompiling: boolean) => void
@@ -84,6 +85,7 @@ export function Preview({
   projectId,
   userId,
   filePath,
+  contentRoot = "",
   scrollContainerRef,
   onScroll,
   onCompilingChange,
@@ -112,7 +114,9 @@ export function Preview({
   const tags = resolveFieldValue(frontmatter, "tags", fieldVariants) as string[] | undefined
   const author = resolveFieldValue(frontmatter, "author", fieldVariants) as string | undefined
 
-  const image = rawImage ? resolveStudioAssetUrl(rawImage, projectId, userId, filePath) : undefined
+  const image = rawImage
+    ? resolveStudioAssetUrl(rawImage, projectId, userId, filePath, undefined, contentRoot)
+    : undefined
   const [imageError, setImageError] = React.useState(false)
 
   // Reset image error when image URL changes
@@ -123,8 +127,8 @@ export function Preview({
 
   // Stabilize the asset resolver to prevent infinite re-renders in PreviewRuntime
   const resolveAssetUrl = React.useMemo(() => {
-    return (path: string) => resolveStudioAssetUrl(path, projectId, userId, filePath)
-  }, [projectId, userId, filePath])
+    return (path: string) => resolveStudioAssetUrl(path, projectId, userId, filePath, undefined, contentRoot)
+  }, [projectId, userId, filePath, contentRoot])
 
   const compileStatusForwarder = React.useMemo(
     () => createCompileStatusForwarder(onCompilingChange),

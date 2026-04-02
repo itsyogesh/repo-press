@@ -45,6 +45,7 @@ function LiveConfigurePreview({ def, formState }: { def: RepoComponentDef; formS
       studio.userId,
       studio.selectedFilePath,
       studio.projectAccessToken,
+      studio.contentRoot,
     )
     return (
       <div className="w-full flex flex-col items-center gap-2">

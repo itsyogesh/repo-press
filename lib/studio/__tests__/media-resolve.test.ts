@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, test } from "vitest"
 import {
   buildMediaResolveUrl,
+  getSuggestedImagePath,
   isStudioMediaResolveUrl,
   normalizeRepoMediaPath,
   resolveStudioAssetUrl,
@@ -37,13 +38,19 @@ describe("media-resolve helpers", () => {
     )
   })
 
-  it("resolves bare file names against the current file path", () => {
+  it("resolves bare file names to local directory when no contentRoot provided", () => {
     expect(resolveStudioAssetUrl("hero.png", "project_123", "user_1", "content/blog/post.mdx")).toBe(
-      "/api/media/resolve?projectId=project_123&path=%2Fimages%2Fblog%2Fpost%2Fhero.png&userId=user_1",
+      "/api/media/resolve?projectId=project_123&path=%2Fcontent%2Fblog%2Fhero.png&userId=user_1",
     )
   })
 
-  it("keeps non-blog bare file names relative to their local directory", () => {
+  it("resolves bare file names using getSuggestedImagePath when contentRoot is provided", () => {
+    expect(resolveStudioAssetUrl("hero.png", "project_123", "user_1", "content/blog/post.mdx", undefined, "content/blog")).toBe(
+      "/api/media/resolve?projectId=project_123&path=%2Fpublic%2Fimages%2Fblog%2Fpost%2Fhero.png&userId=user_1",
+    )
+  })
+
+  it("keeps non-blog bare file names relative to their local directory when no contentRoot", () => {
     expect(resolveStudioAssetUrl("hero.png", "project_123", "user_1", "content/docs/getting-started/intro.mdx")).toBe(
       "/api/media/resolve?projectId=project_123&path=%2Fcontent%2Fdocs%2Fgetting-started%2Fhero.png&userId=user_1",
     )
@@ -59,4 +66,24 @@ describe("media-resolve helpers", () => {
     expect(isStudioMediaResolveUrl(alreadyResolved)).toBe(true)
     expect(resolveStudioAssetUrl(alreadyResolved, "project_123")).toBe(alreadyResolved)
   })
+})
+
+describe("getSuggestedImagePath", () => {
+  test.each([
+    ["content/blog/my-post.mdx", "content/blog", "public/images/blog/my-post"],
+    ["content/blog/2024/my-post.mdx", "content/blog", "public/images/blog/2024/my-post"],
+    ["content/docs/setup.mdx", "content/docs", "public/images/docs/setup"],
+    ["content/docs/guides/setup.mdx", "content/docs", "public/images/docs/guides/setup"],
+    ["content/blog/my-post.mdx", "content", "public/images/blog/my-post"],
+    ["content/docs/setup.mdx", "content", "public/images/docs/setup"],
+    ["content/pages/about.mdx", "content/pages", "public/images/pages/about"],
+    ["src/content/docs/intro.mdx", "src/content/docs", "public/images/docs/intro"],
+    ["apps/docs/content/intro.mdx", "apps/docs/content", "public/images/intro"],
+    ["docs/intro.mdx", "", "public/images/docs/intro"],
+  ] as [string, string, string][])(
+    "%s (root=%s) → %s",
+    (filePath, contentRoot, expected) => {
+      expect(getSuggestedImagePath(filePath, contentRoot)).toBe(expected)
+    },
+  )
 })
