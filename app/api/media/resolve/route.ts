@@ -3,7 +3,7 @@ import { NextResponse } from "next/server"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
 import { createGitHubClient } from "@/lib/github"
-import { mintServerQueryToken } from "@/lib/project-access-token"
+import { mintServerQueryToken, verifyProjectAccessToken } from "@/lib/project-access-token"
 import { RouteAuthError, resolveRouteAuth } from "@/lib/route-auth"
 import { normalizeRepoMediaPath } from "@/lib/studio/media-resolve"
 
@@ -17,6 +17,7 @@ export async function GET(request: Request) {
     const projectId = searchParams.get("projectId")
     const rawPath = searchParams.get("path")
     const branchOverride = searchParams.get("branch")
+    const queryAccessToken = searchParams.get("projectAccessToken")
 
     if (!projectId || !rawPath) {
       return NextResponse.json({ error: "Missing required query params: projectId, path" }, { status: 400 })
@@ -31,18 +32,44 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 })
     }
 
-    // Check GitHub permissions (read-only route — viewer is sufficient)
-    let auth: Awaited<ReturnType<typeof resolveRouteAuth>>
-    try {
-      auth = await resolveRouteAuth(project, "viewer")
-    } catch (e) {
-      if (e instanceof RouteAuthError) {
-        return NextResponse.json({ error: e.message }, { status: e.status })
+    // Attempt auth via projectAccessToken query param first (for <img> tag requests)
+    let actingUserId: string | null = null
+    let projectAccessToken: string | null = null
+    let githubToken: string | null = null
+
+    if (queryAccessToken) {
+      try {
+        const payload = await verifyProjectAccessToken(queryAccessToken)
+        if (payload?.userId && payload?.projectId === projectId) {
+          actingUserId = payload.userId
+          projectAccessToken = queryAccessToken
+          // Note: we won't have githubToken for query-param auth, but we don't need it for media resolve
+        }
+      } catch {
+        // Token verification failed, fall back to cookie-based auth
       }
-      throw e
     }
-    const { actingUserId, projectAccessToken, githubToken: token } = auth
-    const queryAuth = { userId: actingUserId, projectAccessToken }
+
+    // Fallback to cookie-based auth if token auth failed or not provided
+    if (!actingUserId) {
+      try {
+        const auth = await resolveRouteAuth(project, "viewer")
+        actingUserId = auth.actingUserId
+        projectAccessToken = auth.projectAccessToken
+        githubToken = auth.githubToken
+      } catch (e) {
+        if (e instanceof RouteAuthError) {
+          return NextResponse.json({ error: e.message }, { status: e.status })
+        }
+        throw e
+      }
+    }
+
+    if (!actingUserId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    const queryAuth = { userId: actingUserId, projectAccessToken: projectAccessToken || undefined }
 
     const repoPath = normalizeRepoMediaPath(rawPath)
     const githubPath = repoPath.replace(/^\/+/, "")
@@ -87,8 +114,11 @@ export async function GET(request: Request) {
     }
 
     if (pendingOp?.sourceType === "githubBranch" && pendingOp.githubBranch && pendingOp.githubPath) {
+      if (!githubToken) {
+        return NextResponse.json({ error: "GitHub token unavailable for media access" }, { status: 401 })
+      }
       const githubFile = await fetchGitHubFileBytes({
-        token,
+        token: githubToken,
         owner: project.repoOwner,
         repo: project.repoName,
         path: pendingOp.githubPath,
@@ -120,10 +150,15 @@ export async function GET(request: Request) {
       etag?: string
     } | null = null
     let resolvedGitHubPath = githubPath
+
+    if (!githubToken) {
+      return NextResponse.json({ error: "GitHub token unavailable for media access" }, { status: 401 })
+    }
+
     for (const ref of refsToTry) {
       for (const candidatePath of githubPathCandidates) {
         githubFile = await fetchGitHubFileBytes({
-          token,
+          token: githubToken,
           owner: project.repoOwner,
           repo: project.repoName,
           path: candidatePath,

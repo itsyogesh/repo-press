@@ -1,7 +1,8 @@
 "use client"
 
 import { ImageIcon, Info } from "lucide-react"
-import React, { useMemo } from "react"
+import type React from "react"
+import { useMemo } from "react"
 import { REAL_DOCS_SETUP_MEDIA } from "@/lib/repopress/standard-library"
 import { resolveStudioAssetUrl } from "@/lib/studio/media-resolve"
 import { GenericJsxEditor } from "./jsx-component-descriptors"
