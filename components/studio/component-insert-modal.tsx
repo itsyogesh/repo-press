@@ -165,6 +165,7 @@ interface ComponentInsertModalProps {
     owner: string
     repo: string
     branch: string
+    selectedFilePath?: string
   }
   /** Called with serialized JSX, component metadata, and the resolved node when user confirms insert. */
   onInsert: (jsx: string, def: RepoComponentDef, node: ComponentNode) => void

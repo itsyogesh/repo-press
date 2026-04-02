@@ -46,6 +46,7 @@ interface ComponentPropFormProps {
     owner: string
     repo: string
     branch: string
+    selectedFilePath?: string
   }
   /** Map of prop name → error message for validation display. */
   errors?: Record<string, string>
@@ -126,6 +127,7 @@ function PropField({
     owner: string
     repo: string
     branch: string
+    selectedFilePath?: string
   }
   error?: string
 }) {
@@ -238,6 +240,7 @@ function PropField({
             onChange={onChange}
             placeholder={placeholder ?? "Select or upload image..."}
             repoContext={repoContext}
+            selectedFilePath={repoContext?.selectedFilePath}
           />
           {descriptionEl}
           {errorEl}

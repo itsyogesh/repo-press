@@ -19,9 +19,10 @@ interface InsertJsxButtonProps {
   branch: string
   projectId?: string
   userId?: string
+  selectedFilePath?: string
 }
 
-export function InsertJsxButton({ owner, repo, branch, projectId, userId }: InsertJsxButtonProps) {
+export function InsertJsxButton({ owner, repo, branch, projectId, userId, selectedFilePath }: InsertJsxButtonProps) {
   const { components: schema, adapter, detectedFramework } = useStudioAdapter()
   const insertJsx = usePublisher(insertJsx$)
   const [modalOpen, setModalOpen] = React.useState(false)
@@ -81,7 +82,7 @@ export function InsertJsxButton({ owner, repo, branch, projectId, userId }: Inse
         adapterComponents={adapter?.components}
         projectComponents={schema}
         framework={detectedFramework}
-        repoContext={projectId ? { projectId, userId, owner, repo, branch } : undefined}
+        repoContext={projectId ? { projectId, userId, owner, repo, branch, selectedFilePath } : undefined}
         onInsert={handleInsert}
       />
     </>

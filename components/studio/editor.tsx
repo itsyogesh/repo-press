@@ -268,6 +268,7 @@ export function Editor({
             branch={branch}
             projectId={projectId}
             userId={userId}
+            selectedFilePath={filePath}
             showMarkdownMediaInserts={!hasConfiguredMediaComponent}
           />
         ),

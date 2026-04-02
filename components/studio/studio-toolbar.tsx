@@ -23,6 +23,7 @@ interface StudioToolbarProps {
   branch: string
   projectId?: string
   userId?: string
+  selectedFilePath?: string
   showMarkdownMediaInserts?: boolean
 }
 
@@ -32,12 +33,20 @@ export function StudioToolbar({
   branch,
   projectId,
   userId,
+  selectedFilePath,
   showMarkdownMediaInserts = true,
 }: StudioToolbarProps) {
   return (
     <DiffSourceToggleWrapper options={["rich-text", "source"]}>
       <div className="flex items-center gap-0.5 flex-wrap">
-        <InsertJsxButton owner={owner} repo={repo} branch={branch} projectId={projectId} userId={userId} />
+        <InsertJsxButton
+          owner={owner}
+          repo={repo}
+          branch={branch}
+          projectId={projectId}
+          userId={userId}
+          selectedFilePath={selectedFilePath}
+        />
         <Separator />
         <UndoRedo />
         <Separator />
