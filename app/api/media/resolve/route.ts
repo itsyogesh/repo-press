@@ -75,11 +75,29 @@ export async function GET(request: Request) {
     const githubPath = repoPath.replace(/^\/+/, "")
     const githubPathCandidates = getGitHubPathCandidates(githubPath)
 
-    const pendingOp = await convex.query(api.mediaOps.getPendingByRepoPath, {
+    // Look up pending op — try both /images/... and /public/images/... since
+    // images are staged with the full repo path (public/) but authored/referenced
+    // as the web URL path (/images/...). e.g. staged key = /public/images/blog/photo.jpg,
+    // authored value = /images/blog/photo.jpg (after toPublicAssetPath strips the prefix).
+    let pendingOp = await convex.query(api.mediaOps.getPendingByRepoPath, {
       projectId: project._id,
       repoPath,
       ...queryAuth,
     })
+    let effectiveRepoPath = repoPath
+
+    if (!pendingOp && repoPath.startsWith("/images/")) {
+      const publicRepoPath = `/public${repoPath}`
+      const altOp = await convex.query(api.mediaOps.getPendingByRepoPath, {
+        projectId: project._id,
+        repoPath: publicRepoPath,
+        ...queryAuth,
+      })
+      if (altOp) {
+        pendingOp = altOp
+        effectiveRepoPath = publicRepoPath
+      }
+    }
 
     if (pendingOp?.sourceType === "blob" && pendingOp.blobUrl) {
       const blobResponse = await fetchBlobContent(pendingOp.blobUrl)
@@ -103,7 +121,7 @@ export async function GET(request: Request) {
     if (pendingOp?.sourceType === "convex" && pendingOp.convexStorageId) {
       const storageUrl = await convex.query(api.mediaOps.getConvexStorageUrl, {
         projectId: project._id,
-        repoPath,
+        repoPath: effectiveRepoPath,
         ...queryAuth,
       })
       if (!storageUrl) {

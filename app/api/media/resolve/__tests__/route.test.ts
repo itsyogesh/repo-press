@@ -280,8 +280,43 @@ describe("GET /api/media/resolve", () => {
     expect(payload.error).toContain("not found")
   })
 
+  it("resolves pending Convex-stored media for /images/ path staged with /public/ prefix", async () => {
+    // Images are staged as /public/images/... but authored/referenced as /images/...
+    // The resolve route must try the /public/ prefixed path as a fallback.
+    convexQueryMock
+      .mockResolvedValueOnce(projectRecord) // projects.get
+      .mockResolvedValueOnce(null) // getPendingByRepoPath /images/blog/hero.png → not found
+      .mockResolvedValueOnce({
+        // getPendingByRepoPath /public/images/blog/hero.png → found
+        _id: "media-op-convex-1",
+        sourceType: "convex",
+        convexStorageId: "convex-storage-id-1",
+        repoPath: "/public/images/blog/hero.png",
+        mimeType: "image/png",
+        status: "pending",
+      })
+      .mockResolvedValueOnce("https://cdn.convex.cloud/storage/convex-storage-id-1") // getConvexStorageUrl
+
+    const response = await GET(requestFor("/images/blog/hero.png"))
+
+    expect(response.status).toBe(302)
+    expect(response.headers.get("location")).toBe("https://cdn.convex.cloud/storage/convex-storage-id-1")
+    // 4 Convex queries: projects.get, getPendingByRepoPath x2, getConvexStorageUrl
+    expect(convexQueryMock).toHaveBeenCalledTimes(4)
+    // Verify the alternate path (with /public) was queried
+    expect(convexQueryMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ repoPath: "/public/images/blog/hero.png" }),
+    )
+  })
+
   it("falls back to public/ path when resolving Next.js public assets", async () => {
-    convexQueryMock.mockResolvedValueOnce(projectRecord).mockResolvedValueOnce(null).mockResolvedValueOnce(null)
+    // Extra null for the alternate /public/ prefix pending op lookup on /images/ paths
+    convexQueryMock
+      .mockResolvedValueOnce(projectRecord)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
 
     const getContent = vi.fn().mockImplementation(async ({ path }: { path: string }) => {
       if (path === "images/blog/hero.png") {
