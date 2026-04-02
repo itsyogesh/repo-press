@@ -34,6 +34,19 @@ interface GalleryTabProps {
 
 const PAGE_SIZE = 24
 
+/**
+ * Derives the first-level folder segment from a file path relative to contentRoot.
+ * e.g. "content/blog/post.mdx" + contentRoot "content" → "blog"
+ * e.g. "post.mdx" (root-level) → undefined (no scoping)
+ */
+function deriveSectionSlug(filePath: string | undefined, contentRoot: string | undefined): string | undefined {
+  if (!filePath) return undefined
+  const root = contentRoot ? contentRoot.replace(/\/+$/, "") + "/" : ""
+  const relative = root && filePath.startsWith(root) ? filePath.slice(root.length) : filePath
+  const parts = relative.split("/")
+  return parts.length > 1 ? parts[0] : undefined
+}
+
 export function GalleryTab({
   projectId,
   userId,
@@ -50,6 +63,12 @@ export function GalleryTab({
 }: GalleryTabProps) {
   const convex = useConvex()
   const projectIdTyped = projectId as Id<"projects">
+
+  // ── Section scoping ───────────────────────────────────────────────
+  const sectionSlug = React.useMemo(
+    () => deriveSectionSlug(selectedFilePath, contentRoot),
+    [selectedFilePath, contentRoot],
+  )
 
   // ── Accumulated image list ────────────────────────────────────────
   const [allItems, setAllItems] = React.useState<MediaAsset[]>([])
@@ -76,6 +95,7 @@ export function GalleryTab({
     projectAccessToken,
     cursor: undefined,
     limit: PAGE_SIZE,
+    sectionSlug,
   })
 
   const initializedRef = React.useRef(false)
@@ -87,6 +107,18 @@ export function GalleryTab({
       setIsDone(firstPage.isDone)
     }
   }, [firstPage])
+
+  // Reset accumulated items when section scope changes
+  const prevSectionSlugRef = React.useRef(sectionSlug)
+  React.useEffect(() => {
+    if (sectionSlug !== prevSectionSlugRef.current) {
+      prevSectionSlugRef.current = sectionSlug
+      initializedRef.current = false
+      setAllItems([])
+      setContinueCursor(null)
+      setIsDone(false)
+    }
+  }, [sectionSlug])
 
   // ── Pending ops for staged badge ──────────────────────────────────
   const pendingOps = useQuery(api.mediaOps.listPending, {
@@ -127,6 +159,7 @@ export function GalleryTab({
         projectAccessToken,
         cursor: continueCursor,
         limit: PAGE_SIZE,
+        sectionSlug,
       })
       setAllItems((prev) => [...prev, ...(result.page as MediaAsset[])])
       setContinueCursor(result.continueCursor)
@@ -136,7 +169,7 @@ export function GalleryTab({
     } finally {
       setIsLoadingMore(false)
     }
-  }, [continueCursor, isDone, isLoadingMore, convex, projectIdTyped, userId, projectAccessToken])
+  }, [continueCursor, isDone, isLoadingMore, convex, projectIdTyped, userId, projectAccessToken, sectionSlug])
 
   // ── Save alt text ─────────────────────────────────────────────────
   const handleSaveAltText = React.useCallback(async () => {
@@ -236,6 +269,14 @@ export function GalleryTab({
             </button>
           )}
         </div>
+        {sectionSlug && (
+          <span
+            className="shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded bg-studio-accent/10 text-studio-accent border border-studio-accent/20"
+            title={`Showing images from the "${sectionSlug}" folder`}
+          >
+            {sectionSlug}
+          </span>
+        )}
         <Button
           variant="outline"
           size="sm"
@@ -271,7 +312,7 @@ export function GalleryTab({
                 ))}
               </div>
 
-              {!isDone && !searchQuery && (
+              {!isDone && !searchQuery && !sectionSlug && (
                 <div className="flex justify-center mt-4 pb-2">
                   <Button
                     variant="ghost"

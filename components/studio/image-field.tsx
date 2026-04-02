@@ -177,6 +177,7 @@ export function ImageField({
         branch={branch}
         pathHint={pathHint}
         selectedFilePath={selectedFilePath}
+        contentRoot={contentRoot}
         authoredValueUsage="frontmatter"
         fieldName={fieldName}
         semanticRole={semanticRole}
@@ -197,6 +198,7 @@ interface ImageSelectorDialogProps {
   branch?: string
   pathHint: string
   selectedFilePath?: string
+  contentRoot?: string
   authoredValueUsage?: "frontmatter" | "component" | "editor"
   fieldName?: string
   semanticRole?: string
@@ -214,6 +216,7 @@ function ImageSelectorDialog({
   branch,
   pathHint,
   selectedFilePath,
+  contentRoot,
   authoredValueUsage = "frontmatter",
   fieldName,
   semanticRole,
@@ -312,13 +315,6 @@ function ImageSelectorDialog({
                 <Upload className="h-3.5 w-3.5 mr-2" />
                 Upload
               </TabsTrigger>
-              <TabsTrigger
-                value="url"
-                className="rounded-none border-b-2 border-transparent data-[state=active]:border-studio-accent data-[state=active]:bg-transparent px-0 h-10 shadow-none"
-              >
-                <LinkIcon className="h-3.5 w-3.5 mr-2" />
-                External URL
-              </TabsTrigger>
               {projectId && (
                 <TabsTrigger
                   value="gallery"
@@ -328,6 +324,13 @@ function ImageSelectorDialog({
                   Gallery
                 </TabsTrigger>
               )}
+              <TabsTrigger
+                value="url"
+                className="rounded-none border-b-2 border-transparent data-[state=active]:border-studio-accent data-[state=active]:bg-transparent px-0 h-10 shadow-none"
+              >
+                <LinkIcon className="h-3.5 w-3.5 mr-2" />
+                Link
+              </TabsTrigger>
             </TabsList>
           </div>
 
@@ -356,6 +359,25 @@ function ImageSelectorDialog({
               )}
             </div>
           </TabsContent>
+
+          {projectId && (
+            <TabsContent value="gallery" className="flex-1 flex flex-col overflow-hidden mt-0">
+              <GalleryTab
+                projectId={projectId}
+                userId={userId}
+                owner={owner ?? ""}
+                repo={repo ?? ""}
+                branch={branch ?? "main"}
+                projectAccessToken={projectAccessToken}
+                selectedFilePath={selectedFilePath}
+                contentRoot={contentRoot}
+                authoredValueUsage={authoredValueUsage}
+                fieldName={fieldName}
+                semanticRole={semanticRole}
+                onSelect={onSelect}
+              />
+            </TabsContent>
+          )}
 
           <TabsContent value="url" className="flex-1 overflow-y-auto mt-0">
             <div className="p-6 space-y-4">
@@ -398,24 +420,6 @@ function ImageSelectorDialog({
               )}
             </div>
           </TabsContent>
-
-          {projectId && (
-            <TabsContent value="gallery" className="flex-1 flex flex-col overflow-hidden mt-0">
-              <GalleryTab
-                projectId={projectId}
-                userId={userId}
-                owner={owner ?? ""}
-                repo={repo ?? ""}
-                branch={branch ?? "main"}
-                projectAccessToken={projectAccessToken}
-                selectedFilePath={selectedFilePath}
-                authoredValueUsage={authoredValueUsage}
-                fieldName={fieldName}
-                semanticRole={semanticRole}
-                onSelect={onSelect}
-              />
-            </TabsContent>
-          )}
         </Tabs>
       </DialogContent>
     </Dialog>

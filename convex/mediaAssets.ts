@@ -9,17 +9,25 @@ export const listByProjectPaginated = query({
     projectAccessToken: v.optional(v.string()),
     cursor: v.optional(v.string()),
     limit: v.optional(v.number()),
+    sectionSlug: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const access = await resolveProjectReader(ctx, args)
     if (!access) return { page: [], isDone: true, continueCursor: "" }
 
     const numItems = Math.min(args.limit ?? 24, 100)
-    return await ctx.db
+    const result = await ctx.db
       .query("mediaAssets")
       .withIndex("by_projectId", (q) => q.eq("projectId", args.projectId))
       .order("desc")
       .paginate({ cursor: args.cursor ?? null, numItems })
+
+    if (args.sectionSlug) {
+      const slug = args.sectionSlug.toLowerCase()
+      return { ...result, page: result.page.filter((item) => item.filePath.toLowerCase().includes(slug)) }
+    }
+
+    return result
   },
 })
 

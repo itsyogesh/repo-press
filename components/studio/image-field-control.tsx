@@ -46,6 +46,7 @@ interface ImageSelectorDialogProps {
   branch?: string
   pathHint: string
   selectedFilePath?: string
+  contentRoot?: string
   projectAccessToken?: string
   authoredValueUsage?: "frontmatter" | "component" | "editor"
   fieldName?: string
@@ -63,6 +64,7 @@ function ImageSelectorDialog({
   branch,
   pathHint,
   selectedFilePath,
+  contentRoot,
   projectAccessToken,
   authoredValueUsage = "component",
   fieldName,
@@ -155,12 +157,6 @@ function ImageSelectorDialog({
               >
                 Upload
               </TabsTrigger>
-              <TabsTrigger
-                value="url"
-                className="rounded-none border-b-2 border-transparent data-[state=active]:border-studio-accent data-[state=active]:bg-transparent px-0 h-10 shadow-none"
-              >
-                External URL
-              </TabsTrigger>
               {projectId && (
                 <TabsTrigger
                   value="gallery"
@@ -169,6 +165,12 @@ function ImageSelectorDialog({
                   Gallery
                 </TabsTrigger>
               )}
+              <TabsTrigger
+                value="url"
+                className="rounded-none border-b-2 border-transparent data-[state=active]:border-studio-accent data-[state=active]:bg-transparent px-0 h-10 shadow-none"
+              >
+                Link
+              </TabsTrigger>
             </TabsList>
           </div>
 
@@ -197,6 +199,25 @@ function ImageSelectorDialog({
               )}
             </div>
           </TabsContent>
+
+          {projectId && owner && repo && branch && (
+            <TabsContent value="gallery" className="flex-1 flex flex-col min-h-0 mt-0 overflow-hidden">
+              <GalleryTab
+                projectId={projectId}
+                userId={userId}
+                owner={owner}
+                repo={repo}
+                branch={branch}
+                projectAccessToken={projectAccessToken}
+                selectedFilePath={selectedFilePath}
+                contentRoot={contentRoot}
+                authoredValueUsage={authoredValueUsage}
+                fieldName={fieldName}
+                semanticRole={semanticRole}
+                onSelect={onSelect}
+              />
+            </TabsContent>
+          )}
 
           <TabsContent value="url" className="flex-1 overflow-y-auto mt-0">
             <div className="p-6 space-y-4">
@@ -239,24 +260,6 @@ function ImageSelectorDialog({
               )}
             </div>
           </TabsContent>
-
-          {projectId && owner && repo && branch && (
-            <TabsContent value="gallery" className="flex-1 flex flex-col min-h-0 mt-0 overflow-hidden">
-              <GalleryTab
-                projectId={projectId}
-                userId={userId}
-                owner={owner}
-                repo={repo}
-                branch={branch}
-                projectAccessToken={projectAccessToken}
-                selectedFilePath={selectedFilePath}
-                authoredValueUsage={authoredValueUsage}
-                fieldName={fieldName}
-                semanticRole={semanticRole}
-                onSelect={onSelect}
-              />
-            </TabsContent>
-          )}
         </Tabs>
       </DialogContent>
     </Dialog>
@@ -373,6 +376,7 @@ export function ImageFieldControl({
           branch={branch}
           pathHint={pathHint}
           selectedFilePath={selectedFilePath}
+          contentRoot={studio.contentRoot}
           projectAccessToken={projectAccessToken}
           authoredValueUsage="component"
         />
@@ -408,6 +412,7 @@ export function ImageFieldControl({
         branch={branch}
         pathHint={pathHint}
         selectedFilePath={selectedFilePath}
+        contentRoot={studio.contentRoot}
         projectAccessToken={projectAccessToken}
         authoredValueUsage="component"
       />
