@@ -127,7 +127,9 @@ describe("POST /api/media/download-external", () => {
     expect(payload.previewUrl).toBe(
       "/api/media/resolve?projectId=project_123&path=%2Fpublic%2Fimages%2Fblog%2Fcreative-domain-ideas%2Fcreative-domain-ideas.png",
     )
-    expect(fetchSpy).toHaveBeenCalledWith("https://images.example.com/creative-domain-ideas.png")
+    expect(fetchSpy).toHaveBeenCalledWith("https://images.example.com/creative-domain-ideas.png", {
+      redirect: "manual",
+    })
     expect(convexMutationMock).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
@@ -173,5 +175,37 @@ describe("POST /api/media/download-external", () => {
 
     expect(response.status).toBe(400)
     expect(payload.error).toContain("image")
+  })
+
+  it("rejects direct private-network targets before fetching", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch")
+
+    const response = await POST(
+      buildRequest({
+        ...baseBody(),
+        url: "http://127.0.0.1/internal.png",
+      }),
+    )
+    const payload = await response.json()
+
+    expect(response.status).toBe(400)
+    expect(payload.error).toContain("public")
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it("rejects redirects to private-network targets", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(null, {
+        status: 302,
+        headers: { location: "http://169.254.169.254/latest/meta-data" },
+      }),
+    )
+
+    const response = await POST(buildRequest(baseBody()))
+    const payload = await response.json()
+
+    expect(response.status).toBe(400)
+    expect(payload.error).toContain("public")
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
   })
 })

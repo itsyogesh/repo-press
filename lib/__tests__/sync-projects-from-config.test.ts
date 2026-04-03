@@ -391,6 +391,25 @@ describe("syncProjectsFromConfig", () => {
       )
       expect(orphanPatch).toBeUndefined()
     })
+
+    it("does NOT flag config-managed projects that belong to a different branch", async () => {
+      const otherBranchProject = makeProject({
+        _id: "proj_release_docs",
+        branch: "release",
+        configProjectId: "release-docs",
+        frameworkSource: "config",
+      })
+      const patch = vi.fn()
+      const ctx = createCtx({ repoProjects: [otherBranchProject], patch })
+
+      const result = await (syncProjectsFromConfig as any).handler(ctx, BASE_ARGS)
+
+      const orphanPatch = patch.mock.calls.find(
+        (call) => call[0] === "proj_release_docs" && call[1]?.configRemoved === true,
+      )
+      expect(orphanPatch).toBeUndefined()
+      expect(result.orphaned).not.toContain("proj_release_docs")
+    })
   })
 
   // ── Multi-project ────────────────────────────────────────────────────────

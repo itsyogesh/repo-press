@@ -1,3 +1,4 @@
+import { isIP } from "node:net"
 import { ConvexHttpClient } from "convex/browser"
 import { NextResponse } from "next/server"
 import { api } from "@/convex/_generated/api"
@@ -33,10 +34,63 @@ interface DownloadExternalRequest {
 function isSafeExternalUrl(url: string): boolean {
   try {
     const parsed = new URL(url)
-    return parsed.protocol === "https:" || parsed.protocol === "http:"
+    return (parsed.protocol === "https:" || parsed.protocol === "http:") && !isBlockedHostname(parsed.hostname)
   } catch {
     return false
   }
+}
+
+function isBlockedHostname(hostname: string): boolean {
+  const normalized = hostname.trim().toLowerCase().replace(/\.$/, "")
+  if (!normalized) return true
+  if (normalized === "localhost" || normalized.endsWith(".localhost") || normalized.endsWith(".local")) {
+    return true
+  }
+
+  const ipVersion = isIP(normalized)
+  if (ipVersion === 4) {
+    const [a, b] = normalized.split(".").map((segment) => Number(segment))
+    return (
+      a === 10 || a === 127 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)
+    )
+  }
+
+  if (ipVersion === 6) {
+    return (
+      normalized === "::1" ||
+      normalized.startsWith("fe80:") ||
+      normalized.startsWith("fc") ||
+      normalized.startsWith("fd")
+    )
+  }
+
+  return false
+}
+
+async function fetchExternalImage(url: string, maxRedirects = 5): Promise<Response> {
+  let currentUrl = url
+
+  for (let redirectCount = 0; redirectCount <= maxRedirects; redirectCount += 1) {
+    const response = await fetch(currentUrl, { redirect: "manual" })
+
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get("location")
+      if (!location) {
+        throw new Error("External image redirect is missing a Location header")
+      }
+
+      const nextUrl = new URL(location, currentUrl)
+      if (!isSafeExternalUrl(nextUrl.toString())) {
+        throw new Error("External image must resolve to a public HTTP(S) URL")
+      }
+      currentUrl = nextUrl.toString()
+      continue
+    }
+
+    return response
+  }
+
+  throw new Error("External image exceeded maximum redirect depth")
 }
 
 function extensionFromContentType(contentType: string): string {
@@ -84,7 +138,7 @@ export async function POST(request: Request) {
     }
 
     if (!isSafeExternalUrl(url)) {
-      return NextResponse.json({ error: "Invalid external image URL" }, { status: 400 })
+      return NextResponse.json({ error: "External image must resolve to a public HTTP(S) URL" }, { status: 400 })
     }
 
     const project = await resolveProject({ convex, api, projectId, owner, repo, branch })
@@ -113,7 +167,16 @@ export async function POST(request: Request) {
       )
     }
 
-    const externalResponse = await fetch(url)
+    let externalResponse: Response
+    try {
+      externalResponse = await fetchExternalImage(url)
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("public HTTP(S) URL")) {
+        return NextResponse.json({ error: error.message }, { status: 400 })
+      }
+      throw error
+    }
+
     if (!externalResponse.ok) {
       return NextResponse.json({ error: "Failed to fetch external image" }, { status: 502 })
     }

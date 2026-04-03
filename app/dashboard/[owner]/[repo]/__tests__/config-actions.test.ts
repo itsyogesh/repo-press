@@ -14,6 +14,18 @@ vi.mock("@/lib/auth-server", () => ({
   fetchAuthQuery: fetchAuthQueryMock,
 }))
 
+const { convexQueryMock, convexMutationMock } = vi.hoisted(() => ({
+  convexQueryMock: vi.fn(),
+  convexMutationMock: vi.fn(),
+}))
+
+vi.mock("convex/browser", () => ({
+  ConvexHttpClient: class {
+    query = convexQueryMock
+    mutation = convexMutationMock
+  },
+}))
+
 const { readConfigMock, commitConfigMock, addProjectMock, updateProjectMock, removeProjectMock } = vi.hoisted(() => ({
   readConfigMock: vi.fn(),
   commitConfigMock: vi.fn(),
@@ -38,6 +50,16 @@ vi.mock("@/lib/sync-projects", () => ({
   syncProjectsServerSide: syncProjectsServerSideMock,
 }))
 
+const { mintServerQueryTokenMock, mintProjectAccessTokenMock } = vi.hoisted(() => ({
+  mintServerQueryTokenMock: vi.fn(),
+  mintProjectAccessTokenMock: vi.fn(),
+}))
+
+vi.mock("@/lib/project-access-token", () => ({
+  mintServerQueryToken: mintServerQueryTokenMock,
+  mintProjectAccessToken: mintProjectAccessTokenMock,
+}))
+
 vi.mock("next/cache", () => ({
   revalidatePath: vi.fn(),
 }))
@@ -55,6 +77,11 @@ vi.mock("@/lib/github-permissions", () => ({
 vi.mock("@/convex/_generated/api", () => ({
   api: {
     auth: { getCurrentUser: "auth:getCurrentUser" },
+    projects: {
+      get: "projects:get",
+      keepAsManual: "projects:keepAsManual",
+      removeFull: "projects:removeFull",
+    },
   },
 }))
 
@@ -63,6 +90,8 @@ vi.mock("@/convex/_generated/api", () => ({
 import {
   addProjectToConfigAction,
   commitRawConfigAction,
+  deleteProjectPermanentlyAction,
+  keepProjectAsManualAction,
   removeProjectFromConfigAction,
   updateProjectInConfigAction,
 } from "../config-actions"
@@ -87,9 +116,18 @@ function setupHappyPath() {
   fetchAuthQueryMock.mockResolvedValue({ _id: USER_ID })
   resolveRepoRoleMock.mockResolvedValue({ role: "owner", defaultBranch: "main", defaultBranchInferred: false })
   roleAtLeastMock.mockReturnValue(true)
+  mintServerQueryTokenMock.mockResolvedValue("server-query-token")
+  mintProjectAccessTokenMock.mockResolvedValue("project-access-token")
   readConfigMock.mockResolvedValue({ config: BASE_CONFIG, sha: "abc123sha" })
   commitConfigMock.mockResolvedValue(undefined)
   syncProjectsServerSideMock.mockResolvedValue({ synced: [], created: ["proj_1"], unchanged: [] })
+  convexQueryMock.mockResolvedValue({
+    _id: "proj_1",
+    repoOwner: OWNER,
+    repoName: REPO,
+    branch: BRANCH,
+  })
+  convexMutationMock.mockResolvedValue(undefined)
 }
 
 // ── addProjectToConfigAction ─────────────────────────────────────────────────
@@ -405,5 +443,54 @@ describe("commitRawConfigAction", () => {
     )
     // readConfig should NOT have been called — raw action uses caller-supplied SHA
     expect(readConfigMock).not.toHaveBeenCalled()
+  })
+})
+
+describe("orphan resolution actions", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    setupHappyPath()
+  })
+
+  it("keepProjectAsManualAction bridges PAT auth through a signed project token", async () => {
+    fetchAuthQueryMock.mockResolvedValue(null)
+    getPatAuthUserIdMock.mockResolvedValue("pat_user_xyz")
+
+    const result = await keepProjectAsManualAction("proj_1")
+
+    expect(result).toEqual({ success: true })
+    expect(convexQueryMock).toHaveBeenCalledWith("projects:get", {
+      id: "proj_1",
+      serverQueryToken: "server-query-token",
+    })
+    expect(mintProjectAccessTokenMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: "proj_1",
+        userId: "pat_user_xyz",
+        repoOwner: OWNER,
+        repoName: REPO,
+        branch: BRANCH,
+        role: "owner",
+      }),
+    )
+    expect(convexMutationMock).toHaveBeenCalledWith("projects:keepAsManual", {
+      projectId: "proj_1",
+      userId: "pat_user_xyz",
+      projectAccessToken: "project-access-token",
+    })
+  })
+
+  it("deleteProjectPermanentlyAction bridges PAT auth through a signed project token", async () => {
+    fetchAuthQueryMock.mockResolvedValue(null)
+    getPatAuthUserIdMock.mockResolvedValue("pat_user_xyz")
+
+    const result = await deleteProjectPermanentlyAction("proj_1")
+
+    expect(result).toEqual({ success: true })
+    expect(convexMutationMock).toHaveBeenCalledWith("projects:removeFull", {
+      projectId: "proj_1",
+      userId: "pat_user_xyz",
+      projectAccessToken: "project-access-token",
+    })
   })
 })

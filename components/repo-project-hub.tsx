@@ -430,7 +430,6 @@ export function RepoProjectHub({
       />
       <DeleteProjectDialog
         project={deleteProject}
-        userId={actingUserId}
         open={!!deleteProject}
         onOpenChange={(open) => {
           if (!open) setDeleteProject(null)

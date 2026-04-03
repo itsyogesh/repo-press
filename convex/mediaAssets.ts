@@ -16,18 +16,32 @@ export const listByProjectPaginated = query({
     if (!access) return { page: [], isDone: true, continueCursor: "" }
 
     const numItems = Math.min(args.limit ?? 24, 100)
-    const result = await ctx.db
+    const query = ctx.db
       .query("mediaAssets")
       .withIndex("by_projectId", (q) => q.eq("projectId", args.projectId))
       .order("desc")
-      .paginate({ cursor: args.cursor ?? null, numItems })
 
-    if (args.sectionSlug) {
-      const slug = args.sectionSlug.toLowerCase()
-      return { ...result, page: result.page.filter((item) => item.filePath.toLowerCase().includes(slug)) }
+    if (!args.sectionSlug) {
+      return await query.paginate({ cursor: args.cursor ?? null, numItems })
     }
 
-    return result
+    const slug = args.sectionSlug.toLowerCase()
+    const page = []
+    let cursor = args.cursor ?? null
+    let isDone = false
+
+    while (page.length < numItems && !isDone) {
+      const result = await query.paginate({ cursor, numItems })
+      page.push(...result.page.filter((item) => item.filePath.toLowerCase().includes(slug)))
+      cursor = result.continueCursor
+      isDone = result.isDone
+    }
+
+    return {
+      page: page.slice(0, numItems),
+      isDone,
+      continueCursor: isDone ? "" : (cursor ?? ""),
+    }
   },
 })
 

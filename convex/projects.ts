@@ -614,6 +614,7 @@ export const syncProjectsFromConfig = mutation({
     for (const project of repoProjects) {
       if (project.frameworkSource !== "config" || !project.configProjectId) continue
       if (project.name.startsWith("[DELETING]")) continue
+      if (project.branch !== args.branch) continue
 
       if (!configIds.has(project.configProjectId)) {
         // Project is no longer in config — flag it as orphaned

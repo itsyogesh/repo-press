@@ -1,11 +1,12 @@
 "use client"
 
-import { useMutation } from "convex/react"
 import { AlertTriangle, Hand, Loader2, Trash2 } from "lucide-react"
 import { useTransition } from "react"
 import { toast } from "sonner"
-import { api } from "@/convex/_generated/api"
-import type { Id } from "@/convex/_generated/dataModel"
+import {
+  deleteProjectPermanentlyAction,
+  keepProjectAsManualAction,
+} from "@/app/dashboard/[owner]/[repo]/config-actions"
 import { Alert, AlertDescription, AlertTitle } from "./ui/alert"
 import { Button } from "./ui/button"
 
@@ -27,29 +28,26 @@ export function OrphanWarningCard({ project, isOwner, onResolved }: OrphanWarnin
   const [deletePending, startDelete] = useTransition()
   const isPending = keepPending || deletePending
 
-  const keepAsManual = useMutation(api.projects.keepAsManual)
-  const removeFull = useMutation(api.projects.removeFull)
-
   const handleKeep = () => {
     startKeep(async () => {
-      try {
-        await keepAsManual({ projectId: project._id as Id<"projects"> })
+      const result = await keepProjectAsManualAction(project._id)
+      if (result.success) {
         toast.success(`"${project.name}" kept as a manual project`)
         onResolved?.()
-      } catch (err: any) {
-        toast.error(err.message || "Failed to keep project")
+      } else {
+        toast.error(result.error)
       }
     })
   }
 
   const handleDelete = () => {
     startDelete(async () => {
-      try {
-        await removeFull({ projectId: project._id as Id<"projects"> })
+      const result = await deleteProjectPermanentlyAction(project._id)
+      if (result.success) {
         toast.success(`"${project.name}" deleted permanently`)
         onResolved?.()
-      } catch (err: any) {
-        toast.error(err.message || "Failed to delete project")
+      } else {
+        toast.error(result.error)
       }
     })
   }

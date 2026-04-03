@@ -4,6 +4,14 @@ vi.mock("@/convex/_generated/server", () => ({
   mutation: (definition: unknown) => definition,
 }))
 
+vi.mock("@/convex/_generated/api", () => ({
+  internal: {
+    mediaOps: {
+      cleanupMediaForBranch: "internal:mediaOps.cleanupMediaForBranch",
+    },
+  },
+}))
+
 import { handlePRClosed, handlePRMerged } from "@/convex/githubWebhook"
 import { mintServerQueryToken } from "@/lib/project-access-token"
 
@@ -30,14 +38,20 @@ function createWebhookCtx({
   publishBranch,
   explorerOps = [],
   mediaOps = [],
+  project = null,
 }: {
   publishBranch: Record<string, unknown> | null
   explorerOps?: Array<Record<string, unknown>>
   mediaOps?: Array<Record<string, unknown>>
+  project?: Record<string, unknown> | null
 }) {
   return {
     db: {
-      get: vi.fn(),
+      get: vi.fn().mockImplementation(async (id: string) => {
+        if (publishBranch && id === publishBranch._id) return publishBranch
+        if (project && id === publishBranch?.projectId) return project
+        return null
+      }),
       patch: vi.fn(),
       delete: vi.fn(),
       query: vi.fn((table: string) => ({
@@ -65,6 +79,9 @@ function createWebhookCtx({
     },
     scheduler: {
       runAfter: vi.fn().mockResolvedValue(undefined),
+    },
+    storage: {
+      delete: vi.fn().mockResolvedValue(undefined),
     },
   } as any
 }
@@ -191,6 +208,7 @@ describe("GitHub webhook hardening", () => {
     expect(ctx.db.patch).toHaveBeenCalledTimes(1)
     expect(ctx.db.patch).toHaveBeenCalledWith("publish_branch_inactive", expect.objectContaining({ status: "closed" }))
     expect(ctx.db.delete).not.toHaveBeenCalled()
+    expect(ctx.scheduler.runAfter).not.toHaveBeenCalled()
   })
 
   it("merging the current active PR does not delete committed ops from unrelated open PRs", async () => {
@@ -243,5 +261,53 @@ describe("GitHub webhook hardening", () => {
     expect(ctx.db.delete).toHaveBeenCalledWith("media_op_for_current_branch")
     expect(ctx.db.delete).not.toHaveBeenCalledWith("explorer_op_for_other_open_pr")
     expect(ctx.db.delete).not.toHaveBeenCalledWith("media_op_for_other_open_pr")
+  })
+
+  it("deletes Convex storage objects before removing committed media ops on merge", async () => {
+    const serverQueryToken = await mintServerQueryToken()
+    const ctx = createWebhookCtx({
+      publishBranch: {
+        _id: "publish_branch_current",
+        projectId: "project_1",
+        status: "active",
+        committedFilePaths: [],
+      },
+      mediaOps: [
+        {
+          _id: "media_op_for_current_branch",
+          projectId: "project_1",
+          status: "committed",
+          publishBranchId: "publish_branch_current",
+          convexStorageId: "storage_1",
+        },
+      ],
+    })
+
+    await (handlePRMerged as any).handler(ctx, {
+      prNumber: 42,
+      mergeCommitSha: "merge-sha-3",
+      serverQueryToken,
+    })
+
+    expect(ctx.storage.delete).toHaveBeenCalledWith("storage_1")
+    expect(ctx.db.delete).toHaveBeenCalledWith("media_op_for_current_branch")
+  })
+
+  it("closing a PR does not discard staged media for a later republish", async () => {
+    const serverQueryToken = await mintServerQueryToken()
+    const ctx = createWebhookCtx({
+      publishBranch: {
+        _id: "publish_branch_inactive",
+        projectId: "project_1",
+        status: "inactive",
+      },
+    })
+
+    await (handlePRClosed as any).handler(ctx, {
+      prNumber: 42,
+      serverQueryToken,
+    })
+
+    expect(ctx.scheduler.runAfter).not.toHaveBeenCalled()
   })
 })

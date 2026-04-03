@@ -1,10 +1,12 @@
 "use server"
 
+import { ConvexHttpClient } from "convex/browser"
 import { revalidatePath } from "next/cache"
 import { api } from "@/convex/_generated/api"
 import { fetchAuthQuery, getGitHubToken, getPatAuthUserId } from "@/lib/auth-server"
 import type { ProjectConfig } from "@/lib/config-schema"
 import { resolveRepoRole, roleAtLeast } from "@/lib/github-permissions"
+import { mintProjectAccessToken, mintServerQueryToken } from "@/lib/project-access-token"
 import {
   addProject,
   commitConfig,
@@ -14,6 +16,8 @@ import {
   updateProject,
 } from "@/lib/repopress/config-writer"
 import { syncProjectsServerSide } from "@/lib/sync-projects"
+
+const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
 
 // ── Shared helpers ────────────────────────────────────────────────
 
@@ -49,6 +53,47 @@ async function fetchConfigOrThrow(token: string, owner: string, repo: string, br
 type ConfigActionResult =
   | { success: true; syncResult?: { synced: string[]; created: string[]; unchanged: string[] } }
   | { success: false; error: string }
+
+type ProjectResolutionResult = {
+  project: {
+    _id: string
+    repoOwner: string
+    repoName: string
+    branch: string
+  }
+  token: string
+  actingUserId: string
+  projectAccessToken: string
+}
+
+async function resolveProjectOwnerActionContext(projectId: string): Promise<ProjectResolutionResult> {
+  const { token, actingUserId } = await resolveAuthContext()
+  const serverQueryToken = await mintServerQueryToken()
+  const project = await convex.query(api.projects.get, {
+    id: projectId as never,
+    serverQueryToken,
+  })
+
+  if (!project) {
+    throw new Error("Project not found")
+  }
+
+  const { role } = await resolveRepoRole(token, project.repoOwner, project.repoName, actingUserId)
+  if (role !== "owner") {
+    throw new Error("Unauthorized: owner access required")
+  }
+
+  const projectAccessToken = await mintProjectAccessToken({
+    projectId,
+    userId: actingUserId,
+    repoOwner: project.repoOwner,
+    repoName: project.repoName,
+    branch: project.branch,
+    role: "owner",
+  })
+
+  return { token, actingUserId, project, projectAccessToken }
+}
 
 // ── Server actions ────────────────────────────────────────────────
 
@@ -228,6 +273,44 @@ export async function commitRawConfigAction(
     const syncResult = await syncProjectsServerSide(token, owner, repo, branch, actingUserId)
     revalidatePath(`/dashboard/${owner}/${repo}`)
     return { success: true, syncResult: syncResult ?? undefined }
+  } catch (error: any) {
+    return { success: false, error: error.message }
+  }
+}
+
+export async function keepProjectAsManualAction(
+  projectId: string,
+): Promise<{ success: true } | { success: false; error: string }> {
+  try {
+    const { project, actingUserId, projectAccessToken } = await resolveProjectOwnerActionContext(projectId)
+
+    await convex.mutation(api.projects.keepAsManual, {
+      projectId: projectId as never,
+      userId: actingUserId,
+      projectAccessToken,
+    })
+
+    revalidatePath(`/dashboard/${project.repoOwner}/${project.repoName}`)
+    return { success: true }
+  } catch (error: any) {
+    return { success: false, error: error.message }
+  }
+}
+
+export async function deleteProjectPermanentlyAction(
+  projectId: string,
+): Promise<{ success: true } | { success: false; error: string }> {
+  try {
+    const { project, actingUserId, projectAccessToken } = await resolveProjectOwnerActionContext(projectId)
+
+    await convex.mutation(api.projects.removeFull, {
+      projectId: projectId as never,
+      userId: actingUserId,
+      projectAccessToken,
+    })
+
+    revalidatePath(`/dashboard/${project.repoOwner}/${project.repoName}`)
+    return { success: true }
   } catch (error: any) {
     return { success: false, error: error.message }
   }
