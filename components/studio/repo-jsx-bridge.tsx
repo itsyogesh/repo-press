@@ -187,13 +187,6 @@ export function RepoJsxBridge({ mdastNode, descriptor }: RepoJsxBridgeProps) {
     }
   }, [mdastNode, projectId, userId, selectedFilePath, adapter, descriptor.name, schema])
 
-  // Log actionable warnings (non-crashing)
-  React.useEffect(() => {
-    for (const w of propWarnings) {
-      console.warn(`[RepoPress] ${w}`)
-    }
-  }, [propWarnings])
-
   if (!Component) {
     return <GenericJsxEditor descriptor={descriptor} mdastNode={mdastNode} />
   }
