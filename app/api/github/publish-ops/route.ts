@@ -10,15 +10,18 @@ import { mintServerQueryToken } from "@/lib/project-access-token"
 import { RouteAuthError, resolveRouteAuth } from "@/lib/route-auth"
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
+const ACTIVE_PUBLISH_BRANCH_CONFLICT_MESSAGE = "Active publish branch already exists for project"
 
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { projectId, title, description } = body as {
+    const { projectId, title, description, publishMode } = body as {
       projectId: string
       title?: string
       description?: string
+      publishMode?: "reuse-current" | "create-new"
     }
+    const publishModeUsed = publishMode === "create-new" ? "create-new" : "reuse-current"
 
     if (!projectId) {
       return NextResponse.json({ error: "Missing projectId" }, { status: 400 })
@@ -197,14 +200,39 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No valid operations to publish" }, { status: 400 })
     }
 
-    // Branch reuse strategy: If an active PR already exists for this project,
-    // reuse its branch to update the existing PR rather than creating a new one.
-    // This is the industry-standard best practice for git-based CMSes (like TinaCMS, Statamic).
-    // Benefits: Single source of truth, preserved review history, clean commit history.
-    let publishBranch = await convex.query(api.publishBranches.getActiveForProject, {
+    // By default, reuse the current active lane. Callers can opt into a fresh lane/PR.
+    let publishBranch = await convex.query(api.publishBranches.getCurrentForProject, {
       projectId: project._id,
       ...queryAuth,
     })
+    const currentPublishBranchId = publishBranch?._id
+
+    if (publishModeUsed === "create-new") {
+      const openPublishBranches = await convex.query(api.publishBranches.listOpenForProject, {
+        projectId: project._id,
+        ...queryAuth,
+      })
+      const operationPaths = new Set(operations.map((op) => op.path))
+      const overlaps = openPublishBranches.flatMap((branch) =>
+        branch._id === publishBranch?._id || branch.status === "inactive"
+          ? []
+          : (branch.committedFilePaths ?? [])
+              .filter((path) => operationPaths.has(path))
+              .map((path) => ({
+                path,
+                publishBranchId: branch._id,
+                branchName: branch.branchName,
+                prNumber: branch.prNumber,
+                prUrl: branch.prUrl,
+              })),
+      )
+
+      if (overlaps.length > 0) {
+        return NextResponse.json({ ok: false, overlaps }, { status: 409 })
+      }
+
+      publishBranch = null
+    }
 
     // If no active branch exists, create a new publish branch with timestamp-based name.
     // Branch naming: repopress/${baseBranch}/${timestamp} e.g., repopress/main/1710681600000
@@ -212,14 +240,34 @@ export async function POST(request: Request) {
 
     if (!publishBranch) {
       await createBranch(token, owner, repo, baseBranch, branchName)
-      await convex.mutation(api.publishBranches.create, {
-        projectId: project._id,
-        userId: actingUserId,
-        projectAccessToken,
-        branchName,
-        baseBranch,
-      })
-      publishBranch = await convex.query(api.publishBranches.getActiveForProject, {
+      try {
+        await convex.mutation(api.publishBranches.create, {
+          projectId: project._id,
+          userId: actingUserId,
+          projectAccessToken,
+          branchName,
+          baseBranch,
+          deactivateBranchId: publishModeUsed === "create-new" ? (currentPublishBranchId ?? undefined) : undefined,
+        })
+      } catch (error) {
+        if (isActivePublishBranchConflict(error)) {
+          await cleanupOrphanedPublishBranch({
+            token,
+            owner,
+            repo,
+            branchName,
+          })
+          return NextResponse.json(
+            {
+              ok: false,
+              error: "Another active publish lane already exists for this project. Reuse the current lane or retry.",
+            },
+            { status: 409 },
+          )
+        }
+        throw error
+      }
+      publishBranch = await convex.query(api.publishBranches.getCurrentForProject, {
         projectId: project._id,
         ...queryAuth,
       })
@@ -270,6 +318,7 @@ export async function POST(request: Request) {
       await convex.mutation(api.explorerOps.markCommitted, {
         ids: pendingOps.map((op) => op._id),
         commitSha,
+        publishBranchId: publishBranch._id,
         userId: actingUserId,
         projectAccessToken,
       })
@@ -279,6 +328,7 @@ export async function POST(request: Request) {
       await convex.mutation(api.mediaOps.markCommitted, {
         ids: pendingMediaOps.map((op) => op._id),
         commitSha,
+        publishBranchId: publishBranch._id,
         userId: actingUserId,
         projectAccessToken,
       })
@@ -315,6 +365,7 @@ export async function POST(request: Request) {
       ok: true,
       prUrl,
       prNumber,
+      publishModeUsed,
       commitSha,
       summary: parts.join(", "),
       media: {
@@ -326,6 +377,33 @@ export async function POST(request: Request) {
     const message = error instanceof Error ? error.message : "Failed to publish"
     console.error("Error in publish-ops:", error)
     return NextResponse.json({ error: message }, { status: 500 })
+  }
+}
+
+function isActivePublishBranchConflict(error: unknown) {
+  return error instanceof Error && error.message.includes(ACTIVE_PUBLISH_BRANCH_CONFLICT_MESSAGE)
+}
+
+async function cleanupOrphanedPublishBranch({
+  token,
+  owner,
+  repo,
+  branchName,
+}: {
+  token: string
+  owner: string
+  repo: string
+  branchName: string
+}) {
+  try {
+    const octokit = createGitHubClient(token)
+    await octokit.git.deleteRef({
+      owner,
+      repo,
+      ref: `heads/${branchName}`,
+    })
+  } catch (cleanupError) {
+    console.error("Failed to clean up orphaned publish branch after conflict:", cleanupError)
   }
 }
 

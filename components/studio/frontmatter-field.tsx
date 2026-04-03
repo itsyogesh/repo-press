@@ -101,7 +101,13 @@ export function FrontmatterField({ field, value, onChange, selectedFilePath }: F
         <div className="grid gap-1">
           {labelEl}
           {helperEl}
-          <ImageField value={value || ""} onChange={onChange} selectedFilePath={selectedFilePath} />
+          <ImageField
+            value={value || ""}
+            onChange={onChange}
+            selectedFilePath={selectedFilePath}
+            fieldName={field.actualFieldName}
+            semanticRole={field.semanticRole}
+          />
         </div>
       )
 
@@ -157,6 +163,31 @@ export function FrontmatterField({ field, value, onChange, selectedFilePath }: F
       )
 
     default: {
+      // Heuristic: if the field name implies an image (image, cover, thumbnail, hero), render the rich ImageField
+      // Exception: exclude alt text fields (they should be text inputs, not image pickers)
+      const nameLower = String(field.actualFieldName || field.name || "").toLowerCase()
+      if (
+        (nameLower.includes("image") ||
+          nameLower.includes("cover") ||
+          nameLower.includes("thumbnail") ||
+          nameLower.includes("hero")) &&
+        !nameLower.includes("alt")
+      ) {
+        return (
+          <div className="grid gap-1">
+            {labelEl}
+            {helperEl}
+            <ImageField
+              value={value || ""}
+              onChange={onChange}
+              selectedFilePath={selectedFilePath}
+              fieldName={field.actualFieldName}
+              semanticRole={field.semanticRole}
+            />
+          </div>
+        )
+      }
+
       const isLongText =
         field.actualFieldName === "description" ||
         field.actualFieldName === "summary" ||

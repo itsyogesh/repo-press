@@ -2,13 +2,17 @@
 
 import { ExternalLink, ImageIcon, RefreshCw, Trash2 } from "lucide-react"
 import * as React from "react"
+import { toast } from "sonner"
 import { BlurFade } from "@/components/magicui/blur-fade"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Progress } from "@/components/ui/progress"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { downloadExternalImage } from "@/lib/studio/download-external-image"
+import { getAuthoredImageValue } from "@/lib/studio/image-authoring"
 import { isSafeImageSrc, normalizeExternalImageUrl } from "@/lib/studio/image-url"
 import { getSuggestedImagePath, resolveStudioAssetUrl } from "@/lib/studio/media-resolve"
 import { cn } from "@/lib/utils"
@@ -41,6 +45,10 @@ interface ImageSelectorDialogProps {
   repo?: string
   branch?: string
   pathHint: string
+  selectedFilePath?: string
+  authoredValueUsage?: "frontmatter" | "component" | "editor"
+  fieldName?: string
+  semanticRole?: string
 }
 
 function ImageSelectorDialog({
@@ -53,10 +61,85 @@ function ImageSelectorDialog({
   repo,
   branch,
   pathHint,
+  selectedFilePath,
+  authoredValueUsage = "component",
+  fieldName,
+  semanticRole,
 }: ImageSelectorDialogProps) {
   const [urlValue, setUrlValue] = React.useState("")
+  const [isDownloading, setIsDownloading] = React.useState(false)
+  const [downloadProgress, setDownloadProgress] = React.useState(0)
   const normalizedUrlValue = normalizeExternalImageUrl(urlValue)
   const canUseUrl = Boolean(normalizedUrlValue) && isSafeImageSrc(normalizedUrlValue)
+
+  const handleUseUrl = React.useCallback(async () => {
+    const normalized = normalizeExternalImageUrl(urlValue)
+    if (!normalized || !isSafeImageSrc(normalized)) return
+
+    if (
+      !projectId ||
+      !owner ||
+      !repo ||
+      !branch ||
+      (!normalized.startsWith("http://") && !normalized.startsWith("https://"))
+    ) {
+      onSelect(normalized)
+      return
+    }
+
+    setIsDownloading(true)
+    setDownloadProgress(15)
+    let progressInterval: ReturnType<typeof setInterval> | undefined
+
+    try {
+      progressInterval = setInterval(() => {
+        setDownloadProgress((prev) => (prev < 90 ? prev + 10 : prev))
+      }, 400)
+
+      const result = await downloadExternalImage({
+        url: normalized,
+        projectId,
+        userId,
+        owner,
+        repo,
+        branch,
+        pathHint,
+        sourceFilePath: selectedFilePath,
+      })
+
+      setDownloadProgress(100)
+      onSelect(
+        getAuthoredImageValue({
+          repoPath: result.repoPath,
+          selectedFilePath,
+          usage: authoredValueUsage,
+          fieldName,
+          semanticRole,
+        }),
+      )
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to download image")
+    } finally {
+      if (progressInterval) {
+        clearInterval(progressInterval)
+      }
+      setIsDownloading(false)
+      setDownloadProgress(0)
+    }
+  }, [
+    urlValue,
+    projectId,
+    owner,
+    repo,
+    branch,
+    onSelect,
+    userId,
+    pathHint,
+    selectedFilePath,
+    authoredValueUsage,
+    fieldName,
+    semanticRole,
+  ])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -97,6 +180,11 @@ function ImageSelectorDialog({
                     pathHint={pathHint}
                     onUploadComplete={onSelect}
                     active={open}
+                    selectedFilePath={selectedFilePath}
+                    sourceFilePath={selectedFilePath}
+                    authoredValueUsage={authoredValueUsage}
+                    fieldName={fieldName}
+                    semanticRole={semanticRole}
                   />
                 ) : (
                   <div className="flex flex-col items-center justify-center h-48 text-studio-fg-muted">
@@ -117,12 +205,19 @@ function ImageSelectorDialog({
                         placeholder="https://example.com/image.jpg"
                         className="border-studio-border"
                       />
-                      <Button onClick={() => onSelect(normalizeExternalImageUrl(urlValue))} disabled={!canUseUrl}>
+                      <Button onClick={() => void handleUseUrl()} disabled={!canUseUrl || isDownloading}>
                         Use URL
                       </Button>
                     </div>
                     <p className="text-[10px] text-studio-fg-muted">Paste a direct link to an image.</p>
                   </div>
+
+                  {isDownloading && (
+                    <div className="space-y-2">
+                      <p className="text-xs text-studio-fg-muted">Downloading and staging image...</p>
+                      <Progress value={downloadProgress} className="h-1" />
+                    </div>
+                  )}
 
                   {canUseUrl && (
                     <div className="rounded-lg border border-studio-border overflow-hidden bg-studio-canvas-inset aspect-video">
@@ -163,84 +258,83 @@ export function ImageFieldControl({
   const branch = repoContext?.branch ?? studio.branch
   const selectedFilePath = selectedFilePathProp ?? studio.selectedFilePath
   const [browserOpen, setBrowserOpen] = React.useState(false)
+  const [editValue, setEditValue] = React.useState(value)
   const resolvedValuePreview = value ? resolveStudioAssetUrl(value, projectId, userId, selectedFilePath) : value
+
+  // Keep editValue in sync when value changes externally (e.g. on image select)
+  React.useEffect(() => {
+    setEditValue(value)
+  }, [value])
 
   const handleSelectImage = (path: string) => {
     onChange(path)
     setBrowserOpen(false)
   }
 
+  const commitEdit = (raw: string) => {
+    const trimmed = raw.trim()
+    if (trimmed !== value) onChange(trimmed)
+  }
+
   const pathHint = selectedFilePath ? getSuggestedImagePath(selectedFilePath) : "public/images"
-  const displayValue = value ? (value.startsWith("/") ? value : `/${value}`) : ""
 
   if (value && isSafeImageSrc(value)) {
     return (
       <BlurFade delay={0.1} inView>
         <div
           className={cn(
-            "relative group rounded-lg border border-studio-border overflow-hidden bg-studio-canvas-inset transition-all duration-200 hover:border-studio-border-hover shadow-sm",
+            "rounded-lg border border-studio-border bg-studio-canvas-inset px-3 py-2 flex items-center gap-2",
             className,
           )}
         >
-          <div className="aspect-video w-full relative">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={resolvedValuePreview}
-              alt="Preview"
-              className="w-full h-full object-cover"
-              onError={(e) => {
-                ;(e.target as HTMLImageElement).src =
-                  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Crect x='3' y='3' width='18' height='18' rx='2'/%3E%3Ccircle cx='8.5' cy='8.5' r='1.5'/%3E%3Cpath d='m21 15-5-5L5 21'/%3E%3C/svg%3E"
-              }}
-            />
-
-            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                className="h-8 gap-1.5"
-                onClick={() => setBrowserOpen(true)}
-              >
-                <RefreshCw className="h-3.5 w-3.5" />
-                Replace
-              </Button>
-              <Button
-                type="button"
-                variant="destructive"
-                size="sm"
-                className="h-8 gap-1.5"
-                onClick={() => onChange("")}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                Remove
-              </Button>
-              <a
-                href={resolvedValuePreview}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-secondary text-secondary-foreground shadow-sm hover:bg-secondary/80 h-8 w-8"
-              >
-                <ExternalLink className="h-3.5 w-3.5" />
-              </a>
-            </div>
-          </div>
-
-          <div className="px-3 py-2 border-t border-studio-border bg-background/50 backdrop-blur-sm flex items-center justify-between">
-            <span className="text-[10px] font-mono text-studio-fg-muted truncate max-w-[200px]" title={value}>
-              {displayValue}
-            </span>
-            <div className="flex items-center gap-1">
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6"
-                onClick={() => setBrowserOpen(true)}
-              >
-                <RefreshCw className="h-3 w-3" />
-              </Button>
-            </div>
+          <input
+            type="text"
+            value={editValue}
+            onChange={(e) => setEditValue(e.target.value)}
+            onBlur={(e) => commitEdit(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault()
+                commitEdit(editValue)
+              }
+              if (e.key === "Escape") {
+                setEditValue(value)
+              }
+            }}
+            className="text-[10px] font-mono text-studio-fg-muted flex-1 min-w-0 bg-transparent border-none outline-none focus:text-studio-fg placeholder:text-studio-fg-muted/50"
+            placeholder={placeholder}
+            title={value}
+          />
+          <div className="flex items-center gap-1 shrink-0">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={() => setBrowserOpen(true)}
+              title="Replace via picker"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+            </Button>
+            <a
+              href={resolvedValuePreview}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 hover:bg-accent hover:text-accent-foreground h-7 w-7"
+              title="Open in new tab"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-destructive hover:text-destructive"
+              onClick={() => onChange("")}
+              title="Remove"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
           </div>
         </div>
 
@@ -254,6 +348,8 @@ export function ImageFieldControl({
           repo={repo}
           branch={branch}
           pathHint={pathHint}
+          selectedFilePath={selectedFilePath}
+          authoredValueUsage="component"
         />
       </BlurFade>
     )
@@ -286,6 +382,8 @@ export function ImageFieldControl({
         repo={repo}
         branch={branch}
         pathHint={pathHint}
+        selectedFilePath={selectedFilePath}
+        authoredValueUsage="component"
       />
     </>
   )

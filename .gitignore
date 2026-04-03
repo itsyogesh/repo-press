@@ -34,5 +34,6 @@ next-env.d.ts
 .gemini
 .claude
 body_text.txt
+.worktrees/
 .github/plans/*.md
 !.github/plans/template_plan.md

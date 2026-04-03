@@ -44,8 +44,10 @@ export default async function RepoPage({ params }: RepoPageProps) {
     redirect("/dashboard")
   }
 
+  const isWriter = repoRole === "owner" || repoRole === "editor"
+
   // Auto-sync from config if present
-  const { config } = await fetchRepoConfig(token, owner, repo, defaultBranch)
+  const { config, sha: configSha } = await fetchRepoConfig(token, owner, repo, defaultBranch)
   let syncError: string | null = null
 
   if (config && actingUserId) {
@@ -77,18 +79,27 @@ export default async function RepoPage({ params }: RepoPageProps) {
         defaultBranchInferred={defaultBranchInferred || !resolvedDefaultBranch}
         projects={projects.map((p) => ({
           _id: p._id,
+          userId: p.userId,
           name: p.name,
           branch: p.branch,
           contentRoot: p.contentRoot,
           detectedFramework: p.detectedFramework,
           contentType: p.contentType,
           frameworkSource: p.frameworkSource,
+          configProjectId: p.configProjectId,
+          configRemoved: p.configRemoved,
+          configRemovedAt: p.configRemovedAt,
           createdAt: p.createdAt,
           updatedAt: p.updatedAt,
         }))}
         hasConfig={hasConfig}
         configSynced={configSynced}
         syncError={syncError}
+        isWriter={isWriter}
+        role={repoRole}
+        configJson={config ? JSON.stringify(config, null, 2) : null}
+        configSha={configSha ?? null}
+        actingUserId={actingUserId}
       />
     </div>
   )

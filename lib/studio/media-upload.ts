@@ -34,6 +34,8 @@ export interface UploadMediaOptions {
   branch: string
   /** Optional path hint for GitHub fallback (e.g., "public/images"). */
   pathHint?: string
+  /** Source content file path used to relate staged media to the edited document. */
+  sourceFilePath?: string
   /** Storage preference: "auto" (Blob first, GitHub fallback), "blob" (fail if Blob unavailable), "github" (force GitHub). */
   storagePreference?: StoragePreference
 }
@@ -81,6 +83,7 @@ export async function uploadMedia({
   repo,
   branch,
   pathHint,
+  sourceFilePath,
   storagePreference = "auto",
 }: UploadMediaOptions): Promise<UploadMediaResult> {
   // Convert file to base64 in chunks to avoid quadratic string concatenation.
@@ -99,6 +102,7 @@ export async function uploadMedia({
       repo,
       branch,
       pathHint,
+      sourceFilePath,
       fileName: file.name,
       contentBase64: base64,
       storagePreference,

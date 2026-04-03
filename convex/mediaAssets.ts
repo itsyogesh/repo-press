@@ -33,6 +33,7 @@ export const create = mutation({
     height: v.optional(v.number()),
     sizeBytes: v.optional(v.number()),
     githubSha: v.optional(v.string()),
+    originalUrl: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     await resolveProjectAccess(ctx, args, "editor")
@@ -40,6 +41,47 @@ export const create = mutation({
     const { userId: _u, projectAccessToken: _pat, ...data } = args
     const now = Date.now()
     return await ctx.db.insert("mediaAssets", { ...data, createdAt: now, updatedAt: now })
+  },
+})
+
+export const upsert = mutation({
+  args: {
+    projectId: v.id("projects"),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
+    fileName: v.string(),
+    filePath: v.string(),
+    mimeType: v.optional(v.string()),
+    altText: v.optional(v.string()),
+    width: v.optional(v.number()),
+    height: v.optional(v.number()),
+    sizeBytes: v.optional(v.number()),
+    githubSha: v.optional(v.string()),
+    originalUrl: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await resolveProjectAccess(ctx, args, "editor")
+
+    const { userId: _u, projectAccessToken: _pat, ...data } = args
+    const now = Date.now()
+    const existing = await ctx.db
+      .query("mediaAssets")
+      .withIndex("by_projectId_filePath", (q) => q.eq("projectId", args.projectId).eq("filePath", args.filePath))
+      .first()
+
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        ...data,
+        updatedAt: now,
+      })
+      return existing._id
+    }
+
+    return await ctx.db.insert("mediaAssets", {
+      ...data,
+      createdAt: now,
+      updatedAt: now,
+    })
   },
 })
 
