@@ -127,6 +127,7 @@ export function PreviewRuntime({
       i: Object.keys(adapter.allowImports || {}).sort(),
     })
   }, [adapter])
+  const compileInputsKey = useMemo(() => JSON.stringify({ frontmatterKey, adapterKey }), [frontmatterKey, adapterKey])
 
   const allWarnings = useMemo(() => {
     return Array.from(new Set([...externalDiagnostics, ...warnings])).sort()
@@ -147,6 +148,7 @@ export function PreviewRuntime({
   }, [isCompiling, onStatusChange])
 
   useEffect(() => {
+    void compileInputsKey
     // Read latest values from refs (deps use content-based keys for stability)
     const currentAdapter = adapterRef.current
     const currentFrontmatter = frontmatterRef.current
@@ -534,10 +536,9 @@ export function PreviewRuntime({
       // The next effect invocation will set it back to true if needed.
       setIsCompiling(false)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- frontmatterKey and adapterKey
-    // are content-based stable keys; actual values read from refs to avoid re-compilation
-    // on every referential change from parent re-renders.
-  }, [source, frontmatterKey, adapterKey, resolveAssetUrl])
+    // compileInputsKey is a stable content-derived trigger; actual values are read from refs
+    // to avoid re-compilation on every referential change from parent re-renders.
+  }, [source, compileInputsKey, resolveAssetUrl])
 
   return (
     <>
