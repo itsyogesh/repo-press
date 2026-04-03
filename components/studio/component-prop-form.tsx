@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea"
 import type { RepoComponentDef, RepoComponentPropDef } from "@/lib/studio/component-registry"
 import { cn } from "@/lib/utils"
 import { ImageFieldControl } from "./image-field-control"
+import { VideoPreview } from "./video-preview"
 
 // ---------------------------------------------------------------------------
 // Types
@@ -33,6 +34,10 @@ export function validateFormState(props: RepoComponentPropDef[], state: PropForm
     }
   }
   return errors
+}
+
+export function shouldShowVideoPreview(componentName: string | undefined, propName: string): boolean {
+  return /docs\s*video/i.test(String(componentName || "")) && propName === "src"
 }
 
 interface ComponentPropFormProps {
@@ -86,6 +91,7 @@ export function ComponentPropForm({ def, formState, onFormChange, repoContext, e
           onChange={(v) => setProp(propDef.name, v)}
           repoContext={repoContext}
           error={errors[propDef.name]}
+          componentName={def.displayName ?? def.name}
         />
       ))}
 
@@ -116,6 +122,7 @@ function PropField({
   onChange,
   repoContext,
   error,
+  componentName,
 }: {
   propDef: RepoComponentPropDef
   value: unknown
@@ -128,6 +135,7 @@ function PropField({
     branch: string
   }
   error?: string
+  componentName?: string
 }) {
   const label = propDef.label ?? propDef.name
   const id = `prop-${propDef.name}`
@@ -247,6 +255,8 @@ function PropField({
 
     // "string" and fallback
     default: {
+      const isVideoComponent = shouldShowVideoPreview(componentName, propDef.name)
+
       return (
         <div className="space-y-1.5">
           <Label htmlFor={id}>{labelContent}</Label>
@@ -257,6 +267,12 @@ function PropField({
             onChange={(e) => onChange(e.target.value)}
             className={errorClass}
           />
+          {isVideoComponent && typeof value === "string" && (
+            <div className="mt-3">
+              <p className="text-xs text-muted-foreground mb-2">Preview:</p>
+              <VideoPreview url={value} className="max-w-full" />
+            </div>
+          )}
           {descriptionEl}
           {errorEl}
         </div>

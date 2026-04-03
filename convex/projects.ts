@@ -651,11 +651,7 @@ export const update = mutation({
   handler: async (ctx, args) => {
     await resolveProjectAccess(
       ctx,
-      {
-        projectId: args.id,
-        userId: args.userId,
-        projectAccessToken: args.projectAccessToken,
-      },
+      { projectId: args.id, userId: args.userId, projectAccessToken: args.projectAccessToken },
       "editor",
     )
 
@@ -678,11 +674,7 @@ export const updateFramework = mutation({
   handler: async (ctx, args) => {
     await resolveProjectAccess(
       ctx,
-      {
-        projectId: args.id,
-        userId: args.userId,
-        projectAccessToken: args.projectAccessToken,
-      },
+      { projectId: args.id, userId: args.userId, projectAccessToken: args.projectAccessToken },
       "editor",
     )
 
@@ -729,11 +721,7 @@ export const remove = mutation({
   handler: async (ctx, args) => {
     await resolveProjectAccess(
       ctx,
-      {
-        projectId: args.id,
-        userId: args.userId,
-        projectAccessToken: args.projectAccessToken,
-      },
+      { projectId: args.id, userId: args.userId, projectAccessToken: args.projectAccessToken },
       "owner",
     )
 

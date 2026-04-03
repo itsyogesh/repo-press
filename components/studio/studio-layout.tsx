@@ -1033,6 +1033,7 @@ function StudioLayoutInner({
 
   // Restore scroll position after mode switch completes
   React.useLayoutEffect(() => {
+    void viewMode
     // Double requestAnimationFrame: first frame commits layout, second applies after
     // MDX async compilation finishes updating scrollHeight.
     const restoreScroll = () => {
@@ -1051,7 +1052,7 @@ function StudioLayoutInner({
       requestAnimationFrame(restoreScroll)
     })
     return () => cancelAnimationFrame(raf1)
-  }, [])
+  }, [viewMode])
 
   const getScrollSyncMetrics = React.useCallback(
     (container: HTMLDivElement) => {
