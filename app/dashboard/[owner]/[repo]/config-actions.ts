@@ -82,7 +82,16 @@ export async function addProjectToConfigAction(
             error: `Folder "${project.contentRoot}" does not exist in this repository on branch "${branch}".`,
           }
         }
-        // Non-404 errors (rate limit, network) — allow through so a transient failure doesn't block creation
+        if (err.status === 403) {
+          return {
+            success: false,
+            error: `GitHub API rate limit exceeded while validating content root. Please try again in a few minutes.`,
+          }
+        }
+        return {
+          success: false,
+          error: `Failed to validate content root "${project.contentRoot}": ${err.message ?? "unexpected error"}. Please check the path and try again.`,
+        }
       }
     }
 
