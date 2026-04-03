@@ -1,7 +1,7 @@
 "use client"
 
 import { LogOut, Settings, User } from "lucide-react"
-import { useRouter } from "next/navigation"
+import { clearGitHubPAT } from "@/app/login/actions"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
   DropdownMenu,
@@ -25,7 +25,6 @@ function getInitials(name?: string | null): string {
 
 export function UserMenu() {
   const { data: session } = useSession()
-  const router = useRouter()
 
   const user = session?.user
   const avatarUrl = user?.image ?? undefined
@@ -34,9 +33,8 @@ export function UserMenu() {
 
   async function handleLogout() {
     await signOut()
-    // biome-ignore lint/suspicious/noDocumentCookie: clearing PAT cookie on logout
-    document.cookie = "github_pat=; path=/; max-age=0"
-    router.push("/login")
+    await clearGitHubPAT()
+    window.location.href = "/login"
   }
 
   return (

@@ -755,7 +755,8 @@ export const removeFull = mutation({
 
     // Tombstone: record config-driven project deletion for downstream sync
     if (project.frameworkSource === "config" && project.configProjectId) {
-      const callerUserId = args.userId
+      // Use the resolved caller from auth (OAuth or token) — args.userId may not be set
+      const callerUserId = args.userId || ((await authComponent.safeGetAuthUser(ctx))?._id as string | undefined)
       if (callerUserId) {
         await ctx.db.insert("deletedConfigProjects", {
           configProjectId: project.configProjectId,
