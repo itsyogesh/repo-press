@@ -139,9 +139,7 @@ describe("POST /api/media/upload", () => {
     expect(payload.error).toContain("repo context")
     // convexMutationMock may be called once by resolveRouteAuth's cache upsert (best-effort),
     // but the media staging mutation should NOT have been called.
-    const stagingCalls = convexMutationMock.mock.calls.filter(
-      (call: any[]) => call[1]?.repoPath !== undefined,
-    )
+    const stagingCalls = convexMutationMock.mock.calls.filter((call: any[]) => call[1]?.repoPath !== undefined)
     expect(stagingCalls).toHaveLength(0)
   })
 

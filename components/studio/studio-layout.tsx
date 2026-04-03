@@ -27,7 +27,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
 import { getFrameworkAdapter } from "@/lib/framework-adapters"
-import { findTreeNode, type FileTreeNode } from "@/lib/github"
+import { type FileTreeNode, findTreeNode } from "@/lib/github"
 import { usePreviewContext } from "@/lib/hooks/use-preview-context"
 import { buildHistoryHref } from "@/lib/studio/history-link"
 import { CommandPalette } from "./command-palette"
@@ -487,7 +487,6 @@ function StudioLayoutInner({
     opCounts,
     activeBranch,
     dirtyDocs,
-    editCount,
     frontmatterSchema,
     fieldVariants,
   } = studioQueries
@@ -615,7 +614,16 @@ function StudioLayoutInner({
         toast.error(error.message || "Failed to create file")
       }
     },
-    [projectId, canMutateExplorer, userId, projectAccessToken, contentRoot, stageCreate, primeFileSnapshot, navigateToFile],
+    [
+      projectId,
+      canMutateExplorer,
+      userId,
+      projectAccessToken,
+      contentRoot,
+      stageCreate,
+      primeFileSnapshot,
+      navigateToFile,
+    ],
   )
 
   const handleDeleteFile = React.useCallback(
@@ -657,7 +665,16 @@ function StudioLayoutInner({
         toast.error(error.message || "Failed to delete file")
       }
     },
-    [projectId, canMutateExplorer, userId, projectAccessToken, pendingOps, undoOp, discardFileFromClientState, stageDelete],
+    [
+      projectId,
+      canMutateExplorer,
+      userId,
+      projectAccessToken,
+      pendingOps,
+      undoOp,
+      discardFileFromClientState,
+      stageDelete,
+    ],
   )
 
   const handleUndoDelete = React.useCallback(
@@ -891,6 +908,45 @@ function StudioLayoutInner({
   const previewScrollRef = React.useRef<HTMLDivElement>(null)
   const isSyncingScroll = React.useRef(false)
 
+  // Preserve scroll position when switching between editor and preview modes
+  const savedEditorScrollRatio = React.useRef(0)
+  const savedPreviewScrollRatio = React.useRef(0)
+
+  // Capture scroll position before switching modes
+  const captureScrollPositions = React.useCallback(() => {
+    if (editorScrollRef.current) {
+      const maxScroll = editorScrollRef.current.scrollHeight - editorScrollRef.current.clientHeight
+      savedEditorScrollRatio.current = maxScroll > 0 ? editorScrollRef.current.scrollTop / maxScroll : 0
+    }
+    if (previewScrollRef.current) {
+      const maxScroll = previewScrollRef.current.scrollHeight - previewScrollRef.current.clientHeight
+      savedPreviewScrollRatio.current = maxScroll > 0 ? previewScrollRef.current.scrollTop / maxScroll : 0
+    }
+  }, [])
+
+  // Restore scroll position after mode switch completes
+  React.useLayoutEffect(() => {
+    void viewMode
+    // Double requestAnimationFrame: first frame commits layout, second applies after
+    // MDX async compilation finishes updating scrollHeight.
+    const restoreScroll = () => {
+      if (editorScrollRef.current) {
+        const maxScroll = editorScrollRef.current.scrollHeight - editorScrollRef.current.clientHeight
+        editorScrollRef.current.scrollTop = savedEditorScrollRatio.current * maxScroll
+      }
+      if (previewScrollRef.current) {
+        const maxScroll = previewScrollRef.current.scrollHeight - previewScrollRef.current.clientHeight
+        previewScrollRef.current.scrollTop = savedPreviewScrollRatio.current * maxScroll
+      }
+    }
+
+    // Defer restoration to ensure layout and async MDX rendering are complete
+    const raf1 = requestAnimationFrame(() => {
+      requestAnimationFrame(restoreScroll)
+    })
+    return () => cancelAnimationFrame(raf1)
+  }, [viewMode])
+
   const getScrollSyncMetrics = React.useCallback((container: HTMLDivElement) => {
     const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight)
     const root = container.querySelector<HTMLElement>("[data-scroll-sync-root]")
@@ -985,6 +1041,7 @@ function StudioLayoutInner({
 
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "s") {
         e.preventDefault()
+        captureScrollPositions()
         setViewMode("editor")
         return
       }
@@ -1002,13 +1059,14 @@ function StudioLayoutInner({
         setSidebarState(sidebarState === "expanded" ? "collapsed" : "expanded")
       } else if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "p") {
         e.preventDefault()
+        captureScrollPositions()
         setViewMode(viewMode === "split" ? "editor" : "split")
       }
     }
 
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [sidebarState, viewMode, setSidebarState, setViewMode, saveDraft, commandPaletteOpen])
+  }, [sidebarState, viewMode, setSidebarState, setViewMode, saveDraft, commandPaletteOpen, captureScrollPositions])
 
   const isSidebarCollapsed = !isMobile && sidebarState === "collapsed"
   const showPreview = viewMode === "split" && !isMobile
@@ -1028,7 +1086,18 @@ function StudioLayoutInner({
   const shouldShowProjectDataSkeleton =
     Boolean(projectId) && resolvedProjectDataId !== projectId && isProjectDataLoading
   const isSelectedDocumentLoading = isFileLoading
-  const totalPendingCount = opCounts.creates + opCounts.deletes + editCount
+
+  // Filter out documents that are already tracked in pending creates
+  // This prevents "new" files from also showing as "modified"
+  const creatingFilePaths = React.useMemo(() => {
+    if (!pendingOps) return new Set<string>()
+    return new Set(
+      pendingOps.filter((op: any) => op.opType === "create" && op.status === "pending").map((op: any) => op.filePath),
+    )
+  }, [pendingOps])
+
+  const adjustedEditCount = dirtyDocs ? dirtyDocs.filter((doc: any) => !creatingFilePaths.has(doc.filePath)).length : 0
+  const totalPendingCount = opCounts.creates + opCounts.deletes + adjustedEditCount
   const flatFiles = React.useMemo(() => flattenFiles(overlayTree, titleMap), [overlayTree, titleMap])
   const flatFilesByPath = React.useMemo(() => {
     const map = new Map<string, FlatFileEntry>()
@@ -1167,7 +1236,7 @@ function StudioLayoutInner({
                         <PublishOpsBar
                           creates={opCounts.creates}
                           deletes={opCounts.deletes}
-                          edits={editCount}
+                          edits={adjustedEditCount}
                           pendingOps={pendingOps}
                           dirtyDocs={dirtyDocs}
                           prUrl={activeBranch?.prUrl}
@@ -1462,7 +1531,7 @@ function StudioLayoutInner({
         pendingCounts={{
           creates: opCounts.creates,
           deletes: opCounts.deletes,
-          edits: editCount,
+          edits: adjustedEditCount,
         }}
         existingPrUrl={activeBranch?.prUrl}
         isPublishing={isPublishing}
@@ -1507,7 +1576,18 @@ function StudioLayoutInner({
 }
 
 function StudioProviderWrapper(props: StudioLayoutProps) {
-  const { owner, repo, branch, projectId, projectAccessToken, contentRoot = "", tree, initialFile, currentPath, role = "owner" } = props
+  const {
+    owner,
+    repo,
+    branch,
+    projectId,
+    projectAccessToken,
+    contentRoot = "",
+    tree,
+    initialFile,
+    currentPath,
+    role = "owner",
+  } = props
 
   // 1. File state hook
   const studioFile = useStudioFile(initialFile, currentPath)

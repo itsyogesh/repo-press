@@ -45,8 +45,6 @@ interface RepoProjectHubProps {
   hasConfig: boolean
   configSynced: boolean
   syncError: string | null
-  isWriter: boolean
-  role: "owner" | "editor" | "viewer"
 }
 
 export function RepoProjectHub({
@@ -58,8 +56,6 @@ export function RepoProjectHub({
   hasConfig,
   configSynced,
   syncError,
-  isWriter,
-  role,
 }: RepoProjectHubProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -98,9 +94,7 @@ export function RepoProjectHub({
               >
                 <GitBranch className="h-3 w-3" />
                 {defaultBranch}
-                {defaultBranchInferred && (
-                  <AlertCircle className="h-3 w-3 text-studio-attention" />
-                )}
+                {defaultBranchInferred && <AlertCircle className="h-3 w-3 text-studio-attention" />}
               </div>
               {hasConfig && (
                 <Badge
@@ -148,9 +142,9 @@ export function RepoProjectHub({
           <AlertCircle className="h-4 w-4 text-studio-attention" />
           <AlertTitle className="text-studio-attention text-sm">Branch may be incorrect</AlertTitle>
           <AlertDescription className="text-xs text-studio-attention">
-            We couldn&apos;t confirm the default branch from GitHub and guessed <span className="font-medium">{defaultBranch}</span>.
-            If your repo uses a different default branch, the config file may not have been found.
-            Try the setup page to select the correct branch.
+            We couldn&apos;t confirm the default branch from GitHub and guessed{" "}
+            <span className="font-medium">{defaultBranch}</span>. If your repo uses a different default branch, the
+            config file may not have been found. Try the setup page to select the correct branch.
           </AlertDescription>
         </Alert>
       )}

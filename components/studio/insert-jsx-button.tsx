@@ -31,8 +31,12 @@ export function InsertJsxButton({ owner, repo, branch, projectId, userId }: Inse
   if (!hasComponents) return null
 
   const handleInsert = (_jsx: string, def: RepoComponentDef, node: ComponentNode) => {
-    const operation = buildEditorInsertOperation(def, node)
-    insertJsx(operation.payload)
+    try {
+      const operation = buildEditorInsertOperation(def, node)
+      insertJsx(operation.payload)
+    } catch (error) {
+      console.error("Error inserting JSX:", error)
+    }
   }
 
   return (

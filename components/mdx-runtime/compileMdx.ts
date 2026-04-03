@@ -1,6 +1,7 @@
 "use server"
 
 import { compile } from "@mdx-js/mdx"
+import remarkGfm from "remark-gfm"
 import { type ExtractedImport, remarkTransformImports } from "./transformImports"
 
 export interface CompileMdxResult {
@@ -60,7 +61,7 @@ export async function compileMdx(source: string, allowedImports: Record<string, 
   try {
     const vfile = await compile(source, {
       outputFormat: "function-body",
-      remarkPlugins: [[remarkTransformImports, { allowedImports }]],
+      remarkPlugins: [remarkGfm, [remarkTransformImports, { allowedImports }]],
       development: false,
     })
 

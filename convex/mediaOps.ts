@@ -107,7 +107,11 @@ export const markCommitted = mutation({
       const op = await ctx.db.get(id)
       if (!op || op.status !== "pending") continue
 
-      await resolveProjectAccess(ctx, { projectId: op.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken }, "editor")
+      await resolveProjectAccess(
+        ctx,
+        { projectId: op.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken },
+        "editor",
+      )
 
       await ctx.db.patch(id, {
         status: "committed",

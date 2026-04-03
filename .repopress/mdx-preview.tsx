@@ -1,6 +1,6 @@
 "use client"
 
-import { DocsImage, Callout, DocsVideo } from "@/components/docs/doc-media"
+import { Callout, DocsImage, DocsVideo } from "@/components/docs/doc-media"
 
 export const adapter = {
   components: {
@@ -14,5 +14,5 @@ export const adapter = {
   },
   allowImports: {
     "@/components/docs/doc-media": { DocsImage, Callout, DocsVideo },
-  }
+  },
 }

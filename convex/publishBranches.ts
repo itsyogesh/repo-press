@@ -68,7 +68,11 @@ export const updateAfterCommit = mutation({
   handler: async (ctx, args) => {
     const publishBranch = await ctx.db.get(args.id)
     if (!publishBranch) throw new Error("Publish branch not found")
-    await resolveProjectAccess(ctx, { projectId: publishBranch.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken }, "editor")
+    await resolveProjectAccess(
+      ctx,
+      { projectId: publishBranch.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken },
+      "editor",
+    )
 
     const { id, userId: _userId, projectAccessToken: _pat, newFilePaths, ...updates } = args
     // Remove undefined keys so we only patch provided values
@@ -98,7 +102,11 @@ export const markMerged = mutation({
   handler: async (ctx, args) => {
     const publishBranch = await ctx.db.get(args.id)
     if (!publishBranch) throw new Error("Publish branch not found")
-    await resolveProjectAccess(ctx, { projectId: publishBranch.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken }, "editor")
+    await resolveProjectAccess(
+      ctx,
+      { projectId: publishBranch.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken },
+      "editor",
+    )
 
     await ctx.db.patch(args.id, {
       status: "merged",
@@ -117,7 +125,11 @@ export const markClosed = mutation({
   handler: async (ctx, args) => {
     const publishBranch = await ctx.db.get(args.id)
     if (!publishBranch) throw new Error("Publish branch not found")
-    await resolveProjectAccess(ctx, { projectId: publishBranch.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken }, "editor")
+    await resolveProjectAccess(
+      ctx,
+      { projectId: publishBranch.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken },
+      "editor",
+    )
 
     await ctx.db.patch(args.id, {
       status: "closed",

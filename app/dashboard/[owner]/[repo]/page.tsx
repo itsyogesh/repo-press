@@ -45,7 +45,7 @@ export default async function RepoPage({ params }: RepoPageProps) {
   }
 
   // Auto-sync from config if present
-  const { config, errorType } = await fetchRepoConfig(token, owner, repo, defaultBranch)
+  const { config } = await fetchRepoConfig(token, owner, repo, defaultBranch)
   let syncError: string | null = null
 
   if (config && actingUserId) {
@@ -65,7 +65,6 @@ export default async function RepoPage({ params }: RepoPageProps) {
     serverQueryToken,
   })
 
-  const isWriter = repoRole === "owner" || repoRole === "editor"
   const hasConfig = !!config
   const configSynced = hasConfig && !syncError
 
@@ -90,8 +89,6 @@ export default async function RepoPage({ params }: RepoPageProps) {
         hasConfig={hasConfig}
         configSynced={configSynced}
         syncError={syncError}
-        isWriter={isWriter}
-        role={repoRole}
       />
     </div>
   )

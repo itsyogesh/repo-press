@@ -5,17 +5,15 @@ import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import type { FieldVariantMap, FrontmatterFieldDef } from "@/lib/framework-adapters"
-import { buildMergedFieldList, UNIVERSAL_FIELDS } from "@/lib/framework-adapters"
+import { buildMergedFieldList, EXTENDED_UNIVERSAL_FIELDS } from "@/lib/framework-adapters"
 import { groupMergedFields } from "@/lib/framework-adapters/field-groups"
 import { FrontmatterField } from "./frontmatter-field"
-import { IMAGE_EXTENSIONS } from "./shared-constants"
 
 interface FrontmatterPanelProps {
   frontmatter: Record<string, any>
   frontmatterSchema?: FrontmatterFieldDef[]
   fieldVariants?: FieldVariantMap
   onChangeFrontmatter: (key: string, value: any) => void
-  tree?: { path: string; type: string }[]
   filePath?: string
 }
 
@@ -24,17 +22,21 @@ export function FrontmatterPanel({
   frontmatterSchema,
   fieldVariants,
   onChangeFrontmatter,
-  tree = [],
   filePath,
 }: FrontmatterPanelProps) {
   const [isOpen, setIsOpen] = React.useState(true)
   const [showEmptySchema, setShowEmptySchema] = React.useState(false)
   const [userInteracted, setUserInteracted] = React.useState(false)
 
-  // Reset user interaction guard when file path changes
+  // Tracks fields the user has started editing — prevents them from jumping
+  // between "fields in file" and "empty schema" sections mid-session.
+  const [activatedFields, setActivatedFields] = React.useState<Set<string>>(new Set())
+
+  // Reset state when file path changes
   // biome-ignore lint/correctness/useExhaustiveDependencies: filePath is a prop and needs to trigger this effect
   React.useEffect(() => {
     setUserInteracted(false)
+    setActivatedFields(new Set())
   }, [filePath])
 
   // Intelligence: Auto-expand if title or date are missing
@@ -47,21 +49,30 @@ export function FrontmatterPanel({
     }
   }, [frontmatter.title, frontmatter.date, userInteracted, isOpen])
 
-  const schema = frontmatterSchema && frontmatterSchema.length > 0 ? frontmatterSchema : UNIVERSAL_FIELDS
+  const schema = frontmatterSchema && frontmatterSchema.length > 0 ? frontmatterSchema : EXTENDED_UNIVERSAL_FIELDS
   const mergedFields = React.useMemo(
     () => buildMergedFieldList(frontmatter, schema, fieldVariants),
     [frontmatter, schema, fieldVariants],
   )
 
-  const fieldsInFile = mergedFields.filter((f) => f.isInFile)
-  const emptySchemaFields = mergedFields.filter((f) => !f.isInFile)
+  // A field is "in file" if it has a value OR if the user has started editing it
+  // (prevents fields from jumping between sections on first keypress).
+  const fieldsInFile = mergedFields.filter((f) => f.isInFile || activatedFields.has(f.actualFieldName))
+  const emptySchemaFields = mergedFields.filter((f) => !f.isInFile && !activatedFields.has(f.actualFieldName))
 
-  // Extract image paths from tree for the image field
-  const imagePaths = React.useMemo(() => {
-    return tree
-      .filter((node) => node.type === "file" && IMAGE_EXTENSIONS.some((ext) => node.path.toLowerCase().endsWith(ext)))
-      .map((node) => node.path)
-  }, [tree])
+  // Wrap onChange to "activate" a field the first time it's edited
+  const handleFieldChange = React.useCallback(
+    (key: string, value: any) => {
+      setActivatedFields((prev) => {
+        if (prev.has(key)) return prev
+        const next = new Set(prev)
+        next.add(key)
+        return next
+      })
+      onChangeFrontmatter(key, value)
+    },
+    [onChangeFrontmatter],
+  )
 
   return (
     <Collapsible
@@ -88,7 +99,7 @@ export function FrontmatterPanel({
           </Button>
         </CollapsibleTrigger>
       </div>
-      <CollapsibleContent className="px-4 py-3 space-y-4">
+      <CollapsibleContent className="px-4 py-3 space-y-4 max-h-[70vh] overflow-y-auto">
         {fieldsInFile.length > 0 ? (
           groupMergedFields(fieldsInFile).map((grouped) => (
             <div key={grouped.group}>
@@ -101,8 +112,7 @@ export function FrontmatterPanel({
                     key={field.actualFieldName}
                     field={field}
                     value={frontmatter[field.actualFieldName]}
-                    onChange={(value) => onChangeFrontmatter(field.actualFieldName, value)}
-                    imagePaths={imagePaths}
+                    onChange={(value) => handleFieldChange(field.actualFieldName, value)}
                     selectedFilePath={filePath}
                   />
                 ))}
@@ -145,8 +155,7 @@ export function FrontmatterPanel({
                           key={field.actualFieldName}
                           field={field}
                           value={frontmatter[field.actualFieldName]}
-                          onChange={(value) => onChangeFrontmatter(field.actualFieldName, value)}
-                          imagePaths={imagePaths}
+                          onChange={(value) => handleFieldChange(field.actualFieldName, value)}
                         />
                       ))}
                     </div>

@@ -1,6 +1,6 @@
 "use client"
 
-import { ExternalLink, ImageIcon, Link as LinkIcon, RefreshCw, Trash2, Upload } from "lucide-react"
+import { ExternalLink, ImageIcon, RefreshCw, Trash2 } from "lucide-react"
 import * as React from "react"
 import { BlurFade } from "@/components/magicui/blur-fade"
 import { Button } from "@/components/ui/button"
@@ -15,147 +15,20 @@ import { cn } from "@/lib/utils"
 import { ImageUploadZone } from "./image-upload-zone"
 import { useStudio } from "./studio-context"
 
-interface ImageFieldProps {
+interface ImageFieldControlProps {
   value: string
   onChange: (value: string) => void
   placeholder?: string
   className?: string
+  /** Current file path (for suggested upload paths) */
   selectedFilePath?: string
-}
-
-export function ImageField({
-  value,
-  onChange,
-  placeholder = "Select or upload image...",
-  className,
-  selectedFilePath: selectedFilePathProp,
-}: ImageFieldProps) {
-  const { projectId, userId, selectedFilePath: selectedFilePathContext, owner, repo, branch } = useStudio()
-  const selectedFilePath = selectedFilePathProp ?? selectedFilePathContext
-  const [browserOpen, setBrowserOpen] = React.useState(false)
-  const resolvedValuePreview = value ? resolveStudioAssetUrl(value, projectId, userId, selectedFilePath) : value
-
-  const handleSelectImage = (path: string) => {
-    onChange(path)
-    setBrowserOpen(false)
+  repoContext?: {
+    projectId: string
+    userId?: string
+    owner: string
+    repo: string
+    branch: string
   }
-
-  const pathHint = selectedFilePath ? getSuggestedImagePath(selectedFilePath) : "public/images"
-
-  const displayValue = value ? (value.startsWith("/") ? value : `/${value}`) : ""
-
-  if (value && isSafeImageSrc(value)) {
-    return (
-      <BlurFade delay={0.1} inView>
-        <div
-          className={cn(
-            "relative group rounded-lg border border-studio-border overflow-hidden bg-studio-canvas-inset transition-all duration-200 hover:border-studio-border-hover shadow-sm",
-            className,
-          )}
-        >
-          <div className="aspect-video w-full relative">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={resolvedValuePreview}
-              alt="Preview"
-              className="w-full h-full object-cover"
-              onError={(e) => {
-                ;(e.target as HTMLImageElement).src =
-                  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Crect x='3' y='3' width='18' height='18' rx='2'/%3E%3Ccircle cx='8.5' cy='8.5' r='1.5'/%3E%3Cpath d='m21 15-5-5L5 21'/%3E%3C/svg%3E"
-              }}
-            />
-
-            {/* Overlay actions */}
-            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                className="h-8 gap-1.5"
-                onClick={() => setBrowserOpen(true)}
-              >
-                <RefreshCw className="h-3.5 w-3.5" />
-                Replace
-              </Button>
-              <Button
-                type="button"
-                variant="destructive"
-                size="sm"
-                className="h-8 gap-1.5"
-                onClick={() => onChange("")}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                Remove
-              </Button>
-              <a
-                href={resolvedValuePreview}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-secondary text-secondary-foreground shadow-sm hover:bg-secondary/80 h-8 w-8"
-              >
-                <ExternalLink className="h-3.5 w-3.5" />
-              </a>
-            </div>
-          </div>
-
-          <div className="px-3 py-2 border-t border-studio-border bg-background/50 backdrop-blur-sm flex items-center justify-between">
-            <span className="text-[10px] font-mono text-studio-fg-muted truncate max-w-[200px]" title={value}>
-              {displayValue}
-            </span>
-            <div className="flex items-center gap-1">
-              <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setBrowserOpen(true)}>
-                <RefreshCw className="h-3 w-3" />
-              </Button>
-            </div>
-          </div>
-        </div>
-
-        {/* Re-use selection dialog */}
-        <ImageSelectorDialog
-          open={browserOpen}
-          onOpenChange={setBrowserOpen}
-          onSelect={handleSelectImage}
-          projectId={projectId}
-          userId={userId}
-          owner={owner}
-          repo={repo}
-          branch={branch}
-          pathHint={pathHint}
-        />
-      </BlurFade>
-    )
-  }
-
-  return (
-    <>
-      <Button
-        type="button"
-        variant="outline"
-        className={cn(
-          "w-full h-24 border-2 border-dashed border-studio-border bg-studio-canvas-inset hover:bg-studio-accent/5 hover:border-studio-accent transition-all duration-200 group flex-col gap-2",
-          className,
-        )}
-        onClick={() => setBrowserOpen(true)}
-      >
-        <div className="p-2 rounded-full bg-background border border-studio-border group-hover:scale-110 transition-transform duration-200">
-          <ImageIcon className="h-5 w-5 text-studio-fg-muted group-hover:text-studio-accent transition-colors" />
-        </div>
-        <span className="text-sm font-medium text-studio-fg-muted group-hover:text-studio-fg">{placeholder}</span>
-      </Button>
-
-      <ImageSelectorDialog
-        open={browserOpen}
-        onOpenChange={setBrowserOpen}
-        onSelect={handleSelectImage}
-        projectId={projectId}
-        userId={userId}
-        owner={owner}
-        repo={repo}
-        branch={branch}
-        pathHint={pathHint}
-      />
-    </>
-  )
 }
 
 interface ImageSelectorDialogProps {
@@ -200,14 +73,12 @@ function ImageSelectorDialog({
                 value="upload"
                 className="rounded-none border-b-2 border-transparent data-[state=active]:border-studio-accent data-[state=active]:bg-transparent px-0 h-10 shadow-none"
               >
-                <Upload className="h-3.5 w-3.5 mr-2" />
                 Upload
               </TabsTrigger>
               <TabsTrigger
                 value="url"
                 className="rounded-none border-b-2 border-transparent data-[state=active]:border-studio-accent data-[state=active]:bg-transparent px-0 h-10 shadow-none"
               >
-                <LinkIcon className="h-3.5 w-3.5 mr-2" />
                 External URL
               </TabsTrigger>
             </TabsList>
@@ -273,5 +144,149 @@ function ImageSelectorDialog({
         </Tabs>
       </DialogContent>
     </Dialog>
+  )
+}
+
+export function ImageFieldControl({
+  value,
+  onChange,
+  placeholder = "Select or upload image...",
+  className,
+  selectedFilePath: selectedFilePathProp,
+  repoContext,
+}: ImageFieldControlProps) {
+  const studio = useStudio()
+  const projectId = repoContext?.projectId ?? studio.projectId
+  const userId = repoContext?.userId ?? studio.userId
+  const owner = repoContext?.owner ?? studio.owner
+  const repo = repoContext?.repo ?? studio.repo
+  const branch = repoContext?.branch ?? studio.branch
+  const selectedFilePath = selectedFilePathProp ?? studio.selectedFilePath
+  const [browserOpen, setBrowserOpen] = React.useState(false)
+  const resolvedValuePreview = value ? resolveStudioAssetUrl(value, projectId, userId, selectedFilePath) : value
+
+  const handleSelectImage = (path: string) => {
+    onChange(path)
+    setBrowserOpen(false)
+  }
+
+  const pathHint = selectedFilePath ? getSuggestedImagePath(selectedFilePath) : "public/images"
+  const displayValue = value ? (value.startsWith("/") ? value : `/${value}`) : ""
+
+  if (value && isSafeImageSrc(value)) {
+    return (
+      <BlurFade delay={0.1} inView>
+        <div
+          className={cn(
+            "relative group rounded-lg border border-studio-border overflow-hidden bg-studio-canvas-inset transition-all duration-200 hover:border-studio-border-hover shadow-sm",
+            className,
+          )}
+        >
+          <div className="aspect-video w-full relative">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={resolvedValuePreview}
+              alt="Preview"
+              className="w-full h-full object-cover"
+              onError={(e) => {
+                ;(e.target as HTMLImageElement).src =
+                  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Crect x='3' y='3' width='18' height='18' rx='2'/%3E%3Ccircle cx='8.5' cy='8.5' r='1.5'/%3E%3Cpath d='m21 15-5-5L5 21'/%3E%3C/svg%3E"
+              }}
+            />
+
+            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="h-8 gap-1.5"
+                onClick={() => setBrowserOpen(true)}
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                Replace
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                className="h-8 gap-1.5"
+                onClick={() => onChange("")}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Remove
+              </Button>
+              <a
+                href={resolvedValuePreview}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-secondary text-secondary-foreground shadow-sm hover:bg-secondary/80 h-8 w-8"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+              </a>
+            </div>
+          </div>
+
+          <div className="px-3 py-2 border-t border-studio-border bg-background/50 backdrop-blur-sm flex items-center justify-between">
+            <span className="text-[10px] font-mono text-studio-fg-muted truncate max-w-[200px]" title={value}>
+              {displayValue}
+            </span>
+            <div className="flex items-center gap-1">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                onClick={() => setBrowserOpen(true)}
+              >
+                <RefreshCw className="h-3 w-3" />
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        <ImageSelectorDialog
+          open={browserOpen}
+          onOpenChange={setBrowserOpen}
+          onSelect={handleSelectImage}
+          projectId={projectId}
+          userId={userId}
+          owner={owner}
+          repo={repo}
+          branch={branch}
+          pathHint={pathHint}
+        />
+      </BlurFade>
+    )
+  }
+
+  return (
+    <>
+      <Button
+        type="button"
+        variant="outline"
+        className={cn(
+          "w-full h-24 border-2 border-dashed border-studio-border bg-studio-canvas-inset hover:bg-studio-accent/5 hover:border-studio-accent transition-all duration-200 group flex-col gap-2",
+          className,
+        )}
+        onClick={() => setBrowserOpen(true)}
+      >
+        <div className="p-2 rounded-full bg-background border border-studio-border group-hover:scale-110 transition-transform duration-200">
+          <ImageIcon className="h-5 w-5 text-studio-fg-muted group-hover:text-studio-accent transition-colors" />
+        </div>
+        <span className="text-sm font-medium text-studio-fg-muted group-hover:text-studio-fg">{placeholder}</span>
+      </Button>
+
+      <ImageSelectorDialog
+        open={browserOpen}
+        onOpenChange={setBrowserOpen}
+        onSelect={handleSelectImage}
+        projectId={projectId}
+        userId={userId}
+        owner={owner}
+        repo={repo}
+        branch={branch}
+        pathHint={pathHint}
+      />
+    </>
   )
 }

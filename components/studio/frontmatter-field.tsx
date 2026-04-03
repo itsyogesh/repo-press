@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -14,12 +15,17 @@ interface FrontmatterFieldProps {
   field: MergedFieldDef
   value: any
   onChange: (value: any) => void
-  imagePaths?: string[]
   selectedFilePath?: string
 }
 
-export function FrontmatterField({ field, value, onChange, imagePaths = [], selectedFilePath }: FrontmatterFieldProps) {
+export function FrontmatterField({ field, value, onChange, selectedFilePath }: FrontmatterFieldProps) {
   const id = field.actualFieldName
+
+  // Local state for textarea-type fields to ensure charCount always reflects actual content
+  const [localTextValue, setLocalTextValue] = useState<string>(typeof value === "string" ? value : "")
+  useEffect(() => {
+    setLocalTextValue(typeof value === "string" ? value : "")
+  }, [value])
 
   const labelEl = (
     <div className="flex items-center gap-1.5">
@@ -95,12 +101,7 @@ export function FrontmatterField({ field, value, onChange, imagePaths = [], sele
         <div className="grid gap-1">
           {labelEl}
           {helperEl}
-          <ImageField
-            value={value || ""}
-            onChange={onChange}
-            imagePaths={imagePaths}
-            selectedFilePath={selectedFilePath}
-          />
+          <ImageField value={value || ""} onChange={onChange} selectedFilePath={selectedFilePath} />
         </div>
       )
 
@@ -169,16 +170,19 @@ export function FrontmatterField({ field, value, onChange, imagePaths = [], sele
       const charLimit = field.charLimit || (isLongText ? 160 : 0)
 
       if (isLongText || charLimit > 0) {
-        const charCount = (value || "").length
-        const isOverLimit = charCount > charLimit
+        const charCount = localTextValue.length
+        const isOverLimit = charLimit > 0 && charCount > charLimit
         return (
           <div className="grid gap-1">
             {labelEl}
             {helperEl}
             <Textarea
               id={id}
-              value={value || ""}
-              onChange={(e) => onChange(e.target.value)}
+              value={localTextValue}
+              onChange={(e) => {
+                setLocalTextValue(e.target.value)
+                onChange(e.target.value)
+              }}
               placeholder={field.description}
               className="h-20 border-studio-border resize-none"
             />

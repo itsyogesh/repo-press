@@ -1,17 +1,7 @@
 "use client"
 
 import { useMutation, useQuery } from "convex/react"
-import {
-  AlertCircle,
-  CheckCircle2,
-  Folder,
-  GitBranch,
-  Loader2,
-
-  RefreshCw,
-  Settings,
-  Sparkles,
-} from "lucide-react"
+import { AlertCircle, CheckCircle2, Folder, GitBranch, Loader2, RefreshCw, Settings, Sparkles } from "lucide-react"
 import { useRouter } from "next/navigation"
 import type React from "react"
 import { useState, useTransition } from "react"
@@ -26,9 +16,9 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { api } from "@/convex/_generated/api"
 import type { RepoPressConfig } from "@/lib/config-schema"
+import { getFrameworkConfig, getRegisteredAdapters } from "@/lib/framework-adapters"
 import type { ConfigErrorType } from "@/lib/repopress/config"
 import { retrySyncAction } from "@/lib/sync-projects"
-import { getFrameworkConfig, getRegisteredAdapters } from "@/lib/framework-adapters"
 
 interface RepoSetupFormProps {
   owner: string
@@ -72,9 +62,7 @@ export function RepoSetupForm({
   const [contentPath, setContentPath] = useState(frameworkConfig.suggestedContentRoots[0] || "")
   const [contentType, setContentType] = useState<string>(frameworkConfig.contentType)
   const [currentFields, setCurrentFields] = useState(frameworkConfig.frontmatterFields)
-  const [architectureNote, setArchitectureNote] = useState(
-    frameworkConfig.contentArchitecture?.architectureNote || "",
-  )
+  const [architectureNote, setArchitectureNote] = useState(frameworkConfig.contentArchitecture?.architectureNote || "")
   const [isLoading, setIsLoading] = useState(false)
   const [isInitializing, setIsInitializing] = useState(false)
   const [showAdvanced, setShowAdvanced] = useState(false)
@@ -174,9 +162,7 @@ export function RepoSetupForm({
               Config Found
             </div>
           </div>
-          <CardDescription>
-            A repopress.config.json was found. Sync projects from it.
-          </CardDescription>
+          <CardDescription>A repopress.config.json was found. Sync projects from it.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {defaultBranchInferred && (
@@ -184,8 +170,9 @@ export function RepoSetupForm({
               <AlertCircle className="h-4 w-4 text-studio-attention" />
               <AlertTitle className="text-studio-attention text-sm">Verify default branch</AlertTitle>
               <AlertDescription className="text-xs text-studio-attention">
-                We couldn&apos;t confirm the default branch from GitHub and selected <span className="font-medium">{defaultBranch}</span> as
-                a best guess. If this is wrong, change it below before syncing.
+                We couldn&apos;t confirm the default branch from GitHub and selected{" "}
+                <span className="font-medium">{defaultBranch}</span> as a best guess. If this is wrong, change it below
+                before syncing.
               </AlertDescription>
             </Alert>
           )}
@@ -301,8 +288,8 @@ export function RepoSetupForm({
         <CardDescription>
           {selectedFramework !== "custom" ? (
             <>
-              Detected <span className="font-medium text-foreground">{selectedFramework}</span> framework.
-              Set up a config file to manage content.
+              Detected <span className="font-medium text-foreground">{selectedFramework}</span> framework. Set up a
+              config file to manage content.
             </>
           ) : (
             "Set up a config file to manage content in this repository."
@@ -325,9 +312,9 @@ export function RepoSetupForm({
             <AlertCircle className="h-4 w-4 text-studio-attention" />
             <AlertTitle className="text-studio-attention text-sm">Verify default branch</AlertTitle>
             <AlertDescription className="text-xs text-studio-attention">
-              We couldn&apos;t confirm the default branch from GitHub and selected <span className="font-medium">{defaultBranch}</span> as
-              a best guess. If this is wrong, change it below before initializing.
-              Framework detection and config lookup used this branch.
+              We couldn&apos;t confirm the default branch from GitHub and selected{" "}
+              <span className="font-medium">{defaultBranch}</span> as a best guess. If this is wrong, change it below
+              before initializing. Framework detection and config lookup used this branch.
             </AlertDescription>
           </Alert>
         )}
@@ -426,7 +413,8 @@ export function RepoSetupForm({
             <AlertCircle className="h-4 w-4 text-studio-attention" />
             <AlertTitle className="text-studio-attention text-sm">Limited Access Detected</AlertTitle>
             <AlertDescription className="text-xs text-studio-attention">
-              We could not confirm write access. If you have push permissions, you can still try — GitHub will verify your access.
+              We could not confirm write access. If you have push permissions, you can still try — GitHub will verify
+              your access.
             </AlertDescription>
           </Alert>
         )}

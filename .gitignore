@@ -33,3 +33,6 @@ next-env.d.ts
 .agents
 .gemini
 .claude
+body_text.txt
+.github/plans/*.md
+!.github/plans/template_plan.md

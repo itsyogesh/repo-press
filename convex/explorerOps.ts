@@ -192,7 +192,11 @@ export const undoOp = mutation({
       throw new Error("Can only undo pending operations")
     }
 
-    await resolveProjectAccess(ctx, { projectId: op.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken }, "editor")
+    await resolveProjectAccess(
+      ctx,
+      { projectId: op.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken },
+      "editor",
+    )
 
     // Mark the op as undone
     await ctx.db.patch(args.id, {
@@ -229,7 +233,11 @@ export const markCommitted = mutation({
       const op = await ctx.db.get(id)
       // Only mark ops that are still pending (avoid overwriting concurrent undos)
       if (op && op.status === "pending") {
-        await resolveProjectAccess(ctx, { projectId: op.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken }, "editor")
+        await resolveProjectAccess(
+          ctx,
+          { projectId: op.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken },
+          "editor",
+        )
 
         await ctx.db.patch(id, {
           status: "committed",

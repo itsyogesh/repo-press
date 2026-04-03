@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useMemo } from "react"
+import { useMemo } from "react"
 import { REAL_DOCS_SETUP_MEDIA } from "@/lib/repopress/standard-library"
 import { resolveStudioAssetUrl } from "@/lib/studio/media-resolve"
 import { GenericJsxEditor } from "./jsx-component-descriptors"
@@ -116,13 +116,6 @@ export function RepoJsxBridge({ mdastNode, descriptor }: RepoJsxBridgeProps) {
       propWarnings: [...evalWarnings, ...schemaWarnings],
     }
   }, [mdastNode, projectId, userId, selectedFilePath, adapter, descriptor.name, schema])
-
-  // Log actionable warnings (non-crashing)
-  React.useEffect(() => {
-    for (const w of propWarnings) {
-      console.warn(`[RepoPress] ${w}`)
-    }
-  }, [propWarnings])
 
   if (!Component) {
     return <GenericJsxEditor descriptor={descriptor} mdastNode={mdastNode} />

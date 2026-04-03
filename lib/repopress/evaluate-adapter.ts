@@ -1,5 +1,6 @@
 import React from "react"
 import * as jsxRuntime from "react/jsx-runtime"
+import { Callout, DocsImage, DocsVideo } from "@/components/docs/doc-media"
 import { withEvalGuard, withFunctionConstructorGuard } from "./function-constructor-guard"
 
 export interface RepoPressPreviewAdapter {
@@ -22,14 +23,14 @@ const ALLOWED_ADAPTER_MODULES: Record<string, unknown> = {
 // Standard RepoPress adapter shim modules
 const SHIM_MODULES: Record<string, Record<string, unknown>> = {
   "@/components/docs/doc-media": {
-    DocsImage: (_props: any) => null,
-    DocsVideo: (_props: any) => null,
-    Callout: (_props: any) => null,
+    DocsImage,
+    DocsVideo,
+    Callout,
   },
   "@components/docs/doc-media": {
-    DocsImage: (_props: any) => null,
-    DocsVideo: (_props: any) => null,
-    Callout: (_props: any) => null,
+    DocsImage,
+    DocsVideo,
+    Callout,
   },
   "@/lib/constants/docs": { DOCS_SETUP_MEDIA: {} },
   "@lib/constants/docs": { DOCS_SETUP_MEDIA: {} },

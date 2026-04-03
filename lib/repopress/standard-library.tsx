@@ -2,6 +2,7 @@
 
 import { Info } from "lucide-react"
 import React from "react"
+import { DocsVideo as DocsMediaVideo } from "@/components/docs/doc-media"
 import { cn } from "@/lib/utils"
 
 export const DOCS_BLOB_BASE = "https://7azoq5njibf6vkft.public.blob.vercel-storage.com"
@@ -169,36 +170,5 @@ export const standardComponents: Record<string, React.ComponentType<any>> = {
       </div>
     )
   },
-  DocsVideo: (props: any) => {
-    const resolve = (props as any).resolveAssetUrl
-    let src = props.src && resolve ? resolve(props.src) : props.src
-
-    if (src?.includes("youtu.be/")) {
-      const id = src.split("youtu.be/")[1]?.split("?")[0]
-      if (id) src = `https://www.youtube.com/embed/${id}`
-    }
-
-    return (
-      <div className="my-6 relative aspect-video overflow-hidden rounded-xl border bg-foreground text-background flex items-center justify-center text-left font-sans shadow-lg">
-        {src ? (
-          <iframe
-            src={src}
-            title={props.title || "Documentation Video"}
-            className="w-full h-full border-0"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-            allowFullScreen
-          />
-        ) : (
-          <div className="flex flex-col items-center gap-2 text-background/60">
-            <div className="size-12 rounded-full border-2 border-background/20 bg-background/5 flex items-center justify-center">
-              <div className="ml-1 size-0 border-t-[8px] border-t-transparent border-l-[12px] border-l-background/70 border-b-[8px] border-b-transparent" />
-            </div>
-            <span className="text-[10px] uppercase font-bold tracking-widest opacity-50">
-              Video: {props.title || "No Source"}
-            </span>
-          </div>
-        )}
-      </div>
-    )
-  },
+  DocsVideo: DocsMediaVideo,
 }

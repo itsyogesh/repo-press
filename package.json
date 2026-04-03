@@ -76,6 +76,7 @@
     "react-hook-form": "^7.60.0",
     "react-resizable-panels": "latest",
     "recharts": "2.15.4",
+    "remark-gfm": "^4.0.1",
     "sonner": "latest",
     "tailwind-merge": "^2.5.5",
     "unist-util-visit": "^5.1.0",

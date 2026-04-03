@@ -3,7 +3,7 @@
 import matter from "gray-matter"
 import * as React from "react"
 import { normalizeFrontmatterDates } from "@/lib/framework-adapters"
-import { findTreeNode, type FileTreeNode } from "@/lib/github"
+import { type FileTreeNode, findTreeNode } from "@/lib/github"
 import { useStudio } from "../studio-context"
 
 interface InitialFile {
@@ -394,7 +394,15 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
     if (!path) return
     const snapshot = fileCacheRef.current.get(path)
     if (!snapshot) return
-    setSelectedFile(resolveFileNode(path, snapshot.sha))
+    const resolved = resolveFileNode(path, snapshot.sha)
+    // Only update if the resolved node actually differs to avoid re-render loops
+    // when `tree` changes referentially but the node for this path is identical.
+    setSelectedFile((prev) => {
+      if (prev && prev.path === resolved.path && prev.sha === resolved.sha && prev.type === resolved.type) {
+        return prev
+      }
+      return resolved
+    })
   }, [selectedFile?.path, resolveFileNode])
 
   React.useEffect(() => {

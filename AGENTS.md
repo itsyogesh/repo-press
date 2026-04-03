@@ -2,6 +2,8 @@
 
 This file contains all the context and conventions you need to work on RepoPress effectively.
 
+`.github/copilot-instructions.md` is the primary agent instruction file for this repo. Keep this document focused on RepoPress-specific architecture, data flow, and implementation conventions.
+
 ## What is RepoPress?
 
 A Git-native headless CMS that connects to GitHub repos and provides visual MDX editing with draft/publish workflows. Content stays in Git. State (drafts, history, projects, taxonomy) lives in Convex.
@@ -16,6 +18,46 @@ Next.js 16 (App Router) <-> Convex (database + auth) <-> GitHub API (content rea
 - **Convex** -- All persistent data: projects, documents, drafts, history, taxonomy, auth sessions.
 - **Better Auth** -- Authentication via GitHub OAuth. Runs INSIDE Convex functions, NOT in Next.js.
 - **GitHub API (Octokit)** -- Reading repo contents, committing published files back to GitHub.
+
+## Git Best Practices
+
+- Never work directly on `main`; create a feature branch first.
+- Commit frequently with clear messages.
+- Push the feature branch and open a PR for review instead of pushing directly to `main`.
+
+## Build, Test, and Lint
+
+### Development
+```bash
+npx next dev --port 3001
+npx convex dev
+```
+
+Run both servers concurrently in separate terminals.
+
+### Testing
+```bash
+npm run test
+npm run test:watch
+vitest run <path>
+```
+
+Tests live in `__tests__/` directories (for example, `app/api/github/__tests__/route.test.ts`) and use Vitest.
+
+### Linting & Formatting
+```bash
+npm run lint
+npm run lint:fix
+npm run format
+```
+
+Biome handles formatting and linting. Special rules for `components/ui/` relax a11y constraints for shadcn/ui components.
+
+### Building
+```bash
+npm run build
+npm run start
+```
 
 ### Critical: Auth Architecture
 
@@ -265,6 +307,8 @@ Each framework has specific frontmatter field definitions. Universal fields (tit
 
 ## Environment Variables
 
+Never read `.env.local`, `.env`, or other secrets files directly. If a task needs environment values, ask the user to provide them in chat or the terminal, and use those values only for the current session.
+
 ### Required for Convex:
 - `NEXT_PUBLIC_CONVEX_URL` -- e.g. `https://your-project.convex.cloud`
 - `NEXT_PUBLIC_CONVEX_SITE_URL` -- e.g. `https://your-project.convex.site`
@@ -278,6 +322,21 @@ Each framework has specific frontmatter field definitions. Universal fields (tit
 
 ### Optional:
 - `NEXT_PUBLIC_APP_URL` -- Your app's public URL
+
+### Local Development Setup
+```bash
+npx convex dev
+npx next dev --port 3001
+```
+
+Add the GitHub OAuth variables to the `.env.local` file created by Convex after initialization:
+
+```bash
+GITHUB_CLIENT_ID=<your-id>
+GITHUB_CLIENT_SECRET=<your-secret>
+BETTER_AUTH_SECRET=<random-string>
+SITE_URL=https://your-project.convex.site
+```
 
 ## Styling Conventions
 
@@ -322,18 +381,15 @@ Each framework has specific frontmatter field definitions. Universal fields (tit
 
 10. **Mutations require ownership** -- All document-modifying mutations (`saveDraft`, `publish`, `update`, `transitionStatus`) verify `project.userId` matches the caller. New mutations that modify documents must follow this pattern.
 
-## Commands
+## Testing Patterns
 
-```bash
-npm run dev           # Start Next.js dev server
-npx convex dev        # Start Convex dev server (watches for schema changes)
-npx convex deploy     # Deploy Convex to production
-```
+- Tests live in `__tests__/` directories and run with Vitest.
+- Use `chrome-devtools` for browser automation and UI verification; Playwright is not used in this repo.
 
-## Testing Changes
+## Documentation
 
-1. Always run `npx convex dev` alongside `npm run dev` during development
-2. Schema changes in `convex/schema.ts` are automatically deployed by `convex dev`
-3. New Convex functions are available immediately after save
-4. Test auth flow: Login page -> GitHub OAuth -> redirect to /dashboard
-5. Test PAT flow: Login page -> PAT tab -> paste token -> redirect to /dashboard
+- `.github/copilot-instructions.md` is the primary repo-wide agent instruction set.
+- `AGENTS.md` and `CLAUDE.md` remain concise companion references for RepoPress-specific guidance.
+- `.github/plans/` is for draft plans only; do not commit files there.
+- `README.md` covers the user-facing overview and setup.
+- `convex/README.md` covers Convex-specific patterns and query reference.

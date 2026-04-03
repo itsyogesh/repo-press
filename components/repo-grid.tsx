@@ -15,11 +15,12 @@ export function RepoGrid({ repos, serverProjects }: RepoGridProps) {
 
   // Convex query: undefined = still loading, [] = loaded (empty or no session).
   // For PAT users the query returns [] (no OAuth session), so serverProjects is authoritative.
-  const projects = convexProjects === undefined
-    ? serverProjects
-    : convexProjects.length > 0
-      ? convexProjects
-      : (serverProjects ?? convexProjects)
+  const projects =
+    convexProjects === undefined
+      ? serverProjects
+      : convexProjects.length > 0
+        ? convexProjects
+        : (serverProjects ?? convexProjects)
 
   // Build a map of "owner/repo" → project count
   const projectCountMap = new Map<string, number>()
@@ -48,11 +49,7 @@ export function RepoGrid({ repos, serverProjects }: RepoGridProps) {
   return (
     <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
       {sortedRepos.map((repo) => (
-        <RepoCard
-          key={repo.id}
-          repo={repo}
-          connectedProjectCount={projectCountMap.get(repo.full_name) || 0}
-        />
+        <RepoCard key={repo.id} repo={repo} connectedProjectCount={projectCountMap.get(repo.full_name) || 0} />
       ))}
     </div>
   )
