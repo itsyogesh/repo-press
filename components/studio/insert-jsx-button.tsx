@@ -23,7 +23,7 @@ interface InsertJsxButtonProps {
 }
 
 export function InsertJsxButton({ owner, repo, branch, projectId, userId, selectedFilePath }: InsertJsxButtonProps) {
-  const { components: schema, adapter, detectedFramework, resolvedComponents } = useStudioAdapter()
+  const { components: schema, detectedFramework, resolvedComponents } = useStudioAdapter()
   const insertJsx = usePublisher(insertJsx$)
   const [modalOpen, setModalOpen] = React.useState(false)
   const insertComponentModalCtx = useInsertComponentModal()

@@ -140,16 +140,6 @@ export function Preview({
     return () => compileStatusForwarder.cancel()
   }, [compileStatusForwarder, isCompiling])
 
-  const compileStatusForwarder = React.useMemo(
-    () => createCompileStatusForwarder(onCompilingChange),
-    [onCompilingChange],
-  )
-
-  React.useEffect(() => {
-    compileStatusForwarder.update(isCompiling)
-    return () => compileStatusForwarder.cancel()
-  }, [compileStatusForwarder, isCompiling])
-
   // Escape exits full-screen
   React.useEffect(() => {
     if (!isFullScreen) return

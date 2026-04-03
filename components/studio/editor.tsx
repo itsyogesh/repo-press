@@ -292,6 +292,7 @@ export function Editor({
       projectId,
       userId,
       hasConfiguredMediaComponent,
+      filePath,
     ],
   )
 
