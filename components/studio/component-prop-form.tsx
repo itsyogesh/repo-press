@@ -3,11 +3,12 @@
 import * as React from "react"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import type { RepoComponentDef, RepoComponentPropDef } from "@/lib/studio/component-registry"
+import { cn } from "@/lib/utils"
 import { ImageFieldControl } from "./image-field-control"
-import { VideoPreview } from "./video-preview"
 
 // ---------------------------------------------------------------------------
 // Types
@@ -15,8 +16,29 @@ import { VideoPreview } from "./video-preview"
 
 export type PropFormState = Record<string, unknown>
 
-export function shouldShowVideoPreview(componentName: string | undefined, propName: string): boolean {
-  return /docs\s*video/i.test(String(componentName || "")) && propName === "src"
+/** Returns names of props marked as required. */
+export function getRequiredProps(props: RepoComponentPropDef[]): string[] {
+  return props.filter((p) => p.required).map((p) => p.name)
+}
+
+/** Validates form state against required props. Returns map of field name → error message. */
+export function validateFormState(props: RepoComponentPropDef[], state: PropFormState): Record<string, string> {
+  const errors: Record<string, string> = {}
+  for (const prop of props) {
+    if (!prop.required) continue
+    const val = state[prop.name]
+    if (prop.type === "boolean") {
+      // `false` is a valid explicit value; only `undefined`/`null` (unset) is invalid
+      if (val === undefined || val === null) {
+        errors[prop.name] = "Required"
+      }
+      continue
+    }
+    if (val === undefined || val === null || (typeof val === "string" && val.trim() === "")) {
+      errors[prop.name] = "Required"
+    }
+  }
+  return errors
 }
 
 interface ComponentPropFormProps {
@@ -31,6 +53,8 @@ interface ComponentPropFormProps {
     repo: string
     branch: string
   }
+  /** Map of prop name → error message for validation display. */
+  errors?: Record<string, string>
 }
 
 // ---------------------------------------------------------------------------
@@ -50,7 +74,7 @@ interface ComponentPropFormProps {
  * If `def.hasChildren` is true, an additional textarea is rendered
  * for children content.
  */
-export function ComponentPropForm({ def, formState, onFormChange, repoContext }: ComponentPropFormProps) {
+export function ComponentPropForm({ def, formState, onFormChange, repoContext, errors = {} }: ComponentPropFormProps) {
   const setProp = React.useCallback(
     (name: string, value: unknown) => {
       onFormChange({ ...formState, [name]: value })
@@ -67,7 +91,7 @@ export function ComponentPropForm({ def, formState, onFormChange, repoContext }:
           value={formState[propDef.name]}
           onChange={(v) => setProp(propDef.name, v)}
           repoContext={repoContext}
-          componentName={def.displayName ?? def.name}
+          error={errors[propDef.name]}
         />
       ))}
 
@@ -97,7 +121,7 @@ function PropField({
   value,
   onChange,
   repoContext,
-  componentName,
+  error,
 }: {
   propDef: RepoComponentPropDef
   value: unknown
@@ -109,35 +133,78 @@ function PropField({
     repo: string
     branch: string
   }
-  componentName?: string
+  error?: string
 }) {
   const label = propDef.label ?? propDef.name
   const id = `prop-${propDef.name}`
+  const placeholder = propDef.placeholder ?? (propDef.default !== undefined ? String(propDef.default) : undefined)
+  const errorClass = error ? "border-destructive focus-visible:ring-destructive/50" : ""
+
+  const labelContent = (
+    <>
+      {label}
+      {propDef.required && <span className="ml-0.5 text-destructive">*</span>}
+    </>
+  )
+
+  const descriptionEl = propDef.description ? (
+    <p className="text-xs text-muted-foreground">{propDef.description}</p>
+  ) : null
+
+  const errorEl = error ? <p className="text-xs text-destructive">{error}</p> : null
+
+  // Enum/Select: render <Select> when options array is present
+  if (propDef.options && propDef.options.length > 0) {
+    return (
+      <div className="space-y-1.5">
+        <Label htmlFor={id}>{labelContent}</Label>
+        <Select value={typeof value === "string" ? value : ""} onValueChange={(v) => onChange(v)}>
+          <SelectTrigger id={id} className={cn("h-9", errorClass)}>
+            <SelectValue placeholder={placeholder ?? "Select..."} />
+          </SelectTrigger>
+          <SelectContent>
+            {propDef.options.map((opt) => (
+              <SelectItem key={opt} value={opt}>
+                {opt}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {descriptionEl}
+        {errorEl}
+      </div>
+    )
+  }
 
   switch (propDef.type) {
     case "boolean":
       return (
         <div className="flex items-center justify-between gap-4">
-          <Label htmlFor={id}>{label}</Label>
+          <Label htmlFor={id}>{labelContent}</Label>
           <Switch
             id={id}
             checked={value === true || value === "true"}
             onCheckedChange={(checked) => onChange(checked)}
           />
+          {descriptionEl}
+          {errorEl}
         </div>
       )
 
     case "number":
       return (
         <div className="space-y-1.5">
-          <Label htmlFor={id}>{label}</Label>
+          <Label htmlFor={id}>{labelContent}</Label>
           <Input
             id={id}
             type="number"
-            placeholder={propDef.default !== undefined ? String(propDef.default) : undefined}
+            placeholder={placeholder}
             value={value !== undefined && value !== null ? String(value) : ""}
             onChange={(e) => onChange(e.target.value)}
+            className={errorClass}
           />
+          {descriptionEl}
+          {errorEl}
         </div>
       )
 
@@ -145,20 +212,23 @@ function PropField({
       return (
         <div className="space-y-1.5">
           <Label htmlFor={id}>
-            {label}
+            {labelContent}
             <span className="ml-1.5 text-xs text-muted-foreground font-normal">(expression)</span>
           </Label>
           <Input
             id={id}
-            placeholder={propDef.default !== undefined ? String(propDef.default) : "{value}"}
+            placeholder={placeholder ?? "{value}"}
             value={typeof value === "string" ? value : ""}
             onChange={(e) => onChange(e.target.value)}
-            className="font-mono text-sm"
+            className={`font-mono text-sm ${errorClass}`}
           />
-          <p className="text-xs text-muted-foreground">
-            JSX expression, e.g. {"{"}variable{"}"} or {"{"}
-            [&quot;a&quot;, &quot;b&quot;]{"}"}
-          </p>
+          {descriptionEl || (
+            <p className="text-xs text-muted-foreground">
+              JSX expression, e.g. {"{"}variable{"}"} or {"{"}
+              [&quot;a&quot;, &quot;b&quot;]{"}"}
+            </p>
+          )}
+          {errorEl}
         </div>
       )
 
@@ -166,38 +236,35 @@ function PropField({
       return (
         <div className="space-y-1.5">
           <Label htmlFor={id}>
-            {label}
+            {labelContent}
             <span className="ml-1.5 text-xs text-muted-foreground font-normal">(image)</span>
           </Label>
           <ImageFieldControl
             value={typeof value === "string" ? value : ""}
             onChange={onChange}
-            placeholder="Select or upload image..."
+            placeholder={placeholder ?? "Select or upload image..."}
             repoContext={repoContext}
           />
+          {descriptionEl}
+          {errorEl}
         </div>
       )
     }
 
     // "string" and fallback
     default: {
-      const isVideoComponent = shouldShowVideoPreview(componentName, propDef.name)
-
       return (
         <div className="space-y-1.5">
-          <Label htmlFor={id}>{label}</Label>
+          <Label htmlFor={id}>{labelContent}</Label>
           <Input
             id={id}
-            placeholder={propDef.default !== undefined ? String(propDef.default) : undefined}
+            placeholder={placeholder}
             value={typeof value === "string" ? value : ""}
             onChange={(e) => onChange(e.target.value)}
+            className={errorClass}
           />
-          {isVideoComponent && typeof value === "string" && (
-            <div className="mt-3">
-              <p className="text-xs text-muted-foreground mb-2">Preview:</p>
-              <VideoPreview url={value} className="max-w-full" />
-            </div>
-          )}
+          {descriptionEl}
+          {errorEl}
         </div>
       )
     }

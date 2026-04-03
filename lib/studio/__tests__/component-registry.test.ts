@@ -4,6 +4,7 @@ import {
   buildComponentRegistry,
   type ConfigComponentEntry,
   deriveCapabilities,
+  getFrameworkFallbacks,
 } from "../component-registry"
 
 // ---------------------------------------------------------------------------
@@ -183,7 +184,7 @@ describe("buildComponentRegistry — adapter-only", () => {
   })
 
   it("applies fallback schema for DocsImage when adapter only exposes a function", () => {
-    const registry = buildComponentRegistry({ DocsImage: () => null } as any, null)
+    const registry = buildComponentRegistry({ DocsImage: () => null } as any, null, "fumadocs")
 
     expect(registry.DocsImage.source).toBe("adapter")
     expect(registry.DocsImage.hasChildren).toBe(false)
@@ -195,7 +196,7 @@ describe("buildComponentRegistry — adapter-only", () => {
   })
 
   it("applies fallback schema for DocsVideo when adapter only exposes a function", () => {
-    const registry = buildComponentRegistry({ DocsVideo: () => null } as any, null)
+    const registry = buildComponentRegistry({ DocsVideo: () => null } as any, null, "fumadocs")
 
     expect(registry.DocsVideo.source).toBe("adapter")
     expect(registry.DocsVideo.hasChildren).toBe(false)
@@ -324,7 +325,7 @@ describe("buildComponentRegistry — React function components", () => {
       Callout: () => null,
     }
 
-    const registry = buildComponentRegistry(adapterWithFunctions as any, null)
+    const registry = buildComponentRegistry(adapterWithFunctions as any, null, "fumadocs")
 
     expect(registry.DocsImage).toBeDefined()
     expect(registry.DocsImage.source).toBe("adapter")
@@ -371,7 +372,7 @@ describe("buildComponentRegistry — React function components", () => {
       Callout: { props: [{ name: "type", type: "string" }], hasChildren: true }, // schema object
     }
 
-    const registry = buildComponentRegistry(adapterMixed as any, null)
+    const registry = buildComponentRegistry(adapterMixed as any, null, "fumadocs")
 
     // Function for known component → fallback schema props
     expect(registry.DocsImage.props.map((p) => p.name)).toEqual(["src", "alt", "caption"])
@@ -393,5 +394,205 @@ describe("buildComponentRegistry — React function components", () => {
     // ArrayComp treated as non-schema (isSchemaObject returns false for arrays)
     expect(registry.ArrayComp).toBeDefined()
     expect(registry.ArrayComp.props).toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Extended prop fields
+// ---------------------------------------------------------------------------
+
+describe("extended prop fields", () => {
+  it("normalizes required field from config", () => {
+    const config: Record<string, ConfigComponentEntry> = {
+      TestComp: {
+        props: [
+          { name: "src", type: "image", label: "Source", required: true },
+          { name: "alt", type: "string", label: "Alt text" },
+        ],
+        hasChildren: false,
+        kind: "flow",
+      },
+    }
+    const registry = buildComponentRegistry(undefined, config)
+    expect(registry.TestComp.props[0].required).toBe(true)
+    expect(registry.TestComp.props[1].required).toBeUndefined()
+  })
+
+  it("normalizes options field from config", () => {
+    const config: Record<string, ConfigComponentEntry> = {
+      Callout: {
+        props: [{ name: "type", type: "string", label: "Type", options: ["info", "warning", "error", "tip"] }],
+        hasChildren: true,
+        kind: "flow",
+      },
+    }
+    const registry = buildComponentRegistry(undefined, config)
+    expect(registry.Callout.props[0].options).toEqual(["info", "warning", "error", "tip"])
+  })
+
+  it("normalizes description and placeholder from config", () => {
+    const config: Record<string, ConfigComponentEntry> = {
+      Hero: {
+        props: [
+          {
+            name: "title",
+            type: "string",
+            label: "Title",
+            description: "The main heading",
+            placeholder: "Enter title...",
+          },
+        ],
+        hasChildren: false,
+        kind: "flow",
+      },
+    }
+    const registry = buildComponentRegistry(undefined, config)
+    expect(registry.Hero.props[0].description).toBe("The main heading")
+    expect(registry.Hero.props[0].placeholder).toBe("Enter title...")
+  })
+
+  it("preserves required on known adapter fallbacks", () => {
+    const adapterComponents = { DocsImage: () => null }
+    const registry = buildComponentRegistry(adapterComponents as any, undefined, "fumadocs")
+    const srcProp = registry.DocsImage.props.find((p: any) => p.name === "src")
+    expect(srcProp?.required).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// getFrameworkFallbacks
+// ---------------------------------------------------------------------------
+
+describe("getFrameworkFallbacks", () => {
+  describe("fumadocs", () => {
+    it("returns DocsImage, DocsVideo, Callout", () => {
+      const fallbacks = getFrameworkFallbacks("fumadocs")
+      expect(Object.keys(fallbacks).sort()).toEqual(["Callout", "DocsImage", "DocsVideo"])
+    })
+
+    it("DocsImage has image src prop marked required", () => {
+      const { DocsImage } = getFrameworkFallbacks("fumadocs")
+      const src = DocsImage.props!.find((p) => p.name === "src")
+      expect(src?.type).toBe("image")
+      expect(src?.required).toBe(true)
+    })
+
+    it("Callout has options array", () => {
+      const { Callout } = getFrameworkFallbacks("fumadocs")
+      const type = Callout.props!.find((p) => p.name === "type")
+      expect(type?.options).toEqual(["info", "warning", "error", "tip"])
+    })
+
+    it("matches when framework string is 'fumadocs-core'", () => {
+      const fallbacks = getFrameworkFallbacks("fumadocs-core")
+      expect(fallbacks.DocsImage).toBeDefined()
+    })
+  })
+
+  describe("nextra", () => {
+    it("returns Callout, Steps, Card, Cards, Tab, Tabs", () => {
+      const fallbacks = getFrameworkFallbacks("nextra")
+      expect(Object.keys(fallbacks).sort()).toEqual(["Callout", "Card", "Cards", "Steps", "Tab", "Tabs"].sort())
+    })
+
+    it("Callout has nextra-specific options", () => {
+      const { Callout } = getFrameworkFallbacks("nextra")
+      const type = Callout.props!.find((p) => p.name === "type")
+      expect(type?.options).toContain("default")
+      expect(type?.options).not.toContain("tip")
+    })
+
+    it("Steps component has no props", () => {
+      const { Steps } = getFrameworkFallbacks("nextra")
+      expect(Steps.props).toEqual([])
+      expect(Steps.hasChildren).toBe(true)
+    })
+  })
+
+  describe("astro / starlight", () => {
+    it("returns Aside, Card, CardGrid, LinkCard for 'astro'", () => {
+      const fallbacks = getFrameworkFallbacks("astro")
+      expect(Object.keys(fallbacks).sort()).toEqual(["Aside", "Card", "CardGrid", "LinkCard"])
+    })
+
+    it("returns the same set for 'starlight'", () => {
+      const astro = getFrameworkFallbacks("astro")
+      const starlight = getFrameworkFallbacks("starlight")
+      expect(Object.keys(astro).sort()).toEqual(Object.keys(starlight).sort())
+    })
+
+    it("Aside has caution/danger options", () => {
+      const { Aside } = getFrameworkFallbacks("astro")
+      const type = Aside.props!.find((p) => p.name === "type")
+      expect(type?.options).toContain("caution")
+      expect(type?.options).toContain("danger")
+    })
+  })
+
+  describe("docusaurus", () => {
+    it("returns Admonition, Tabs, TabItem", () => {
+      const fallbacks = getFrameworkFallbacks("docusaurus")
+      expect(Object.keys(fallbacks).sort()).toEqual(["Admonition", "TabItem", "Tabs"])
+    })
+
+    it("TabItem value prop is required", () => {
+      const { TabItem } = getFrameworkFallbacks("docusaurus")
+      const value = TabItem.props!.find((p) => p.name === "value")
+      expect(value?.required).toBe(true)
+    })
+  })
+
+  describe("jekyll / hugo", () => {
+    it("returns empty object for jekyll (no JSX components)", () => {
+      expect(getFrameworkFallbacks("jekyll")).toEqual({})
+    })
+
+    it("returns empty object for hugo", () => {
+      expect(getFrameworkFallbacks("hugo")).toEqual({})
+    })
+  })
+
+  describe("generic / unknown", () => {
+    it("returns Callout, Image, Video for unknown framework", () => {
+      const fallbacks = getFrameworkFallbacks("some-unknown-framework")
+      expect(Object.keys(fallbacks).sort()).toEqual(["Callout", "Image", "Video"])
+    })
+
+    it("returns generic defaults when framework is undefined", () => {
+      const fallbacks = getFrameworkFallbacks(undefined)
+      expect(fallbacks.Callout).toBeDefined()
+      expect(fallbacks.Image).toBeDefined()
+    })
+
+    it("Image has image-type src prop", () => {
+      const { Image } = getFrameworkFallbacks()
+      const src = Image.props!.find((p) => p.name === "src")
+      expect(src?.type).toBe("image")
+      expect(src?.required).toBe(true)
+    })
+  })
+
+  describe("buildComponentRegistry integration", () => {
+    it("uses nextra fallbacks when framework='nextra' and adapter has function component", () => {
+      const registry = buildComponentRegistry({ Callout: () => null } as any, null, "nextra")
+      // nextra Callout has 'emoji' prop
+      const emoji = registry.Callout.props.find((p) => p.name === "emoji")
+      expect(emoji).toBeDefined()
+    })
+
+    it("uses generic fallbacks when framework is not provided, with legacy DocsImage fallback", () => {
+      // generic has Image/Video/Callout; legacy DocsImage/DocsVideo also resolved
+      // via KNOWN_ADAPTER_FALLBACKS when no framework is specified (backward compat)
+      const registry = buildComponentRegistry({ Image: () => null, DocsImage: () => null } as any, null)
+      expect(registry.Image.props.some((p) => p.type === "image")).toBe(true)
+      // DocsImage still gets fumadocs-era fallback when no framework is set
+      expect(registry.DocsImage.props.map((p) => p.name)).toEqual(["src", "alt", "caption"])
+    })
+
+    it("uses astro fallbacks when framework='astro'", () => {
+      const registry = buildComponentRegistry({ Aside: () => null } as any, null, "astro")
+      expect(registry.Aside).toBeDefined()
+      expect(registry.Aside.props.length).toBeGreaterThan(0)
+    })
   })
 })

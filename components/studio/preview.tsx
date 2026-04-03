@@ -15,6 +15,54 @@ import { cn } from "@/lib/utils"
 import { DeviceFrame } from "./device-frame"
 import { type Viewport, ViewportToggle } from "./viewport-toggle"
 
+type TimerApi = Pick<typeof globalThis, "setTimeout" | "clearTimeout">
+
+export function createCompileStatusForwarder(
+  onCompilingChange?: (isCompiling: boolean) => void,
+  settleDelayMs = 300,
+  timers: TimerApi = globalThis,
+) {
+  let settleTimer: ReturnType<typeof setTimeout> | null = null
+  let hasSeenCompilingState = false
+  let lastEmitted: boolean | null = null
+
+  const emit = (isCompiling: boolean) => {
+    if (!onCompilingChange || lastEmitted === isCompiling) return
+    lastEmitted = isCompiling
+    onCompilingChange(isCompiling)
+  }
+
+  return {
+    update(isCompiling: boolean) {
+      if (!onCompilingChange) return
+
+      if (settleTimer !== null) {
+        timers.clearTimeout(settleTimer)
+        settleTimer = null
+      }
+
+      if (isCompiling) {
+        hasSeenCompilingState = true
+        emit(true)
+        return
+      }
+
+      if (!hasSeenCompilingState) return
+
+      settleTimer = timers.setTimeout(() => {
+        settleTimer = null
+        emit(false)
+      }, settleDelayMs)
+    },
+    cancel() {
+      if (settleTimer !== null) {
+        timers.clearTimeout(settleTimer)
+        settleTimer = null
+      }
+    },
+  }
+}
+
 interface PreviewProps {
   content: string
   frontmatter: Record<string, any>
@@ -24,6 +72,7 @@ interface PreviewProps {
   filePath?: string
   scrollContainerRef?: React.RefObject<HTMLDivElement | null>
   onScroll?: () => void
+  onCompilingChange?: (isCompiling: boolean) => void
   adapter?: RepoPressPreviewAdapter | null
   adapterDiagnostics?: string[]
 }
@@ -37,6 +86,7 @@ export function Preview({
   filePath,
   scrollContainerRef,
   onScroll,
+  onCompilingChange,
   adapter,
   adapterDiagnostics,
 }: PreviewProps) {
@@ -66,14 +116,25 @@ export function Preview({
   const [imageError, setImageError] = React.useState(false)
 
   // Reset image error when image URL changes
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional reset-on-change pattern
   React.useEffect(() => {
     setImageError(false)
-  }, [])
+  }, [image])
 
   // Stabilize the asset resolver to prevent infinite re-renders in PreviewRuntime
   const resolveAssetUrl = React.useMemo(() => {
     return (path: string) => resolveStudioAssetUrl(path, projectId, userId, filePath)
   }, [projectId, userId, filePath])
+
+  const compileStatusForwarder = React.useMemo(
+    () => createCompileStatusForwarder(onCompilingChange),
+    [onCompilingChange],
+  )
+
+  React.useEffect(() => {
+    compileStatusForwarder.update(isCompiling)
+    return () => compileStatusForwarder.cancel()
+  }, [compileStatusForwarder, isCompiling])
 
   // Escape exits full-screen
   React.useEffect(() => {

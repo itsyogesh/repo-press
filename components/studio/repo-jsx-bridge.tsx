@@ -1,12 +1,80 @@
 "use client"
 
-import { useMemo } from "react"
+import { ImageIcon, Info } from "lucide-react"
+import React, { useMemo } from "react"
 import { REAL_DOCS_SETUP_MEDIA } from "@/lib/repopress/standard-library"
 import { resolveStudioAssetUrl } from "@/lib/studio/media-resolve"
 import { GenericJsxEditor } from "./jsx-component-descriptors"
 import { safeEvalJsExpression } from "./safe-jsx-prop-eval"
 import { useStudioAdapter } from "./studio-adapter-context"
 import { useStudio } from "./studio-context"
+
+// Components whose adapter versions depend on CSS variables / dark-mode tokens
+// that don't exist in the studio editor context, causing black/broken rendering.
+// Use these studio-safe versions instead.
+const STUDIO_SAFE_RENDERERS: Record<string, React.ComponentType<any>> = {
+  DynamicImage: ({
+    src,
+    image,
+    path,
+    url,
+    fileName,
+    alt,
+    resolveAssetUrl,
+  }: {
+    src?: string
+    image?: string
+    path?: string
+    url?: string
+    fileName?: string
+    alt?: string
+    resolveAssetUrl?: (s: string) => string
+  }) => {
+    const rawSrc = src || image || path || url || fileName
+    const resolvedSrc = rawSrc && resolveAssetUrl ? resolveAssetUrl(rawSrc) : rawSrc
+    if (!resolvedSrc) {
+      return (
+        <div className="my-6 flex items-center justify-center gap-2 rounded-xl border border-dashed border-studio-border p-6 text-sm text-studio-fg-muted font-sans">
+          <ImageIcon className="h-5 w-5 opacity-50 shrink-0" />
+          <span>DynamicImage — no source provided</span>
+        </div>
+      )
+    }
+    return (
+      <img
+        src={resolvedSrc}
+        alt={alt ?? ""}
+        className="my-6 w-full h-auto rounded-xl border border-studio-border object-cover"
+      />
+    )
+  },
+  TickPoint: ({ children }: { children?: React.ReactNode }) => (
+    <div className="my-4 rounded-lg border border-studio-border bg-studio-canvas-inset p-4 text-sm font-sans text-foreground">
+      {children ?? <span className="text-studio-fg-muted italic text-xs">TickPoint content</span>}
+    </div>
+  ),
+  Callout: ({ children, type, title }: { children?: React.ReactNode; type?: string; title?: string }) => {
+    const styles: Record<string, { border: string; bg: string }> = {
+      info: { border: "border-studio-accent/20", bg: "bg-studio-accent/5" },
+      warning: { border: "border-studio-attention/20", bg: "bg-studio-attention/5" },
+      error: { border: "border-studio-danger/20", bg: "bg-studio-danger/5" },
+      tip: { border: "border-studio-success/20", bg: "bg-studio-success/5" },
+    }
+    const t = type ?? "info"
+    const s = styles[t] ?? styles.info
+    return (
+      <div className={`my-4 flex gap-3 rounded-lg border p-4 text-sm font-sans ${s.border} ${s.bg}`}>
+        <div className="mt-0.5 shrink-0">
+          <Info className="h-4 w-4 text-studio-accent" />
+        </div>
+        <div className="flex-1 min-w-0 text-foreground">
+          {title && <p className="font-semibold mb-1">{title}</p>}
+          {children ?? <span className="text-muted-foreground italic text-xs">Callout content</span>}
+        </div>
+      </div>
+    )
+  },
+}
 
 interface RepoJsxBridgeProps {
   mdastNode: any
@@ -63,7 +131,9 @@ export function RepoJsxBridge({ mdastNode, descriptor }: RepoJsxBridgeProps) {
   const { projectId, userId, selectedFilePath } = useStudio()
   const { adapter, components: componentSchema } = useStudioAdapter()
 
-  const Component = adapter?.components?.[descriptor.name]
+  // Prefer studio-safe renderer over adapter component when adapter version
+  // uses CSS variables or dark-mode tokens not available in the studio context.
+  const Component = STUDIO_SAFE_RENDERERS[descriptor.name] ?? adapter?.components?.[descriptor.name]
   const schema = componentSchema?.[descriptor.name]
 
   // Extract props from MDAST node attributes
@@ -133,7 +203,7 @@ export function RepoJsxBridge({ mdastNode, descriptor }: RepoJsxBridgeProps) {
             </span>
           )}
         </div>
-        <div className="border border-transparent group-hover:border-studio-accent/30 rounded-sm transition-colors overflow-hidden">
+        <div className="rounded-sm transition-colors group-hover:ring-1 group-hover:ring-studio-accent/30 group-hover:ring-offset-1">
           <Component {...props}>
             {/* If the component has children, MDXEditor handles them via the nested editor */}
             {descriptor.hasChildren && props.children ? props.children : null}
