@@ -69,7 +69,7 @@ export function VideoPreview({ url, className }: VideoPreviewProps) {
   if (videoInfo.provider === "direct") {
     return (
       <div className={cn("rounded-lg overflow-hidden border border-studio-border bg-black", className)}>
-        {/* biome-ignore lint/a11y/useMediaCaption: user-provided video URLs; captions not available */}
+        {/* biome-ignore lint/a11y/useMediaCaption: VideoPreview renders arbitrary user media URLs and cannot infer a matching caption track. */}
         <video src={videoInfo.embedUrl} controls className="w-full h-auto" style={{ maxHeight: "400px" }} />
       </div>
     )
