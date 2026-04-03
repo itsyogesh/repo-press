@@ -21,7 +21,7 @@ interface StudioContextValue {
   adapterError: string | null
   adapterDiagnostics: string[]
   components: Record<string, any> | undefined
-  /** Adapter components filtered to the current contentRoot via componentsByContext. Falls back to adapter.components. */
+  /** Adapter components for the insert picker, filtered to the current contentRoot via componentsByContext. Falls back to standardComponents (universal safe set) when no context split is declared — intentionally excludes adapter-specific docs components from appearing in non-docs insert pickers. */
   resolvedComponents: Record<string, any> | undefined
 }
 
