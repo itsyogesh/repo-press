@@ -1,8 +1,7 @@
 "use client"
 
 import { Info } from "lucide-react"
-import React from "react"
-import { cn } from "@/lib/utils"
+import type React from "react"
 
 export const DOCS_BLOB_BASE = "https://7azoq5njibf6vkft.public.blob.vercel-storage.com"
 
