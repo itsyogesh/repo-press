@@ -132,7 +132,7 @@ export function Editor({
   contentRoot = "",
   tree = [],
 }: EditorProps) {
-  const { adapter, components: componentSchema } = useStudioAdapter()
+  const { adapter, components: componentSchema, resolvedComponents } = useStudioAdapter()
   const editorRef = React.useRef<MDXEditorMethods>(null)
 
   const discoveredJsxComponentNames = React.useMemo(() => {
@@ -149,7 +149,12 @@ export function Editor({
   }, [content])
 
   const hasConfiguredMediaComponent = React.useMemo(() => {
-    const configuredNames = new Set([...Object.keys(adapter?.components || {}), ...Object.keys(componentSchema || {})])
+    // Use resolvedComponents (contentRoot-filtered) so blog context doesn't
+    // treat docs-only media components as available for inline inserts.
+    const configuredNames = new Set([
+      ...Object.keys(resolvedComponents || adapter?.components || {}),
+      ...Object.keys(componentSchema || {}),
+    ])
 
     return (
       configuredNames.has("DocsImage") ||
@@ -157,7 +162,7 @@ export function Editor({
       configuredNames.has("DocsVideo") ||
       configuredNames.has("Video")
     )
-  }, [adapter, componentSchema])
+  }, [resolvedComponents, adapter, componentSchema])
 
   // Image upload handler - Blob-first with GitHub fallback
   const handleImageUpload = React.useCallback(

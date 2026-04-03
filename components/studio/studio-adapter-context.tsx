@@ -9,6 +9,8 @@ interface StudioAdapterContextValue {
   adapterError: string | null
   adapterDiagnostics: string[]
   components: Record<string, any> | undefined
+  /** Adapter components filtered to the current contentRoot via componentsByContext. Falls back to adapter.components. */
+  resolvedComponents: Record<string, any> | undefined
   detectedFramework?: string
 }
 

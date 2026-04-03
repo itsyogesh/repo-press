@@ -5,6 +5,24 @@ import { withEvalGuard, withFunctionConstructorGuard } from "./function-construc
 
 export interface RepoPressPreviewAdapter {
   components?: Record<string, React.ComponentType<any>>
+  /**
+   * Context-aware component map keyed by contentRoot.
+   * When the Studio is editing a document under a specific contentRoot,
+   * the matching entry overrides `components` for the insert picker.
+   *
+   * Example (in .repopress/mdx-preview.tsx):
+   * ```ts
+   * componentsByContext: {
+   *   "content/blog": { Callout },
+   *   "content/docs": { DocsImage, DocsVideo, Callout },
+   * }
+   * ```
+   *
+   * Rendering (WYSIWYG parser, live preview) always uses the full `components`
+   * set so existing content with any component continues to display correctly.
+   * Only the insert picker is filtered.
+   */
+  componentsByContext?: Record<string, Record<string, React.ComponentType<any>>>
   scope?: Record<string, unknown>
   allowImports?: Record<string, Record<string, unknown>>
   resolveAssetUrl?: (input: string, ctx: { owner: string; repo: string; branch: string; filePath: string }) => string

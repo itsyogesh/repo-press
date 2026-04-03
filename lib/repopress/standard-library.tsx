@@ -2,7 +2,6 @@
 
 import { Info } from "lucide-react"
 import React from "react"
-import { DocsVideo as DocsMediaVideo } from "@/components/docs/doc-media"
 import { cn } from "@/lib/utils"
 
 export const DOCS_BLOB_BASE = "https://7azoq5njibf6vkft.public.blob.vercel-storage.com"
@@ -129,46 +128,4 @@ export const standardComponents: Record<string, React.ComponentType<any>> = {
       Copy IP Addresses
     </button>
   ),
-  DocsImage: (props: any) => {
-    const [isLoading, setIsLoading] = React.useState(true)
-    // resolveAssetUrl is injected by the bridge/runtime
-    const resolve = (props as any).resolveAssetUrl
-    const src = props.src && resolve ? resolve(props.src) : props.src
-
-    return (
-      <div className="my-6 overflow-hidden rounded-xl border bg-muted/30 flex flex-col group relative text-left font-sans shadow-sm">
-        {src ? (
-          <div className="relative">
-            <img
-              src={src}
-              alt={props.alt || ""}
-              className={cn(
-                "w-full h-auto block transition-opacity duration-300",
-                isLoading ? "opacity-0" : "opacity-100",
-              )}
-              onLoad={() => setIsLoading(false)}
-            />
-            {isLoading && (
-              <div className="absolute inset-0 flex items-center justify-center bg-muted/20 animate-pulse">
-                <Info className="h-6 w-6 text-muted-foreground/30" />
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="aspect-video flex items-center justify-center">
-            <div className="text-muted-foreground flex flex-col items-center gap-2">
-              <Info className="h-8 w-8 opacity-20" />
-              <span className="text-[10px] uppercase font-bold tracking-widest opacity-50">No Source</span>
-            </div>
-          </div>
-        )}
-        {props.caption && (
-          <div className="p-3 bg-muted/20 border-t text-[11px] text-muted-foreground text-center italic">
-            {props.caption}
-          </div>
-        )}
-      </div>
-    )
-  },
-  DocsVideo: DocsMediaVideo,
 }

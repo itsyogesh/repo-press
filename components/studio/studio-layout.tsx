@@ -29,6 +29,7 @@ import type { Id } from "@/convex/_generated/dataModel"
 import { getFrameworkAdapter } from "@/lib/framework-adapters"
 import { type FileTreeNode, findTreeNode } from "@/lib/github"
 import { usePreviewContext } from "@/lib/hooks/use-preview-context"
+import { standardComponents } from "@/lib/repopress/standard-library"
 import { buildHistoryHref } from "@/lib/studio/history-link"
 import { getPublishLaneViewModel } from "@/lib/studio/publish-lane-view-model"
 import { CommandPalette } from "./command-palette"
@@ -1863,6 +1864,19 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
       adapterError: previewContext.error,
       adapterDiagnostics: previewContext.diagnostics,
       components: componentSchema,
+      // Resolve insert-picker components by contentRoot:
+      //  1. If the adapter declares componentsByContext for this root, use that (fully context-aware).
+      //  2. Otherwise fall back to standardComponents — the universal safe set that never includes
+      //     docs-only components like DocsImage/DocsVideo that come from the adapter layer.
+      //     The full previewContext.context.components (adapter-augmented) is still used for
+      //     *rendering* existing MDX; we deliberately exclude adapter additions from the insert picker
+      //     when no explicit context split is declared.
+      resolvedComponents:
+        contentRoot && previewContext.context?.componentsByContext?.[contentRoot]
+          ? previewContext.context.componentsByContext[contentRoot]
+          : previewContext.context
+            ? standardComponents
+            : undefined,
       detectedFramework: studioQueries.project?.detectedFramework as string | undefined,
     }),
     [
@@ -1911,6 +1925,7 @@ export function StudioLayout(props: StudioLayoutProps) {
       adapterError: null,
       adapterDiagnostics: [],
       components: undefined,
+      resolvedComponents: undefined,
     }),
     [owner, repo, branch, projectId, projectAccessToken, contentRoot, tree, role],
   )
