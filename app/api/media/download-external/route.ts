@@ -1,3 +1,4 @@
+import { lookup } from "node:dns/promises"
 import { isIP } from "node:net"
 import { ConvexHttpClient } from "convex/browser"
 import { NextResponse } from "next/server"
@@ -40,13 +41,8 @@ function isSafeExternalUrl(url: string): boolean {
   }
 }
 
-function isBlockedHostname(hostname: string): boolean {
-  const normalized = hostname.trim().toLowerCase().replace(/\.$/, "")
-  if (!normalized) return true
-  if (normalized === "localhost" || normalized.endsWith(".localhost") || normalized.endsWith(".local")) {
-    return true
-  }
-
+function isBlockedIpAddress(address: string): boolean {
+  const normalized = address.trim().toLowerCase().replace(/\.$/, "")
   const ipVersion = isIP(normalized)
   if (ipVersion === 4) {
     const [a, b] = normalized.split(".").map((segment) => Number(segment))
@@ -67,10 +63,46 @@ function isBlockedHostname(hostname: string): boolean {
   return false
 }
 
+function isBlockedHostname(hostname: string): boolean {
+  const normalized = hostname.trim().toLowerCase().replace(/\.$/, "")
+  if (!normalized) return true
+  if (normalized === "localhost" || normalized.endsWith(".localhost") || normalized.endsWith(".local")) {
+    return true
+  }
+
+  if (isBlockedIpAddress(normalized)) {
+    return true
+  }
+
+  return false
+}
+
+async function assertPublicHostname(hostname: string): Promise<void> {
+  if (isBlockedHostname(hostname)) {
+    throw new Error("External image must resolve to a public HTTP(S) URL")
+  }
+
+  const normalized = hostname.trim().toLowerCase().replace(/\.$/, "")
+  if (isIP(normalized)) return
+
+  let addresses: Awaited<ReturnType<typeof lookup>>
+  try {
+    addresses = await lookup(normalized, { all: true, verbatim: true })
+  } catch {
+    throw new Error("External image must resolve to a public HTTP(S) URL")
+  }
+
+  if (!addresses.length || addresses.some((entry) => isBlockedIpAddress(entry.address))) {
+    throw new Error("External image must resolve to a public HTTP(S) URL")
+  }
+}
+
 async function fetchExternalImage(url: string, maxRedirects = 5): Promise<Response> {
   let currentUrl = url
 
   for (let redirectCount = 0; redirectCount <= maxRedirects; redirectCount += 1) {
+    const currentTarget = new URL(currentUrl)
+    await assertPublicHostname(currentTarget.hostname)
     const response = await fetch(currentUrl, { redirect: "manual" })
 
     if (response.status >= 300 && response.status < 400) {
@@ -83,6 +115,7 @@ async function fetchExternalImage(url: string, maxRedirects = 5): Promise<Respon
       if (!isSafeExternalUrl(nextUrl.toString())) {
         throw new Error("External image must resolve to a public HTTP(S) URL")
       }
+      await assertPublicHostname(nextUrl.hostname)
       currentUrl = nextUrl.toString()
       continue
     }

@@ -44,10 +44,10 @@ describe("media-resolve helpers", () => {
     )
   })
 
-  it("resolves bare file names using getSuggestedImagePath when contentRoot is provided", () => {
+  it("keeps bare file names relative to the current document even when contentRoot is provided", () => {
     expect(
       resolveStudioAssetUrl("hero.png", "project_123", "user_1", "content/blog/post.mdx", undefined, "content/blog"),
-    ).toBe("/api/media/resolve?projectId=project_123&path=%2Fpublic%2Fimages%2Fblog%2Fpost%2Fhero.png&userId=user_1")
+    ).toBe("/api/media/resolve?projectId=project_123&path=%2Fcontent%2Fblog%2Fhero.png&userId=user_1")
   })
 
   it("keeps non-blog bare file names relative to their local directory when no contentRoot", () => {

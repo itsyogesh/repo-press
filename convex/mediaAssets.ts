@@ -31,7 +31,8 @@ export const listByProjectPaginated = query({
     let isDone = false
 
     while (page.length < numItems && !isDone) {
-      const result = await query.paginate({ cursor, numItems })
+      const remaining = Math.max(1, numItems - page.length)
+      const result = await query.paginate({ cursor, numItems: remaining })
       page.push(...result.page.filter((item) => item.filePath.toLowerCase().includes(slug)))
       cursor = result.continueCursor
       isDone = result.isDone

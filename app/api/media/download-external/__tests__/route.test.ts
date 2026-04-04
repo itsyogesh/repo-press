@@ -12,6 +12,14 @@ vi.mock("convex/browser", () => ({
   },
 }))
 
+const { dnsLookupMock } = vi.hoisted(() => ({
+  dnsLookupMock: vi.fn(),
+}))
+
+vi.mock("node:dns/promises", () => ({
+  lookup: dnsLookupMock,
+}))
+
 vi.mock("@/lib/auth-server", () => ({
   fetchAuthQuery: vi.fn(),
   getGitHubToken: vi.fn(),
@@ -90,6 +98,7 @@ describe("POST /api/media/download-external", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     process.env.BETTER_AUTH_SECRET = "test-secret"
+    dnsLookupMock.mockResolvedValue([{ address: "93.184.216.34", family: 4 }])
     vi.mocked(getGitHubToken).mockResolvedValue("gh-token")
     vi.mocked(fetchAuthQuery!).mockResolvedValue({ _id: "user_1" })
     vi.mocked(getPatAuthUserId).mockResolvedValue("user_1")
@@ -207,5 +216,22 @@ describe("POST /api/media/download-external", () => {
     expect(response.status).toBe(400)
     expect(payload.error).toContain("public")
     expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it("rejects hostnames that resolve to private-network IPs", async () => {
+    dnsLookupMock.mockResolvedValueOnce([{ address: "10.0.0.12", family: 4 }])
+    const fetchSpy = vi.spyOn(globalThis, "fetch")
+
+    const response = await POST(
+      buildRequest({
+        ...baseBody(),
+        url: "http://metadata.google.internal/instance/image.png",
+      }),
+    )
+    const payload = await response.json()
+
+    expect(response.status).toBe(400)
+    expect(payload.error).toContain("public")
+    expect(fetchSpy).not.toHaveBeenCalled()
   })
 })

@@ -13,7 +13,7 @@ export function normalizeRepoMediaPath(path: string): string {
   return withoutDotSlash.startsWith("/") ? withoutDotSlash : `/${withoutDotSlash}`
 }
 
-function resolvePathAgainstBase(path: string, baseFilePath?: string, contentRoot?: string): string {
+function resolvePathAgainstBase(path: string, baseFilePath?: string, _contentRoot?: string): string {
   const trimmed = path.trim().replace(/\\/g, "/")
   if (!trimmed) return trimmed
   if (trimmed.startsWith("/")) return normalizeRepoMediaPath(trimmed)
@@ -21,13 +21,6 @@ function resolvePathAgainstBase(path: string, baseFilePath?: string, contentRoot
   const pathSegments = trimmed.split("/")
   const hasRelativePrefix = pathSegments[0] === "." || pathSegments[0] === ".."
   const isBareFileName = !trimmed.includes("/")
-  const isLikelyMediaFile = /\.(?:png|jpe?g|gif|webp|svg|mp4|webm|pdf)$/i.test(trimmed)
-  const normalizedBase = baseFilePath?.trim().replace(/^\/+/, "") || ""
-
-  if (isBareFileName && isLikelyMediaFile && normalizedBase && contentRoot !== undefined) {
-    const imageFolder = getSuggestedImagePath(normalizedBase, contentRoot)
-    return normalizeRepoMediaPath(`${imageFolder}/${trimmed}`)
-  }
 
   if (!baseFilePath || (!hasRelativePrefix && !isBareFileName)) {
     return normalizeRepoMediaPath(trimmed)

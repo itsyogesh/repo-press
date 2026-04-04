@@ -59,4 +59,49 @@ describe("media asset pagination", () => {
     expect(result.page).toEqual([{ _id: "asset_blog", filePath: "public/images/blog/post-1.png" }])
     expect(result.isDone).toBe(true)
   })
+
+  it("does not skip section matches that spill past the requested page size", async () => {
+    const paginate = vi
+      .fn()
+      .mockResolvedValueOnce({
+        page: Array.from({ length: 20 }, (_, index) => ({
+          _id: `asset_blog_${index}`,
+          filePath: `public/images/blog/post-${index}.png`,
+        })),
+        isDone: false,
+        continueCursor: "cursor_20",
+      })
+      .mockResolvedValueOnce({
+        page: Array.from({ length: 4 }, (_, index) => ({
+          _id: `asset_blog_more_${index}`,
+          filePath: `public/images/blog/more-${index}.png`,
+        })),
+        isDone: false,
+        continueCursor: "cursor_24",
+      })
+
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({
+            order: vi.fn(() => ({
+              paginate,
+            })),
+          })),
+        })),
+      },
+    } as any
+
+    const result = await (listByProjectPaginated as any).handler(ctx, {
+      projectId: "project_1",
+      userId: "user_1",
+      sectionSlug: "blog",
+      limit: 24,
+    })
+
+    expect(result.page).toHaveLength(24)
+    expect(result.continueCursor).toBe("cursor_24")
+    expect(paginate.mock.calls[0]?.[0]).toEqual({ cursor: null, numItems: 24 })
+    expect(paginate.mock.calls[1]?.[0]).toEqual({ cursor: "cursor_20", numItems: 4 })
+  })
 })
