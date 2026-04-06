@@ -18,7 +18,11 @@ export async function syncProjectsFromConfigAction(owner: string, repo: string, 
   if (!actingUserId) return { success: false, error: "No user found" }
 
   try {
-    const result = await syncProjectsServerSide(token, owner, repo, branch, actingUserId)
+    // Studio-triggered syncs may use any branch; skip orphan detection to
+    // avoid falsely flagging projects absent from a non-canonical branch's config.
+    const result = await syncProjectsServerSide(token, owner, repo, branch, actingUserId, {
+      runOrphanDetection: false,
+    })
     if (!result) {
       return { success: false, error: "Config not found or sync failed" }
     }

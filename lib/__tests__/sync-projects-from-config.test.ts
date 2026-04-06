@@ -392,7 +392,10 @@ describe("syncProjectsFromConfig", () => {
       expect(orphanPatch).toBeUndefined()
     })
 
-    it("does NOT flag config-managed projects that belong to a different branch", async () => {
+    it("DOES flag config-managed projects with a branch override as orphans when absent from config", async () => {
+      // Before the fix, a project with branch: "release" was silently skipped
+      // by an incorrect `project.branch !== args.branch` guard, so it was never
+      // orphaned even when removed from the config. This test verifies the fix.
       const otherBranchProject = makeProject({
         _id: "proj_release_docs",
         branch: "release",
@@ -402,13 +405,43 @@ describe("syncProjectsFromConfig", () => {
       const patch = vi.fn()
       const ctx = createCtx({ repoProjects: [otherBranchProject], patch })
 
+      // Sync from main — config does NOT contain "release-docs"
       const result = await (syncProjectsFromConfig as any).handler(ctx, BASE_ARGS)
 
+      // "release-docs" is no longer in the config, so it must be orphaned
+      // regardless of its content branch.
       const orphanPatch = patch.mock.calls.find(
         (call) => call[0] === "proj_release_docs" && call[1]?.configRemoved === true,
       )
+      expect(orphanPatch).toBeDefined()
+      expect(result.orphaned).toContain("proj_release_docs")
+    })
+
+    it("does NOT orphan when runOrphanDetection is false (Studio sync safety)", async () => {
+      // Studio-triggered syncs pass runOrphanDetection: false to avoid falsely
+      // orphaning projects absent from a non-canonical branch's config.
+      const configManagedProject = makeProject({
+        _id: "proj_main_docs",
+        branch: "main",
+        configProjectId: "main-docs",
+        frameworkSource: "config",
+      })
+      const patch = vi.fn()
+      const ctx = createCtx({ repoProjects: [configManagedProject], patch })
+
+      // Config is empty + runOrphanDetection: false — simulates Studio sync on feature branch
+      const result = await (syncProjectsFromConfig as any).handler(ctx, {
+        ...BASE_ARGS,
+        projects: [],
+        runOrphanDetection: false,
+      })
+
+      // No orphan patches should fire
+      const orphanPatch = patch.mock.calls.find(
+        (call) => call[0] === "proj_main_docs" && call[1]?.configRemoved === true,
+      )
       expect(orphanPatch).toBeUndefined()
-      expect(result.orphaned).not.toContain("proj_release_docs")
+      expect(result.orphaned).toHaveLength(0)
     })
   })
 

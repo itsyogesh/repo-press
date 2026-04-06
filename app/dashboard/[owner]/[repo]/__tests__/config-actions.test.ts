@@ -361,7 +361,7 @@ describe("removeProjectFromConfigAction", () => {
     expect(result).toEqual({ success: false, error: "Repo not found" })
   })
 
-  it("returns { success: false } when removeProject (config-writer) throws", async () => {
+  it("returns { success: false } when removeProject (config-writer) throws for an unexpected reason", async () => {
     removeProjectMock.mockImplementation(() => {
       throw new Error("Cannot remove the last project")
     })
@@ -370,6 +370,39 @@ describe("removeProjectFromConfigAction", () => {
 
     expect(result).toEqual({ success: false, error: "Cannot remove the last project" })
     expect(commitConfigMock).not.toHaveBeenCalled()
+  })
+
+  it("succeeds without committing when project is absent from config (config was manually cleared)", async () => {
+    // Simulates the real-world bug: config has projects: [] but Convex still has
+    // config-managed projects (orphan detection never ran due to the branch guard bug).
+    // removeProject throws "not found in config" → we skip the commit but still sync.
+    removeProjectMock.mockImplementation(() => {
+      throw new Error('Project "docs" not found in config')
+    })
+
+    const result = await removeProjectFromConfigAction(OWNER, REPO, BRANCH, "docs")
+
+    expect(result.success).toBe(true)
+    // removeProject IS called; we catch its "not found" error
+    expect(removeProjectMock).toHaveBeenCalledWith(BASE_CONFIG, "docs")
+    // No commit — nothing to change in the config
+    expect(commitConfigMock).not.toHaveBeenCalled()
+    // Sync MUST run so orphan detection in Convex flags the stale project
+    expect(syncProjectsServerSideMock).toHaveBeenCalledWith(TOKEN, OWNER, REPO, BRANCH, USER_ID)
+  })
+
+  it("succeeds without committing when configProjectId is absent from a non-empty config", async () => {
+    // Edge case: config still has OTHER projects but not the one being removed.
+    // This is idempotent — the desired end state (project not in config) is already true.
+    removeProjectMock.mockImplementation(() => {
+      throw new Error('Project "blog" not found in config')
+    })
+
+    const result = await removeProjectFromConfigAction(OWNER, REPO, BRANCH, "blog")
+
+    expect(result.success).toBe(true)
+    expect(commitConfigMock).not.toHaveBeenCalled()
+    expect(syncProjectsServerSideMock).toHaveBeenCalledWith(TOKEN, OWNER, REPO, BRANCH, USER_ID)
   })
 })
 
