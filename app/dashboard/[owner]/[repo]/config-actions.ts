@@ -199,6 +199,10 @@ export async function updateProjectInConfigAction(
 /**
  * Removes a project from repopress.config.json on GitHub, then syncs.
  * After sync, orphan detection will flag the removed project in Convex.
+ *
+ * If the project is already absent from the config (e.g. the config was
+ * manually cleared), we skip the commit and go straight to sync so that
+ * Convex's orphan detection can flag/clean up the stale project record.
  */
 export async function removeProjectFromConfigAction(
   owner: string,
@@ -211,16 +215,34 @@ export async function removeProjectFromConfigAction(
     await requireWriteAccess(token, owner, repo, actingUserId)
     const { config, sha } = await fetchConfigOrThrow(token, owner, repo, branch)
 
-    const updatedConfig = removeProject(config, configProjectId)
-    await commitConfig(
-      token,
-      owner,
-      repo,
-      branch,
-      updatedConfig,
-      sha,
-      `chore(repopress): remove project "${configProjectId}"`,
-    )
+    let skipCommit = false
+    let updatedConfig: typeof config
+    try {
+      updatedConfig = removeProject(config, configProjectId)
+    } catch (err: any) {
+      if (err.message?.includes("not found in config")) {
+        // Project is already absent — idempotent success. Skip the GitHub commit
+        // and fall through to sync so Convex orphan detection can clean up.
+        skipCommit = true
+      } else {
+        throw err
+      }
+    }
+
+    if (!skipCommit) {
+      await commitConfig(
+        token,
+        owner,
+        repo,
+        branch,
+        updatedConfig!,
+        sha,
+        `chore(repopress): remove project "${configProjectId}"`,
+      )
+    }
+    // If the project is not in the config, skip the commit — it was already
+    // removed (e.g. the config was manually cleared). The sync below will
+    // trigger orphan detection and flag the Convex record appropriately.
 
     const syncResult = await syncProjectsServerSide(token, owner, repo, branch, actingUserId)
     revalidatePath(`/dashboard/${owner}/${repo}`)
