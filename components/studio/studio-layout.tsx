@@ -1015,7 +1015,7 @@ function StudioLayoutInner({
   const editorScrollRef = React.useRef<HTMLDivElement>(null)
   const previewScrollRef = React.useRef<HTMLDivElement>(null)
   const lastScrollSource = React.useRef<"editor" | "preview">("editor")
-  const scrollSyncSettleTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+  const scrollSyncSettleTimer = React.useRef<number | null>(null)
 
   // Scroll anchor cache — keyed by container, invalidated when scrollHeight or width changes
   const headingsCache = React.useRef<

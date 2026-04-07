@@ -125,7 +125,7 @@ describe("createScrollSyncCoordinator", () => {
   })
 
   it("creates a coordinator when requestAnimationFrame is unavailable during SSR", () => {
-    const globalScope = globalThis as typeof globalThis & {
+    const globalScope = globalThis as Omit<typeof globalThis, "requestAnimationFrame" | "cancelAnimationFrame"> & {
       requestAnimationFrame?: typeof requestAnimationFrame
       cancelAnimationFrame?: typeof cancelAnimationFrame
     }

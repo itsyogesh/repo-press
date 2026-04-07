@@ -202,6 +202,29 @@ describe("POST /api/media/download-external", () => {
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 
+  it.each([
+    "http://0.0.0.0/internal.png",
+    "http://100.64.0.1/internal.png",
+    "http://198.18.0.1/internal.png",
+    "http://224.0.0.1/internal.png",
+    "http://[::1]/internal.png",
+    "http://[::ffff:127.0.0.1]/internal.png",
+  ])("rejects non-global direct targets before fetching: %s", async (url) => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch")
+
+    const response = await POST(
+      buildRequest({
+        ...baseBody(),
+        url,
+      }),
+    )
+    const payload = await response.json()
+
+    expect(response.status).toBe(400)
+    expect(payload.error).toContain("public")
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
   it("rejects redirects to private-network targets", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       new Response(null, {
@@ -226,6 +249,23 @@ describe("POST /api/media/download-external", () => {
       buildRequest({
         ...baseBody(),
         url: "http://metadata.google.internal/instance/image.png",
+      }),
+    )
+    const payload = await response.json()
+
+    expect(response.status).toBe(400)
+    expect(payload.error).toContain("public")
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it("rejects hostnames that resolve to reserved IPs", async () => {
+    dnsLookupMock.mockResolvedValueOnce([{ address: "100.64.0.12", family: 4 }])
+    const fetchSpy = vi.spyOn(globalThis, "fetch")
+
+    const response = await POST(
+      buildRequest({
+        ...baseBody(),
+        url: "http://images.example.internal/image.png",
       }),
     )
     const payload = await response.json()

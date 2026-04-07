@@ -77,7 +77,7 @@ function makeProject(overrides: Partial<ProjectRow> & { _id: string }): ProjectR
 /** Creates a minimal Convex ctx mock with controllable DB behavior. */
 function createCtx({
   repoProjects = [] as ProjectRow[],
-  tombstone = null as ProjectRow | null,
+  tombstone = null as Partial<ProjectRow> | null,
   patch = vi.fn(),
   insert = vi.fn().mockResolvedValue("new_project_id"),
 } = {}) {

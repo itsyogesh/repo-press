@@ -621,4 +621,63 @@ describe("POST /api/github/publish-ops", () => {
       }),
     )
   })
+
+  it("publishes Convex-backed media from the storage URL returned by Convex", async () => {
+    vi.mocked(getFile).mockResolvedValue(null as never)
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      arrayBuffer: vi.fn().mockResolvedValue(Uint8Array.from([4, 5, 6]).buffer),
+    } as never)
+    convexQueryMock.mockReset()
+    convexQueryMock
+      .mockResolvedValueOnce(baseProject)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          _id: "media_op_convex_1",
+          projectId: "project_123",
+          repoPath: "/public/uploads/convex-hero.png",
+          sourceType: "convex",
+          convexStorageId: "convex-storage-id-1",
+        },
+      ])
+      .mockResolvedValueOnce("https://files.convex.cloud/storage/convex-storage-id-1")
+      .mockResolvedValueOnce({
+        _id: "publish_branch_1",
+        branchName: "repopress/main/1234",
+        prNumber: 42,
+        prUrl: "https://github.com/acme/docs-site/pull/42",
+        committedFilePaths: [],
+      })
+
+    const response = await POST(
+      buildRequest({
+        projectId: "project_123",
+      }),
+    )
+
+    expect(response.status).toBe(200)
+    expect(fetchSpy).toHaveBeenCalledWith("https://files.convex.cloud/storage/convex-storage-id-1", {
+      cache: "no-store",
+    })
+    expect(fetchSpy).not.toHaveBeenCalledWith("https://example.convex.site/api/storage/convex-storage-id-1", {
+      cache: "no-store",
+    })
+    expect(batchCommit).toHaveBeenCalledWith(
+      "gh-token",
+      "acme",
+      "docs-site",
+      "repopress/main/1234",
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: "public/uploads/convex-hero.png",
+          action: "create",
+          contentEncoding: "base64",
+          content: Buffer.from(Uint8Array.from([4, 5, 6])).toString("base64"),
+        }),
+      ]),
+      "chore(content): 1 media created via RepoPress",
+    )
+  })
 })

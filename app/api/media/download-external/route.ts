@@ -1,5 +1,6 @@
+import type { LookupAddress } from "node:dns"
 import { lookup } from "node:dns/promises"
-import { isIP } from "node:net"
+import { BlockList, isIP } from "node:net"
 import { ConvexHttpClient } from "convex/browser"
 import { NextResponse } from "next/server"
 import { api } from "@/convex/_generated/api"
@@ -20,6 +21,45 @@ export const runtime = "nodejs"
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
 const MAX_EXTERNAL_IMAGE_BYTES = 10 * 1024 * 1024
+const BLOCKED_IPV4_RANGES = new BlockList()
+const BLOCKED_IPV6_RANGES = new BlockList()
+
+for (const [address, prefix] of [
+  ["0.0.0.0", 8],
+  ["10.0.0.0", 8],
+  ["100.64.0.0", 10],
+  ["127.0.0.0", 8],
+  ["169.254.0.0", 16],
+  ["172.16.0.0", 12],
+  ["192.0.0.0", 24],
+  ["192.0.2.0", 24],
+  ["192.168.0.0", 16],
+  ["198.18.0.0", 15],
+  ["198.51.100.0", 24],
+  ["203.0.113.0", 24],
+  ["224.0.0.0", 4],
+  ["240.0.0.0", 4],
+] as const) {
+  BLOCKED_IPV4_RANGES.addSubnet(address, prefix, "ipv4")
+}
+
+for (const [address, prefix] of [
+  ["::ffff:0:0", 96],
+  ["64:ff9b::", 96],
+  ["64:ff9b:1::", 48],
+  ["100::", 64],
+  ["2001::", 23],
+  ["2001:db8::", 32],
+  ["2002::", 16],
+  ["fc00::", 7],
+  ["fe80::", 10],
+  ["ff00::", 8],
+] as const) {
+  BLOCKED_IPV6_RANGES.addSubnet(address, prefix, "ipv6")
+}
+
+BLOCKED_IPV6_RANGES.addAddress("::", "ipv6")
+BLOCKED_IPV6_RANGES.addAddress("::1", "ipv6")
 
 interface DownloadExternalRequest {
   projectId?: string
@@ -41,30 +81,23 @@ function isSafeExternalUrl(url: string): boolean {
   }
 }
 
+function normalizeHostname(hostname: string): string {
+  const normalized = hostname.trim().toLowerCase().replace(/\.$/, "")
+  if (normalized.startsWith("[") && normalized.endsWith("]")) {
+    return normalized.slice(1, -1)
+  }
+  return normalized
+}
+
 function isBlockedIpAddress(address: string): boolean {
-  const normalized = address.trim().toLowerCase().replace(/\.$/, "")
+  const normalized = normalizeHostname(address)
   const ipVersion = isIP(normalized)
-  if (ipVersion === 4) {
-    const [a, b] = normalized.split(".").map((segment) => Number(segment))
-    return (
-      a === 10 || a === 127 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)
-    )
-  }
-
-  if (ipVersion === 6) {
-    return (
-      normalized === "::1" ||
-      normalized.startsWith("fe80:") ||
-      normalized.startsWith("fc") ||
-      normalized.startsWith("fd")
-    )
-  }
-
-  return false
+  if (ipVersion === 0) return false
+  return ipVersion === 4 ? BLOCKED_IPV4_RANGES.check(normalized, "ipv4") : BLOCKED_IPV6_RANGES.check(normalized, "ipv6")
 }
 
 function isBlockedHostname(hostname: string): boolean {
-  const normalized = hostname.trim().toLowerCase().replace(/\.$/, "")
+  const normalized = normalizeHostname(hostname)
   if (!normalized) return true
   if (normalized === "localhost" || normalized.endsWith(".localhost") || normalized.endsWith(".local")) {
     return true
@@ -82,10 +115,10 @@ async function assertPublicHostname(hostname: string): Promise<void> {
     throw new Error("External image must resolve to a public HTTP(S) URL")
   }
 
-  const normalized = hostname.trim().toLowerCase().replace(/\.$/, "")
+  const normalized = normalizeHostname(hostname)
   if (isIP(normalized)) return
 
-  let addresses: Awaited<ReturnType<typeof lookup>>
+  let addresses: LookupAddress[]
   try {
     addresses = await lookup(normalized, { all: true, verbatim: true })
   } catch {

@@ -183,6 +183,9 @@ export async function POST(request: Request) {
     const contentDeleteCount = operations.filter((o) => o.action === "delete").length
 
     const mediaBatchOps = await buildMediaBatchOperations({
+      convex,
+      projectId: project._id,
+      queryAuth,
       token,
       owner,
       repo,
@@ -413,6 +416,9 @@ function normalizeMediaPath(repoPath: string) {
 }
 
 async function buildMediaBatchOperations({
+  convex,
+  projectId,
+  queryAuth,
   token,
   owner,
   repo,
@@ -421,6 +427,9 @@ async function buildMediaBatchOperations({
   prefetchResults,
   conflicts,
 }: {
+  convex: ConvexHttpClient
+  projectId: Id<"projects">
+  queryAuth: { userId?: string; projectAccessToken?: string }
   token: string
   owner: string
   repo: string
@@ -463,7 +472,12 @@ async function buildMediaBatchOperations({
         continue
       }
 
-      const bytes = await fetchConvexStorageBytes(mediaOp.convexStorageId)
+      const bytes = await fetchConvexStorageBytes({
+        convex,
+        projectId,
+        repoPath: mediaOp.repoPath,
+        queryAuth,
+      })
       operations.push({
         path: normalizedPath,
         action,
@@ -582,22 +596,29 @@ async function fetchGitHubBytes({
   return Buffer.from(base64, "base64")
 }
 
-async function fetchConvexStorageBytes(storageId: string): Promise<Buffer> {
-  // Convex storage IDs can be used with the Convex storage serve URL.
-  // The serve URL pattern is the same storage URL returned by ctx.storage.getUrl().
-  // We don't have the URL here, but we can construct it via the Convex HTTP API.
-  // Since this is server-side, we query Convex for the URL then fetch the bytes.
-  const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL
-  if (!convexUrl) {
-    throw new Error("NEXT_PUBLIC_CONVEX_URL is not set")
+async function fetchConvexStorageBytes({
+  convex,
+  projectId,
+  repoPath,
+  queryAuth,
+}: {
+  convex: ConvexHttpClient
+  projectId: Id<"projects">
+  repoPath: string
+  queryAuth: { userId?: string; projectAccessToken?: string }
+}): Promise<Buffer> {
+  const storageUrl = await convex.query(api.mediaOps.getConvexStorageUrl, {
+    projectId,
+    repoPath,
+    ...queryAuth,
+  })
+  if (!storageUrl) {
+    throw new Error(`No Convex storage URL returned for media path ${repoPath}`)
   }
-  // Use the Convex storage endpoint directly: {convex_site_url}/api/storage/{storageId}
-  const convexSiteUrl = process.env.NEXT_PUBLIC_CONVEX_SITE_URL || convexUrl.replace(".convex.cloud", ".convex.site")
-  const storageUrl = `${convexSiteUrl}/api/storage/${storageId}`
 
   const response = await fetch(storageUrl, { cache: "no-store" })
   if (!response.ok) {
-    throw new Error(`Failed to fetch Convex storage file (${response.status}): ${storageId}`)
+    throw new Error(`Failed to fetch Convex storage file (${response.status}): ${repoPath}`)
   }
 
   return Buffer.from(await response.arrayBuffer())

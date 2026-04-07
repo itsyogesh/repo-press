@@ -21,7 +21,11 @@ export type ConvexStorageUploadResult = {
 }
 
 type ConvexMutationClient = {
-  mutation: (ref: unknown, args: Record<string, unknown>) => Promise<unknown>
+  mutation: (...args: any[]) => Promise<unknown>
+}
+
+type ConvexQueryClient = {
+  query: (...args: any[]) => Promise<unknown>
 }
 
 export type ImageMetadata = {
@@ -87,7 +91,7 @@ export async function uploadToConvexStorage({
 
   const response = await fetch(uploadUrl, {
     method: "POST",
-    body: content,
+    body: new Uint8Array(content),
     headers: { "Content-Type": contentType },
   })
 
@@ -365,7 +369,7 @@ export async function resolveProject({
   repo,
   branch,
 }: {
-  convex: { query: (ref: unknown, args: Record<string, unknown>) => Promise<unknown> }
+  convex: ConvexQueryClient
   api: { projects: { get: unknown; findByRepo: unknown } }
   projectId?: string
   owner: string
