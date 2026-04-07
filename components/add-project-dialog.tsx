@@ -4,7 +4,6 @@ import { Loader2, Plus } from "lucide-react"
 import { useState, useTransition } from "react"
 import { toast } from "sonner"
 import { addProjectToConfigAction } from "@/app/dashboard/[owner]/[repo]/config-actions"
-import { buildAddProjectActionInput } from "@/components/project-config-action-input"
 import { Button } from "./ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog"
 import { Input } from "./ui/input"
@@ -41,6 +40,13 @@ interface AddProjectDialogProps {
   onSuccess?: () => void
 }
 
+function slugify(str: string): string {
+  return str
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+}
+
 export function AddProjectDialog({ owner, repo, defaultBranch, open, onOpenChange, onSuccess }: AddProjectDialogProps) {
   const [isPending, startTransition] = useTransition()
   const [name, setName] = useState("")
@@ -50,14 +56,7 @@ export function AddProjectDialog({ owner, repo, defaultBranch, open, onOpenChang
   const [branch, setBranch] = useState("")
   const [error, setError] = useState<string | null>(null)
 
-  const projectId = buildAddProjectActionInput({
-    defaultBranch,
-    name,
-    contentRoot,
-    framework,
-    contentType: contentType as "blog" | "docs" | "pages" | "changelog" | "custom",
-    branchInput: branch,
-  }).project.id
+  const projectId = slugify(name)
 
   const resetForm = () => {
     setName("")
@@ -80,15 +79,15 @@ export function AddProjectDialog({ owner, repo, defaultBranch, open, onOpenChang
 
     setError(null)
     startTransition(async () => {
-      const { configBranch, project } = buildAddProjectActionInput({
-        defaultBranch,
-        name,
-        contentRoot,
+      // Config file always lives on the default branch — not the project's content branch
+      const result = await addProjectToConfigAction(owner, repo, defaultBranch, {
+        id: projectId,
+        name: name.trim(),
+        contentRoot: contentRoot.trim(),
         framework,
         contentType: contentType as "blog" | "docs" | "pages" | "changelog" | "custom",
-        branchInput: branch,
+        ...(branch.trim() ? { branch: branch.trim() } : {}),
       })
-      const result = await addProjectToConfigAction(owner, repo, configBranch, project)
 
       if (result.success) {
         toast.success(`Project "${name.trim()}" added`)

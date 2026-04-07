@@ -5,6 +5,7 @@ import type { FileTreeNode } from "@/lib/github"
 const CONTENT_EXTENSIONS = /\.(mdx?|markdown)$/i
 
 export function blankSmartCreateValue(field: FrontmatterFieldDef): unknown {
+  if (field.defaultValue !== undefined) return field.defaultValue
   if (field.type === "date") return normalizeDate(new Date())
   if (field.type === "boolean") return false
   if (field.type === "number") return undefined

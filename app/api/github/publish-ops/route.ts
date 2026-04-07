@@ -8,6 +8,7 @@ import type { BatchOperation } from "@/lib/github"
 import { batchCommit, createBranch, createGitHubClient, createPullRequest, getFile } from "@/lib/github"
 import { mintServerQueryToken } from "@/lib/project-access-token"
 import { RouteAuthError, resolveRouteAuth } from "@/lib/route-auth"
+import { isStudioMediaResolveUrl } from "@/lib/studio/media-resolve"
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
 const ACTIVE_PUBLISH_BRANCH_CONFLICT_MESSAGE = "Active publish branch already exists for project"
@@ -124,9 +125,9 @@ export async function POST(request: Request) {
         }
 
         const doc = dirtyDocs.find((d) => d.filePath === op.filePath)
-        const fileContent = doc
-          ? matter.stringify(doc.body || "", doc.frontmatter || {})
-          : matter.stringify(op.initialBody || "", op.initialFrontmatter || {})
+        const rawFrontmatter = doc ? doc.frontmatter || {} : op.initialFrontmatter || {}
+        const rawBody = doc ? doc.body || "" : op.initialBody || ""
+        const fileContent = matter.stringify(rawBody, rewriteProxyUrls(rawFrontmatter))
 
         operations.push({
           path: fullPath,
@@ -168,7 +169,7 @@ export async function POST(request: Request) {
         }
       }
 
-      const fileContent = matter.stringify(doc.body || "", doc.frontmatter || {})
+      const fileContent = matter.stringify(doc.body || "", rewriteProxyUrls(doc.frontmatter || {}))
       operations.push({
         path: fullPath,
         content: fileContent,
@@ -182,6 +183,9 @@ export async function POST(request: Request) {
     const contentDeleteCount = operations.filter((o) => o.action === "delete").length
 
     const mediaBatchOps = await buildMediaBatchOperations({
+      convex,
+      projectId: project._id,
+      queryAuth,
       token,
       owner,
       repo,
@@ -412,6 +416,9 @@ function normalizeMediaPath(repoPath: string) {
 }
 
 async function buildMediaBatchOperations({
+  convex,
+  projectId,
+  queryAuth,
   token,
   owner,
   repo,
@@ -420,6 +427,9 @@ async function buildMediaBatchOperations({
   prefetchResults,
   conflicts,
 }: {
+  convex: ConvexHttpClient
+  projectId: Id<"projects">
+  queryAuth: { userId?: string; projectAccessToken?: string }
   token: string
   owner: string
   repo: string
@@ -452,6 +462,30 @@ async function buildMediaBatchOperations({
     }
 
     const action: "create" | "update" = expectedBaseSha ? "update" : "create"
+
+    if (mediaOp.sourceType === "convex") {
+      if (!mediaOp.convexStorageId) {
+        conflicts.push({
+          path: mediaOp.repoPath,
+          reason: "Missing Convex storage ID for media operation.",
+        })
+        continue
+      }
+
+      const bytes = await fetchConvexStorageBytes({
+        convex,
+        projectId,
+        repoPath: mediaOp.repoPath,
+        queryAuth,
+      })
+      operations.push({
+        path: normalizedPath,
+        action,
+        contentEncoding: "base64",
+        content: bytes.toString("base64"),
+      })
+      continue
+    }
 
     if (mediaOp.sourceType === "blob") {
       if (!mediaOp.blobUrl) {
@@ -560,4 +594,73 @@ async function fetchGitHubBytes({
   }
 
   return Buffer.from(base64, "base64")
+}
+
+async function fetchConvexStorageBytes({
+  convex,
+  projectId,
+  repoPath,
+  queryAuth,
+}: {
+  convex: ConvexHttpClient
+  projectId: Id<"projects">
+  repoPath: string
+  queryAuth: { userId?: string; projectAccessToken?: string }
+}): Promise<Buffer> {
+  const storageUrl = await convex.query(api.mediaOps.getConvexStorageUrl, {
+    projectId,
+    repoPath,
+    ...queryAuth,
+  })
+  if (!storageUrl) {
+    throw new Error(`No Convex storage URL returned for media path ${repoPath}`)
+  }
+
+  const response = await fetch(storageUrl, { cache: "no-store" })
+  if (!response.ok) {
+    throw new Error(`Failed to fetch Convex storage file (${response.status}): ${repoPath}`)
+  }
+
+  return Buffer.from(await response.arrayBuffer())
+}
+
+/**
+ * Rewrite any /api/media/resolve proxy URLs in frontmatter values to root-relative paths.
+ * Extracts the `path` query param and strips the `/public` prefix (since frameworks serve `public/` at root).
+ * Only string values matching isStudioMediaResolveUrl() are modified — all other values pass through unchanged.
+ */
+function rewriteProxyUrls(frontmatter: Record<string, unknown>): Record<string, unknown> {
+  const rewritten: Record<string, unknown> = {}
+
+  for (const [key, value] of Object.entries(frontmatter)) {
+    if (typeof value === "string" && isStudioMediaResolveUrl(value)) {
+      rewritten[key] = proxyUrlToRootRelative(value)
+    } else if (Array.isArray(value)) {
+      rewritten[key] = value.map((item) =>
+        typeof item === "string" && isStudioMediaResolveUrl(item) ? proxyUrlToRootRelative(item) : item,
+      )
+    } else if (value !== null && typeof value === "object") {
+      rewritten[key] = rewriteProxyUrls(value as Record<string, unknown>)
+    } else {
+      rewritten[key] = value
+    }
+  }
+
+  return rewritten
+}
+
+function proxyUrlToRootRelative(proxyUrl: string): string {
+  try {
+    // Parse the proxy URL — it may be relative so we use a dummy base.
+    const parsed = new URL(proxyUrl, "http://localhost")
+    const rawPath = parsed.searchParams.get("path")
+    if (!rawPath) return proxyUrl
+
+    // Strip the leading /public prefix so the path becomes root-relative for frameworks.
+    // e.g. /public/images/blog/cover.jpg → /images/blog/cover.jpg
+    const withoutPublic = rawPath.replace(/^\/public\//, "/")
+    return withoutPublic
+  } catch {
+    return proxyUrl
+  }
 }

@@ -264,6 +264,14 @@ export const discardAll = mutation({
     }
 
     for (const mediaOp of pendingMediaOps) {
+      // Delete from Convex storage before marking undone — prevents orphaned files.
+      if (mediaOp.convexStorageId) {
+        try {
+          await ctx.storage.delete(mediaOp.convexStorageId)
+        } catch {
+          // File may already be gone; don't block the discard.
+        }
+      }
       await ctx.db.patch(mediaOp._id, {
         status: "undone",
         updatedAt: now,

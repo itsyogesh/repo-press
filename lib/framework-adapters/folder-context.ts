@@ -135,7 +135,7 @@ export function getFolderContext(folderPath: string, adapter: FrameworkAdapter |
   // Empty path = repo root
   if (!segment) {
     return {
-      contentLabel: "New Page",
+      contentLabel: "Page",
       primaryFieldLabel: "Page Title",
       requiredFields,
       namingStrategy,

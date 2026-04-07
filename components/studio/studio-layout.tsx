@@ -29,6 +29,7 @@ import type { Id } from "@/convex/_generated/dataModel"
 import { getFrameworkAdapter } from "@/lib/framework-adapters"
 import { type FileTreeNode, findTreeNode } from "@/lib/github"
 import { usePreviewContext } from "@/lib/hooks/use-preview-context"
+import { standardComponents } from "@/lib/repopress/standard-library"
 import { buildHistoryHref } from "@/lib/studio/history-link"
 import { getPublishLaneViewModel } from "@/lib/studio/publish-lane-view-model"
 import { CommandPalette } from "./command-palette"
@@ -519,6 +520,12 @@ function StudioLayoutInner({
     fieldVariants,
   } = studioQueries
 
+  // Build a set of full repo-relative paths for documents with pending edits.
+  // doc.filePath is already the full tree path (set from selectedFile.path on save).
+  const dirtyPaths = React.useMemo(() => {
+    return new Set((dirtyDocs ?? []).map((doc: any) => doc.filePath))
+  }, [dirtyDocs])
+
   const publishLaneViewModel = React.useMemo(
     () =>
       getPublishLaneViewModel({
@@ -1008,7 +1015,7 @@ function StudioLayoutInner({
   const editorScrollRef = React.useRef<HTMLDivElement>(null)
   const previewScrollRef = React.useRef<HTMLDivElement>(null)
   const lastScrollSource = React.useRef<"editor" | "preview">("editor")
-  const scrollSyncSettleTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+  const scrollSyncSettleTimer = React.useRef<number | null>(null)
 
   // Scroll anchor cache — keyed by container, invalidated when scrollHeight or width changes
   const headingsCache = React.useRef<
@@ -1033,7 +1040,6 @@ function StudioLayoutInner({
 
   // Restore scroll position after mode switch completes
   React.useLayoutEffect(() => {
-    void viewMode
     // Double requestAnimationFrame: first frame commits layout, second applies after
     // MDX async compilation finishes updating scrollHeight.
     const restoreScroll = () => {
@@ -1052,7 +1058,7 @@ function StudioLayoutInner({
       requestAnimationFrame(restoreScroll)
     })
     return () => cancelAnimationFrame(raf1)
-  }, [viewMode])
+  }, [])
 
   const getScrollSyncMetrics = React.useCallback(
     (container: HTMLDivElement) => {
@@ -1387,6 +1393,7 @@ function StudioLayoutInner({
                           owner={owner}
                           repo={repo}
                           adapter={frameworkAdapter}
+                          dirtyPaths={dirtyPaths}
                         />
                       </div>
                       <div className="shrink-0 border-t border-studio-border bg-studio-canvas/95 backdrop-blur supports-[backdrop-filter]:bg-studio-canvas/80">
@@ -1687,6 +1694,7 @@ function StudioLayoutInner({
                         projectId={projectId}
                         userId={userId}
                         filePath={selectedFile.path}
+                        contentRoot={contentRoot}
                         scrollContainerRef={previewScrollRef}
                         onScroll={handlePreviewScroll}
                         onCompilingChange={handlePreviewCompilingChange}
@@ -1856,6 +1864,19 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
       adapterError: previewContext.error,
       adapterDiagnostics: previewContext.diagnostics,
       components: componentSchema,
+      // Resolve insert-picker components by contentRoot:
+      //  1. If the adapter declares componentsByContext for this root, use that (fully context-aware).
+      //  2. Otherwise fall back to standardComponents — the universal safe set that never includes
+      //     docs-only components like DocsImage/DocsVideo that come from the adapter layer.
+      //     The full previewContext.context.components (adapter-augmented) is still used for
+      //     *rendering* existing MDX; we deliberately exclude adapter additions from the insert picker
+      //     when no explicit context split is declared.
+      resolvedComponents:
+        contentRoot && previewContext.context?.componentsByContext?.[contentRoot]
+          ? previewContext.context.componentsByContext[contentRoot]
+          : previewContext.context
+            ? standardComponents
+            : undefined,
       detectedFramework: studioQueries.project?.detectedFramework as string | undefined,
     }),
     [
@@ -1904,6 +1925,7 @@ export function StudioLayout(props: StudioLayoutProps) {
       adapterError: null,
       adapterDiagnostics: [],
       components: undefined,
+      resolvedComponents: undefined,
     }),
     [owner, repo, branch, projectId, projectAccessToken, contentRoot, tree, role],
   )

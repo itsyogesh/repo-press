@@ -129,10 +129,10 @@ export function Editor({
   projectId,
   userId,
   filePath = "",
-  contentRoot: _contentRoot = "",
+  contentRoot = "",
   tree = [],
 }: EditorProps) {
-  const { adapter, components: componentSchema } = useStudioAdapter()
+  const { adapter, components: componentSchema, resolvedComponents } = useStudioAdapter()
   const editorRef = React.useRef<MDXEditorMethods>(null)
 
   const discoveredJsxComponentNames = React.useMemo(() => {
@@ -149,7 +149,12 @@ export function Editor({
   }, [content])
 
   const hasConfiguredMediaComponent = React.useMemo(() => {
-    const configuredNames = new Set([...Object.keys(adapter?.components || {}), ...Object.keys(componentSchema || {})])
+    // Use resolvedComponents (contentRoot-filtered) so blog context doesn't
+    // treat docs-only media components as available for inline inserts.
+    const configuredNames = new Set([
+      ...Object.keys(resolvedComponents || adapter?.components || {}),
+      ...Object.keys(componentSchema || {}),
+    ])
 
     return (
       configuredNames.has("DocsImage") ||
@@ -157,7 +162,7 @@ export function Editor({
       configuredNames.has("DocsVideo") ||
       configuredNames.has("Video")
     )
-  }, [adapter, componentSchema])
+  }, [resolvedComponents, adapter, componentSchema])
 
   // Image upload handler - Blob-first with GitHub fallback
   const handleImageUpload = React.useCallback(
@@ -166,7 +171,7 @@ export function Editor({
         if (!projectId) {
           throw new Error("Missing project context for media upload")
         }
-        const pathHint = filePath ? getSuggestedImagePath(filePath) : "public/images"
+        const pathHint = filePath ? getSuggestedImagePath(filePath, contentRoot) : "public/images"
 
         // Use Blob-first upload with GitHub fallback
         const result = await uploadMedia({
@@ -191,7 +196,7 @@ export function Editor({
         throw error
       }
     },
-    [projectId, userId, owner, repo, branch, filePath],
+    [projectId, userId, owner, repo, branch, filePath, contentRoot],
   )
 
   // Extract image paths from tree for autocomplete
@@ -203,9 +208,9 @@ export function Editor({
 
   const handleImagePreview = React.useCallback(
     async (imageSource: string): Promise<string> => {
-      return resolveStudioAssetUrl(imageSource, projectId, userId, filePath)
+      return resolveStudioAssetUrl(imageSource, projectId, userId, filePath, undefined, contentRoot)
     },
-    [projectId, userId, filePath],
+    [projectId, userId, filePath, contentRoot],
   )
 
   // Build MDXEditor plugins — memoized to avoid re-creating on every render
@@ -268,6 +273,7 @@ export function Editor({
             branch={branch}
             projectId={projectId}
             userId={userId}
+            selectedFilePath={filePath}
             showMarkdownMediaInserts={!hasConfiguredMediaComponent}
           />
         ),
@@ -286,6 +292,7 @@ export function Editor({
       projectId,
       userId,
       hasConfiguredMediaComponent,
+      filePath,
     ],
   )
 

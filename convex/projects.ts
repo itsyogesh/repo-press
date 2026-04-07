@@ -462,6 +462,11 @@ export const syncProjectsFromConfig = mutation({
     configVersion: v.number(),
     configPath: v.string(),
     pluginRegistry: v.optional(v.any()),
+    // When false, orphan detection is skipped. Pass false from Studio-triggered
+    // syncs (which may use a non-default branch) to avoid falsely orphaning
+    // projects whose configProjectId is absent from that branch's config but
+    // still present in the canonical branch config.
+    runOrphanDetection: v.optional(v.boolean()),
     projects: v.array(
       v.object({
         configProjectId: v.string(),
@@ -608,25 +613,35 @@ export const syncProjectsFromConfig = mutation({
     // ── Orphan detection ─────────────────────────────────────────
     // Flag config-driven projects that are no longer in the config.
     // Clear the flag for projects that were re-added.
-    const configIds = new Set(args.projects.map((p) => p.configProjectId))
+    // Only run when runOrphanDetection !== false. Studio-triggered syncs pass
+    // false because they may use a non-default branch whose config omits
+    // projects that still exist on the canonical branch.
     const orphaned: string[] = []
 
-    for (const project of repoProjects) {
-      if (project.frameworkSource !== "config" || !project.configProjectId) continue
-      if (project.name.startsWith("[DELETING]")) continue
+    if (args.runOrphanDetection !== false) {
+      const configIds = new Set(args.projects.map((p) => p.configProjectId))
 
-      if (!configIds.has(project.configProjectId)) {
-        // Project is no longer in config — flag it as orphaned
-        if (!project.configRemoved) {
-          await ctx.db.patch(project._id, {
-            configRemoved: true,
-            configRemovedAt: Date.now(),
-            updatedAt: Date.now(),
-          })
+      for (const project of repoProjects) {
+        if (project.frameworkSource !== "config" || !project.configProjectId) continue
+        if (project.name.startsWith("[DELETING]")) continue
+        // Note: we intentionally do NOT filter by branch here.
+        // A project's `branch` is its content branch, not the config branch.
+        // If a configProjectId is absent from the current config, the project is
+        // orphaned regardless of which content branch it targets.
+
+        if (!configIds.has(project.configProjectId)) {
+          // Project is no longer in config — flag it as orphaned
+          if (!project.configRemoved) {
+            await ctx.db.patch(project._id, {
+              configRemoved: true,
+              configRemovedAt: Date.now(),
+              updatedAt: Date.now(),
+            })
+          }
+          orphaned.push(project._id)
+          // Note: re-added orphans (configRemoved → cleared) are handled in the
+          // main upsert loop above via the needsUpdate check on configRemoved.
         }
-        orphaned.push(project._id)
-        // Note: re-added orphans (configRemoved → cleared) are handled in the
-        // main upsert loop above via the needsUpdate check on configRemoved.
       }
     }
 
@@ -651,7 +666,11 @@ export const update = mutation({
   handler: async (ctx, args) => {
     await resolveProjectAccess(
       ctx,
-      { projectId: args.id, userId: args.userId, projectAccessToken: args.projectAccessToken },
+      {
+        projectId: args.id,
+        userId: args.userId,
+        projectAccessToken: args.projectAccessToken,
+      },
       "editor",
     )
 
@@ -674,7 +693,11 @@ export const updateFramework = mutation({
   handler: async (ctx, args) => {
     await resolveProjectAccess(
       ctx,
-      { projectId: args.id, userId: args.userId, projectAccessToken: args.projectAccessToken },
+      {
+        projectId: args.id,
+        userId: args.userId,
+        projectAccessToken: args.projectAccessToken,
+      },
       "editor",
     )
 
@@ -721,7 +744,11 @@ export const remove = mutation({
   handler: async (ctx, args) => {
     await resolveProjectAccess(
       ctx,
-      { projectId: args.id, userId: args.userId, projectAccessToken: args.projectAccessToken },
+      {
+        projectId: args.id,
+        userId: args.userId,
+        projectAccessToken: args.projectAccessToken,
+      },
       "owner",
     )
 

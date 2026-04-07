@@ -12,8 +12,12 @@ vi.mock("convex/browser", () => ({
   },
 }))
 
-vi.mock("@vercel/blob", () => ({
-  put: vi.fn(),
+const { dnsLookupMock } = vi.hoisted(() => ({
+  dnsLookupMock: vi.fn(),
+}))
+
+vi.mock("node:dns/promises", () => ({
+  lookup: dnsLookupMock,
 }))
 
 vi.mock("@/lib/auth-server", () => ({
@@ -39,9 +43,18 @@ vi.mock("@/lib/github-permissions", () => ({
   },
 }))
 
+vi.mock("@/lib/studio/media-upload-shared", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/studio/media-upload-shared")>(
+    "@/lib/studio/media-upload-shared",
+  )
+  return {
+    ...actual,
+    uploadToConvexStorage: vi.fn().mockResolvedValue({ storageId: "storage_ext123" }),
+  }
+})
+
 process.env.NEXT_PUBLIC_CONVEX_URL = process.env.NEXT_PUBLIC_CONVEX_URL || "https://example.convex.cloud"
 
-import { put } from "@vercel/blob"
 import { fetchAuthQuery, getGitHubToken, getPatAuthUserId } from "@/lib/auth-server"
 import { createGitHubClient } from "@/lib/github"
 import { getRepoRole } from "@/lib/github-permissions"
@@ -74,24 +87,27 @@ const projectRecord = {
   branch: "main",
 }
 
-describe("POST /api/media/download-external", () => {
-  const baseGithubClient = {
-    repos: {
-      getContent: vi.fn().mockRejectedValue({ status: 404, message: "Not Found" }),
-      createOrUpdateFileContents: vi.fn(),
-    },
-  }
+function imageResponse() {
+  return new Response(Uint8Array.from([1, 2, 3]), {
+    status: 200,
+    headers: { "content-type": "image/png" },
+  })
+}
 
+describe("POST /api/media/download-external", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     process.env.BETTER_AUTH_SECRET = "test-secret"
-    process.env.BLOB_READ_WRITE_TOKEN = "blob-token"
+    dnsLookupMock.mockResolvedValue([{ address: "93.184.216.34", family: 4 }])
     vi.mocked(getGitHubToken).mockResolvedValue("gh-token")
     vi.mocked(fetchAuthQuery!).mockResolvedValue({ _id: "user_1" })
     vi.mocked(getPatAuthUserId).mockResolvedValue("user_1")
     vi.mocked(getRepoRole).mockResolvedValue({ role: "owner", defaultBranch: "main", defaultBranchInferred: false })
     vi.mocked(createGitHubClient).mockReturnValue({
-      ...baseGithubClient,
+      repos: {
+        getContent: vi.fn().mockRejectedValue({ status: 404, message: "Not Found" }),
+        createOrUpdateFileContents: vi.fn(),
+      },
       users: {
         getAuthenticated: vi.fn().mockResolvedValue({ data: { login: "user_1" } }),
       },
@@ -104,25 +120,15 @@ describe("POST /api/media/download-external", () => {
     vi.restoreAllMocks()
   })
 
-  it("downloads the image, stages blob-backed media, and returns repoPath + previewUrl", async () => {
-    vi.mocked(put).mockResolvedValue({
-      url: "https://blob.vercel-storage.com/repo-press/creative-domain-ideas.png",
-    } as any)
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(Uint8Array.from([1, 2, 3]), {
-        status: 200,
-        headers: {
-          "content-type": "image/png",
-        },
-      }),
-    )
+  it("downloads the image, stages Convex-backed media, and returns repoPath + previewUrl", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(imageResponse())
 
     const response = await POST(buildRequest(baseBody()))
     const payload = await response.json()
 
     expect(response.status).toBe(200)
     expect(payload).toMatchObject({
-      storage: "blob",
+      storage: "convex",
       repoPath: "/public/images/blog/creative-domain-ideas/creative-domain-ideas.png",
       staged: true,
       mediaOpId: "media-op-1",
@@ -130,49 +136,23 @@ describe("POST /api/media/download-external", () => {
     expect(payload.previewUrl).toBe(
       "/api/media/resolve?projectId=project_123&path=%2Fpublic%2Fimages%2Fblog%2Fcreative-domain-ideas%2Fcreative-domain-ideas.png",
     )
-    expect(fetchSpy).toHaveBeenCalledWith("https://images.example.com/creative-domain-ideas.png")
+    expect(fetchSpy).toHaveBeenCalledWith("https://images.example.com/creative-domain-ideas.png", {
+      redirect: "manual",
+    })
     expect(convexMutationMock).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
         repoPath: "/public/images/blog/creative-domain-ideas/creative-domain-ideas.png",
         fileName: "creative-domain-ideas.png",
         mimeType: "image/png",
-      }),
-    )
-    const mediaAssetCall = convexMutationMock.mock.calls.find(
-      ([, args]) =>
-        args &&
-        typeof args === "object" &&
-        (args as Record<string, unknown>).filePath ===
-          "/public/images/blog/creative-domain-ideas/creative-domain-ideas.png",
-    )
-    expect(mediaAssetCall?.[1]).toEqual(
-      expect.objectContaining({
-        projectId: "project_123",
-        userId: "user_1",
-        fileName: "creative-domain-ideas.png",
-        filePath: "/public/images/blog/creative-domain-ideas/creative-domain-ideas.png",
-        mimeType: "image/png",
-        sizeBytes: 3,
-        originalUrl: "https://images.example.com/creative-domain-ideas.png",
-        width: undefined,
-        height: undefined,
+        sourceType: "convex",
+        convexStorageId: "storage_ext123",
       }),
     )
   })
 
   it("threads sourceFilePath into staged external media ops", async () => {
-    vi.mocked(put).mockResolvedValue({
-      url: "https://blob.vercel-storage.com/repo-press/creative-domain-ideas.png",
-    } as any)
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(Uint8Array.from([1, 2, 3]), {
-        status: 200,
-        headers: {
-          "content-type": "image/png",
-        },
-      }),
-    )
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(imageResponse())
 
     const response = await POST(
       buildRequest({
@@ -191,39 +171,11 @@ describe("POST /api/media/download-external", () => {
     )
   })
 
-  it("retries blob upload with private access when public upload fails with an access-policy error", async () => {
-    vi.mocked(put)
-      .mockRejectedValueOnce(new Error("This token does not allow public uploads"))
-      .mockResolvedValueOnce({
-        url: "https://blob.vercel-storage.com/repo-press/creative-domain-ideas.png",
-      } as any)
-
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(Uint8Array.from([1, 2, 3]), {
-        status: 200,
-        headers: {
-          "content-type": "image/png",
-        },
-      }),
-    )
-
-    const response = await POST(buildRequest(baseBody()))
-    const payload = await response.json()
-
-    expect(response.status).toBe(200)
-    expect(payload.storage).toBe("blob")
-    expect(vi.mocked(put)).toHaveBeenCalledTimes(2)
-    expect(vi.mocked(put).mock.calls[0]?.[2]).toEqual(expect.objectContaining({ access: "public" }))
-    expect(vi.mocked(put).mock.calls[1]?.[2]).toEqual(expect.objectContaining({ access: "private" }))
-  })
-
   it("rejects non-image downloads", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response("<html></html>", {
         status: 200,
-        headers: {
-          "content-type": "text/html",
-        },
+        headers: { "content-type": "text/html" },
       }),
     )
 
@@ -232,6 +184,94 @@ describe("POST /api/media/download-external", () => {
 
     expect(response.status).toBe(400)
     expect(payload.error).toContain("image")
-    expect(vi.mocked(put)).not.toHaveBeenCalled()
+  })
+
+  it("rejects direct private-network targets before fetching", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch")
+
+    const response = await POST(
+      buildRequest({
+        ...baseBody(),
+        url: "http://127.0.0.1/internal.png",
+      }),
+    )
+    const payload = await response.json()
+
+    expect(response.status).toBe(400)
+    expect(payload.error).toContain("public")
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    "http://0.0.0.0/internal.png",
+    "http://100.64.0.1/internal.png",
+    "http://198.18.0.1/internal.png",
+    "http://224.0.0.1/internal.png",
+    "http://[::1]/internal.png",
+    "http://[::ffff:127.0.0.1]/internal.png",
+  ])("rejects non-global direct targets before fetching: %s", async (url) => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch")
+
+    const response = await POST(
+      buildRequest({
+        ...baseBody(),
+        url,
+      }),
+    )
+    const payload = await response.json()
+
+    expect(response.status).toBe(400)
+    expect(payload.error).toContain("public")
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it("rejects redirects to private-network targets", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(null, {
+        status: 302,
+        headers: { location: "http://169.254.169.254/latest/meta-data" },
+      }),
+    )
+
+    const response = await POST(buildRequest(baseBody()))
+    const payload = await response.json()
+
+    expect(response.status).toBe(400)
+    expect(payload.error).toContain("public")
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it("rejects hostnames that resolve to private-network IPs", async () => {
+    dnsLookupMock.mockResolvedValueOnce([{ address: "10.0.0.12", family: 4 }])
+    const fetchSpy = vi.spyOn(globalThis, "fetch")
+
+    const response = await POST(
+      buildRequest({
+        ...baseBody(),
+        url: "http://metadata.google.internal/instance/image.png",
+      }),
+    )
+    const payload = await response.json()
+
+    expect(response.status).toBe(400)
+    expect(payload.error).toContain("public")
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it("rejects hostnames that resolve to reserved IPs", async () => {
+    dnsLookupMock.mockResolvedValueOnce([{ address: "100.64.0.12", family: 4 }])
+    const fetchSpy = vi.spyOn(globalThis, "fetch")
+
+    const response = await POST(
+      buildRequest({
+        ...baseBody(),
+        url: "http://images.example.internal/image.png",
+      }),
+    )
+    const payload = await response.json()
+
+    expect(response.status).toBe(400)
+    expect(payload.error).toContain("public")
+    expect(fetchSpy).not.toHaveBeenCalled()
   })
 })

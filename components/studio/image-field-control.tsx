@@ -9,13 +9,13 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Progress } from "@/components/ui/progress"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { downloadExternalImage } from "@/lib/studio/download-external-image"
 import { getAuthoredImageValue } from "@/lib/studio/image-authoring"
 import { isSafeImageSrc, normalizeExternalImageUrl } from "@/lib/studio/image-url"
 import { getSuggestedImagePath, resolveStudioAssetUrl } from "@/lib/studio/media-resolve"
 import { cn } from "@/lib/utils"
+import { GalleryTab } from "./gallery-tab"
 import { ImageUploadZone } from "./image-upload-zone"
 import { useStudio } from "./studio-context"
 
@@ -46,6 +46,8 @@ interface ImageSelectorDialogProps {
   branch?: string
   pathHint: string
   selectedFilePath?: string
+  contentRoot?: string
+  projectAccessToken?: string
   authoredValueUsage?: "frontmatter" | "component" | "editor"
   fieldName?: string
   semanticRole?: string
@@ -62,6 +64,8 @@ function ImageSelectorDialog({
   branch,
   pathHint,
   selectedFilePath,
+  contentRoot,
+  projectAccessToken,
   authoredValueUsage = "component",
   fieldName,
   semanticRole,
@@ -76,13 +80,8 @@ function ImageSelectorDialog({
     const normalized = normalizeExternalImageUrl(urlValue)
     if (!normalized || !isSafeImageSrc(normalized)) return
 
-    if (
-      !projectId ||
-      !owner ||
-      !repo ||
-      !branch ||
-      (!normalized.startsWith("http://") && !normalized.startsWith("https://"))
-    ) {
+    if (!projectId || !owner || !repo) {
+      // Missing project context — fall back to using the raw URL directly in frontmatter.
       onSelect(normalized)
       return
     }
@@ -143,14 +142,14 @@ function ImageSelectorDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg overflow-hidden flex flex-col max-h-[90vh] p-0">
-        <DialogHeader className="px-6 pt-6 pb-2">
+      <DialogContent className="sm:max-w-xl overflow-hidden flex flex-col max-h-[90vh] p-0">
+        <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
           <DialogTitle>Select Image</DialogTitle>
           <DialogDescription>Choose an image for your content</DialogDescription>
         </DialogHeader>
 
-        <Tabs defaultValue="upload" className="flex-1 flex flex-col overflow-hidden">
-          <div className="px-6 border-b border-studio-border">
+        <Tabs defaultValue="upload" className="flex-1 flex flex-col overflow-hidden min-h-0">
+          <div className="px-6 border-b border-studio-border shrink-0">
             <TabsList className="w-full justify-start h-10 bg-transparent gap-6">
               <TabsTrigger
                 value="upload"
@@ -158,84 +157,109 @@ function ImageSelectorDialog({
               >
                 Upload
               </TabsTrigger>
+              {projectId && (
+                <TabsTrigger
+                  value="gallery"
+                  className="rounded-none border-b-2 border-transparent data-[state=active]:border-studio-accent data-[state=active]:bg-transparent px-0 h-10 shadow-none"
+                >
+                  Gallery
+                </TabsTrigger>
+              )}
               <TabsTrigger
                 value="url"
                 className="rounded-none border-b-2 border-transparent data-[state=active]:border-studio-accent data-[state=active]:bg-transparent px-0 h-10 shadow-none"
               >
-                External URL
+                Link
               </TabsTrigger>
             </TabsList>
           </div>
 
-          <ScrollArea className="flex-1">
+          <TabsContent value="upload" className="flex-1 overflow-y-auto mt-0">
             <div className="p-6">
-              <TabsContent value="upload" className="mt-0">
-                {projectId && owner && repo && branch ? (
-                  <ImageUploadZone
-                    projectId={projectId}
-                    userId={userId}
-                    owner={owner}
-                    repo={repo}
-                    branch={branch}
-                    pathHint={pathHint}
-                    onUploadComplete={onSelect}
-                    active={open}
-                    selectedFilePath={selectedFilePath}
-                    sourceFilePath={selectedFilePath}
-                    authoredValueUsage={authoredValueUsage}
-                    fieldName={fieldName}
-                    semanticRole={semanticRole}
-                  />
-                ) : (
-                  <div className="flex flex-col items-center justify-center h-48 text-studio-fg-muted">
-                    <p className="text-sm">Upload context unavailable</p>
-                  </div>
-                )}
-              </TabsContent>
-
-              <TabsContent value="url" className="mt-0">
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="image-url">Image URL</Label>
-                    <div className="flex gap-2">
-                      <Input
-                        id="image-url"
-                        value={urlValue}
-                        onChange={(e) => setUrlValue(e.target.value)}
-                        placeholder="https://example.com/image.jpg"
-                        className="border-studio-border"
-                      />
-                      <Button onClick={() => void handleUseUrl()} disabled={!canUseUrl || isDownloading}>
-                        Use URL
-                      </Button>
-                    </div>
-                    <p className="text-[10px] text-studio-fg-muted">Paste a direct link to an image.</p>
-                  </div>
-
-                  {isDownloading && (
-                    <div className="space-y-2">
-                      <p className="text-xs text-studio-fg-muted">Downloading and staging image...</p>
-                      <Progress value={downloadProgress} className="h-1" />
-                    </div>
-                  )}
-
-                  {canUseUrl && (
-                    <div className="rounded-lg border border-studio-border overflow-hidden bg-studio-canvas-inset aspect-video">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={normalizedUrlValue}
-                        alt="External preview"
-                        className="w-full h-full object-contain"
-                        onError={(e) => {
-                          ;(e.target as HTMLImageElement).style.display = "none"
-                        }}
-                      />
-                    </div>
-                  )}
+              {projectId && owner && repo && branch ? (
+                <ImageUploadZone
+                  projectId={projectId}
+                  userId={userId}
+                  owner={owner}
+                  repo={repo}
+                  branch={branch}
+                  pathHint={pathHint}
+                  onUploadComplete={onSelect}
+                  active={open}
+                  selectedFilePath={selectedFilePath}
+                  sourceFilePath={selectedFilePath}
+                  authoredValueUsage={authoredValueUsage}
+                  fieldName={fieldName}
+                  semanticRole={semanticRole}
+                />
+              ) : (
+                <div className="flex flex-col items-center justify-center h-48 text-studio-fg-muted">
+                  <p className="text-sm">Upload context unavailable</p>
                 </div>
-              </TabsContent>
+              )}
             </div>
-          </ScrollArea>
+          </TabsContent>
+
+          {projectId && owner && repo && branch && (
+            <TabsContent value="gallery" className="flex-1 flex flex-col min-h-0 mt-0 overflow-hidden">
+              <GalleryTab
+                projectId={projectId}
+                userId={userId}
+                owner={owner}
+                repo={repo}
+                branch={branch}
+                projectAccessToken={projectAccessToken}
+                selectedFilePath={selectedFilePath}
+                contentRoot={contentRoot}
+                authoredValueUsage={authoredValueUsage}
+                fieldName={fieldName}
+                semanticRole={semanticRole}
+                onSelect={onSelect}
+              />
+            </TabsContent>
+          )}
+
+          <TabsContent value="url" className="flex-1 overflow-y-auto mt-0">
+            <div className="p-6 space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="image-url">Image URL</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="image-url"
+                    value={urlValue}
+                    onChange={(e) => setUrlValue(e.target.value)}
+                    placeholder="https://example.com/image.jpg"
+                    className="border-studio-border"
+                  />
+                  <Button onClick={() => void handleUseUrl()} disabled={!canUseUrl || isDownloading}>
+                    Use URL
+                  </Button>
+                </div>
+                <p className="text-[10px] text-studio-fg-muted">Paste a direct link to an image.</p>
+              </div>
+
+              {isDownloading && (
+                <div className="space-y-2">
+                  <p className="text-xs text-studio-fg-muted">Downloading and staging image...</p>
+                  <Progress value={downloadProgress} className="h-1" />
+                </div>
+              )}
+
+              {canUseUrl && (
+                <div className="rounded-lg border border-studio-border overflow-hidden bg-studio-canvas-inset aspect-video">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={normalizedUrlValue}
+                    alt="External preview"
+                    className="w-full h-full object-contain"
+                    onError={(e) => {
+                      ;(e.target as HTMLImageElement).style.display = "none"
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+          </TabsContent>
         </Tabs>
       </DialogContent>
     </Dialog>
@@ -256,10 +280,13 @@ export function ImageFieldControl({
   const owner = repoContext?.owner ?? studio.owner
   const repo = repoContext?.repo ?? studio.repo
   const branch = repoContext?.branch ?? studio.branch
+  const projectAccessToken = studio.projectAccessToken
   const selectedFilePath = selectedFilePathProp ?? studio.selectedFilePath
   const [browserOpen, setBrowserOpen] = React.useState(false)
   const [editValue, setEditValue] = React.useState(value)
-  const resolvedValuePreview = value ? resolveStudioAssetUrl(value, projectId, userId, selectedFilePath) : value
+  const resolvedValuePreview = value
+    ? resolveStudioAssetUrl(value, projectId, userId, selectedFilePath, undefined, studio.contentRoot)
+    : value
 
   // Keep editValue in sync when value changes externally (e.g. on image select)
   React.useEffect(() => {
@@ -276,7 +303,7 @@ export function ImageFieldControl({
     if (trimmed !== value) onChange(trimmed)
   }
 
-  const pathHint = selectedFilePath ? getSuggestedImagePath(selectedFilePath) : "public/images"
+  const pathHint = selectedFilePath ? getSuggestedImagePath(selectedFilePath, studio.contentRoot) : "public/images"
 
   if (value && isSafeImageSrc(value)) {
     return (
@@ -349,6 +376,8 @@ export function ImageFieldControl({
           branch={branch}
           pathHint={pathHint}
           selectedFilePath={selectedFilePath}
+          contentRoot={studio.contentRoot}
+          projectAccessToken={projectAccessToken}
           authoredValueUsage="component"
         />
       </BlurFade>
@@ -383,6 +412,8 @@ export function ImageFieldControl({
         branch={branch}
         pathHint={pathHint}
         selectedFilePath={selectedFilePath}
+        contentRoot={studio.contentRoot}
+        projectAccessToken={projectAccessToken}
         authoredValueUsage="component"
       />
     </>

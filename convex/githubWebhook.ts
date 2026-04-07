@@ -62,6 +62,14 @@ export const handlePRMerged = mutation({
         continue
       }
 
+      if (op.convexStorageId) {
+        try {
+          await ctx.storage.delete(op.convexStorageId)
+        } catch {
+          // Already gone or unavailable; don't block publish finalization.
+        }
+      }
+
       await ctx.db.delete(op._id)
     }
 
@@ -163,7 +171,7 @@ export const handlePRMerged = mutation({
 
 /**
  * Handle a GitHub PR close event (without merge).
- * Marks the publish branch as closed. Explorer ops remain pending
+ * Marks the publish branch as closed. Explorer and media ops remain pending
  * so the user can re-publish later.
  */
 export const handlePRClosed = mutation({

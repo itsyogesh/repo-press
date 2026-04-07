@@ -98,7 +98,7 @@ describe("review regression guards", () => {
 
   it("uses document-aware upload folders for editor image uploads", () => {
     const source = read("components/studio/editor.tsx")
-    expect(source).toContain("getSuggestedImagePath(filePath)")
+    expect(source).toContain("getSuggestedImagePath(filePath,")
   })
 
   it("keeps studio component previews self-hosted", () => {

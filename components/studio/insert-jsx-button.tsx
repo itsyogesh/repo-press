@@ -19,10 +19,11 @@ interface InsertJsxButtonProps {
   branch: string
   projectId?: string
   userId?: string
+  selectedFilePath?: string
 }
 
-export function InsertJsxButton({ owner, repo, branch, projectId, userId }: InsertJsxButtonProps) {
-  const { components: schema, adapter, detectedFramework } = useStudioAdapter()
+export function InsertJsxButton({ owner, repo, branch, projectId, userId, selectedFilePath }: InsertJsxButtonProps) {
+  const { components: schema, detectedFramework, resolvedComponents } = useStudioAdapter()
   const insertJsx = usePublisher(insertJsx$)
   const [modalOpen, setModalOpen] = React.useState(false)
   const insertComponentModalCtx = useInsertComponentModal()
@@ -36,10 +37,10 @@ export function InsertJsxButton({ owner, repo, branch, projectId, userId }: Inse
   }
 
   const hasComponents = React.useMemo(() => {
-    const adapterCount = Object.keys(adapter?.components || {}).length
+    const adapterCount = Object.keys(resolvedComponents || {}).length
     const schemaCount = Object.keys(schema || {}).length
     return adapterCount + schemaCount > 0
-  }, [adapter, schema])
+  }, [resolvedComponents, schema])
 
   if (!hasComponents) return null
 
@@ -78,10 +79,10 @@ export function InsertJsxButton({ owner, repo, branch, projectId, userId }: Inse
       <ComponentInsertModal
         open={effectiveOpen}
         onOpenChange={handleOpenChange}
-        adapterComponents={adapter?.components}
+        adapterComponents={resolvedComponents}
         projectComponents={schema}
         framework={detectedFramework}
-        repoContext={projectId ? { projectId, userId, owner, repo, branch } : undefined}
+        repoContext={projectId ? { projectId, userId, owner, repo, branch, selectedFilePath } : undefined}
         onInsert={handleInsert}
       />
     </>

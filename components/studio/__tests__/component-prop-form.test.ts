@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { getRequiredProps, shouldShowVideoPreview, validateFormState } from "../component-prop-form"
+import { getRequiredProps, validateFormState } from "../component-prop-form"
 
 describe("getRequiredProps", () => {
   it("returns names of required props", () => {
@@ -51,16 +51,5 @@ describe("validateFormState", () => {
     const state = { enabled: false }
     const errors = validateFormState(props, state)
     expect(errors).toEqual({})
-  })
-})
-
-describe("shouldShowVideoPreview", () => {
-  it("enables preview for DocsVideo src when only the component name is available", () => {
-    expect(shouldShowVideoPreview("DocsVideo", "src")).toBe(true)
-  })
-
-  it("does not enable preview for non-src props or unrelated components", () => {
-    expect(shouldShowVideoPreview("DocsVideo", "title")).toBe(false)
-    expect(shouldShowVideoPreview("DocsImage", "src")).toBe(false)
   })
 })

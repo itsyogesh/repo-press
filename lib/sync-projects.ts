@@ -19,6 +19,7 @@ export async function syncProjectsServerSide(
   repo: string,
   branch: string,
   actingUserId: string,
+  { runOrphanDetection = true }: { runOrphanDetection?: boolean } = {},
 ): Promise<{ synced: string[]; created: string[]; unchanged: string[] } | null> {
   if (!convexUrl) return null
 
@@ -49,6 +50,7 @@ export async function syncProjectsServerSide(
     configVersion: config.version,
     configPath: "repopress.config.json",
     pluginRegistry: config.plugins,
+    runOrphanDetection,
     projects: projectsToSync,
   })
 

@@ -1,9 +1,9 @@
 "use client"
 
-import { useMutation } from "convex/react"
 import { Loader2, Trash2 } from "lucide-react"
 import { useState } from "react"
 import { toast } from "sonner"
+import { deleteProjectPermanentlyAction } from "@/app/dashboard/[owner]/[repo]/config-actions"
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -14,33 +14,25 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
-import { api } from "@/convex/_generated/api"
-import type { Id } from "@/convex/_generated/dataModel"
 
 interface DeleteProjectDialogProps {
   project: { _id: string; name: string } | null
-  /** actingUserId resolved server-side (OAuth or PAT). Optional — Convex session covers OAuth users. */
-  userId?: string | null
   open: boolean
   onOpenChange: (open: boolean) => void
   onSuccess: () => void
 }
 
-export function DeleteProjectDialog({ project, userId, open, onOpenChange, onSuccess }: DeleteProjectDialogProps) {
+export function DeleteProjectDialog({ project, open, onOpenChange, onSuccess }: DeleteProjectDialogProps) {
   const [isDeleting, setIsDeleting] = useState(false)
-  // Note: removeFull authorization relies on the Convex Better Auth session (OAuth users) or a
-  // projectAccessToken. PAT-only users cannot call this mutation from a client component without
-  // a projectAccessToken — the same limitation applies to OrphanWarningCard.
-  const removeFull = useMutation(api.projects.removeFull)
 
   const handleDelete = async () => {
     if (!project) return
     setIsDeleting(true)
     try {
-      await removeFull({
-        projectId: project._id as Id<"projects">,
-        userId: userId ?? undefined,
-      })
+      const result = await deleteProjectPermanentlyAction(project._id)
+      if (!result.success) {
+        throw new Error(result.error)
+      }
       toast.success(`"${project.name}" deleted`)
       onOpenChange(false)
       onSuccess()

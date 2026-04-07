@@ -35,5 +35,3 @@ next-env.d.ts
 .claude
 body_text.txt
 .worktrees/
-.github/plans/*.md
-!.github/plans/template_plan.md

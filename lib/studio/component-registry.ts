@@ -450,11 +450,13 @@ export function buildComponentRegistry(
       : undefined
 
     const frameworkFallbacks = getFrameworkFallbacks(framework)
-    // When no framework is detected, also check KNOWN_ADAPTER_FALLBACKS (fumadocs-era
-    // component names like DocsImage/DocsVideo) so existing projects aren't regressed.
+    // Always check KNOWN_ADAPTER_FALLBACKS as a last resort for well-known component names
+    // (fumadocs-era DocsImage/DocsVideo/Callout). This covers projects whose adapter exposes
+    // these components as bare React functions (no inline schema) and whose config doesn't
+    // define them explicitly — regardless of which framework the project uses.
     const fallback =
       !fromConfig && !hasAdapterSchema(fromAdapter)
-        ? (frameworkFallbacks[name] ?? (framework == null ? KNOWN_ADAPTER_FALLBACKS[name] : undefined))
+        ? (frameworkFallbacks[name] ?? KNOWN_ADAPTER_FALLBACKS[name])
         : undefined
 
     let source: RepoComponentDef["source"]
