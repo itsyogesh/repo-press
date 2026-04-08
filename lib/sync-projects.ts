@@ -21,8 +21,8 @@ export async function syncProjectsServerSide(
   actingUserId: string,
   {
     runOrphanDetection = true,
-    clearTombstones = false,
-  }: { runOrphanDetection?: boolean; clearTombstones?: boolean } = {},
+    restoredConfigProjectIds,
+  }: { runOrphanDetection?: boolean; restoredConfigProjectIds?: string[] } = {},
 ): Promise<{ synced: string[]; created: string[]; unchanged: string[]; orphaned?: string[] } | null> {
   if (!convexUrl) return null
 
@@ -54,7 +54,7 @@ export async function syncProjectsServerSide(
     configPath: "repopress.config.json",
     pluginRegistry: config.plugins,
     runOrphanDetection,
-    clearTombstones,
+    restoredConfigProjectIds,
     projects: projectsToSync,
   })
 

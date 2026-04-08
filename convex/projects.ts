@@ -485,9 +485,9 @@ export const syncProjectsFromConfig = mutation({
     // projects whose configProjectId is absent from that branch's config but
     // still present in the canonical branch config.
     runOrphanDetection: v.optional(v.boolean()),
-    // Explicit opt-in for config write flows that should resurrect a previously
-    // deleted config project when it is intentionally re-added.
-    clearTombstones: v.optional(v.boolean()),
+    // Config project IDs that were intentionally restored by the current write.
+    // Only these IDs may clear a tombstone during sync.
+    restoredConfigProjectIds: v.optional(v.array(v.string())),
     projects: v.array(
       v.object({
         configProjectId: v.string(),
@@ -529,6 +529,7 @@ export const syncProjectsFromConfig = mutation({
     const synced: string[] = []
     const created: string[] = []
     const unchanged: string[] = []
+    const restoredConfigProjectIds = new Set(args.restoredConfigProjectIds ?? [])
 
     // Repo-scoped lookup: find ALL projects for this repo, regardless of creator
     const repoProjects = await ctx.db
@@ -549,9 +550,10 @@ export const syncProjectsFromConfig = mutation({
 
       if (tombstone) {
         // Default/read-time syncs must preserve tombstones so page loads cannot
-        // resurrect intentionally deleted config projects. Only explicit config
-        // write flows opt into clearing them, and never from Studio branch syncs.
-        if (!args.clearTombstones || args.runOrphanDetection === false) {
+        // resurrect intentionally deleted config projects. Only explicit
+        // re-adds of the same configProjectId may clear a tombstone, and never
+        // from Studio branch syncs.
+        if (args.runOrphanDetection === false || !restoredConfigProjectIds.has(p.configProjectId)) {
           continue
         }
 

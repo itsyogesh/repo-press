@@ -170,7 +170,7 @@ describe("addProjectToConfigAction", () => {
       expect.stringContaining("Blog"),
     )
     expect(syncProjectsServerSideMock).toHaveBeenCalledWith(TOKEN, OWNER, REPO, BRANCH, USER_ID, {
-      clearTombstones: true,
+      restoredConfigProjectIds: ["blog"],
     })
   })
 
@@ -252,7 +252,7 @@ describe("addProjectToConfigAction", () => {
 
     expect(result.success).toBe(true)
     expect(syncProjectsServerSideMock).toHaveBeenCalledWith(TOKEN, OWNER, REPO, BRANCH, "pat_user_xyz", {
-      clearTombstones: true,
+      restoredConfigProjectIds: ["blog"],
     })
   })
 
@@ -296,9 +296,7 @@ describe("updateProjectInConfigAction", () => {
       "abc123sha",
       'chore(repopress): update project "docs"',
     )
-    expect(syncProjectsServerSideMock).toHaveBeenCalledWith(TOKEN, OWNER, REPO, BRANCH, USER_ID, {
-      clearTombstones: true,
-    })
+    expect(syncProjectsServerSideMock).toHaveBeenCalledWith(TOKEN, OWNER, REPO, BRANCH, USER_ID)
   })
 
   it("returns { success: false } when updateProject throws unknown id", async () => {
@@ -340,9 +338,7 @@ describe("removeProjectFromConfigAction", () => {
     // removeProject is called (config-writer logic)
     expect(removeProjectMock).toHaveBeenCalledWith(BASE_CONFIG, "docs")
     // Sync triggers orphan detection inside syncProjectsFromConfig
-    expect(syncProjectsServerSideMock).toHaveBeenCalledWith(TOKEN, OWNER, REPO, BRANCH, USER_ID, {
-      clearTombstones: true,
-    })
+    expect(syncProjectsServerSideMock).toHaveBeenCalledWith(TOKEN, OWNER, REPO, BRANCH, USER_ID)
     // Commit message includes the project id
     expect(commitConfigMock).toHaveBeenCalledWith(
       TOKEN,
@@ -399,9 +395,7 @@ describe("removeProjectFromConfigAction", () => {
     // No commit — nothing to change in the config
     expect(commitConfigMock).not.toHaveBeenCalled()
     // Sync MUST run so orphan detection in Convex flags the stale project
-    expect(syncProjectsServerSideMock).toHaveBeenCalledWith(TOKEN, OWNER, REPO, BRANCH, USER_ID, {
-      clearTombstones: true,
-    })
+    expect(syncProjectsServerSideMock).toHaveBeenCalledWith(TOKEN, OWNER, REPO, BRANCH, USER_ID)
   })
 
   it("succeeds without committing when configProjectId is absent from a non-empty config", async () => {
@@ -415,9 +409,7 @@ describe("removeProjectFromConfigAction", () => {
 
     expect(result.success).toBe(true)
     expect(commitConfigMock).not.toHaveBeenCalled()
-    expect(syncProjectsServerSideMock).toHaveBeenCalledWith(TOKEN, OWNER, REPO, BRANCH, USER_ID, {
-      clearTombstones: true,
-    })
+    expect(syncProjectsServerSideMock).toHaveBeenCalledWith(TOKEN, OWNER, REPO, BRANCH, USER_ID)
   })
 })
 
@@ -436,7 +428,7 @@ describe("commitRawConfigAction", () => {
   })
 
   it("parses, validates and commits a valid JSON config", async () => {
-    const result = await commitRawConfigAction(OWNER, REPO, BRANCH, VALID_JSON, SHA)
+    const result = await commitRawConfigAction(OWNER, REPO, BRANCH, VALID_JSON, SHA, JSON.stringify(BASE_CONFIG))
 
     expect(result.success).toBe(true)
     expect(commitConfigMock).toHaveBeenCalledWith(
@@ -449,12 +441,12 @@ describe("commitRawConfigAction", () => {
       "chore(repopress): update config via raw editor",
     )
     expect(syncProjectsServerSideMock).toHaveBeenCalledWith(TOKEN, OWNER, REPO, BRANCH, USER_ID, {
-      clearTombstones: true,
+      restoredConfigProjectIds: ["blog"],
     })
   })
 
   it("returns { success: false } for malformed JSON (not parseable)", async () => {
-    const result = await commitRawConfigAction(OWNER, REPO, BRANCH, "{not valid json", SHA)
+    const result = await commitRawConfigAction(OWNER, REPO, BRANCH, "{not valid json", SHA, JSON.stringify(BASE_CONFIG))
 
     expect(result).toEqual({ success: false, error: "Invalid JSON format" })
     expect(commitConfigMock).not.toHaveBeenCalled()
@@ -462,7 +454,14 @@ describe("commitRawConfigAction", () => {
 
   it("returns { success: false } when JSON parses but fails Zod schema", async () => {
     // Missing required 'version' and 'projects'
-    const result = await commitRawConfigAction(OWNER, REPO, BRANCH, JSON.stringify({ foo: "bar" }), SHA)
+    const result = await commitRawConfigAction(
+      OWNER,
+      REPO,
+      BRANCH,
+      JSON.stringify({ foo: "bar" }),
+      SHA,
+      JSON.stringify(BASE_CONFIG),
+    )
 
     expect(result.success).toBe(false)
     expect(result).toHaveProperty("error")
@@ -473,14 +472,21 @@ describe("commitRawConfigAction", () => {
   it("returns { success: false } when not authenticated", async () => {
     getGitHubTokenMock.mockResolvedValue(null)
 
-    const result = await commitRawConfigAction(OWNER, REPO, BRANCH, VALID_JSON, SHA)
+    const result = await commitRawConfigAction(OWNER, REPO, BRANCH, VALID_JSON, SHA, JSON.stringify(BASE_CONFIG))
 
     expect(result.success).toBe(false)
     expect(commitConfigMock).not.toHaveBeenCalled()
   })
 
   it("uses provided SHA (not re-fetched from GitHub) to avoid unnecessary round-trip", async () => {
-    const result = await commitRawConfigAction(OWNER, REPO, BRANCH, VALID_JSON, "explicit_sha_xyz")
+    const result = await commitRawConfigAction(
+      OWNER,
+      REPO,
+      BRANCH,
+      VALID_JSON,
+      "explicit_sha_xyz",
+      JSON.stringify(BASE_CONFIG),
+    )
 
     expect(result.success).toBe(true)
     expect(commitConfigMock).toHaveBeenCalledWith(

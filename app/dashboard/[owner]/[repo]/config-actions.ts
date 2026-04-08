@@ -50,6 +50,21 @@ async function fetchConfigOrThrow(token: string, owner: string, repo: string, br
   return { config: result.config, sha: result.sha }
 }
 
+function getAddedConfigProjectIds(previousIds: string[], nextIds: string[]) {
+  const existingIds = new Set(previousIds)
+  return nextIds.filter((id) => !existingIds.has(id))
+}
+
+function getConfigProjectIdsFromJson(rawJson: string) {
+  try {
+    const parsed = JSON.parse(rawJson) as { projects?: Array<{ id?: string }> }
+    if (!Array.isArray(parsed.projects)) return []
+    return parsed.projects.flatMap((project) => (typeof project.id === "string" ? [project.id] : []))
+  } catch {
+    return []
+  }
+}
+
 type ConfigActionResult =
   | { success: true; syncResult?: { synced: string[]; created: string[]; unchanged: string[] } }
   | { success: false; error: string }
@@ -155,7 +170,7 @@ export async function addProjectToConfigAction(
     )
 
     const syncResult = await syncProjectsServerSide(token, owner, repo, branch, actingUserId, {
-      clearTombstones: true,
+      restoredConfigProjectIds: [project.id],
     })
     revalidatePath(`/dashboard/${owner}/${repo}`)
     return { success: true, syncResult: syncResult ?? undefined }
@@ -190,9 +205,7 @@ export async function updateProjectInConfigAction(
       `chore(repopress): update project "${configProjectId}"`,
     )
 
-    const syncResult = await syncProjectsServerSide(token, owner, repo, branch, actingUserId, {
-      clearTombstones: true,
-    })
+    const syncResult = await syncProjectsServerSide(token, owner, repo, branch, actingUserId)
     revalidatePath(`/dashboard/${owner}/${repo}`)
     return { success: true, syncResult: syncResult ?? undefined }
   } catch (error: any) {
@@ -248,9 +261,7 @@ export async function removeProjectFromConfigAction(
     // removed (e.g. the config was manually cleared). The sync below will
     // trigger orphan detection and flag the Convex record appropriately.
 
-    const syncResult = await syncProjectsServerSide(token, owner, repo, branch, actingUserId, {
-      clearTombstones: true,
-    })
+    const syncResult = await syncProjectsServerSide(token, owner, repo, branch, actingUserId)
     revalidatePath(`/dashboard/${owner}/${repo}`)
     return { success: true, syncResult: syncResult ?? undefined }
   } catch (error: any) {
@@ -268,6 +279,7 @@ export async function commitRawConfigAction(
   branch: string,
   rawJson: string,
   currentSha: string,
+  previousJson: string,
 ): Promise<ConfigActionResult> {
   try {
     const { token, actingUserId } = await resolveAuthContext()
@@ -288,6 +300,11 @@ export async function commitRawConfigAction(
       return { success: false, error: `Validation failed: ${errors}` }
     }
 
+    const restoredConfigProjectIds = getAddedConfigProjectIds(
+      getConfigProjectIdsFromJson(previousJson),
+      validated.data.projects.map((project) => project.id),
+    )
+
     await commitConfig(
       token,
       owner,
@@ -298,9 +315,12 @@ export async function commitRawConfigAction(
       "chore(repopress): update config via raw editor",
     )
 
-    const syncResult = await syncProjectsServerSide(token, owner, repo, branch, actingUserId, {
-      clearTombstones: true,
-    })
+    const syncResult =
+      restoredConfigProjectIds.length > 0
+        ? await syncProjectsServerSide(token, owner, repo, branch, actingUserId, {
+            restoredConfigProjectIds,
+          })
+        : await syncProjectsServerSide(token, owner, repo, branch, actingUserId)
     revalidatePath(`/dashboard/${owner}/${repo}`)
     return { success: true, syncResult: syncResult ?? undefined }
   } catch (error: any) {

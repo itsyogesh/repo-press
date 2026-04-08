@@ -283,19 +283,36 @@ describe("syncProjectsFromConfig", () => {
       expect(result.created).toHaveLength(0)
     })
 
-    it("clears tombstone only when explicit clearTombstones is requested", async () => {
+    it("clears tombstone only when the project ID is explicitly restored", async () => {
       const tombstone = { _id: "tomb_1", repoOwner: "acme", repoName: "docs", configProjectId: "docs" }
       const insert = vi.fn().mockResolvedValue("recreated_proj_id")
       const ctx = createCtx({ repoProjects: [], tombstone, insert })
 
-      const result = await (syncProjectsFromConfig as any).handler(ctx, { ...BASE_ARGS, clearTombstones: true })
+      const result = await (syncProjectsFromConfig as any).handler(ctx, {
+        ...BASE_ARGS,
+        restoredConfigProjectIds: ["docs"],
+      })
 
       expect(ctx.db.delete).toHaveBeenCalledWith("tomb_1")
       expect(insert).toHaveBeenCalledWith("projects", expect.objectContaining({ configProjectId: "docs" }))
       expect(result.created).toContain("recreated_proj_id")
     })
 
-    it("does NOT clear tombstone for Studio auto-syncs even if clearTombstones is set", async () => {
+    it("does not clear a tombstone when a different project was restored", async () => {
+      const tombstone = { _id: "tomb_1", repoOwner: "acme", repoName: "docs", configProjectId: "docs" }
+      const insert = vi.fn()
+      const ctx = createCtx({ repoProjects: [], tombstone, insert })
+
+      await (syncProjectsFromConfig as any).handler(ctx, {
+        ...BASE_ARGS,
+        restoredConfigProjectIds: ["blog"],
+      })
+
+      expect(ctx.db.delete).not.toHaveBeenCalled()
+      expect(insert).not.toHaveBeenCalled()
+    })
+
+    it("does NOT clear tombstone for Studio auto-syncs even if the project ID is restored", async () => {
       const tombstone = { _id: "tomb_1", repoOwner: "acme", repoName: "docs", configProjectId: "docs" }
       const insert = vi.fn()
       const ctx = createCtx({ repoProjects: [], tombstone, insert })
@@ -303,7 +320,7 @@ describe("syncProjectsFromConfig", () => {
       await (syncProjectsFromConfig as any).handler(ctx, {
         ...BASE_ARGS,
         runOrphanDetection: false,
-        clearTombstones: true,
+        restoredConfigProjectIds: ["docs"],
       })
 
       expect(ctx.db.delete).not.toHaveBeenCalled()
