@@ -408,13 +408,16 @@ export const getOrCreate = mutation({
   handler: async (ctx, args) => {
     await verifyCallerIdentity(ctx, args.userId)
 
-    const existing = await ctx.db
+    const matches = await ctx.db
       .query("projects")
       .withIndex("by_userId_repo", (q) =>
         q.eq("userId", args.userId).eq("repoOwner", args.repoOwner).eq("repoName", args.repoName),
       )
       .filter((q) => q.and(q.eq(q.field("branch"), args.branch), q.eq(q.field("contentRoot"), args.contentRoot)))
-      .first()
+      .collect()
+
+    // Prefer a live project when a previous match is still being deleted.
+    const existing = matches.find((project) => !project.name.startsWith("[DELETING]")) ?? matches[0]
 
     if (existing) {
       // Skip projects that are being deleted — treat as if they don't exist
@@ -482,6 +485,9 @@ export const syncProjectsFromConfig = mutation({
     // projects whose configProjectId is absent from that branch's config but
     // still present in the canonical branch config.
     runOrphanDetection: v.optional(v.boolean()),
+    // Explicit opt-in for config write flows that should resurrect a previously
+    // deleted config project when it is intentionally re-added.
+    clearTombstones: v.optional(v.boolean()),
     projects: v.array(
       v.object({
         configProjectId: v.string(),
@@ -542,16 +548,13 @@ export const syncProjectsFromConfig = mutation({
         .first()
 
       if (tombstone) {
-        // Studio auto-syncs (runOrphanDetection: false) run on every page load and may
-        // be triggered by non-owner users. They must NOT clear tombstones — doing so
-        // would silently resurrect a project the owner intentionally deleted.
-        // Only canonical syncs (runOrphanDetection not explicitly false) may clear
-        // tombstones, since those are deliberate user-initiated actions.
-        if (args.runOrphanDetection === false) {
+        // Default/read-time syncs must preserve tombstones so page loads cannot
+        // resurrect intentionally deleted config projects. Only explicit config
+        // write flows opt into clearing them, and never from Studio branch syncs.
+        if (!args.clearTombstones || args.runOrphanDetection === false) {
           continue
         }
-        // Re-adding a project to config is an explicit user intent to recreate it.
-        // Clear the tombstone so the project can be created fresh on this sync.
+
         await ctx.db.delete(tombstone._id)
       }
 

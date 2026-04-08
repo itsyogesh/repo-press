@@ -271,34 +271,42 @@ describe("syncProjectsFromConfig", () => {
   // ── Tombstone / deletion ─────────────────────────────────────────────────
 
   describe("tombstone (deletedConfigProjects)", () => {
-    it("clears tombstone and creates project when configProjectId reappears in config", async () => {
-      const tombstone = { _id: "tomb_1", repoOwner: "acme", repoName: "docs", configProjectId: "docs" }
-      const insert = vi.fn().mockResolvedValue("recreated_proj_id")
-      const ctx = createCtx({ repoProjects: [], tombstone, insert })
-      const deleteDoc = ctx.db.delete
-
-      const result = await (syncProjectsFromConfig as any).handler(ctx, BASE_ARGS)
-
-      // Tombstone must be deleted so the project can be re-created
-      expect(deleteDoc).toHaveBeenCalledWith("tomb_1")
-      // Project must be created fresh
-      expect(insert).toHaveBeenCalledWith("projects", expect.objectContaining({ configProjectId: "docs" }))
-      expect(result.created).toContain("recreated_proj_id")
-    })
-
-    it("does NOT clear tombstone for Studio auto-syncs (runOrphanDetection: false)", async () => {
-      // Studio auto-syncs pass runOrphanDetection: false to avoid false orphaning on
-      // non-default branches. They must also skip tombstone clearing to prevent
-      // non-owner page loads from resurrecting owner-deleted projects.
+    it("skips tombstoned projects by default during sync", async () => {
       const tombstone = { _id: "tomb_1", repoOwner: "acme", repoName: "docs", configProjectId: "docs" }
       const insert = vi.fn()
       const ctx = createCtx({ repoProjects: [], tombstone, insert })
 
-      await (syncProjectsFromConfig as any).handler(ctx, { ...BASE_ARGS, runOrphanDetection: false })
+      const result = await (syncProjectsFromConfig as any).handler(ctx, BASE_ARGS)
 
-      // Tombstone must NOT be cleared
       expect(ctx.db.delete).not.toHaveBeenCalled()
-      // Project must NOT be created
+      expect(insert).not.toHaveBeenCalled()
+      expect(result.created).toHaveLength(0)
+    })
+
+    it("clears tombstone only when explicit clearTombstones is requested", async () => {
+      const tombstone = { _id: "tomb_1", repoOwner: "acme", repoName: "docs", configProjectId: "docs" }
+      const insert = vi.fn().mockResolvedValue("recreated_proj_id")
+      const ctx = createCtx({ repoProjects: [], tombstone, insert })
+
+      const result = await (syncProjectsFromConfig as any).handler(ctx, { ...BASE_ARGS, clearTombstones: true })
+
+      expect(ctx.db.delete).toHaveBeenCalledWith("tomb_1")
+      expect(insert).toHaveBeenCalledWith("projects", expect.objectContaining({ configProjectId: "docs" }))
+      expect(result.created).toContain("recreated_proj_id")
+    })
+
+    it("does NOT clear tombstone for Studio auto-syncs even if clearTombstones is set", async () => {
+      const tombstone = { _id: "tomb_1", repoOwner: "acme", repoName: "docs", configProjectId: "docs" }
+      const insert = vi.fn()
+      const ctx = createCtx({ repoProjects: [], tombstone, insert })
+
+      await (syncProjectsFromConfig as any).handler(ctx, {
+        ...BASE_ARGS,
+        runOrphanDetection: false,
+        clearTombstones: true,
+      })
+
+      expect(ctx.db.delete).not.toHaveBeenCalled()
       expect(insert).not.toHaveBeenCalled()
     })
   })
@@ -538,7 +546,7 @@ describe("getOrCreate", () => {
   })
 
   function createGetOrCreateCtx({
-    existingProject = null as ProjectRow | null,
+    matchingProjects = [] as ProjectRow[],
     patch = vi.fn(),
     insert = vi.fn().mockResolvedValue("new_project_id"),
   } = {}) {
@@ -551,7 +559,7 @@ describe("getOrCreate", () => {
         query: vi.fn((_table: string) => ({
           withIndex: (_index: string, _fn: unknown) => ({
             filter: (_filterFn: unknown) => ({
-              first: vi.fn().mockResolvedValue(existingProject),
+              collect: vi.fn().mockResolvedValue(matchingProjects),
             }),
           }),
         })),
@@ -577,7 +585,7 @@ describe("getOrCreate", () => {
       configRemovedAt: 1000000,
     })
     const patch = vi.fn()
-    const ctx = createGetOrCreateCtx({ existingProject: orphanedProject, patch })
+    const ctx = createGetOrCreateCtx({ matchingProjects: [orphanedProject], patch })
 
     const result = await (getOrCreate as any).handler(ctx, GET_OR_CREATE_ARGS)
 
@@ -593,7 +601,7 @@ describe("getOrCreate", () => {
     })
     const patch = vi.fn()
     const insert = vi.fn().mockResolvedValue("new_proj_id")
-    const ctx = createGetOrCreateCtx({ existingProject: deletingProject, patch, insert })
+    const ctx = createGetOrCreateCtx({ matchingProjects: [deletingProject], patch, insert })
 
     const result = await (getOrCreate as any).handler(ctx, GET_OR_CREATE_ARGS)
 
@@ -610,13 +618,37 @@ describe("getOrCreate", () => {
     )
   })
 
+  it("returns the recreated project when a deleting row still exists", async () => {
+    const deletingProject = makeProject({
+      _id: "proj_deleting",
+      name: "[DELETING] Old Blog",
+    })
+    const recreatedProject = makeProject({
+      _id: "proj_recreated",
+      name: "Docs",
+    })
+    const patch = vi.fn()
+    const insert = vi.fn()
+    const ctx = createGetOrCreateCtx({
+      matchingProjects: [deletingProject, recreatedProject],
+      patch,
+      insert,
+    })
+
+    const result = await (getOrCreate as any).handler(ctx, GET_OR_CREATE_ARGS)
+
+    expect(result).toBe("proj_recreated")
+    expect(insert).not.toHaveBeenCalled()
+    expect(patch).not.toHaveBeenCalled()
+  })
+
   it("does NOT clear configRemoved when project is not orphaned", async () => {
     const normalProject = makeProject({
       _id: "proj_normal",
       configRemoved: undefined,
     })
     const patch = vi.fn()
-    const ctx = createGetOrCreateCtx({ existingProject: normalProject, patch })
+    const ctx = createGetOrCreateCtx({ matchingProjects: [normalProject], patch })
 
     const result = await (getOrCreate as any).handler(ctx, GET_OR_CREATE_ARGS)
 

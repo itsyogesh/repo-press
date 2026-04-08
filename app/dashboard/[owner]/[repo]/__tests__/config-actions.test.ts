@@ -169,7 +169,9 @@ describe("addProjectToConfigAction", () => {
       "abc123sha",
       expect.stringContaining("Blog"),
     )
-    expect(syncProjectsServerSideMock).toHaveBeenCalledWith(TOKEN, OWNER, REPO, BRANCH, USER_ID)
+    expect(syncProjectsServerSideMock).toHaveBeenCalledWith(TOKEN, OWNER, REPO, BRANCH, USER_ID, {
+      clearTombstones: true,
+    })
   })
 
   it("returns { success: false } when not authenticated", async () => {
@@ -249,7 +251,9 @@ describe("addProjectToConfigAction", () => {
     })
 
     expect(result.success).toBe(true)
-    expect(syncProjectsServerSideMock).toHaveBeenCalledWith(TOKEN, OWNER, REPO, BRANCH, "pat_user_xyz")
+    expect(syncProjectsServerSideMock).toHaveBeenCalledWith(TOKEN, OWNER, REPO, BRANCH, "pat_user_xyz", {
+      clearTombstones: true,
+    })
   })
 
   it("returns { success: false } when both OAuth and PAT user resolution fail", async () => {
@@ -292,6 +296,9 @@ describe("updateProjectInConfigAction", () => {
       "abc123sha",
       'chore(repopress): update project "docs"',
     )
+    expect(syncProjectsServerSideMock).toHaveBeenCalledWith(TOKEN, OWNER, REPO, BRANCH, USER_ID, {
+      clearTombstones: true,
+    })
   })
 
   it("returns { success: false } when updateProject throws unknown id", async () => {
@@ -333,7 +340,9 @@ describe("removeProjectFromConfigAction", () => {
     // removeProject is called (config-writer logic)
     expect(removeProjectMock).toHaveBeenCalledWith(BASE_CONFIG, "docs")
     // Sync triggers orphan detection inside syncProjectsFromConfig
-    expect(syncProjectsServerSideMock).toHaveBeenCalledWith(TOKEN, OWNER, REPO, BRANCH, USER_ID)
+    expect(syncProjectsServerSideMock).toHaveBeenCalledWith(TOKEN, OWNER, REPO, BRANCH, USER_ID, {
+      clearTombstones: true,
+    })
     // Commit message includes the project id
     expect(commitConfigMock).toHaveBeenCalledWith(
       TOKEN,
@@ -390,7 +399,9 @@ describe("removeProjectFromConfigAction", () => {
     // No commit — nothing to change in the config
     expect(commitConfigMock).not.toHaveBeenCalled()
     // Sync MUST run so orphan detection in Convex flags the stale project
-    expect(syncProjectsServerSideMock).toHaveBeenCalledWith(TOKEN, OWNER, REPO, BRANCH, USER_ID)
+    expect(syncProjectsServerSideMock).toHaveBeenCalledWith(TOKEN, OWNER, REPO, BRANCH, USER_ID, {
+      clearTombstones: true,
+    })
   })
 
   it("succeeds without committing when configProjectId is absent from a non-empty config", async () => {
@@ -404,7 +415,9 @@ describe("removeProjectFromConfigAction", () => {
 
     expect(result.success).toBe(true)
     expect(commitConfigMock).not.toHaveBeenCalled()
-    expect(syncProjectsServerSideMock).toHaveBeenCalledWith(TOKEN, OWNER, REPO, BRANCH, USER_ID)
+    expect(syncProjectsServerSideMock).toHaveBeenCalledWith(TOKEN, OWNER, REPO, BRANCH, USER_ID, {
+      clearTombstones: true,
+    })
   })
 })
 
@@ -435,6 +448,9 @@ describe("commitRawConfigAction", () => {
       SHA,
       "chore(repopress): update config via raw editor",
     )
+    expect(syncProjectsServerSideMock).toHaveBeenCalledWith(TOKEN, OWNER, REPO, BRANCH, USER_ID, {
+      clearTombstones: true,
+    })
   })
 
   it("returns { success: false } for malformed JSON (not parseable)", async () => {

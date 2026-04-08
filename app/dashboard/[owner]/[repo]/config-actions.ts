@@ -154,7 +154,9 @@ export async function addProjectToConfigAction(
       `chore(repopress): add project "${project.name}"`,
     )
 
-    const syncResult = await syncProjectsServerSide(token, owner, repo, branch, actingUserId)
+    const syncResult = await syncProjectsServerSide(token, owner, repo, branch, actingUserId, {
+      clearTombstones: true,
+    })
     revalidatePath(`/dashboard/${owner}/${repo}`)
     return { success: true, syncResult: syncResult ?? undefined }
   } catch (error: any) {
@@ -188,7 +190,9 @@ export async function updateProjectInConfigAction(
       `chore(repopress): update project "${configProjectId}"`,
     )
 
-    const syncResult = await syncProjectsServerSide(token, owner, repo, branch, actingUserId)
+    const syncResult = await syncProjectsServerSide(token, owner, repo, branch, actingUserId, {
+      clearTombstones: true,
+    })
     revalidatePath(`/dashboard/${owner}/${repo}`)
     return { success: true, syncResult: syncResult ?? undefined }
   } catch (error: any) {
@@ -244,7 +248,9 @@ export async function removeProjectFromConfigAction(
     // removed (e.g. the config was manually cleared). The sync below will
     // trigger orphan detection and flag the Convex record appropriately.
 
-    const syncResult = await syncProjectsServerSide(token, owner, repo, branch, actingUserId)
+    const syncResult = await syncProjectsServerSide(token, owner, repo, branch, actingUserId, {
+      clearTombstones: true,
+    })
     revalidatePath(`/dashboard/${owner}/${repo}`)
     return { success: true, syncResult: syncResult ?? undefined }
   } catch (error: any) {
@@ -292,7 +298,9 @@ export async function commitRawConfigAction(
       "chore(repopress): update config via raw editor",
     )
 
-    const syncResult = await syncProjectsServerSide(token, owner, repo, branch, actingUserId)
+    const syncResult = await syncProjectsServerSide(token, owner, repo, branch, actingUserId, {
+      clearTombstones: true,
+    })
     revalidatePath(`/dashboard/${owner}/${repo}`)
     return { success: true, syncResult: syncResult ?? undefined }
   } catch (error: any) {
