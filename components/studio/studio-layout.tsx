@@ -1562,6 +1562,8 @@ function StudioLayoutInner({
                             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-studio-fg-muted" />
                             <Input
                               ref={searchInputRef}
+                              id="studio-empty-search"
+                              name="studio-empty-search"
                               value={emptySearch}
                               onChange={(e) => setEmptySearch(e.target.value)}
                               onKeyDown={(e) => {
