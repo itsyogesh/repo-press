@@ -1,7 +1,7 @@
 "use client"
 
 import { Loader2, Trash2 } from "lucide-react"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { toast } from "sonner"
 import { deleteProjectPermanentlyAction } from "@/app/dashboard/[owner]/[repo]/config-actions"
 import {
@@ -14,6 +14,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 
 interface DeleteProjectDialogProps {
   project: { _id: string; name: string } | null
@@ -24,6 +26,11 @@ interface DeleteProjectDialogProps {
 
 export function DeleteProjectDialog({ project, open, onOpenChange, onSuccess }: DeleteProjectDialogProps) {
   const [isDeleting, setIsDeleting] = useState(false)
+  const [confirmName, setConfirmName] = useState("")
+
+  useEffect(() => {
+    if (!open) setConfirmName("")
+  }, [open])
 
   const handleDelete = async () => {
     if (!project) return
@@ -49,16 +56,46 @@ export function DeleteProjectDialog({ project, open, onOpenChange, onSuccess }: 
         <AlertDialogHeader>
           <AlertDialogTitle>Delete &ldquo;{project?.name}&rdquo;?</AlertDialogTitle>
           <AlertDialogDescription>
-            This will permanently delete <strong>{project?.name}</strong> and all its drafts, history, and metadata in
-            RepoPress. This action cannot be undone.
+            This will permanently delete{" "}
+            <button
+              type="button"
+              className="inline font-bold cursor-pointer hover:underline bg-transparent border-0 p-0 text-inherit"
+              title="Click to fill"
+              onClick={() => setConfirmName(project?.name ?? "")}
+            >
+              {project?.name}
+            </button>{" "}
+            and all its drafts, history, and metadata in RepoPress. This action cannot be undone.
           </AlertDialogDescription>
         </AlertDialogHeader>
+        <div className="my-4 space-y-2">
+          <Label htmlFor="confirmDeleteName" className="text-sm">
+            Type{" "}
+            <button
+              type="button"
+              className="inline font-mono font-bold text-foreground cursor-pointer hover:underline bg-transparent border-0 p-0 text-sm"
+              title="Click to fill"
+              onClick={() => setConfirmName(project?.name ?? "")}
+            >
+              {project?.name}
+            </button>{" "}
+            to confirm:
+          </Label>
+          <Input
+            id="confirmDeleteName"
+            value={confirmName}
+            onChange={(e) => setConfirmName(e.target.value)}
+            placeholder={project?.name ?? ""}
+            className="border-destructive/25 focus-visible:ring-destructive/20"
+            disabled={isDeleting}
+          />
+        </div>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
           <Button
             variant="destructive"
             onClick={handleDelete}
-            disabled={isDeleting}
+            disabled={isDeleting || confirmName !== (project?.name ?? "")}
             className="focus-visible:ring-destructive/20"
           >
             {isDeleting ? (

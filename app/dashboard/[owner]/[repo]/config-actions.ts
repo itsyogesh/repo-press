@@ -81,9 +81,16 @@ async function resolveProjectOwnerActionContext(projectId: string): Promise<Proj
     throw new Error("Project not found")
   }
 
-  const { role } = await resolveRepoRole(token, project.repoOwner, project.repoName, actingUserId)
-  if (role !== "owner") {
-    throw new Error("Unauthorized: owner access required")
+  // Primary check: Convex project ownership. This is the authoritative record and
+  // works regardless of OAuth scope limitations that can prevent GitHub's permissions
+  // field from being returned by repos.get().
+  const isConvexOwner = (project as any).userId === actingUserId
+  if (!isConvexOwner) {
+    // Fallback: GitHub admin access (e.g. org admins who didn't create the project).
+    const { role } = await resolveRepoRole(token, project.repoOwner, project.repoName, actingUserId)
+    if (role !== "owner") {
+      throw new Error("Unauthorized: owner access required")
+    }
   }
 
   const projectAccessToken = await mintProjectAccessToken({

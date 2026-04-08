@@ -85,7 +85,11 @@ export function DeleteProjectZone({ project, projectAccessToken }: DeleteProject
           </Alert>
         )}
 
-        <AlertDialog>
+        <AlertDialog
+          onOpenChange={(o) => {
+            if (!o) setConfirmName("")
+          }}
+        >
           <AlertDialogTrigger asChild>
             <Button variant="destructive" className="w-full sm:w-auto">
               <Trash2 className="h-4 w-4 mr-2" />
@@ -96,14 +100,31 @@ export function DeleteProjectZone({ project, projectAccessToken }: DeleteProject
             <AlertDialogHeader>
               <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
               <AlertDialogDescription>
-                This will delete the <strong>{project.name}</strong> project and all its associated data. This action is
-                irreversible.
+                This will delete the{" "}
+                <button
+                  type="button"
+                  className="inline font-bold text-foreground cursor-pointer hover:underline bg-transparent border-0 p-0 text-inherit"
+                  title="Click to fill"
+                  onClick={() => setConfirmName(project.name)}
+                >
+                  {project.name}
+                </button>{" "}
+                project and all its associated data. This action is irreversible.
               </AlertDialogDescription>
             </AlertDialogHeader>
 
             <div className="my-4 space-y-2">
               <Label htmlFor="confirmName" className="text-sm">
-                Type <span className="font-mono font-bold text-foreground">{project.name}</span> to confirm:
+                Type{" "}
+                <button
+                  type="button"
+                  className="inline font-mono font-bold text-foreground cursor-pointer hover:underline bg-transparent border-0 p-0 text-sm"
+                  title="Click to fill"
+                  onClick={() => setConfirmName(project.name)}
+                >
+                  {project.name}
+                </button>{" "}
+                to confirm:
               </Label>
               <Input
                 id="confirmName"
@@ -117,9 +138,9 @@ export function DeleteProjectZone({ project, projectAccessToken }: DeleteProject
             <AlertDialogFooter>
               <AlertDialogCancel onClick={() => setConfirmName("")}>Cancel</AlertDialogCancel>
               <AlertDialogAction
+                variant="destructive"
                 onClick={handleDelete}
                 disabled={confirmName !== project.name || isDeleting}
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90 focus-visible:ring-destructive/20"
               >
                 {isDeleting ? "Deleting..." : "Yes, Delete Project"}
               </AlertDialogAction>
