@@ -277,3 +277,29 @@
 .skeleton {
   animation: skeleton-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
+
+@layer utilities {
+  .text-hero {
+    @apply text-4xl font-bold tracking-tight sm:text-5xl md:text-6xl lg:text-7xl;
+  }
+
+  .text-section-heading {
+    @apply text-3xl font-bold tracking-tight md:text-4xl;
+  }
+
+  .text-section-subheading {
+    @apply text-lg text-muted-foreground md:text-xl;
+  }
+
+  .text-card-title {
+    @apply text-xl font-semibold md:text-2xl;
+  }
+
+  .text-body-large {
+    @apply text-lg leading-relaxed text-muted-foreground;
+  }
+
+  .text-caption {
+    @apply text-sm text-muted-foreground;
+  }
+}
