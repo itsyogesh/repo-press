@@ -1818,8 +1818,9 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
   const studioFile = useStudioFile(initialFile, currentPath)
   const { selectedFile } = studioFile
 
-  // 2. Queries hook
-  const studioQueries = useStudioQueries(selectedFile?.path)
+  // 2. Queries hook — pass the local tree state so overlayTree uses the async-fetched
+  // tree rather than the outer StudioProvider's empty initialTree.
+  const studioQueries = useStudioQueries(selectedFile?.path, { tree })
   const {
     previewEntry,
     enabledPlugins,
