@@ -17,6 +17,9 @@ vi.mock("@/components/ui/button", () => ({
 vi.mock("@/components/ui/sheet", () => ({
   Sheet: ({ children }: { children: React.ReactNode }) => <div data-slot="sheet">{children}</div>,
   SheetContent: ({ children }: { children: React.ReactNode }) => <div data-slot="sheet-content">{children}</div>,
+  SheetHeader: ({ children }: { children: React.ReactNode }) => <div data-slot="sheet-header">{children}</div>,
+  SheetTitle: ({ children }: { children: React.ReactNode }) => <h2>{children}</h2>,
+  SheetDescription: ({ children }: { children: React.ReactNode }) => <p>{children}</p>,
   SheetTrigger: ({ children }: { children: React.ReactNode }) => <div data-slot="sheet-trigger">{children}</div>,
 }))
 
@@ -32,5 +35,12 @@ describe("landing navigation links", () => {
     expect(footerHtml).toContain('href="/#features"')
     expect(navbarHtml).not.toContain('href="#features"')
     expect(footerHtml).not.toContain('href="#features"')
+  })
+
+  it("includes an accessible title and description for the mobile navigation sheet", () => {
+    const navbarHtml = renderToStaticMarkup(<Navbar />)
+
+    expect(navbarHtml).toContain("Navigation menu")
+    expect(navbarHtml).toContain("Browse RepoPress pages and sign in options.")
   })
 })

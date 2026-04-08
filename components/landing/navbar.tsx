@@ -4,7 +4,7 @@ import { Box, Github, Menu } from "lucide-react"
 import Link from "next/link"
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 
 const navLinks = [
   { href: "/#features", label: "Features", external: false },
@@ -77,6 +77,10 @@ export default function Navbar() {
               </Button>
             </SheetTrigger>
             <SheetContent side="right" className="w-72 bg-background p-6">
+              <SheetHeader className="sr-only">
+                <SheetTitle>Navigation menu</SheetTitle>
+                <SheetDescription>Browse RepoPress pages and sign in options.</SheetDescription>
+              </SheetHeader>
               <div className="flex flex-col gap-6 mt-8">
                 {navLinks.map((link) =>
                   link.external ? (
