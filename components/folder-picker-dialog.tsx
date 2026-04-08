@@ -1,12 +1,12 @@
 "use client"
 
-import { ChevronRight, Folder, FolderOpen, Loader2, AlertCircle } from "lucide-react"
+import { AlertCircle, Folder, Loader2 } from "lucide-react"
 import { useCallback, useEffect, useState } from "react"
 import { fetchRepoDirsAction } from "@/app/dashboard/[owner]/[repo]/actions"
 import { Button } from "./ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog"
 import { ScrollArea } from "./ui/scroll-area"
-import { cn } from "@/lib/utils"
+import { Tree, TreeItem, TreeProvider } from "./ui/tree"
 
 type FolderNode = {
   name: string
@@ -39,9 +39,9 @@ export function FolderPickerDialog({
   const [selectedPath, setSelectedPath] = useState<string>(initialPath)
   const [isLoadingRoot, setIsLoadingRoot] = useState(false)
   const [rootError, setRootError] = useState<string | null>(null)
-  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set())
 
   // Load root directories when dialog opens
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally excluding initialPath to avoid re-fetching on path change
   useEffect(() => {
     if (!open) return
     setSelectedPath(initialPath ?? "")
@@ -66,11 +66,9 @@ export function FolderPickerDialog({
       }
     })
   }, [open, owner, repo, branch])
-  // Note: intentionally excluding initialPath from deps to avoid re-fetching on path change
 
   const loadChildren = useCallback(
     async (path: string) => {
-      // Mark node as loading
       setTree((prev) => updateNodeInTree(prev, path, { isLoading: true, error: null }))
 
       const result = await fetchRepoDirsAction(owner, repo, path, branch)
@@ -100,24 +98,16 @@ export function FolderPickerDialog({
     [owner, repo, branch],
   )
 
-  const handleToggle = (node: FolderNode) => {
-    if (node.children !== null) {
-      // Children already loaded — toggle expanded state
-      setExpandedPaths((prev) => {
-        const next = new Set(prev)
-        if (next.has(node.path)) {
-          next.delete(node.path)
-        } else {
-          next.add(node.path)
-        }
-        return next
-      })
-    } else {
-      // First expand: load children
-      setExpandedPaths((prev) => new Set(prev).add(node.path))
-      loadChildren(node.path)
-    }
-  }
+  const handleNodeExpand = useCallback(
+    (nodeId: string, expanded: boolean) => {
+      if (!expanded || nodeId === "") return
+      const node = findNodeInTree(tree, nodeId)
+      if (node && node.children === null) {
+        loadChildren(nodeId)
+      }
+    },
+    [tree, loadChildren],
+  )
 
   const handleConfirm = () => {
     onSelect(selectedPath)
@@ -134,20 +124,7 @@ export function FolderPickerDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <ScrollArea className="h-[300px] rounded-md border p-2">
-          {/* Repo root option — always present */}
-          <button
-            type="button"
-            className={cn(
-              "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent",
-              selectedPath === "" && "bg-accent text-accent-foreground font-medium",
-            )}
-            onClick={() => setSelectedPath("")}
-          >
-            <Folder className="h-4 w-4 text-muted-foreground" />
-            <span>(repo root)</span>
-          </button>
-
+        <ScrollArea className="h-[300px] rounded-md border">
           {isLoadingRoot ? (
             <div className="flex items-center justify-center py-8">
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -184,14 +161,37 @@ export function FolderPickerDialog({
               </Button>
             </div>
           ) : (
-            <FolderTreeNodes
-              nodes={tree}
-              depth={0}
-              selectedPath={selectedPath}
-              expandedPaths={expandedPaths}
-              onSelect={setSelectedPath}
-              onToggle={handleToggle}
-            />
+            <TreeProvider
+              variant="ghost"
+              className="!border-0 !shadow-none !rounded-none"
+              selectedIds={[selectedPath]}
+              onSelectionChange={(ids) => setSelectedPath(ids[0] ?? "")}
+              onNodeExpand={handleNodeExpand}
+              showLines
+              showIcons
+              indent={16}
+              animateExpand
+            >
+              <Tree>
+                {/* Repo root — always present */}
+                <TreeItem
+                  nodeId=""
+                  label="(repo root)"
+                  icon={<Folder className="h-4 w-4" />}
+                  hasChildren={false}
+                  level={0}
+                />
+                {tree.map((node, i) => (
+                  <FolderNodeTreeItem
+                    key={node.path}
+                    node={node}
+                    level={0}
+                    isLast={i === tree.length - 1}
+                    parentPath={[]}
+                  />
+                ))}
+              </Tree>
+            </TreeProvider>
           )}
         </ScrollArea>
 
@@ -210,96 +210,70 @@ export function FolderPickerDialog({
   )
 }
 
-// --- Internal helper components and functions ---
+// --- Recursive tree item for folder nodes ---
 
-function FolderTreeNodes({
-  nodes,
-  depth,
-  selectedPath,
-  expandedPaths,
-  onSelect,
-  onToggle,
+function FolderNodeTreeItem({
+  node,
+  level,
+  isLast,
+  parentPath,
 }: {
-  nodes: FolderNode[]
-  depth: number
-  selectedPath: string
-  expandedPaths: Set<string>
-  onSelect: (path: string) => void
-  onToggle: (node: FolderNode) => void
+  node: FolderNode
+  level: number
+  isLast: boolean
+  parentPath: boolean[]
 }) {
-  if (nodes.length === 0) {
-    return (
-      <p className="text-xs text-muted-foreground py-1" style={{ paddingLeft: `${(depth + 1) * 16 + 8}px` }}>
-        No subfolders
-      </p>
-    )
-  }
+  const hasChildren = node.children === null || node.children.length > 0
+  const currentPath = [...parentPath, isLast]
 
   return (
-    <>
-      {nodes.map((node) => {
-        const isExpanded = expandedPaths.has(node.path)
-        const isSelected = selectedPath === node.path
-        return (
-          <div key={node.path}>
-            <div
-              className={cn(
-                "flex items-center gap-1 rounded-md px-1 py-1 text-sm hover:bg-accent cursor-pointer",
-                isSelected && "bg-accent text-accent-foreground font-medium",
-              )}
-              style={{ paddingLeft: `${depth * 16 + 4}px` }}
-            >
-              <button
-                type="button"
-                className="p-0.5 hover:bg-muted rounded"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onToggle(node)
-                }}
-              >
-                {node.isLoading ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
-                ) : (
-                  <ChevronRight
-                    className={cn("h-3.5 w-3.5 text-muted-foreground transition-transform", isExpanded && "rotate-90")}
-                  />
-                )}
-              </button>
-              <button
-                type="button"
-                className="flex items-center gap-1.5 flex-1 text-left"
-                onClick={() => onSelect(node.path)}
-              >
-                {isExpanded ? (
-                  <FolderOpen className="h-4 w-4 text-muted-foreground" />
-                ) : (
-                  <Folder className="h-4 w-4 text-muted-foreground" />
-                )}
-                <span>{node.name}</span>
-              </button>
-            </div>
-
-            {node.error && (
-              <p className="text-xs text-destructive py-1" style={{ paddingLeft: `${(depth + 1) * 16 + 8}px` }}>
-                {node.error}
-              </p>
-            )}
-
-            {isExpanded && node.children !== null && (
-              <FolderTreeNodes
-                nodes={node.children}
-                depth={depth + 1}
-                selectedPath={selectedPath}
-                expandedPaths={expandedPaths}
-                onSelect={onSelect}
-                onToggle={onToggle}
-              />
-            )}
-          </div>
-        )
-      })}
-    </>
+    <TreeItem
+      nodeId={node.path}
+      label={node.name}
+      level={level}
+      isLast={isLast}
+      parentPath={parentPath}
+      hasChildren={hasChildren}
+      icon={<Folder className="h-4 w-4" />}
+    >
+      {node.isLoading ? (
+        <div className="flex items-center py-1" style={{ paddingLeft: `${(level + 1) * 16 + 28}px` }}>
+          <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+        </div>
+      ) : node.error ? (
+        <p className="text-xs text-destructive py-1" style={{ paddingLeft: `${(level + 1) * 16 + 28}px` }}>
+          {node.error}
+        </p>
+      ) : node.children && node.children.length === 0 ? (
+        <p className="text-xs text-muted-foreground py-1" style={{ paddingLeft: `${(level + 1) * 16 + 28}px` }}>
+          No subfolders
+        </p>
+      ) : node.children ? (
+        node.children.map((child, i) => (
+          <FolderNodeTreeItem
+            key={child.path}
+            node={child}
+            level={level + 1}
+            isLast={i === node.children!.length - 1}
+            parentPath={currentPath}
+          />
+        ))
+      ) : null}
+    </TreeItem>
   )
+}
+
+// --- Utility helpers ---
+
+function findNodeInTree(nodes: FolderNode[], targetPath: string): FolderNode | null {
+  for (const node of nodes) {
+    if (node.path === targetPath) return node
+    if (node.children) {
+      const found = findNodeInTree(node.children, targetPath)
+      if (found) return found
+    }
+  }
+  return null
 }
 
 function updateNodeInTree(nodes: FolderNode[], targetPath: string, updates: Partial<FolderNode>): FolderNode[] {
@@ -307,7 +281,7 @@ function updateNodeInTree(nodes: FolderNode[], targetPath: string, updates: Part
     if (node.path === targetPath) {
       return { ...node, ...updates }
     }
-    if (node.children && targetPath.startsWith(node.path + "/")) {
+    if (node.children && targetPath.startsWith(`${node.path}/`)) {
       return {
         ...node,
         children: updateNodeInTree(node.children, targetPath, updates),
