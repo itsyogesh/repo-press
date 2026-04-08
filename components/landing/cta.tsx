@@ -24,7 +24,7 @@ export default function CTA() {
         {/* Mock UI Illustration */}
         <div className="relative mt-16 mx-auto max-w-4xl">
           {/* Gradient Glow */}
-          <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-3/4 h-64 bg-gradient-to-r from-orange-200 via-pink-200 to-purple-200 opacity-50 blur-3xl rounded-full" />
+          <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-3/4 h-64 bg-linear-to-r from-orange-200 via-pink-200 to-purple-200 opacity-50 blur-3xl rounded-full" />
 
           <div className="relative rounded-t-2xl border border-zinc-200 bg-white/80 p-2 shadow-2xl backdrop-blur-sm">
             <div className="rounded-t-xl bg-zinc-50 border-b border-zinc-100 p-4 flex items-center gap-4">
