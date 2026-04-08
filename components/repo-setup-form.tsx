@@ -1,7 +1,17 @@
 "use client"
 
 import { useMutation, useQuery } from "convex/react"
-import { AlertCircle, CheckCircle2, Folder, GitBranch, Loader2, RefreshCw, Settings, Sparkles } from "lucide-react"
+import {
+  AlertCircle,
+  CheckCircle2,
+  Folder,
+  FolderOpen,
+  GitBranch,
+  Loader2,
+  RefreshCw,
+  Settings,
+  Sparkles,
+} from "lucide-react"
 import { useRouter } from "next/navigation"
 import type React from "react"
 import { useState, useTransition } from "react"
@@ -19,6 +29,7 @@ import type { RepoPressConfig } from "@/lib/config-schema"
 import { getFrameworkConfig, getRegisteredAdapters } from "@/lib/framework-adapters"
 import type { ConfigErrorType } from "@/lib/repopress/config"
 import { retrySyncAction } from "@/lib/sync-projects"
+import { FolderPickerDialog } from "./folder-picker-dialog"
 
 interface RepoSetupFormProps {
   owner: string
@@ -66,6 +77,7 @@ export function RepoSetupForm({
   const [isLoading, setIsLoading] = useState(false)
   const [isInitializing, setIsInitializing] = useState(false)
   const [showAdvanced, setShowAdvanced] = useState(false)
+  const [folderPickerOpen, setFolderPickerOpen] = useState(false)
   const [isSyncPending, startSyncTransition] = useTransition()
 
   const registeredAdapters = getRegisteredAdapters()
@@ -342,15 +354,37 @@ export function RepoSetupForm({
 
           <div className="space-y-2">
             <Label>Content Root</Label>
-            <div className="relative">
-              <Folder className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="e.g. content/blog"
-                value={contentPath}
-                onChange={(e) => setContentPath(e.target.value)}
-                className="pl-9"
-              />
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Folder className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input
+                  readOnly
+                  value={contentPath || "(repo root)"}
+                  onClick={() => setFolderPickerOpen(true)}
+                  className="pl-9 cursor-pointer"
+                  placeholder="Click to browse..."
+                />
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={() => setFolderPickerOpen(true)}
+                title="Browse directories"
+              >
+                <FolderOpen className="h-4 w-4" />
+              </Button>
             </div>
+
+            <FolderPickerDialog
+              open={folderPickerOpen}
+              onOpenChange={setFolderPickerOpen}
+              onSelect={(path) => setContentPath(path)}
+              owner={owner}
+              repo={repo}
+              branch={selectedBranch}
+              initialPath={contentPath}
+            />
             {(() => {
               const config = getFrameworkConfig(selectedFramework)
               const roots = config.suggestedContentRoots
