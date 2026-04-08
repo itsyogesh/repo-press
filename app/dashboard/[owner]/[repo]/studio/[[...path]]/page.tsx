@@ -1,15 +1,12 @@
 import { ConvexHttpClient } from "convex/browser"
-import { AlertCircle } from "lucide-react"
 import { redirect } from "next/navigation"
 import { StudioLayout } from "@/components/studio/studio-layout"
 import { StudioPageThemeToggle } from "@/components/studio/studio-page-theme-toggle"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { api } from "@/convex/_generated/api"
 import type { Doc, Id } from "@/convex/_generated/dataModel"
 import { fetchAuthQuery, getGitHubToken, getPatAuthUserId } from "@/lib/auth-server"
-import type { FileTreeNode } from "@/lib/github"
-import { createGitHubClient, getContentTree, getFile } from "@/lib/github"
-import { getRepoRole, probeRepoReadAccess } from "@/lib/github-permissions"
+import { createGitHubClient, getFile } from "@/lib/github"
+import { resolveRepoRole } from "@/lib/github-permissions"
 import { mintProjectAccessToken, mintServerQueryToken } from "@/lib/project-access-token"
 import { projectMatchesRoute, selectStudioFallbackProject } from "@/lib/studio/project-route"
 
@@ -28,73 +25,61 @@ interface StudioPageProps {
   }>
 }
 
-export default async function StudioPage({ params, searchParams }: StudioPageProps) {
-  const token = await getGitHubToken()
+export default async function StudioPage({
+  params: paramsPromise,
+  searchParams: searchParamsPromise,
+}: StudioPageProps) {
+  // Batch 1: all independent setup calls run in parallel
+  const [token, authUser, serverQueryToken, resolvedParams, resolvedSearchParams] = await Promise.all([
+    getGitHubToken(),
+    fetchAuthQuery ? fetchAuthQuery(api.auth.getCurrentUser).catch(() => null) : Promise.resolve(null),
+    mintServerQueryToken(),
+    paramsPromise,
+    searchParamsPromise,
+  ])
 
-  if (!token) {
-    redirect("/login")
-  }
+  if (!token) redirect("/login")
 
-  const { owner, repo, path } = await params
-  const { branch, projectId: projectIdParam, file } = await searchParams
-  const currentBranch = branch || "main"
+  const { owner, repo, path } = resolvedParams
+  const { branch, projectId: projectIdParam, file } = resolvedSearchParams
   const currentPath = file || (path ? path.join("/") : "")
-  const authUser = fetchAuthQuery ? await fetchAuthQuery(api.auth.getCurrentUser).catch(() => null) : null
+
   const patUserId = !authUser ? await getPatAuthUserId(token) : null
   const actingUserId = (authUser?._id as string | undefined) ?? patUserId
 
   const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
-  const serverQueryToken = await mintServerQueryToken()
 
-  // Look up the project first (needed for ownership fallback)
+  // Batch 2: project lookups + role resolution run in parallel.
+  // listProjectsForRepo always runs (eliminates the sequential fallback on the common path).
+  const [requestedProject, repoProjects, { role: resolvedRole, defaultBranch }] = await Promise.all([
+    projectIdParam
+      ? convex.query(api.projects.get, { id: projectIdParam as Id<"projects">, serverQueryToken })
+      : Promise.resolve(null),
+    convex.query(api.projects.listProjectsForRepo, { repoOwner: owner, repoName: repo, serverQueryToken }),
+    resolveRepoRole(token, owner, repo, actingUserId),
+  ])
+
+  // Effective branch: URL param wins, then API default, then "main"
+  const currentBranch = branch || defaultBranch || "main"
+
+  // Resolve project: try the specific project first, then fall back to repo-level lookup
   let project: Doc<"projects"> | null = null
-  if (projectIdParam) {
-    const requestedProject = await convex.query(api.projects.get, {
-      id: projectIdParam as Id<"projects">,
-      serverQueryToken,
-    })
-    if (
-      projectMatchesRoute(requestedProject, owner, repo, currentBranch) &&
-      requestedProject &&
-      actingUserId &&
-      requestedProject.userId === actingUserId
-    ) {
-      project = requestedProject
-    }
+  if (
+    requestedProject &&
+    projectMatchesRoute(requestedProject, owner, repo, currentBranch) &&
+    actingUserId &&
+    requestedProject.userId === actingUserId
+  ) {
+    project = requestedProject
   }
   if (!project) {
-    const repoProjects = await convex.query(api.projects.listProjectsForRepo, {
-      repoOwner: owner,
-      repoName: repo,
-      serverQueryToken,
-    })
     project = selectStudioFallbackProject(repoProjects, currentBranch)
   }
 
-  // Resolve role: GitHub API → ownership → cache → content probe
-  const { role: githubRole } = await getRepoRole(token, owner, repo)
+  // Ownership check happens AFTER final project is selected so the upgrade applies
+  // regardless of whether the project came from the specific lookup or the fallback.
   const isProjectOwner = !!(project && actingUserId && project.userId === actingUserId)
-  let repoRole: Role | null = githubRole ?? (isProjectOwner ? "owner" : null)
-
-  // Fallback chain for org-repo collaborators where getRepoRole returns null
-  if (!repoRole && actingUserId) {
-    // 1. Check access cache (seeded by prior visits)
-    try {
-      const cached = await convex.query(api.repoAccessCache.getForUserPublic, {
-        repoOwner: owner,
-        repoName: repo,
-        userId: actingUserId,
-        serverQueryToken,
-      })
-      if (cached) repoRole = cached.role as Role
-    } catch {
-      // Cache lookup failed
-    }
-    // 2. Probe: can the token actually read repo content?
-    if (!repoRole) {
-      repoRole = await probeRepoReadAccess(token, owner, repo)
-    }
-  }
+  const repoRole: Role | null = isProjectOwner ? "owner" : resolvedRole
 
   if (!repoRole) {
     redirect("/dashboard")
@@ -113,7 +98,7 @@ export default async function StudioPage({ params, searchParams }: StudioPagePro
         })
       : undefined
 
-  // Cache the permission in Convex (best-effort, requires projectAccessToken)
+  // Cache the permission in Convex (best-effort, non-critical)
   if (actingUserId && projectAccessToken) {
     try {
       const octokit = createGitHubClient(token)
@@ -131,24 +116,17 @@ export default async function StudioPage({ params, searchParams }: StudioPagePro
     }
   }
 
-  // Use project's contentRoot to scope file listing (falls back to repo root)
   const contentRoot = project?.contentRoot || ""
 
-  let tree: FileTreeNode[] = []
+  // Fetch initial file content server-side (fast for small files).
+  // The file tree is deferred to client-side to avoid blocking on large repos.
   let fileData = null
-  let error = null
-
   try {
-    // Always fetch the full content tree (filtered to .md/.mdx files)
-    tree = await getContentTree(token, owner, repo, currentBranch, contentRoot)
-
-    // When a specific path is requested, fetch the file content
     if (currentPath) {
       fileData = await getFile(token, owner, repo, currentPath, currentBranch)
     }
-  } catch (e) {
-    console.error("Error fetching studio data:", e)
-    error = "Failed to fetch repository data. Please try again later."
+  } catch {
+    // Non-critical: editor opens with empty content; user can reload from the file tree
   }
 
   return (
@@ -166,30 +144,20 @@ export default async function StudioPage({ params, searchParams }: StudioPagePro
         </div>
       </div>
 
-      {error ? (
-        <div className="w-full px-2 sm:px-3 py-8">
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Error</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        </div>
-      ) : (
-        <div className="flex-1 min-h-0">
-          <StudioLayout
-            tree={tree}
-            initialFile={fileData}
-            owner={owner}
-            repo={repo}
-            branch={currentBranch}
-            currentPath={currentPath}
-            projectId={project?._id}
-            projectAccessToken={projectAccessToken}
-            contentRoot={contentRoot}
-            role={repoRole}
-          />
-        </div>
-      )}
+      <div className="flex-1 min-h-0">
+        <StudioLayout
+          tree={[]}
+          initialFile={fileData}
+          owner={owner}
+          repo={repo}
+          branch={currentBranch}
+          currentPath={currentPath}
+          projectId={project?._id}
+          projectAccessToken={projectAccessToken}
+          contentRoot={contentRoot}
+          role={repoRole}
+        />
+      </div>
     </div>
   )
 }
