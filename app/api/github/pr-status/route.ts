@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { getGitHubToken } from "@/lib/auth-server"
 import { createGitHubClient } from "@/lib/github"
+import { isValidGitHubName } from "@/lib/route-validation"
 
 export async function GET(request: Request) {
   const token = await getGitHubToken()
@@ -17,6 +18,13 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Missing required query params: owner, repo, prNumber" }, { status: 400 })
   }
 
+  if (!isValidGitHubName(owner)) {
+    return NextResponse.json({ error: "Invalid owner format" }, { status: 400 })
+  }
+  if (!isValidGitHubName(repo)) {
+    return NextResponse.json({ error: "Invalid repo format" }, { status: 400 })
+  }
+
   const prNumber = parseInt(prNumberStr, 10)
   if (Number.isNaN(prNumber) || prNumber <= 0 || prNumber > Number.MAX_SAFE_INTEGER) {
     return NextResponse.json({ error: "prNumber must be a positive integer" }, { status: 400 })
@@ -31,7 +39,7 @@ export async function GET(request: Request) {
     if (status === 404) {
       return NextResponse.json({ error: "PR not found" }, { status: 404 })
     }
-    const message = error instanceof Error ? error.message : "Failed to fetch PR status"
-    return NextResponse.json({ error: message }, { status: 500 })
+    console.error("Error fetching PR status:", error)
+    return NextResponse.json({ error: "Failed to fetch PR status" }, { status: 500 })
   }
 }

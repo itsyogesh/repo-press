@@ -11,9 +11,14 @@ const _geist = Geist({ subsets: ["latin"] })
 const _geistMono = Geist_Mono({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "RepoPress - Git-native Headless CMS",
-  description: "Transform your GitHub repository into a powerful headless CMS with visual MDX editing",
-  generator: "v0.app",
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || "https://repopress.dev"),
+  title: {
+    default: "RepoPress — Your Repo is Your CMS",
+    template: "%s | RepoPress",
+  },
+  description:
+    "Git-native headless CMS for GitHub repositories. Visual MDX editing with draft/publish workflows. Your content stays in Git.",
+  keywords: ["CMS", "GitHub", "MDX", "headless CMS", "Git", "content management", "documentation", "open source"],
   icons: {
     icon: [
       {
@@ -30,6 +35,37 @@ export const metadata: Metadata = {
       },
     ],
     apple: "/apple-icon.png",
+  },
+  openGraph: {
+    title: "RepoPress — Your Repo is Your CMS",
+    description:
+      "Git-native headless CMS for GitHub repositories. Visual MDX editing with draft/publish workflows. Your content stays in Git.",
+    url: "/",
+    siteName: "RepoPress",
+    type: "website",
+    images: [
+      {
+        url: "/opengraph-image",
+        width: 1200,
+        height: 630,
+        alt: "RepoPress — Your Repo is Your CMS",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "RepoPress — Your Repo is Your CMS",
+    description:
+      "Git-native headless CMS for GitHub repositories. Visual MDX editing with draft/publish workflows. Your content stays in Git.",
+    images: ["/opengraph-image"],
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+    },
   },
 }
 

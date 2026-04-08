@@ -53,7 +53,7 @@ export default function Hero() {
 
       <div className="container mx-auto px-4 flex flex-col items-center py-12 md:py-20">
         <div className="relative w-full max-w-5xl hidden md:block">
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-3/4 h-3/4 bg-gradient-to-r from-primary/15 via-primary/10 to-primary/5 blur-[120px] -z-10 rounded-full" />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-3/4 w-3/4 rounded-full bg-linear-to-r from-primary/15 via-primary/10 to-primary/5 blur-[120px] -z-10" />
 
           <div className="overflow-hidden rounded-xl border border-border/50 bg-zinc-950/95 shadow-2xl backdrop-blur-sm ring-1 ring-white/10">
             <div className="flex h-10 items-center border-b border-white/5 bg-white/5 px-4">
