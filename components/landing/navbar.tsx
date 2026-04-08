@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 
 const navLinks = [
-  { href: "#features", label: "Features", external: false },
+  { href: "/#features", label: "Features", external: false },
   { href: "/docs", label: "Docs", external: false },
   { href: "/blog", label: "Blog", external: false },
   {

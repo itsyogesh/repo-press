@@ -2,7 +2,7 @@ import { Box, Github, Twitter } from "lucide-react"
 import Link from "next/link"
 
 const productLinks = [
-  { href: "#features", label: "Features" },
+  { href: "/#features", label: "Features" },
   { href: "/dashboard", label: "Studio" },
   { href: "/docs", label: "Docs" },
   { href: "/blog", label: "Blog" },
