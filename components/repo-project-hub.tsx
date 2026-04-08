@@ -21,6 +21,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useMemo, useState, useTransition } from "react"
 import { toast } from "sonner"
+import { cleanUpAllOrphansAction } from "@/app/dashboard/[owner]/[repo]/config-actions"
 import { retrySyncAction } from "@/lib/sync-projects"
 import { AddProjectDialog } from "./add-project-dialog"
 import { DeleteProjectDialog } from "./delete-project-dialog"
@@ -111,6 +112,26 @@ export function RepoProjectHub({
         router.refresh()
       } catch (err: any) {
         toast.error(err.message || "Failed to sync projects")
+      }
+    })
+  }
+
+  const handleCleanUpAll = () => {
+    startTransition(async () => {
+      try {
+        const result = await cleanUpAllOrphansAction(owner, repo)
+        if (result.success) {
+          const msg =
+            result.remaining > 0
+              ? `Queued cleanup for ${result.removed} orphaned project${result.removed !== 1 ? "s" : ""} (${result.remaining} remaining)`
+              : `Queued cleanup for ${result.removed} orphaned project${result.removed !== 1 ? "s" : ""}`
+          toast.success(msg)
+          router.refresh()
+        } else {
+          toast.error(result.error)
+        }
+      } catch (err: any) {
+        toast.error(err.message || "Failed to clean up orphans")
       }
     })
   }
@@ -223,6 +244,27 @@ export function RepoProjectHub({
       {/* Orphan warnings */}
       {orphanedProjects.length > 0 && (
         <div className="flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium text-studio-attention">
+              {orphanedProjects.length} project{orphanedProjects.length !== 1 ? "s" : ""} removed from config
+            </p>
+            {role === "owner" && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleCleanUpAll}
+                disabled={isPending}
+                className="text-destructive hover:text-destructive"
+              >
+                {isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                ) : (
+                  <Trash2 className="h-3.5 w-3.5 mr-1" />
+                )}
+                Remove All
+              </Button>
+            )}
+          </div>
           {orphanedProjects.map((project) => (
             <OrphanWarningCard
               key={project._id}

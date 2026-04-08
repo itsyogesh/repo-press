@@ -19,8 +19,11 @@ export async function syncProjectsServerSide(
   repo: string,
   branch: string,
   actingUserId: string,
-  { runOrphanDetection = true }: { runOrphanDetection?: boolean } = {},
-): Promise<{ synced: string[]; created: string[]; unchanged: string[] } | null> {
+  {
+    runOrphanDetection = true,
+    restoredConfigProjectIds,
+  }: { runOrphanDetection?: boolean; restoredConfigProjectIds?: string[] } = {},
+): Promise<{ synced: string[]; created: string[]; unchanged: string[]; orphaned?: string[] } | null> {
   if (!convexUrl) return null
 
   const { config } = await fetchRepoConfig(token, owner, repo, branch)
@@ -51,8 +54,18 @@ export async function syncProjectsServerSide(
     configPath: "repopress.config.json",
     pluginRegistry: config.plugins,
     runOrphanDetection,
+    restoredConfigProjectIds,
     projects: projectsToSync,
   })
+
+  if (result) {
+    const parts = [`Sync complete for ${owner}/${repo}:`]
+    if (result.created.length) parts.push(`${result.created.length} created`)
+    if (result.synced.length) parts.push(`${result.synced.length} updated`)
+    if (result.unchanged.length) parts.push(`${result.unchanged.length} unchanged`)
+    if ((result as any).orphaned?.length) parts.push(`${(result as any).orphaned.length} orphaned`)
+    console.log(parts.join(" "))
+  }
 
   return result
 }

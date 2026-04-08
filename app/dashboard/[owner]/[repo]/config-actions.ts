@@ -50,6 +50,21 @@ async function fetchConfigOrThrow(token: string, owner: string, repo: string, br
   return { config: result.config, sha: result.sha }
 }
 
+function getAddedConfigProjectIds(previousIds: string[], nextIds: string[]) {
+  const existingIds = new Set(previousIds)
+  return nextIds.filter((id) => !existingIds.has(id))
+}
+
+function getConfigProjectIdsFromJson(rawJson: string) {
+  try {
+    const parsed = JSON.parse(rawJson) as { projects?: Array<{ id?: string }> }
+    if (!Array.isArray(parsed.projects)) return []
+    return parsed.projects.flatMap((project) => (typeof project.id === "string" ? [project.id] : []))
+  } catch {
+    return []
+  }
+}
+
 type ConfigActionResult =
   | { success: true; syncResult?: { synced: string[]; created: string[]; unchanged: string[] } }
   | { success: false; error: string }
@@ -154,7 +169,9 @@ export async function addProjectToConfigAction(
       `chore(repopress): add project "${project.name}"`,
     )
 
-    const syncResult = await syncProjectsServerSide(token, owner, repo, branch, actingUserId)
+    const syncResult = await syncProjectsServerSide(token, owner, repo, branch, actingUserId, {
+      restoredConfigProjectIds: [project.id],
+    })
     revalidatePath(`/dashboard/${owner}/${repo}`)
     return { success: true, syncResult: syncResult ?? undefined }
   } catch (error: any) {
@@ -262,6 +279,7 @@ export async function commitRawConfigAction(
   branch: string,
   rawJson: string,
   currentSha: string,
+  previousJson: string,
 ): Promise<ConfigActionResult> {
   try {
     const { token, actingUserId } = await resolveAuthContext()
@@ -282,6 +300,11 @@ export async function commitRawConfigAction(
       return { success: false, error: `Validation failed: ${errors}` }
     }
 
+    const restoredConfigProjectIds = getAddedConfigProjectIds(
+      getConfigProjectIdsFromJson(previousJson),
+      validated.data.projects.map((project) => project.id),
+    )
+
     await commitConfig(
       token,
       owner,
@@ -292,7 +315,12 @@ export async function commitRawConfigAction(
       "chore(repopress): update config via raw editor",
     )
 
-    const syncResult = await syncProjectsServerSide(token, owner, repo, branch, actingUserId)
+    const syncResult =
+      restoredConfigProjectIds.length > 0
+        ? await syncProjectsServerSide(token, owner, repo, branch, actingUserId, {
+            restoredConfigProjectIds,
+          })
+        : await syncProjectsServerSide(token, owner, repo, branch, actingUserId)
     revalidatePath(`/dashboard/${owner}/${repo}`)
     return { success: true, syncResult: syncResult ?? undefined }
   } catch (error: any) {
@@ -333,6 +361,38 @@ export async function deleteProjectPermanentlyAction(
 
     revalidatePath(`/dashboard/${project.repoOwner}/${project.repoName}`)
     return { success: true }
+  } catch (error: any) {
+    return { success: false, error: error.message }
+  }
+}
+
+/**
+ * Batch-removes all orphaned (configRemoved) projects for a repository.
+ * Requires owner-level access (consistent with per-project delete).
+ */
+export async function cleanUpAllOrphansAction(
+  owner: string,
+  repo: string,
+): Promise<{ success: true; removed: number; remaining: number } | { success: false; error: string }> {
+  try {
+    const { token, actingUserId } = await resolveAuthContext()
+
+    // Require owner role — consistent with deleteProjectPermanentlyAction
+    const { role } = await resolveRepoRole(token, owner, repo, actingUserId)
+    if (role !== "owner") {
+      throw new Error("Unauthorized: owner access required to remove all orphans")
+    }
+
+    const serverQueryToken = await mintServerQueryToken()
+    const result = await convex.mutation(api.projects.removeAllOrphans, {
+      actingUserId,
+      serverQueryToken,
+      repoOwner: owner,
+      repoName: repo,
+    })
+
+    revalidatePath(`/dashboard/${owner}/${repo}`)
+    return { success: true, removed: result.removed, remaining: result.remaining }
   } catch (error: any) {
     return { success: false, error: error.message }
   }

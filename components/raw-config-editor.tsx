@@ -100,7 +100,7 @@ export function RawConfigEditor({
     if (!validation.valid) return
 
     startTransition(async () => {
-      const result = await commitRawConfigAction(owner, repo, branch, value, sha)
+      const result = await commitRawConfigAction(owner, repo, branch, value, sha, initialJson)
       if (result.success) {
         toast.success("Config committed to GitHub")
         // Update SHA to prevent stale conflicts on subsequent edits

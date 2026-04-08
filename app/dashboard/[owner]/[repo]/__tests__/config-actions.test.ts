@@ -81,6 +81,7 @@ vi.mock("@/convex/_generated/api", () => ({
       get: "projects:get",
       keepAsManual: "projects:keepAsManual",
       removeFull: "projects:removeFull",
+      removeAllOrphans: "projects:removeAllOrphans",
     },
   },
 }))
@@ -89,6 +90,7 @@ vi.mock("@/convex/_generated/api", () => ({
 
 import {
   addProjectToConfigAction,
+  cleanUpAllOrphansAction,
   commitRawConfigAction,
   deleteProjectPermanentlyAction,
   keepProjectAsManualAction,
@@ -167,7 +169,9 @@ describe("addProjectToConfigAction", () => {
       "abc123sha",
       expect.stringContaining("Blog"),
     )
-    expect(syncProjectsServerSideMock).toHaveBeenCalledWith(TOKEN, OWNER, REPO, BRANCH, USER_ID)
+    expect(syncProjectsServerSideMock).toHaveBeenCalledWith(TOKEN, OWNER, REPO, BRANCH, USER_ID, {
+      restoredConfigProjectIds: ["blog"],
+    })
   })
 
   it("returns { success: false } when not authenticated", async () => {
@@ -247,7 +251,9 @@ describe("addProjectToConfigAction", () => {
     })
 
     expect(result.success).toBe(true)
-    expect(syncProjectsServerSideMock).toHaveBeenCalledWith(TOKEN, OWNER, REPO, BRANCH, "pat_user_xyz")
+    expect(syncProjectsServerSideMock).toHaveBeenCalledWith(TOKEN, OWNER, REPO, BRANCH, "pat_user_xyz", {
+      restoredConfigProjectIds: ["blog"],
+    })
   })
 
   it("returns { success: false } when both OAuth and PAT user resolution fail", async () => {
@@ -290,6 +296,7 @@ describe("updateProjectInConfigAction", () => {
       "abc123sha",
       'chore(repopress): update project "docs"',
     )
+    expect(syncProjectsServerSideMock).toHaveBeenCalledWith(TOKEN, OWNER, REPO, BRANCH, USER_ID)
   })
 
   it("returns { success: false } when updateProject throws unknown id", async () => {
@@ -421,7 +428,7 @@ describe("commitRawConfigAction", () => {
   })
 
   it("parses, validates and commits a valid JSON config", async () => {
-    const result = await commitRawConfigAction(OWNER, REPO, BRANCH, VALID_JSON, SHA)
+    const result = await commitRawConfigAction(OWNER, REPO, BRANCH, VALID_JSON, SHA, JSON.stringify(BASE_CONFIG))
 
     expect(result.success).toBe(true)
     expect(commitConfigMock).toHaveBeenCalledWith(
@@ -433,10 +440,13 @@ describe("commitRawConfigAction", () => {
       SHA,
       "chore(repopress): update config via raw editor",
     )
+    expect(syncProjectsServerSideMock).toHaveBeenCalledWith(TOKEN, OWNER, REPO, BRANCH, USER_ID, {
+      restoredConfigProjectIds: ["blog"],
+    })
   })
 
   it("returns { success: false } for malformed JSON (not parseable)", async () => {
-    const result = await commitRawConfigAction(OWNER, REPO, BRANCH, "{not valid json", SHA)
+    const result = await commitRawConfigAction(OWNER, REPO, BRANCH, "{not valid json", SHA, JSON.stringify(BASE_CONFIG))
 
     expect(result).toEqual({ success: false, error: "Invalid JSON format" })
     expect(commitConfigMock).not.toHaveBeenCalled()
@@ -444,7 +454,14 @@ describe("commitRawConfigAction", () => {
 
   it("returns { success: false } when JSON parses but fails Zod schema", async () => {
     // Missing required 'version' and 'projects'
-    const result = await commitRawConfigAction(OWNER, REPO, BRANCH, JSON.stringify({ foo: "bar" }), SHA)
+    const result = await commitRawConfigAction(
+      OWNER,
+      REPO,
+      BRANCH,
+      JSON.stringify({ foo: "bar" }),
+      SHA,
+      JSON.stringify(BASE_CONFIG),
+    )
 
     expect(result.success).toBe(false)
     expect(result).toHaveProperty("error")
@@ -455,14 +472,21 @@ describe("commitRawConfigAction", () => {
   it("returns { success: false } when not authenticated", async () => {
     getGitHubTokenMock.mockResolvedValue(null)
 
-    const result = await commitRawConfigAction(OWNER, REPO, BRANCH, VALID_JSON, SHA)
+    const result = await commitRawConfigAction(OWNER, REPO, BRANCH, VALID_JSON, SHA, JSON.stringify(BASE_CONFIG))
 
     expect(result.success).toBe(false)
     expect(commitConfigMock).not.toHaveBeenCalled()
   })
 
   it("uses provided SHA (not re-fetched from GitHub) to avoid unnecessary round-trip", async () => {
-    const result = await commitRawConfigAction(OWNER, REPO, BRANCH, VALID_JSON, "explicit_sha_xyz")
+    const result = await commitRawConfigAction(
+      OWNER,
+      REPO,
+      BRANCH,
+      VALID_JSON,
+      "explicit_sha_xyz",
+      JSON.stringify(BASE_CONFIG),
+    )
 
     expect(result.success).toBe(true)
     expect(commitConfigMock).toHaveBeenCalledWith(
@@ -525,5 +549,64 @@ describe("orphan resolution actions", () => {
       userId: "pat_user_xyz",
       projectAccessToken: "project-access-token",
     })
+  })
+})
+
+// ── cleanUpAllOrphansAction ───────────────────────────────────────────────────
+
+describe("cleanUpAllOrphansAction", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    setupHappyPath()
+    convexMutationMock.mockResolvedValue({ removed: 2, remaining: 0 })
+  })
+
+  it("returns success with removed/remaining on the happy path", async () => {
+    const result = await cleanUpAllOrphansAction(OWNER, REPO)
+
+    expect(result).toEqual({ success: true, removed: 2, remaining: 0 })
+    expect(convexMutationMock).toHaveBeenCalledWith(
+      "projects:removeAllOrphans",
+      expect.objectContaining({
+        repoOwner: OWNER,
+        repoName: REPO,
+        actingUserId: USER_ID,
+        serverQueryToken: "server-query-token",
+      }),
+    )
+  })
+
+  it("returns { success: false } when not authenticated", async () => {
+    getGitHubTokenMock.mockResolvedValue(null)
+
+    const result = await cleanUpAllOrphansAction(OWNER, REPO)
+
+    expect(result).toEqual({ success: false, error: "Not authenticated with GitHub" })
+    expect(convexMutationMock).not.toHaveBeenCalled()
+  })
+
+  it("returns { success: false } when caller is not owner", async () => {
+    resolveRepoRoleMock.mockResolvedValue({ role: "editor", defaultBranch: "main", defaultBranchInferred: false })
+
+    const result = await cleanUpAllOrphansAction(OWNER, REPO)
+
+    expect(result).toEqual({ success: false, error: "Unauthorized: owner access required to remove all orphans" })
+    expect(convexMutationMock).not.toHaveBeenCalled()
+  })
+
+  it("surfaces remaining count when batch limit reached (>25 orphans)", async () => {
+    convexMutationMock.mockResolvedValue({ removed: 25, remaining: 7 })
+
+    const result = await cleanUpAllOrphansAction(OWNER, REPO)
+
+    expect(result).toEqual({ success: true, removed: 25, remaining: 7 })
+  })
+
+  it("returns { success: false } when the Convex mutation throws", async () => {
+    convexMutationMock.mockRejectedValue(new Error("Convex rate limit exceeded"))
+
+    const result = await cleanUpAllOrphansAction(OWNER, REPO)
+
+    expect(result).toEqual({ success: false, error: "Convex rate limit exceeded" })
   })
 })
