@@ -81,6 +81,7 @@ vi.mock("@/convex/_generated/api", () => ({
       get: "projects:get",
       keepAsManual: "projects:keepAsManual",
       removeFull: "projects:removeFull",
+      removeAllOrphans: "projects:removeAllOrphans",
     },
   },
 }))
@@ -89,6 +90,7 @@ vi.mock("@/convex/_generated/api", () => ({
 
 import {
   addProjectToConfigAction,
+  cleanUpAllOrphansAction,
   commitRawConfigAction,
   deleteProjectPermanentlyAction,
   keepProjectAsManualAction,
@@ -525,5 +527,64 @@ describe("orphan resolution actions", () => {
       userId: "pat_user_xyz",
       projectAccessToken: "project-access-token",
     })
+  })
+})
+
+// ── cleanUpAllOrphansAction ───────────────────────────────────────────────────
+
+describe("cleanUpAllOrphansAction", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    setupHappyPath()
+    convexMutationMock.mockResolvedValue({ removed: 2, remaining: 0 })
+  })
+
+  it("returns success with removed/remaining on the happy path", async () => {
+    const result = await cleanUpAllOrphansAction(OWNER, REPO)
+
+    expect(result).toEqual({ success: true, removed: 2, remaining: 0 })
+    expect(convexMutationMock).toHaveBeenCalledWith(
+      "projects:removeAllOrphans",
+      expect.objectContaining({
+        repoOwner: OWNER,
+        repoName: REPO,
+        actingUserId: USER_ID,
+        serverQueryToken: "server-query-token",
+      }),
+    )
+  })
+
+  it("returns { success: false } when not authenticated", async () => {
+    getGitHubTokenMock.mockResolvedValue(null)
+
+    const result = await cleanUpAllOrphansAction(OWNER, REPO)
+
+    expect(result).toEqual({ success: false, error: "Not authenticated with GitHub" })
+    expect(convexMutationMock).not.toHaveBeenCalled()
+  })
+
+  it("returns { success: false } when caller is not owner", async () => {
+    resolveRepoRoleMock.mockResolvedValue({ role: "editor", defaultBranch: "main", defaultBranchInferred: false })
+
+    const result = await cleanUpAllOrphansAction(OWNER, REPO)
+
+    expect(result).toEqual({ success: false, error: "Unauthorized: owner access required to remove all orphans" })
+    expect(convexMutationMock).not.toHaveBeenCalled()
+  })
+
+  it("surfaces remaining count when batch limit reached (>25 orphans)", async () => {
+    convexMutationMock.mockResolvedValue({ removed: 25, remaining: 7 })
+
+    const result = await cleanUpAllOrphansAction(OWNER, REPO)
+
+    expect(result).toEqual({ success: true, removed: 25, remaining: 7 })
+  })
+
+  it("returns { success: false } when the Convex mutation throws", async () => {
+    convexMutationMock.mockRejectedValue(new Error("Convex rate limit exceeded"))
+
+    const result = await cleanUpAllOrphansAction(OWNER, REPO)
+
+    expect(result).toEqual({ success: false, error: "Convex rate limit exceeded" })
   })
 })

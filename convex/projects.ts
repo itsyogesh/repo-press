@@ -533,17 +533,26 @@ export const syncProjectsFromConfig = mutation({
     for (const p of args.projects) {
       const nextBranch = p.branch || args.branch
 
-      // Skip if this configProjectId was previously deleted
-      const isTombstoned = await ctx.db
+      // Check if this configProjectId was previously deleted
+      const tombstone = await ctx.db
         .query("deletedConfigProjects")
         .withIndex("by_repo_configProjectId", (q) =>
           q.eq("repoOwner", args.repoOwner).eq("repoName", args.repoName).eq("configProjectId", p.configProjectId),
         )
         .first()
 
-      if (isTombstoned) {
-        // Skip this project — it was intentionally deleted
-        continue
+      if (tombstone) {
+        // Studio auto-syncs (runOrphanDetection: false) run on every page load and may
+        // be triggered by non-owner users. They must NOT clear tombstones — doing so
+        // would silently resurrect a project the owner intentionally deleted.
+        // Only canonical syncs (runOrphanDetection not explicitly false) may clear
+        // tombstones, since those are deliberate user-initiated actions.
+        if (args.runOrphanDetection === false) {
+          continue
+        }
+        // Re-adding a project to config is an explicit user intent to recreate it.
+        // Clear the tombstone so the project can be created fresh on this sync.
+        await ctx.db.delete(tombstone._id)
       }
 
       // 1) Preferred match: explicit config project ID (across ALL projects for repo).

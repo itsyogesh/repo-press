@@ -271,17 +271,35 @@ describe("syncProjectsFromConfig", () => {
   // ── Tombstone / deletion ─────────────────────────────────────────────────
 
   describe("tombstone (deletedConfigProjects)", () => {
-    it("skips a project whose configProjectId is tombstoned", async () => {
+    it("clears tombstone and creates project when configProjectId reappears in config", async () => {
       const tombstone = { _id: "tomb_1", repoOwner: "acme", repoName: "docs", configProjectId: "docs" }
-      const insert = vi.fn()
-      const patch = vi.fn()
-      const ctx = createCtx({ repoProjects: [], tombstone, insert, patch })
+      const insert = vi.fn().mockResolvedValue("recreated_proj_id")
+      const ctx = createCtx({ repoProjects: [], tombstone, insert })
+      const deleteDoc = ctx.db.delete
 
       const result = await (syncProjectsFromConfig as any).handler(ctx, BASE_ARGS)
 
+      // Tombstone must be deleted so the project can be re-created
+      expect(deleteDoc).toHaveBeenCalledWith("tomb_1")
+      // Project must be created fresh
+      expect(insert).toHaveBeenCalledWith("projects", expect.objectContaining({ configProjectId: "docs" }))
+      expect(result.created).toContain("recreated_proj_id")
+    })
+
+    it("does NOT clear tombstone for Studio auto-syncs (runOrphanDetection: false)", async () => {
+      // Studio auto-syncs pass runOrphanDetection: false to avoid false orphaning on
+      // non-default branches. They must also skip tombstone clearing to prevent
+      // non-owner page loads from resurrecting owner-deleted projects.
+      const tombstone = { _id: "tomb_1", repoOwner: "acme", repoName: "docs", configProjectId: "docs" }
+      const insert = vi.fn()
+      const ctx = createCtx({ repoProjects: [], tombstone, insert })
+
+      await (syncProjectsFromConfig as any).handler(ctx, { ...BASE_ARGS, runOrphanDetection: false })
+
+      // Tombstone must NOT be cleared
+      expect(ctx.db.delete).not.toHaveBeenCalled()
+      // Project must NOT be created
       expect(insert).not.toHaveBeenCalled()
-      expect(patch).not.toHaveBeenCalled()
-      expect(result.created).toHaveLength(0)
     })
   })
 
