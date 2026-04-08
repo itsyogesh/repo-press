@@ -1000,19 +1000,17 @@ export const removeAllOrphans = mutation({
     for (const orphan of batch) {
       // Insert tombstone only if one doesn't already exist (dedupe)
       if (orphan.frameworkSource === "config" && orphan.configProjectId) {
+        const configProjectId = orphan.configProjectId
         const existingTombstone = await ctx.db
           .query("deletedConfigProjects")
           .withIndex("by_repo_configProjectId", (q) =>
-            q
-              .eq("repoOwner", orphan.repoOwner)
-              .eq("repoName", orphan.repoName)
-              .eq("configProjectId", orphan.configProjectId),
+            q.eq("repoOwner", orphan.repoOwner).eq("repoName", orphan.repoName).eq("configProjectId", configProjectId),
           )
           .first()
 
         if (!existingTombstone) {
           await ctx.db.insert("deletedConfigProjects", {
-            configProjectId: orphan.configProjectId,
+            configProjectId,
             repoOwner: orphan.repoOwner,
             repoName: orphan.repoName,
             branch: orphan.branch,
