@@ -125,7 +125,7 @@ export default function FeatureGrid() {
         </div>
 
         {/* Card: Zero Config */}
-        <div className="rounded-3xl bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 border border-blue-100 dark:border-blue-900/50 p-8 flex flex-col justify-center items-center text-center">
+        <div className="rounded-3xl bg-linear-to-br from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 border border-blue-100 dark:border-blue-900/50 p-8 flex flex-col justify-center items-center text-center">
           <div className="h-16 w-16 rounded-full bg-white dark:bg-blue-900/50 shadow-sm flex items-center justify-center mb-4">
             <Zap className="h-8 w-8 text-blue-600 dark:text-blue-400 fill-current" />
           </div>

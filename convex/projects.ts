@@ -20,17 +20,6 @@ async function verifyCallerIdentity(ctx: Parameters<typeof authComponent.safeGet
   throw new Error("Unauthorized: Not authenticated")
 }
 
-export const list = query({
-  args: { userId: v.string() },
-  handler: async (ctx, args) => {
-    return await ctx.db
-      .query("projects")
-      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
-      .order("desc")
-      .collect()
-  },
-})
-
 // Authenticated version — gets projects for the current logged-in user.
 // Uses the auth component's user ID (which lives in a different table namespace
 // than the app's "users" table), so we query by matching IDs as strings.
@@ -110,28 +99,6 @@ export const get = query({
     }
 
     return null
-  },
-})
-
-export const getByRepo = query({
-  args: {
-    userId: v.string(),
-    repoOwner: v.string(),
-    repoName: v.string(),
-  },
-  handler: async (ctx, args) => {
-    // Verify caller identity when OAuth session exists
-    const authUser = await authComponent.safeGetAuthUser(ctx)
-    if (authUser && (authUser._id as string) !== args.userId) {
-      return []
-    }
-
-    return await ctx.db
-      .query("projects")
-      .withIndex("by_userId_repo", (q) =>
-        q.eq("userId", args.userId).eq("repoOwner", args.repoOwner).eq("repoName", args.repoName),
-      )
-      .collect()
   },
 })
 
