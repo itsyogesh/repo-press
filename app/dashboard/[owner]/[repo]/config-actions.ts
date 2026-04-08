@@ -51,7 +51,10 @@ async function fetchConfigOrThrow(token: string, owner: string, repo: string, br
 }
 
 type ConfigActionResult =
-  | { success: true; syncResult?: { synced: string[]; created: string[]; unchanged: string[] } }
+  | {
+      success: true
+      syncResult?: { synced: string[]; created: string[]; unchanged: string[] }
+    }
   | { success: false; error: string }
 
 type ProjectResolutionResult = {
@@ -170,12 +173,42 @@ export async function updateProjectInConfigAction(
   repo: string,
   branch: string,
   configProjectId: string,
-  updates: Partial<Pick<ProjectConfig, "name" | "framework" | "contentType" | "branch" | "preview" | "components">>,
+  updates: Partial<
+    Pick<ProjectConfig, "name" | "framework" | "contentType" | "branch" | "preview" | "components" | "contentRoot">
+  >,
 ): Promise<ConfigActionResult> {
   try {
     const { token, actingUserId } = await resolveAuthContext()
     await requireWriteAccess(token, owner, repo, actingUserId)
     const { config, sha } = await fetchConfigOrThrow(token, owner, repo, branch)
+
+    // Validate contentRoot directory exists if it's being updated
+    if (updates.contentRoot !== undefined && updates.contentRoot !== "") {
+      const { createGitHubClient } = await import("@/lib/github")
+      const octokit = createGitHubClient(token)
+      try {
+        const { data } = await octokit.repos.getContent({
+          owner,
+          repo,
+          path: updates.contentRoot,
+          ref: branch,
+        })
+        if (!Array.isArray(data)) {
+          return {
+            success: false,
+            error: `"${updates.contentRoot}" is a file, not a folder.`,
+          }
+        }
+      } catch (err: any) {
+        if (err.status === 404) {
+          return {
+            success: false,
+            error: `Folder "${updates.contentRoot}" does not exist in ${owner}/${repo} on branch ${branch}.`,
+          }
+        }
+        // Non-404 errors: let through to avoid blocking on transient failures
+      }
+    }
 
     const updatedConfig = updateProject(config, configProjectId, updates)
     await commitConfig(
