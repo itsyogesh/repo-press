@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { getGitHubToken } from "@/lib/auth-server"
 import { getFile } from "@/lib/github"
+import { isValidFilePath, isValidGitHubName } from "@/lib/route-validation"
 
 export async function GET(request: Request) {
   const token = await getGitHubToken()
@@ -18,6 +19,16 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Missing required query params: owner, repo, path" }, { status: 400 })
   }
 
+  if (!isValidGitHubName(owner)) {
+    return NextResponse.json({ error: "Invalid owner format" }, { status: 400 })
+  }
+  if (!isValidGitHubName(repo)) {
+    return NextResponse.json({ error: "Invalid repo format" }, { status: 400 })
+  }
+  if (!isValidFilePath(path)) {
+    return NextResponse.json({ error: "Invalid file path" }, { status: 400 })
+  }
+
   try {
     const file = await getFile(token, owner, repo, path, branch)
     if (!file) {
@@ -31,7 +42,7 @@ export async function GET(request: Request) {
       content: file.content,
     })
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Failed to fetch file"
-    return NextResponse.json({ error: message }, { status: 500 })
+    console.error("Error fetching file:", error)
+    return NextResponse.json({ error: "Failed to fetch file" }, { status: 500 })
   }
 }
