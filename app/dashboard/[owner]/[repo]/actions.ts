@@ -2,9 +2,8 @@
 
 import { revalidatePath } from "next/cache"
 import { api } from "@/convex/_generated/api"
-import { fetchAuthMutation, fetchAuthQuery, getGitHubToken, getPatAuthUserId } from "@/lib/auth-server"
+import { fetchAuthQuery, getGitHubToken, getPatAuthUserId } from "@/lib/auth-server"
 import { getRepoContents } from "@/lib/github"
-import { fetchRepoConfig } from "@/lib/repopress/config"
 import { syncProjectsServerSide } from "@/lib/sync-projects"
 
 export async function syncProjectsFromConfigAction(owner: string, repo: string, branch: string) {

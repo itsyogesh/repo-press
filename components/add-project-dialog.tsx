@@ -4,12 +4,12 @@ import { Folder, FolderOpen, Loader2, Plus } from "lucide-react"
 import { useState, useTransition } from "react"
 import { toast } from "sonner"
 import { addProjectToConfigAction } from "@/app/dashboard/[owner]/[repo]/config-actions"
+import { FolderPickerDialog } from "./folder-picker-dialog"
 import { Button } from "./ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog"
 import { Input } from "./ui/input"
 import { Label } from "./ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select"
-import { FolderPickerDialog } from "./folder-picker-dialog"
 
 const FRAMEWORK_OPTIONS = [
   { value: "auto", label: "Auto-detect" },

@@ -1,5 +1,5 @@
 import { v } from "convex/values"
-import { api, internal } from "./_generated/api"
+import { internal } from "./_generated/api"
 import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server"
 import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
 

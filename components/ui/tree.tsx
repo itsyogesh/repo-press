@@ -1,10 +1,10 @@
 "use client"
 
-import * as React from "react"
 import { Slot } from "@radix-ui/react-slot"
 import { cva, type VariantProps } from "class-variance-authority"
-import { ChevronRight, Folder, File, FolderOpen } from "lucide-react"
-import { motion, AnimatePresence } from "motion/react"
+import { ChevronRight, File, Folder, FolderOpen } from "lucide-react"
+import { AnimatePresence, motion } from "motion/react"
+import * as React from "react"
 import { cn } from "@/lib/utils"
 
 // Tree Context
@@ -195,7 +195,7 @@ const Tree = React.forwardRef<HTMLDivElement, TreeProps>(({ className, asChild =
   const Comp = asChild ? Slot : "div"
 
   return (
-    <Comp className={cn("space-y-1", className)} ref={ref} {...props}>
+    <Comp className={cn("space-y-1", className)} ref={ref} role={asChild ? undefined : "tree"} {...props}>
       {children}
     </Comp>
   )
@@ -204,7 +204,9 @@ const Tree = React.forwardRef<HTMLDivElement, TreeProps>(({ className, asChild =
 Tree.displayName = "Tree"
 
 // Tree Item Props
-export interface TreeItemProps extends React.HTMLAttributes<HTMLDivElement>, VariantProps<typeof treeItemVariants> {
+export interface TreeItemProps
+  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
+    VariantProps<typeof treeItemVariants> {
   nodeId: string
   label: string
   icon?: React.ReactNode
@@ -213,11 +215,10 @@ export interface TreeItemProps extends React.HTMLAttributes<HTMLDivElement>, Var
   isLast?: boolean
   parentPath?: boolean[]
   hasChildren?: boolean
-  asChild?: boolean
 }
 
 // Tree Item
-const TreeItem = React.forwardRef<HTMLDivElement, TreeItemProps>(
+const TreeItem = React.forwardRef<HTMLButtonElement, TreeItemProps>(
   (
     {
       className,
@@ -230,10 +231,9 @@ const TreeItem = React.forwardRef<HTMLDivElement, TreeItemProps>(
       isLast = false,
       parentPath = [],
       hasChildren = false,
-      asChild = false,
       children,
       onClick,
-      ...props
+      ...buttonProps
     },
     ref,
   ) => {
@@ -264,20 +264,39 @@ const TreeItem = React.forwardRef<HTMLDivElement, TreeItemProps>(
         <File className="h-4 w-4" />
       )
 
-    const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
       if (hasChildren) toggleExpanded(nodeId)
       handleSelection(nodeId, e.ctrlKey || e.metaKey)
       onNodeClick?.(nodeId, data)
       onClick?.(e)
     }
 
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
+      if (!hasChildren) return
+
+      if (e.key === "ArrowRight" && !isExpanded) {
+        e.preventDefault()
+        toggleExpanded(nodeId)
+      }
+
+      if (e.key === "ArrowLeft" && isExpanded) {
+        e.preventDefault()
+        toggleExpanded(nodeId)
+      }
+    }
+
     return (
       <div className="select-none">
-        <motion.div
+        <button
+          ref={ref}
           className={cn(treeItemVariants({ variant, selected: isSelected, className }))}
           style={{ paddingLeft: level * indent + 8 }}
           onClick={handleClick}
-          whileTap={{ scale: 0.98, transition: { duration: 0.1 } }}
+          onKeyDown={handleKeyDown}
+          aria-expanded={hasChildren ? isExpanded : undefined}
+          aria-pressed={isSelected}
+          {...buttonProps}
+          type="button"
         >
           {/* Tree Lines */}
           {showLines && level > 0 && (
@@ -334,7 +353,7 @@ const TreeItem = React.forwardRef<HTMLDivElement, TreeItemProps>(
 
           {/* Label */}
           <span className="text-sm truncate flex-1 text-foreground">{label}</span>
-        </motion.div>
+        </button>
 
         {/* Children */}
         <AnimatePresence>
