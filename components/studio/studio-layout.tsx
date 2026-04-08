@@ -1795,11 +1795,24 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
     projectId,
     projectAccessToken,
     contentRoot = "",
-    tree,
+    tree: initialTree,
     initialFile,
     currentPath,
     role = "owner",
   } = props
+
+  // Tree starts from the server-provided value ([] when server deferred loading).
+  // A client-side fetch runs immediately when the initial tree is empty, unblocking
+  // the server render from the expensive GitHub recursive-tree API call.
+  const [tree, setTree] = React.useState<FileTreeNode[]>(initialTree)
+  React.useEffect(() => {
+    if (initialTree.length > 0) return
+    const qp = new URLSearchParams({ owner, repo, branch: branch ?? "main", contentRoot })
+    fetch(`/api/github/tree?${qp}`)
+      .then((res) => (res.ok ? res.json() : Promise.reject(res)))
+      .then((data: FileTreeNode[]) => setTree(data))
+      .catch(() => {}) // non-critical: empty tree is an acceptable fallback
+  }, [owner, repo, branch, contentRoot, initialTree.length])
 
   // 1. File state hook
   const studioFile = useStudioFile(initialFile, currentPath)
