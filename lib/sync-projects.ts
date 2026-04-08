@@ -54,6 +54,15 @@ export async function syncProjectsServerSide(
     projects: projectsToSync,
   })
 
+  if (result) {
+    const parts = [`Sync complete for ${owner}/${repo}:`]
+    if (result.created.length) parts.push(`${result.created.length} created`)
+    if (result.synced.length) parts.push(`${result.synced.length} updated`)
+    if (result.unchanged.length) parts.push(`${result.unchanged.length} unchanged`)
+    if ((result as any).orphaned?.length) parts.push(`${(result as any).orphaned.length} orphaned`)
+    console.log(parts.join(" "))
+  }
+
   return result
 }
 

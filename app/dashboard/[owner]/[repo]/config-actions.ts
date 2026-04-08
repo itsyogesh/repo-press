@@ -337,3 +337,35 @@ export async function deleteProjectPermanentlyAction(
     return { success: false, error: error.message }
   }
 }
+
+/**
+ * Batch-removes all orphaned (configRemoved) projects for a repository.
+ * Requires owner-level access (consistent with per-project delete).
+ */
+export async function cleanUpAllOrphansAction(
+  owner: string,
+  repo: string,
+): Promise<{ success: true; removed: number; remaining: number } | { success: false; error: string }> {
+  try {
+    const { token, actingUserId } = await resolveAuthContext()
+
+    // Require owner role — consistent with deleteProjectPermanentlyAction
+    const { role } = await resolveRepoRole(token, owner, repo, actingUserId)
+    if (role !== "owner") {
+      throw new Error("Unauthorized: owner access required to remove all orphans")
+    }
+
+    const serverQueryToken = await mintServerQueryToken()
+    const result = await convex.mutation(api.projects.removeAllOrphans, {
+      actingUserId,
+      serverQueryToken,
+      repoOwner: owner,
+      repoName: repo,
+    })
+
+    revalidatePath(`/dashboard/${owner}/${repo}`)
+    return { success: true, removed: result.removed, remaining: result.remaining }
+  } catch (error: any) {
+    return { success: false, error: error.message }
+  }
+}

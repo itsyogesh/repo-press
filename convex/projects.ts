@@ -417,6 +417,17 @@ export const getOrCreate = mutation({
       .first()
 
     if (existing) {
+      // Skip projects that are being deleted — treat as if they don't exist
+      if (existing.name.startsWith("[DELETING]")) {
+        const now = Date.now()
+        return await ctx.db.insert("projects", {
+          ...args,
+          createdBy: args.userId,
+          createdAt: now,
+          updatedAt: now,
+        })
+      }
+
       // Update framework/schema/components if re-detected values differ from stored ones
       const updates: Record<string, unknown> = {}
       if (args.detectedFramework && args.detectedFramework !== existing.detectedFramework) {
@@ -434,6 +445,10 @@ export const getOrCreate = mutation({
       if (args.components && JSON.stringify(args.components) !== JSON.stringify((existing as any).components)) {
         updates.components = args.components
       }
+      // Note: do NOT clear configRemoved here — orphan cleanup should happen
+      // through explicit user actions (Remove All, Keep as Manual, Delete Permanently).
+      // Clearing it silently would leave config-related fields (frameworkSource,
+      // configProjectId) intact, creating inconsistent state.
       if (Object.keys(updates).length > 0) {
         await ctx.db.patch(existing._id, { ...updates, updatedAt: Date.now() })
       }
@@ -831,6 +846,12 @@ export const _removeFullBatch = internalMutation({
       return
     }
 
+    // Safety: abort if project was un-orphaned (e.g. re-added to config) between
+    // scheduling and execution. Only proceed if still marked [DELETING].
+    if (!project.name.startsWith("[DELETING]")) {
+      return
+    }
+
     if (args.phase === "documents") {
       let deletesRemaining = MAX_DELETES_PER_INVOCATION
 
@@ -922,5 +943,84 @@ export const _removeFullBatch = internalMutation({
     }
 
     throw new Error(`Unknown cleanup phase: ${args.phase}`)
+  },
+})
+
+/**
+ * Batch-removes all orphaned (configRemoved) projects for a repository.
+ * Inserts tombstones and schedules two-phase deletion for each orphan.
+ * Auth: server query token ONLY — called from server action that verifies
+ * GitHub owner-level permissions. No direct OAuth fallback (destructive op).
+ * Processes at most MAX_ORPHANS_PER_BATCH to stay within Convex limits.
+ */
+export const removeAllOrphans = mutation({
+  args: {
+    actingUserId: v.string(),
+    serverQueryToken: v.string(),
+    repoOwner: v.string(),
+    repoName: v.string(),
+  },
+  handler: async (ctx, args) => {
+    // Auth: server query token only — no OAuth fallback for this destructive op
+    if (!(await verifyServerQueryToken(args.serverQueryToken))) {
+      throw new Error("Unauthorized: invalid server query token")
+    }
+
+    const callerUserId = args.actingUserId
+    const MAX_ORPHANS_PER_BATCH = 25
+
+    const repoProjects = await ctx.db
+      .query("projects")
+      .withIndex("by_repo", (q) => q.eq("repoOwner", args.repoOwner).eq("repoName", args.repoName))
+      .collect()
+
+    const orphans = repoProjects.filter((p) => p.configRemoved && !p.name.startsWith("[DELETING]"))
+
+    if (orphans.length === 0) {
+      return { removed: 0, remaining: 0 }
+    }
+
+    const batch = orphans.slice(0, MAX_ORPHANS_PER_BATCH)
+    const now = Date.now()
+
+    for (const orphan of batch) {
+      // Insert tombstone only if one doesn't already exist (dedupe)
+      if (orphan.frameworkSource === "config" && orphan.configProjectId) {
+        const existingTombstone = await ctx.db
+          .query("deletedConfigProjects")
+          .withIndex("by_repo_configProjectId", (q) =>
+            q
+              .eq("repoOwner", orphan.repoOwner)
+              .eq("repoName", orphan.repoName)
+              .eq("configProjectId", orphan.configProjectId),
+          )
+          .first()
+
+        if (!existingTombstone) {
+          await ctx.db.insert("deletedConfigProjects", {
+            configProjectId: orphan.configProjectId,
+            repoOwner: orphan.repoOwner,
+            repoName: orphan.repoName,
+            branch: orphan.branch,
+            deletedBy: callerUserId,
+            deletedAt: now,
+          })
+        }
+      }
+
+      // Mark as deleting and schedule batch cleanup
+      await ctx.db.patch(orphan._id, {
+        name: `[DELETING] ${orphan.name}`,
+        updatedAt: now,
+      })
+
+      await ctx.scheduler.runAfter(0, internal.projects._removeFullBatch, {
+        projectId: orphan._id,
+        phase: "documents",
+      })
+    }
+
+    const remaining = orphans.length - batch.length
+    return { removed: batch.length, remaining }
   },
 })
