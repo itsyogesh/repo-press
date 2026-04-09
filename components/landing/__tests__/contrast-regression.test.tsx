@@ -92,13 +92,13 @@ describe("landing contrast regressions", () => {
     const destructive = parseOklch(extractRootVar(css, "--destructive"))
     const destructiveForeground = parseOklch(extractRootVar(css, "--destructive-foreground"))
     const darkPrimary = parseOklch(extractDarkVar(css, "--primary"))
-    const darkBackground = parseOklch(extractDarkVar(css, "--background"))
+    const darkPrimaryForeground = parseOklch(extractDarkVar(css, "--primary-foreground"))
 
     expect(extractRootVar(css, "--primary-foreground")).toBe("oklch(0.985 0 0)")
     expect(contrastRatio(primaryForeground, primary)).toBeGreaterThanOrEqual(4.5)
     expect(contrastRatio(mutedForeground, muted)).toBeGreaterThanOrEqual(4.5)
     expect(contrastRatio(destructiveForeground, destructive)).toBeGreaterThanOrEqual(4.5)
-    expect(contrastRatio(darkPrimary, darkBackground)).toBeGreaterThanOrEqual(4.5)
+    expect(contrastRatio(darkPrimaryForeground, darkPrimary)).toBeGreaterThanOrEqual(4.5)
   })
 
   it("avoids low-contrast blue-on-blue accent copy in landing highlights", () => {
