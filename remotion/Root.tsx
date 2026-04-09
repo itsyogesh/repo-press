@@ -39,15 +39,14 @@ export const RemotionRoot = () => {
 
       {/* ── Full-length production videos ──────────────────────────────── */}
       {/*
-        NOTE: durationInFrames values below are estimates.
-        Open Remotion Studio (`npx remotion studio remotion/Root.tsx`) and
-        verify the actual duration of each TransitionSeries before finalizing.
-        Tutorial ≈ 53s × 30fps = 1590f  |  Launch ≈ 29s × 30fps = 870f
+        durationInFrames = sum(scene_seconds) × 30fps − (n_transitions × 25f)
+        Tutorial: (61s × 30) − (10 × 25) = 1830 − 250 = 1580f (~52.7s)
+        Launch:   (33s × 30) − (5  × 25) = 990  − 125 = 865f  (~28.8s)
       */}
       <Composition
         id="TutorialVideo"
         component={TutorialVideo}
-        durationInFrames={1590}
+        durationInFrames={1580}
         fps={30}
         width={1280}
         height={720}
@@ -56,7 +55,7 @@ export const RemotionRoot = () => {
       <Composition
         id="LaunchVideo"
         component={LaunchVideo}
-        durationInFrames={870}
+        durationInFrames={865}
         fps={30}
         width={1280}
         height={720}
