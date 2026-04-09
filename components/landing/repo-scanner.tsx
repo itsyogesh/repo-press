@@ -9,7 +9,7 @@ import { buildRepoScannerDemo } from "@/lib/repo-scanner-demo"
 const sampleRepos = [
   "https://github.com/fuma-nama/fumadocs",
   "https://github.com/withastro/blog-tutorial-demo",
-  "https://github.com/vercel/nextjs.org",
+  "https://github.com/vercel/next.js",
 ]
 
 const defaultRepo = sampleRepos[0]
@@ -103,6 +103,7 @@ export default function RepoScanner() {
                 onChange={(event) => setInput(event.target.value)}
                 placeholder="https://github.com/acme/docs"
                 aria-invalid={isError || undefined}
+                aria-describedby={isError ? "repo-scanner-error" : undefined}
                 className="h-12 rounded-xl px-4"
               />
               <Button type="submit" className="h-12 rounded-xl px-5">
@@ -116,6 +117,7 @@ export default function RepoScanner() {
 
           {isError ? (
             <div
+              id="repo-scanner-error"
               className="mt-6 rounded-2xl border border-destructive/20 bg-destructive/5 p-4 text-sm text-destructive"
               aria-live="polite"
             >
