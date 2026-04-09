@@ -304,14 +304,14 @@ describe("POST /api/github/publish-ops", () => {
       "acme",
       "docs-site",
       "main",
-      "repopress/publish/main/1700000000000",
+      "repopress/publish/main/2023-11-14-221320-loyw3v28",
     )
     expect(createPullRequest).toHaveBeenCalledTimes(1)
     expect(createPullRequest).toHaveBeenCalledWith(
       "gh-token",
       "acme",
       "docs-site",
-      "repopress/publish/main/1700000000000",
+      "repopress/publish/main/2023-11-14-221320-loyw3v28",
       "main",
       "Content update via RepoPress (1 updated) (PR from RepoPress)",
       "Automated content update from RepoPress.\n\n- 1 updated",
@@ -321,13 +321,13 @@ describe("POST /api/github/publish-ops", () => {
         typeof args === "object" &&
         args !== null &&
         "branchName" in args &&
-        args.branchName === "repopress/publish/main/1700000000000",
+        args.branchName === "repopress/publish/main/2023-11-14-221320-loyw3v28",
     )
     expect(createPublishBranchCall?.[1]).toEqual(
       expect.objectContaining({
         projectId: "project_123",
         userId: "user_owner",
-        branchName: "repopress/publish/main/1700000000000",
+        branchName: "repopress/publish/main/2023-11-14-221320-loyw3v28",
         baseBranch: "main",
       }),
     )
@@ -363,7 +363,7 @@ describe("POST /api/github/publish-ops", () => {
       ],
       refreshedPublishBranch: {
         _id: "publish_branch_2",
-        branchName: "repopress/publish/main/1700000000002",
+        branchName: "repopress/publish/main/2023-11-14-221320-loyw3v2a",
         prNumber: undefined,
         prUrl: undefined,
         committedFilePaths: [],
@@ -385,13 +385,13 @@ describe("POST /api/github/publish-ops", () => {
       "acme",
       "docs-site",
       "main",
-      "repopress/publish/main/1700000000002",
+      "repopress/publish/main/2023-11-14-221320-loyw3v2a",
     )
     expect(createPullRequest).toHaveBeenCalledWith(
       "gh-token",
       "acme",
       "docs-site",
-      "repopress/publish/main/1700000000002",
+      "repopress/publish/main/2023-11-14-221320-loyw3v2a",
       "main",
       "Content update via RepoPress (1 updated) (PR from RepoPress)",
       "Automated content update from RepoPress.\n\n- 1 updated",
@@ -567,7 +567,7 @@ describe("POST /api/github/publish-ops", () => {
       "acme",
       "docs-site",
       "main",
-      "repopress/publish/main/1700000000001",
+      "repopress/publish/main/2023-11-14-221320-loyw3v29",
     )
     expect(createPullRequest).toHaveBeenCalledTimes(1)
     expect(batchCommit).toHaveBeenCalledTimes(1)
@@ -615,13 +615,13 @@ describe("POST /api/github/publish-ops", () => {
       "acme",
       "docs-site",
       "main",
-      "repopress/publish/main/1700000000002",
+      "repopress/publish/main/2023-11-14-221320-loyw3v2a",
     )
     expect(createGitHubClient).toHaveBeenCalledWith("gh-token")
     expect(deleteRefMock).toHaveBeenCalledWith({
       owner: "acme",
       repo: "docs-site",
-      ref: "heads/repopress/publish/main/1700000000002",
+      ref: "heads/repopress/publish/main/2023-11-14-221320-loyw3v2a",
     })
     expect(
       convexMutationMock.mock.calls.some(
@@ -678,7 +678,7 @@ describe("POST /api/github/publish-ops", () => {
     expect(deleteRefMock).toHaveBeenCalledWith({
       owner: "acme",
       repo: "docs-site",
-      ref: "heads/repopress/publish/main/1700000000003",
+      ref: "heads/repopress/publish/main/2023-11-14-221320-loyw3v2b",
     })
     expect(consoleErrorSpy).toHaveBeenCalledWith(
       "Failed to clean up orphaned publish branch after conflict:",

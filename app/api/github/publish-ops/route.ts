@@ -14,6 +14,7 @@ import {
   updatePullRequest,
 } from "@/lib/github"
 import { mintServerQueryToken } from "@/lib/project-access-token"
+import { buildPublishBranchName } from "@/lib/publish-branch-name"
 import { RouteAuthError, resolveRouteAuth } from "@/lib/route-auth"
 import { isStudioMediaResolveUrl } from "@/lib/studio/media-resolve"
 
@@ -245,9 +246,7 @@ export async function POST(request: Request) {
       publishBranch = null
     }
 
-    // If no active branch exists, create a new publish branch with timestamp-based name.
-    // Branch naming: repopress/publish/${baseBranch}/${timestamp}
-    const branchName = publishBranch?.branchName || `repopress/publish/${baseBranch}/${Date.now()}`
+    const branchName = publishBranch?.branchName || buildPublishBranchName(baseBranch)
 
     if (!publishBranch) {
       await createBranch(token, owner, repo, baseBranch, branchName)
