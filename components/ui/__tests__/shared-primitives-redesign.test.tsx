@@ -126,9 +126,13 @@ describe("shared primitives redesign", () => {
         </CommandList>
       </CommandDialog>,
     )
+    const dialogShellClasses = html.match(/data-slot="dialog-content"[^>]*class="([^"]+)"/)?.[1]
 
     expect(html).toContain("glass-command")
     expect(html).toContain("max-h-[min(32rem,80vh)]")
     expect(html).toContain("tracking-[0.18em]")
+    expect(dialogShellClasses).not.toContain("border-0")
+    expect(dialogShellClasses).not.toContain("bg-transparent")
+    expect(dialogShellClasses).not.toContain("shadow-none")
   })
 })

@@ -40,7 +40,7 @@ function CommandDialog({
       </DialogHeader>
       <DialogContent
         className={cn(
-          "glass-command max-w-[min(92vw,42rem)] overflow-hidden border-0 bg-transparent p-0 shadow-none data-[state=open]:duration-150 data-[state=closed]:duration-100 data-[state=open]:ease-out data-[state=closed]:ease-in",
+          "glass-command max-w-[min(92vw,42rem)] overflow-hidden p-0 data-[state=open]:duration-150 data-[state=closed]:duration-100 data-[state=open]:ease-out data-[state=closed]:ease-in",
           className,
         )}
         showCloseButton={showCloseButton}
