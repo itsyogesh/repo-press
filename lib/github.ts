@@ -356,6 +356,24 @@ export async function createBranch(
   return data
 }
 
+export async function branchExists(accessToken: string, owner: string, repo: string, branchName: string) {
+  const octokit = createGitHubClient(accessToken)
+
+  try {
+    await octokit.git.getRef({
+      owner,
+      repo,
+      ref: `heads/${branchName}`,
+    })
+    return true
+  } catch (error: any) {
+    if (error?.status === 404) {
+      return false
+    }
+    throw error
+  }
+}
+
 export type BatchOperation = {
   path: string
   content?: string

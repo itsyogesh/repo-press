@@ -7,6 +7,7 @@ import { prefixContentRoot } from "@/lib/explorer-tree-overlay"
 import type { BatchOperation } from "@/lib/github"
 import {
   batchCommit,
+  branchExists,
   createBranch,
   createGitHubClient,
   createPullRequest,
@@ -14,7 +15,7 @@ import {
   updatePullRequest,
 } from "@/lib/github"
 import { mintServerQueryToken } from "@/lib/project-access-token"
-import { buildPublishBranchName } from "@/lib/publish-branch-name"
+import { buildPublishBranchName, derivePublishBranchScope } from "@/lib/publish-branch-name"
 import { RouteAuthError, resolveRouteAuth } from "@/lib/route-auth"
 import { isStudioMediaResolveUrl } from "@/lib/studio/media-resolve"
 
@@ -246,10 +247,25 @@ export async function POST(request: Request) {
       publishBranch = null
     }
 
-    const branchName = publishBranch?.branchName || buildPublishBranchName(baseBranch)
+    let branchName = publishBranch?.branchName
 
     if (!publishBranch) {
-      await createBranch(token, owner, repo, baseBranch, branchName)
+      const existingBranchNames = await convex.query(api.publishBranches.listBranchNamesForProject, {
+        projectId: project._id,
+        ...queryAuth,
+      })
+      const scope = derivePublishBranchScope(
+        operations.map((operation) => operation.path),
+        contentRoot,
+      )
+      branchName = await createAvailablePublishBranch({
+        token,
+        owner,
+        repo,
+        baseBranch,
+        scope,
+        existingBranchNames,
+      })
       try {
         await convex.mutation(api.publishBranches.create, {
           projectId: project._id,
@@ -404,6 +420,53 @@ export async function POST(request: Request) {
 
 function isActivePublishBranchConflict(error: unknown) {
   return error instanceof Error && error.message.includes(ACTIVE_PUBLISH_BRANCH_CONFLICT_MESSAGE)
+}
+
+async function createAvailablePublishBranch({
+  token,
+  owner,
+  repo,
+  baseBranch,
+  scope,
+  existingBranchNames,
+}: {
+  token: string
+  owner: string
+  repo: string
+  baseBranch: string
+  scope: string
+  existingBranchNames: string[]
+}) {
+  const takenBranchNames = new Set(existingBranchNames)
+
+  for (let ordinal = 1; ordinal <= 50; ordinal += 1) {
+    const candidate = buildPublishBranchName(scope, ordinal)
+    if (takenBranchNames.has(candidate)) continue
+
+    const alreadyExists = await branchExists(token, owner, repo, candidate)
+    if (alreadyExists) {
+      takenBranchNames.add(candidate)
+      continue
+    }
+
+    try {
+      await createBranch(token, owner, repo, baseBranch, candidate)
+      return candidate
+    } catch (error) {
+      if (isGitHubBranchExistsError(error)) {
+        takenBranchNames.add(candidate)
+        continue
+      }
+      throw error
+    }
+  }
+
+  throw new Error(`Failed to allocate a publish branch name for scope "${scope}"`)
+}
+
+function isGitHubBranchExistsError(error: unknown) {
+  if (error instanceof Error && /already exists/i.test(error.message)) return true
+  return typeof error === "object" && error !== null && "status" in error && error.status === 422
 }
 
 async function cleanupOrphanedPublishBranch({

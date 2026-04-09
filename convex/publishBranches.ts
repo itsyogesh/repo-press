@@ -63,6 +63,25 @@ export const listOpenForProject = query({
   },
 })
 
+/** Lists every publish branch name a project has already used. */
+export const listBranchNamesForProject = query({
+  args: {
+    projectId: v.id("projects"),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const access = await resolveProjectReader(ctx, args)
+    if (!access) return []
+
+    const branches = await ctx.db
+      .query("publishBranches")
+      .withIndex("by_projectId", (q) => q.eq("projectId", args.projectId))
+      .collect()
+    return branches.map((branch) => branch.branchName)
+  },
+})
+
 /** Finds a publish branch by its PR number. Used by webhook handlers. */
 export const getByPRNumber = query({
   args: { prNumber: v.number() },
