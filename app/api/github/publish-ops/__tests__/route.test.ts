@@ -28,6 +28,7 @@ vi.mock("@/lib/github", () => ({
   createGitHubClient: vi.fn(),
   createPullRequest: vi.fn(),
   getFile: vi.fn(),
+  updatePullRequest: vi.fn(),
 }))
 
 vi.mock("@/lib/github-permissions", () => ({
@@ -42,7 +43,14 @@ vi.mock("@/lib/github-permissions", () => ({
 process.env.NEXT_PUBLIC_CONVEX_URL = process.env.NEXT_PUBLIC_CONVEX_URL || "https://example.convex.cloud"
 
 import { fetchAuthQuery, getGitHubToken, getPatAuthUserId } from "@/lib/auth-server"
-import { batchCommit, createBranch, createGitHubClient, createPullRequest, getFile } from "@/lib/github"
+import {
+  batchCommit,
+  createBranch,
+  createGitHubClient,
+  createPullRequest,
+  getFile,
+  updatePullRequest,
+} from "@/lib/github"
 import { getRepoRole } from "@/lib/github-permissions"
 import { POST } from "../route"
 
@@ -137,6 +145,7 @@ describe("POST /api/github/publish-ops", () => {
       number: 99,
       htmlUrl: "https://github.com/acme/docs-site/pull/99",
     } as never)
+    vi.mocked(updatePullRequest).mockResolvedValue(undefined as never)
 
     mockPublishQueries({})
   })
@@ -290,15 +299,21 @@ describe("POST /api/github/publish-ops", () => {
     expect(payload.ok).toBe(true)
     expect(payload.publishModeUsed).toBe("create-new")
     expect(createBranch).toHaveBeenCalledTimes(1)
-    expect(createBranch).toHaveBeenCalledWith("gh-token", "acme", "docs-site", "main", "repopress/main/1700000000000")
+    expect(createBranch).toHaveBeenCalledWith(
+      "gh-token",
+      "acme",
+      "docs-site",
+      "main",
+      "repopress/publish/main/1700000000000",
+    )
     expect(createPullRequest).toHaveBeenCalledTimes(1)
     expect(createPullRequest).toHaveBeenCalledWith(
       "gh-token",
       "acme",
       "docs-site",
-      "repopress/main/1700000000000",
+      "repopress/publish/main/1700000000000",
       "main",
-      "Content update via RepoPress (1 updated)",
+      "Content update via RepoPress (1 updated) (PR from RepoPress)",
       "Automated content update from RepoPress.\n\n- 1 updated",
     )
     const createPublishBranchCall = convexMutationMock.mock.calls.find(
@@ -306,16 +321,131 @@ describe("POST /api/github/publish-ops", () => {
         typeof args === "object" &&
         args !== null &&
         "branchName" in args &&
-        args.branchName === "repopress/main/1700000000000",
+        args.branchName === "repopress/publish/main/1700000000000",
     )
     expect(createPublishBranchCall?.[1]).toEqual(
       expect.objectContaining({
         projectId: "project_123",
         userId: "user_owner",
-        branchName: "repopress/main/1700000000000",
+        branchName: "repopress/publish/main/1700000000000",
         baseBranch: "main",
       }),
     )
+  })
+
+  it("brands the default PR title and publish branch name for create-new", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_002)
+    mockPublishQueries({
+      pendingOps: [],
+      dirtyDocs: [
+        {
+          _id: "doc_1",
+          filePath: "posts/hello.mdx",
+          body: "# Hello",
+          frontmatter: { title: "Hello" },
+        },
+      ],
+      pendingMediaOps: [],
+      currentPublishBranch: {
+        _id: "publish_branch_1",
+        branchName: "repopress/main/1234",
+        prNumber: 42,
+        prUrl: "https://github.com/acme/docs-site/pull/42",
+        committedFilePaths: ["content/posts/hello.mdx"],
+      },
+      openPublishBranches: [
+        {
+          _id: "publish_branch_1",
+          branchName: "repopress/main/1234",
+          prNumber: 42,
+          committedFilePaths: ["content/posts/hello.mdx"],
+        },
+      ],
+      refreshedPublishBranch: {
+        _id: "publish_branch_2",
+        branchName: "repopress/publish/main/1700000000002",
+        prNumber: undefined,
+        prUrl: undefined,
+        committedFilePaths: [],
+      },
+    })
+
+    const response = await POST(
+      buildRequest({
+        projectId: "project_123",
+        publishMode: "create-new",
+      }),
+    )
+    const payload = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(payload.ok).toBe(true)
+    expect(createBranch).toHaveBeenCalledWith(
+      "gh-token",
+      "acme",
+      "docs-site",
+      "main",
+      "repopress/publish/main/1700000000002",
+    )
+    expect(createPullRequest).toHaveBeenCalledWith(
+      "gh-token",
+      "acme",
+      "docs-site",
+      "repopress/publish/main/1700000000002",
+      "main",
+      "Content update via RepoPress (1 updated) (PR from RepoPress)",
+      "Automated content update from RepoPress.\n\n- 1 updated",
+    )
+  })
+
+  it("updates the existing PR title and description when reuse-current receives custom copy", async () => {
+    const response = await POST(
+      buildRequest({
+        projectId: "project_123",
+        publishMode: "reuse-current",
+        title: "docs: tighten publish UX (PR from RepoPress)",
+        description: "Refresh the copy and branch naming for publish flows.",
+      }),
+    )
+    const payload = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(payload.ok).toBe(true)
+    expect(createPullRequest).not.toHaveBeenCalled()
+    expect(updatePullRequest).toHaveBeenCalledWith("gh-token", "acme", "docs-site", 42, {
+      title: "docs: tighten publish UX (PR from RepoPress)",
+      body: "Refresh the copy and branch naming for publish flows.",
+    })
+  })
+
+  it("keeps the publish successful when the existing PR metadata update fails", async () => {
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+    vi.mocked(updatePullRequest).mockRejectedValueOnce(new Error("GitHub PR update failed"))
+
+    const response = await POST(
+      buildRequest({
+        projectId: "project_123",
+        publishMode: "reuse-current",
+        title: "docs: tighten publish UX (PR from RepoPress)",
+        description: "Refresh the copy and branch naming for publish flows.",
+      }),
+    )
+    const payload = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(payload.ok).toBe(true)
+    expect(payload.warning).toBe("Commit pushed, but updating the existing PR title/description failed.")
+    expect(batchCommit).toHaveBeenCalledTimes(1)
+    expect(convexMutationMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        id: "publish_branch_1",
+        prNumber: 42,
+        prUrl: "https://github.com/acme/docs-site/pull/42",
+        lastCommitSha: "commit-sha-1",
+      }),
+    )
+    expect(consoleErrorSpy).toHaveBeenCalledWith("Failed to update existing PR metadata:", expect.any(Error))
   })
 
   it("returns 409 when create-new overlaps files tracked by another open PR", async () => {
@@ -432,7 +562,13 @@ describe("POST /api/github/publish-ops", () => {
     expect(response.status).toBe(200)
     expect(payload.ok).toBe(true)
     expect(payload.publishModeUsed).toBe("create-new")
-    expect(createBranch).toHaveBeenCalledWith("gh-token", "acme", "docs-site", "main", "repopress/main/1700000000001")
+    expect(createBranch).toHaveBeenCalledWith(
+      "gh-token",
+      "acme",
+      "docs-site",
+      "main",
+      "repopress/publish/main/1700000000001",
+    )
     expect(createPullRequest).toHaveBeenCalledTimes(1)
     expect(batchCommit).toHaveBeenCalledTimes(1)
   })
@@ -474,12 +610,18 @@ describe("POST /api/github/publish-ops", () => {
     expect(response.status).toBe(409)
     expect(payload.ok).toBe(false)
     expect(payload.error).toContain("active publish lane")
-    expect(createBranch).toHaveBeenCalledWith("gh-token", "acme", "docs-site", "main", "repopress/main/1700000000002")
+    expect(createBranch).toHaveBeenCalledWith(
+      "gh-token",
+      "acme",
+      "docs-site",
+      "main",
+      "repopress/publish/main/1700000000002",
+    )
     expect(createGitHubClient).toHaveBeenCalledWith("gh-token")
     expect(deleteRefMock).toHaveBeenCalledWith({
       owner: "acme",
       repo: "docs-site",
-      ref: "heads/repopress/main/1700000000002",
+      ref: "heads/repopress/publish/main/1700000000002",
     })
     expect(
       convexMutationMock.mock.calls.some(
@@ -536,7 +678,7 @@ describe("POST /api/github/publish-ops", () => {
     expect(deleteRefMock).toHaveBeenCalledWith({
       owner: "acme",
       repo: "docs-site",
-      ref: "heads/repopress/main/1700000000003",
+      ref: "heads/repopress/publish/main/1700000000003",
     })
     expect(consoleErrorSpy).toHaveBeenCalledWith(
       "Failed to clean up orphaned publish branch after conflict:",

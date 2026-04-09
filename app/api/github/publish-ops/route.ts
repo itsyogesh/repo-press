@@ -5,7 +5,14 @@ import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
 import { prefixContentRoot } from "@/lib/explorer-tree-overlay"
 import type { BatchOperation } from "@/lib/github"
-import { batchCommit, createBranch, createGitHubClient, createPullRequest, getFile } from "@/lib/github"
+import {
+  batchCommit,
+  createBranch,
+  createGitHubClient,
+  createPullRequest,
+  getFile,
+  updatePullRequest,
+} from "@/lib/github"
 import { mintServerQueryToken } from "@/lib/project-access-token"
 import { RouteAuthError, resolveRouteAuth } from "@/lib/route-auth"
 import { isStudioMediaResolveUrl } from "@/lib/studio/media-resolve"
@@ -239,8 +246,8 @@ export async function POST(request: Request) {
     }
 
     // If no active branch exists, create a new publish branch with timestamp-based name.
-    // Branch naming: repopress/${baseBranch}/${timestamp} e.g., repopress/main/1710681600000
-    const branchName = publishBranch?.branchName || `repopress/${baseBranch}/${Date.now()}`
+    // Branch naming: repopress/publish/${baseBranch}/${timestamp}
+    const branchName = publishBranch?.branchName || `repopress/publish/${baseBranch}/${Date.now()}`
 
     if (!publishBranch) {
       await createBranch(token, owner, repo, baseBranch, branchName)
@@ -298,14 +305,25 @@ export async function POST(request: Request) {
     // This is intentional - additional publishes will update the same PR with new commits.
     let prUrl = publishBranch.prUrl
     let prNumber = publishBranch.prNumber
+    let warning: string | undefined
 
     if (!prNumber) {
-      const prTitle = title || `Content update via RepoPress (${parts.join(", ")})`
+      const prTitle = title || `Content update via RepoPress (${parts.join(", ")}) (PR from RepoPress)`
       const prBody =
         description || `Automated content update from RepoPress.\n\n${parts.map((p) => `- ${p}`).join("\n")}`
       const pr = await createPullRequest(token, owner, repo, branchName, baseBranch, prTitle, prBody)
       prNumber = pr.number
       prUrl = pr.htmlUrl
+    } else if (title || description) {
+      try {
+        await updatePullRequest(token, owner, repo, prNumber, {
+          title: title || undefined,
+          body: description || undefined,
+        })
+      } catch (error) {
+        warning = "Commit pushed, but updating the existing PR title/description failed."
+        console.error("Failed to update existing PR metadata:", error)
+      }
     }
 
     await convex.mutation(api.publishBranches.updateAfterCommit, {
@@ -372,6 +390,7 @@ export async function POST(request: Request) {
       publishModeUsed,
       commitSha,
       summary: parts.join(", "),
+      warning,
       media: {
         created: mediaCreateCount,
         updated: mediaUpdateCount,

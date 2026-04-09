@@ -54,4 +54,52 @@ describe("PublishDialog", () => {
     expect(html.toLowerCase()).toContain("media")
     expect(html).toContain("2 media")
   })
+
+  it("shows PR fields when reusing the current publish lane", () => {
+    const html = renderToStaticMarkup(
+      <PublishDialog
+        open
+        onOpenChange={vi.fn()}
+        pendingCounts={
+          {
+            creates: 0,
+            deletes: 0,
+            edits: 1,
+            media: 0,
+          } as any
+        }
+        publishLaneViewModel={
+          {
+            currentLane: {
+              prNumber: 42,
+              prUrl: "https://github.com/acme/docs-site/pull/42",
+              title: "Current PR #42",
+              summary: "New publishes will update PR #42.",
+              linkLabel: "PR #42",
+            },
+            modeOptions: {
+              "create-new": {
+                label: "Create a new pull request",
+                description: "Create a new publish lane and PR.",
+                submitLabel: "Create PR",
+              },
+              "reuse-current": {
+                label: "Update current pull request",
+                description: "Add changes to the current lane.",
+                submitLabel: "Update PR",
+              },
+            },
+          } as any
+        }
+        publishMode="reuse-current"
+        onPublishModeChange={vi.fn()}
+        isPublishing={false}
+        onConfirm={vi.fn()}
+      />,
+    )
+
+    expect(html).toContain("Current PR #42")
+    expect(html).toContain("PR Title")
+    expect(html).toContain("Description (optional)")
+  })
 })
