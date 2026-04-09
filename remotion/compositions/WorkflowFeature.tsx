@@ -1,4 +1,5 @@
 import { AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion"
+import { geistFamily } from "../fonts"
 
 const ACCENT = "#3b82f6"
 const BG = "#000000"
@@ -6,38 +7,10 @@ const FG = "#ffffff"
 const MUTED = "#6b7280"
 
 const stages = [
-  {
-    label: "Draft",
-    color: "#fbbf24",
-    bgColor: "#1c1917",
-    borderColor: "#854d0e",
-    enterFrame: 10,
-    exitFrame: 40,
-  },
-  {
-    label: "In Review",
-    color: "#60a5fa",
-    bgColor: "#0c1d36",
-    borderColor: "#1e40af",
-    enterFrame: 40,
-    exitFrame: 70,
-  },
-  {
-    label: "Approved",
-    color: "#22c55e",
-    bgColor: "#052e16",
-    borderColor: "#166534",
-    enterFrame: 70,
-    exitFrame: 100,
-  },
-  {
-    label: "Published",
-    color: ACCENT,
-    bgColor: "#0a1628",
-    borderColor: ACCENT,
-    enterFrame: 100,
-    exitFrame: 150,
-  },
+  { label: "Draft", color: "#fbbf24", bgColor: "#1c1917", borderColor: "#854d0e", enterFrame: 10, exitFrame: 40 },
+  { label: "In Review", color: "#60a5fa", bgColor: "#0c1d36", borderColor: "#1e40af", enterFrame: 40, exitFrame: 70 },
+  { label: "Approved", color: "#22c55e", bgColor: "#052e16", borderColor: "#166534", enterFrame: 70, exitFrame: 100 },
+  { label: "Published", color: ACCENT, bgColor: "#0a1628", borderColor: ACCENT, enterFrame: 100, exitFrame: 150 },
 ]
 
 const sparkles = [
@@ -113,14 +86,13 @@ const StatusTimeline: React.FC = () => {
           const isPast = i < activeIndex || (activeIndex === -1 && frame >= stages[stages.length - 1].enterFrame)
           const isCurrentPublished = isActive && isPublished
 
-          const badgeScale = spring({
-            frame,
-            fps,
-            config: { damping: 12, stiffness: 100 },
-            delay: stage.enterFrame,
-          })
-
-          const activeGlow = isActive ? interpolate(frame % 30, [0, 15, 30], [0.5, 1, 0.5]) : 0
+          const badgeScale = spring({ frame, fps, config: { damping: 12, stiffness: 100 }, delay: stage.enterFrame })
+          const activeGlow = isActive
+            ? interpolate(frame % 30, [0, 15, 30], [0.5, 1, 0.5], {
+                extrapolateLeft: "clamp",
+                extrapolateRight: "clamp",
+              })
+            : 0
 
           return (
             <div key={`stage-${stage.label}`} style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -227,7 +199,7 @@ export const WorkflowFeature: React.FC = () => {
     <AbsoluteFill
       style={{
         backgroundColor: BG,
-        fontFamily: "system-ui, -apple-system, sans-serif",
+        fontFamily: geistFamily,
         display: "flex",
         flexDirection: "column",
         alignItems: "center",

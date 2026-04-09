@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" width="40" height="40">
+  <!-- Outer square with rounded corners -->
+  <rect x="3" y="3" width="34" height="34" rx="9" fill="none" stroke="#ffffff" stroke-width="2.5"/>
+  <!-- Git branch icon -->
+  <circle cx="13" cy="13" r="3" fill="#ffffff"/>
+  <circle cx="27" cy="13" r="3" fill="#ffffff"/>
+  <circle cx="13" cy="27" r="3" fill="#ffffff"/>
+  <line x1="13" y1="16" x2="13" y2="24" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>
+  <path d="M13 16 Q13 20 20 20 Q27 20 27 16" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>
+</svg>

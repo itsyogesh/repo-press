@@ -1,4 +1,5 @@
 import { AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion"
+import { geistFamily, geistMonoFamily } from "../fonts"
 
 const ACCENT = "#3b82f6"
 const BG = "#000000"
@@ -70,7 +71,7 @@ const GitTree: React.FC = () => {
                   style={{
                     color: ACCENT,
                     fontSize: 11,
-                    fontFamily: "ui-monospace, monospace",
+                    fontFamily: geistMonoFamily,
                     fontWeight: 600,
                   }}
                 >
@@ -139,43 +140,11 @@ const RenderedPage: React.FC = () => {
       </div>
       <div style={{ padding: "18px 20px" }}>
         <div style={{ color: FG, fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Getting Started</div>
-        <div
-          style={{
-            width: "100%",
-            height: 6,
-            backgroundColor: "#222",
-            borderRadius: 3,
-            marginBottom: 6,
-          }}
-        >
-          <div
-            style={{
-              width: "85%",
-              height: "100%",
-              backgroundColor: MUTED,
-              borderRadius: 3,
-              opacity: 0.5,
-            }}
-          />
+        <div style={{ width: "100%", height: 6, backgroundColor: "#222", borderRadius: 3, marginBottom: 6 }}>
+          <div style={{ width: "85%", height: "100%", backgroundColor: MUTED, borderRadius: 3, opacity: 0.5 }} />
         </div>
-        <div
-          style={{
-            width: "100%",
-            height: 6,
-            backgroundColor: "#222",
-            borderRadius: 3,
-            marginBottom: 6,
-          }}
-        >
-          <div
-            style={{
-              width: "65%",
-              height: "100%",
-              backgroundColor: MUTED,
-              borderRadius: 3,
-              opacity: 0.5,
-            }}
-          />
+        <div style={{ width: "100%", height: 6, backgroundColor: "#222", borderRadius: 3, marginBottom: 6 }}>
+          <div style={{ width: "65%", height: "100%", backgroundColor: MUTED, borderRadius: 3, opacity: 0.5 }} />
         </div>
         <div
           style={{
@@ -184,7 +153,7 @@ const RenderedPage: React.FC = () => {
             borderRadius: 8,
             border: "1px solid #1e3a5f",
             padding: "10px 14px",
-            fontFamily: "ui-monospace, monospace",
+            fontFamily: geistMonoFamily,
             fontSize: 12,
             color: "#22c55e",
           }}
@@ -230,7 +199,7 @@ export const GitNativeFeature: React.FC = () => {
     <AbsoluteFill
       style={{
         backgroundColor: BG,
-        fontFamily: "system-ui, -apple-system, sans-serif",
+        fontFamily: geistFamily,
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
