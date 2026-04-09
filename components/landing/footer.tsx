@@ -1,4 +1,4 @@
-import { Box, Github, Twitter } from "lucide-react"
+import { Github } from "lucide-react"
 import Link from "next/link"
 
 const productLinks = [
@@ -29,45 +29,44 @@ const legalLinks = [
 
 export default function Footer() {
   return (
-    <footer className="border-t border-border/40 bg-background">
-      {/* Top section */}
-      <div className="container mx-auto px-4 py-12 md:py-16">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-10 lg:gap-16">
-          {/* Brand column */}
-          <div className="lg:col-span-2 flex flex-col gap-4">
-            <Link href="/" className="flex items-center gap-2 text-xl">
-              <Box className="h-6 w-6" />
-              <div className="flex items-baseline">
-                <span className="font-bold">Repo</span>
-                <span className="font-normal">press</span>
+    <footer className="px-4 pb-10 pt-6">
+      <div className="mx-auto max-w-6xl rounded-[2rem] border border-border/70 bg-muted/35 px-6 py-10 sm:px-8">
+        <div className="grid gap-10 lg:grid-cols-[1.2fr_0.8fr_0.8fr_0.8fr]">
+          <div className="flex flex-col gap-4">
+            <Link href="/" className="flex items-center gap-3">
+              <span className="inline-flex size-10 items-center justify-center rounded-xl border border-border/70 bg-background/80 font-mono text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-foreground">
+                RP
+              </span>
+              <div className="flex flex-col">
+                <span className="text-sm font-semibold tracking-[-0.03em] text-foreground">RepoPress</span>
+                <span className="font-mono text-[0.65rem] uppercase tracking-[0.22em] text-muted-foreground">
+                  Git-native studio
+                </span>
               </div>
             </Link>
-            <p className="text-sm text-muted-foreground max-w-xs">
-              Git-native headless CMS. Edit content directly in your GitHub repos with a powerful visual studio.
+            <p className="max-w-sm text-sm leading-6 text-muted-foreground">
+              A premium workspace for markdown and MDX teams that want visual editing, cleaner Git workflows, and zero
+              content lock-in.
             </p>
             <a
               href="https://github.com/itsyogesh/repo-press"
               target="_blank"
               rel="noopener noreferrer"
-              className="mt-1 w-fit"
+              className="inline-flex w-fit items-center gap-2 rounded-full border border-border/70 bg-background px-3 py-2 text-sm font-medium tracking-[-0.01em] text-foreground"
             >
-              <img
-                src="https://img.shields.io/github/stars/itsyogesh/repo-press?style=social"
-                alt="GitHub Stars"
-                className="h-5"
-              />
+              <Github className="h-4 w-4" />
+              View on GitHub
             </a>
           </div>
 
-          {/* Product column */}
           <div>
-            <h3 className="text-sm font-semibold text-foreground mb-4">Product</h3>
+            <h3 className="mb-4 text-sm font-semibold tracking-[-0.01em] text-foreground">Product</h3>
             <ul className="flex flex-col gap-3">
               {productLinks.map((link) => (
                 <li key={link.href + link.label}>
                   <Link
                     href={link.href}
-                    className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                    className="text-sm text-muted-foreground transition-colors hover:text-foreground"
                   >
                     {link.label}
                   </Link>
@@ -76,9 +75,8 @@ export default function Footer() {
             </ul>
           </div>
 
-          {/* Resources column */}
           <div>
-            <h3 className="text-sm font-semibold text-foreground mb-4">Resources</h3>
+            <h3 className="mb-4 text-sm font-semibold tracking-[-0.01em] text-foreground">Resources</h3>
             <ul className="flex flex-col gap-3">
               {resourceLinks.map((link) => (
                 <li key={link.href + link.label}>
@@ -87,14 +85,14 @@ export default function Footer() {
                       href={link.href}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                      className="text-sm text-muted-foreground transition-colors hover:text-foreground"
                     >
                       {link.label}
                     </a>
                   ) : (
                     <Link
                       href={link.href}
-                      className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                      className="text-sm text-muted-foreground transition-colors hover:text-foreground"
                     >
                       {link.label}
                     </Link>
@@ -104,15 +102,14 @@ export default function Footer() {
             </ul>
           </div>
 
-          {/* Legal column */}
           <div>
-            <h3 className="text-sm font-semibold text-foreground mb-4">Legal</h3>
+            <h3 className="mb-4 text-sm font-semibold tracking-[-0.01em] text-foreground">Legal</h3>
             <ul className="flex flex-col gap-3">
               {legalLinks.map((link) => (
                 <li key={link.href}>
                   <Link
                     href={link.href}
-                    className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                    className="text-sm text-muted-foreground transition-colors hover:text-foreground"
                   >
                     {link.label}
                   </Link>
@@ -121,56 +118,24 @@ export default function Footer() {
             </ul>
           </div>
         </div>
-      </div>
 
-      {/* Bottom bar */}
-      <div className="border-t border-border/40">
-        <div className="container mx-auto px-4 py-6 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex flex-col sm:flex-row items-center gap-2 text-sm text-muted-foreground">
-            <span>© {new Date().getFullYear()} RepoPress. All rights reserved.</span>
-            <span className="hidden sm:inline">·</span>
-            <span>
-              Made with ❤️ by{" "}
-              <a
-                href="https://twitter.com/itsyogesh18"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="font-medium text-foreground hover:underline"
-              >
-                itsyogesh
-              </a>{" "}
-              and{" "}
-              <a
-                href="https://v0.dev"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="font-medium text-foreground hover:underline"
-              >
-                v0
-              </a>
-            </span>
-          </div>
-
-          {/* Social icons */}
+        <div className="mt-10 flex flex-col gap-4 border-t border-border/70 pt-6 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+          <p>© {new Date().getFullYear()} RepoPress. Git-native visual publishing for markdown and MDX teams.</p>
           <div className="flex items-center gap-4">
-            <a
-              href="https://twitter.com/itsyogesh18"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <Twitter className="h-5 w-5" />
-              <span className="sr-only">Twitter</span>
-            </a>
             <a
               href="https://github.com/itsyogesh/repo-press"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-muted-foreground hover:text-foreground transition-colors"
+              className="transition-colors hover:text-foreground"
             >
-              <Github className="h-5 w-5" />
-              <span className="sr-only">GitHub</span>
+              GitHub
             </a>
+            <Link href="/privacy" className="transition-colors hover:text-foreground">
+              Privacy
+            </Link>
+            <Link href="/terms" className="transition-colors hover:text-foreground">
+              Terms
+            </Link>
           </div>
         </div>
       </div>

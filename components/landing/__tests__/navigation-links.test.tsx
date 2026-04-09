@@ -37,6 +37,13 @@ describe("landing navigation links", () => {
     expect(footerHtml).not.toContain('href="#features"')
   })
 
+  it("keeps the landing demo discoverable from the navbar", () => {
+    const navbarHtml = renderToStaticMarkup(<Navbar />)
+
+    expect(navbarHtml).toContain('href="/#demo"')
+    expect(navbarHtml).not.toContain('href="#demo"')
+  })
+
   it("includes an accessible title and description for the mobile navigation sheet", () => {
     const navbarHtml = renderToStaticMarkup(<Navbar />)
 

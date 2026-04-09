@@ -1,83 +1,80 @@
-import { Check, Minus, X } from "lucide-react"
+import { Check } from "lucide-react"
 
-type CellValue = "yes" | "no" | "partial"
-
-interface ComparisonRow {
-  feature: string
-  repopress: CellValue
-  decap: CellValue
-  tina: CellValue
-  keystatic: CellValue
-}
-
-const rows: ComparisonRow[] = [
-  { feature: "Framework Auto-Detection", repopress: "yes", decap: "no", tina: "no", keystatic: "no" },
-  { feature: "Visual MDX Editor", repopress: "yes", decap: "no", tina: "yes", keystatic: "yes" },
-  { feature: "Document History & Revert", repopress: "yes", decap: "no", tina: "no", keystatic: "no" },
-  { feature: "Webhook Integration", repopress: "yes", decap: "no", tina: "yes", keystatic: "no" },
-  { feature: "Multi-State Workflows", repopress: "yes", decap: "no", tina: "no", keystatic: "no" },
-  { feature: "Multi-Project Support", repopress: "yes", decap: "no", tina: "no", keystatic: "no" },
-  { feature: "100% Open Source", repopress: "yes", decap: "yes", tina: "partial", keystatic: "yes" },
-  { feature: "Git-Native Storage", repopress: "yes", decap: "yes", tina: "yes", keystatic: "yes" },
+const notes = [
+  {
+    name: "Decap CMS",
+    tension: "Functional, but the admin surface can feel dated and utilitarian.",
+    response:
+      "RepoPress answers with stronger hierarchy, calmer spacing, and a workflow that feels authored instead of inherited.",
+  },
+  {
+    name: "TinaCMS",
+    tension: "Powerful for developers, but easy to tip into a tool-heavy editing experience.",
+    response: "RepoPress keeps the developer trust while dialing the shell closer to a Notion + VS Code hybrid.",
+  },
+  {
+    name: "CloudCannon",
+    tension: "Rich visual editing, but the SaaS shell can feel heavy for Git-native teams.",
+    response:
+      "RepoPress keeps the workflow light, sharp, and rooted in the repository rather than an enterprise console.",
+  },
 ]
 
-const competitors = [
-  { key: "repopress" as const, label: "RepoPress" },
-  { key: "decap" as const, label: "Decap CMS" },
-  { key: "tina" as const, label: "TinaCMS" },
-  { key: "keystatic" as const, label: "Keystatic" },
+const commitments = [
+  "Keep Git as the source of truth instead of hiding content behind a separate admin model.",
+  "Put rendered preview, repo context, and publishing decisions in the same authored surface.",
+  "Use typography, spacing, and calmer hierarchy to avoid the default dashboard feel.",
+  "Stay credible for self-hosted teams that want open workflows without SaaS heaviness.",
 ]
-
-function CellIcon({ value }: { value: CellValue }) {
-  if (value === "yes") {
-    return <Check className="mx-auto h-5 w-5 text-primary" />
-  }
-  if (value === "partial") {
-    return <Minus className="mx-auto h-5 w-5 text-muted-foreground" />
-  }
-  return <X className="mx-auto h-5 w-5 text-muted-foreground/50" />
-}
 
 export default function Comparison() {
   return (
-    <section id="comparison" className="container mx-auto px-4 py-24">
-      <div className="mx-auto flex max-w-[58rem] flex-col items-center space-y-4 text-center mb-16">
-        <h2 className="text-3xl font-bold tracking-tight md:text-4xl">How RepoPress Compares</h2>
-        <p className="max-w-[85%] text-muted-foreground sm:text-lg sm:leading-7 text-balance">
-          See how RepoPress stacks up against other Git-based content management solutions.
-        </p>
-      </div>
+    <section id="comparison" className="px-4 py-24">
+      <div className="mx-auto grid max-w-6xl gap-10 lg:grid-cols-[0.9fr_1.1fr]">
+        <div>
+          <p className="font-mono text-[0.72rem] uppercase tracking-[0.24em] text-muted-foreground">Competitive bar</p>
+          <h2 className="mt-4 text-4xl font-semibold tracking-[-0.05em] text-balance text-foreground sm:text-5xl">
+            Built for teams that have outgrown dated, tool-heavy, or SaaS-heavy CMS workflows.
+          </h2>
+          <p className="mt-4 text-base leading-7 text-muted-foreground sm:text-lg sm:leading-8">
+            RepoPress sits in a deliberate middle lane: calmer than a dev-tool console, sharper than a default CMS
+            admin, and lighter than a heavy managed content platform.
+          </p>
 
-      <div className="mx-auto max-w-4xl overflow-x-auto rounded-xl border border-border">
-        <table className="w-full min-w-[600px] text-sm">
-          <thead>
-            <tr className="bg-muted/50">
-              <th className="px-6 py-4 text-left font-medium text-muted-foreground">Feature</th>
-              {competitors.map((c) => (
-                <th
-                  key={c.key}
-                  className={`px-6 py-4 text-center font-medium ${
-                    c.key === "repopress" ? "bg-primary/5 text-foreground" : "text-muted-foreground"
-                  }`}
-                >
-                  {c.label}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, i) => (
-              <tr key={row.feature} className={i < rows.length - 1 ? "border-b border-border" : ""}>
-                <td className="px-6 py-4 font-medium">{row.feature}</td>
-                {competitors.map((c) => (
-                  <td key={c.key} className={`px-6 py-4 text-center ${c.key === "repopress" ? "bg-primary/5" : ""}`}>
-                    <CellIcon value={row[c.key]} />
-                  </td>
-                ))}
-              </tr>
+          <div className="mt-8 space-y-4">
+            {notes.map((note) => (
+              <div key={note.name} className="surface-card rounded-[1.5rem] border p-5">
+                <p className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-muted-foreground">
+                  {note.name}
+                </p>
+                <p className="mt-3 text-sm font-medium tracking-[-0.01em] text-foreground">{note.tension}</p>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">{note.response}</p>
+              </div>
             ))}
-          </tbody>
-        </table>
+          </div>
+        </div>
+
+        <div className="surface-card overflow-hidden rounded-[1.75rem] border">
+          <div className="border-b border-border/70 px-6 py-5">
+            <p className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-muted-foreground">
+              Design commitments
+            </p>
+            <h3 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-foreground">
+              What the landing should make clear
+            </h3>
+          </div>
+
+          <div className="grid gap-4 px-6 py-6">
+            {commitments.map((commitment) => (
+              <div key={commitment} className="flex gap-3 rounded-[1.5rem] border border-border/70 bg-muted/35 p-5">
+                <span className="mt-0.5 inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                  <Check className="h-4 w-4" />
+                </span>
+                <p className="text-sm leading-6 text-muted-foreground">{commitment}</p>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </section>
   )

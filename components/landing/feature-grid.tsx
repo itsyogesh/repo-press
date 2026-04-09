@@ -1,180 +1,213 @@
-import { Code2, Cpu, FileText, GitBranch, Github, GitPullRequest, History, Zap } from "lucide-react"
-import Link from "next/link"
-import { Button } from "@/components/ui/button"
+import { ArrowUpRight, FileText, FolderTree, GitBranch, Layers3, PanelTopOpen, Sparkles } from "lucide-react"
 
-const frameworks = ["Next.js", "Astro", "Hugo", "Docusaurus", "Jekyll", "Fumadocs", "Nextra", "Gatsby"]
+const frameworks = ["Next.js", "Astro", "Fumadocs", "Nextra", "Docusaurus", "Hugo"]
+
+const studioSignals = [
+  "Split-view editing with preview",
+  "Frontmatter, media, and history in one shell",
+  "Command palette that feels like a real operator surface",
+]
+
+const historyMoments = [
+  { label: "Current", detail: "Updated component callout copy", time: "2m ago" },
+  { label: "Review", detail: "Editor approved docs lane changes", time: "48m ago" },
+  { label: "Origin", detail: "Imported framework-aware content root", time: "Today" },
+]
 
 export default function FeatureGrid() {
   return (
-    <section id="features" className="container mx-auto px-4 py-24 space-y-8">
-      <div className="mx-auto flex max-w-[58rem] flex-col items-center space-y-4 text-center">
-        <h2 className="text-4xl font-bold tracking-tight sm:text-5xl text-balance">
-          Everything you need to manage content
-        </h2>
-        <p className="max-w-[85%] leading-normal text-muted-foreground sm:text-lg sm:leading-7 text-balance">
-          RepoPress transforms your GitHub repository into a powerful headless CMS. Edit MDX blogs, documentation, legal
-          files, and more without leaving your browser.
-        </p>
-      </div>
+    <section id="features" className="px-4 py-24">
+      <div className="mx-auto max-w-6xl">
+        <div className="mx-auto flex max-w-3xl flex-col items-center gap-4 text-center">
+          <p className="font-mono text-[0.72rem] uppercase tracking-[0.24em] text-muted-foreground">Studio power</p>
+          <h2 className="text-4xl font-semibold tracking-[-0.05em] text-balance text-foreground sm:text-5xl">
+            A product surface, not a pile of admin cards.
+          </h2>
+          <p className="text-base leading-7 text-muted-foreground sm:text-lg sm:leading-8">
+            RepoPress is designed to feel closer to a workspace than a CMS: stronger hierarchy, calmer controls, and
+            Git-native flows that make sense to developers and content teams.
+          </p>
+        </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-7xl mx-auto">
-        {/* Large Card: Framework Auto-Detection */}
-        <div className="md:col-span-2 md:row-span-2 rounded-3xl bg-gradient-to-br from-primary/5 to-primary/10 border border-border p-8 flex flex-col justify-between overflow-hidden relative group">
-          <div className="relative z-10">
-            <div className="h-12 w-12 rounded-2xl bg-primary/10 flex items-center justify-center mb-6">
-              <Cpu className="h-6 w-6 text-primary" />
+        <div className="mt-14 grid gap-6 xl:grid-cols-[1.12fr_0.88fr]">
+          <div className="surface-card rounded-[2rem] border p-8 sm:p-10">
+            <div className="flex flex-col gap-4">
+              <div className="inline-flex w-fit items-center gap-2 rounded-full border border-border/70 bg-background/75 px-3 py-1.5 font-mono text-[0.68rem] uppercase tracking-[0.2em] text-muted-foreground">
+                <PanelTopOpen className="h-3.5 w-3.5 text-primary" />
+                Studio shell
+              </div>
+              <h3 className="max-w-[14ch] text-3xl font-semibold tracking-[-0.04em] text-foreground sm:text-4xl">
+                One editing shell for content, preview, and publishing.
+              </h3>
+              <p className="max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base sm:leading-7">
+                Instead of bouncing between markdown fields, media tabs, and hidden publish dialogs, the studio keeps
+                editing, preview, history, and Git actions legible in one place.
+              </p>
             </div>
-            <h3 className="text-2xl font-semibold mb-2">Framework Auto-Detection</h3>
-            <p className="text-muted-foreground max-w-md">
-              Connect your repo and we&apos;ll detect your framework automatically. Works with Next.js, Astro, Hugo,
-              Docusaurus, Jekyll, Fumadocs, Nextra, and more.
+
+            <div className="mt-8 grid gap-3 sm:grid-cols-3">
+              {studioSignals.map((signal) => (
+                <div
+                  key={signal}
+                  className="rounded-2xl border border-border/70 bg-muted/35 p-4 text-sm leading-6 text-muted-foreground"
+                >
+                  {signal}
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-8 overflow-hidden rounded-[1.5rem] border border-border/70 bg-background">
+              <div className="flex items-center justify-between border-b border-border/70 px-5 py-4">
+                <div>
+                  <p className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-muted-foreground">
+                    Studio snapshot
+                  </p>
+                  <p className="text-sm font-semibold tracking-[-0.02em] text-foreground">docs/getting-started.mdx</p>
+                </div>
+                <span className="rounded-full bg-primary/10 px-3 py-1 font-mono text-[0.62rem] uppercase tracking-[0.18em] text-primary">
+                  Preview synced
+                </span>
+              </div>
+
+              <div className="grid gap-0 lg:grid-cols-[0.88fr_1.12fr]">
+                <div className="border-b border-border/70 bg-muted/35 px-5 py-5 lg:border-b-0 lg:border-r">
+                  <div className="space-y-3">
+                    <div className="h-4 w-40 rounded-full bg-muted" />
+                    <div className="h-10 rounded-2xl border border-border/70 bg-background" />
+                    <div className="h-24 rounded-2xl border border-border/70 bg-background" />
+                    <div className="h-16 rounded-2xl border border-primary/15 bg-primary/8" />
+                  </div>
+                </div>
+
+                <div className="px-5 py-5">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-2xl border border-border/70 bg-muted/35 p-4">
+                      <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                        <FileText className="h-4 w-4 text-primary" />
+                        MDX + components
+                      </div>
+                      <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                        Render real components and keep authoring context intact while editing.
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border border-border/70 bg-muted/35 p-4">
+                      <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                        <GitBranch className="h-4 w-4 text-primary" />
+                        Publish lanes
+                      </div>
+                      <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                        Draft into PR-ready changes without losing the repo story.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-6">
+            <div className="surface-card rounded-[1.75rem] border p-6">
+              <div className="flex items-center gap-3">
+                <span className="inline-flex size-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                  <FolderTree className="h-5 w-5" />
+                </span>
+                <div>
+                  <p className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-muted-foreground">
+                    Framework-aware
+                  </p>
+                  <h3 className="text-xl font-semibold tracking-[-0.03em] text-foreground">
+                    Auto-detection as onboarding
+                  </h3>
+                </div>
+              </div>
+              <p className="mt-4 text-sm leading-6 text-muted-foreground">
+                The first impression matters. RepoPress starts by understanding how the repo is already organized
+                instead of forcing the user into a generic setup wizard.
+              </p>
+              <div className="mt-5 flex flex-wrap gap-2">
+                {frameworks.map((framework) => (
+                  <span
+                    key={framework}
+                    className="rounded-full border border-border/70 bg-background px-3 py-1.5 font-mono text-[0.62rem] uppercase tracking-[0.18em] text-muted-foreground"
+                  >
+                    {framework}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-[1.75rem] border border-foreground/10 bg-foreground px-6 py-7 text-background">
+              <div className="flex items-center gap-3">
+                <span className="inline-flex size-11 items-center justify-center rounded-xl border border-background/10 bg-background/5 text-background">
+                  <Layers3 className="h-5 w-5" />
+                </span>
+                <div>
+                  <p className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-background/60">Open format</p>
+                  <h3 className="text-xl font-semibold tracking-[-0.03em]">Git-native by default</h3>
+                </div>
+              </div>
+              <p className="mt-4 text-sm leading-6 text-background/72">
+                Content stays in the repo, which means no hidden content silo, no forced migration, and a cleaner mental
+                model for engineering teams.
+              </p>
+              <div className="mt-6 inline-flex items-center gap-2 font-mono text-[0.68rem] uppercase tracking-[0.2em] text-background/68">
+                Self-hosted friendly
+                <ArrowUpRight className="h-4 w-4" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-6 grid gap-6 lg:grid-cols-[0.82fr_1.02fr_0.86fr]">
+          <div className="surface-card rounded-[1.75rem] border p-6">
+            <div className="flex items-center gap-3">
+              <Sparkles className="h-5 w-5 text-primary" />
+              <h3 className="text-lg font-semibold tracking-[-0.03em] text-foreground">Preview real surfaces</h3>
+            </div>
+            <p className="mt-3 text-sm leading-6 text-muted-foreground">
+              RepoPress is built around the high-value moments competitors often flatten: previews, media, publish
+              actions, and content movement across the repo.
             </p>
           </div>
 
-          {/* Framework badges */}
-          <div className="mt-8 grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {frameworks.map((fw) => (
-              <div
-                key={fw}
-                className="flex items-center justify-center gap-2 rounded-xl bg-background border border-border px-3 py-2.5 text-sm font-medium text-foreground shadow-sm transition-all group-hover:border-primary/30"
-              >
-                <Zap className="h-3.5 w-3.5 text-primary" />
-                {fw}
+          <div className="surface-card rounded-[1.75rem] border p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-muted-foreground">History</p>
+                <h3 className="text-lg font-semibold tracking-[-0.03em] text-foreground">A calmer version trail</h3>
               </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Card: 100% Open Source */}
-        <div className="rounded-3xl bg-zinc-950 text-white p-8 flex flex-col justify-between relative overflow-hidden group">
-          <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-            <Github className="h-32 w-32" />
-          </div>
-          <div>
-            <div className="h-12 w-12 rounded-2xl bg-white/10 flex items-center justify-center mb-6">
-              <Code2 className="h-6 w-6 text-white" />
+              <span className="rounded-full border border-border/70 bg-background/80 px-3 py-1 font-mono text-[0.62rem] uppercase tracking-[0.18em] text-muted-foreground">
+                Snapshot aware
+              </span>
             </div>
-            <h3 className="text-xl font-semibold mb-2">100% Open Source</h3>
-            <p className="text-zinc-400 text-sm">
-              Built by developers, for developers. Host it yourself or deploy on Vercel in seconds.
-            </p>
-          </div>
-          <Button variant="secondary" className="mt-6 w-full rounded-full" asChild>
-            <Link href="https://github.com/itsyogesh/repo-press" target="_blank">
-              Star on GitHub
-            </Link>
-          </Button>
-        </div>
-
-        {/* Card: Visual MDX Studio */}
-        <div className="rounded-3xl bg-muted dark:bg-card border border-border p-8 flex flex-col">
-          <div className="h-12 w-12 rounded-2xl bg-primary/10 flex items-center justify-center mb-6">
-            <FileText className="h-6 w-6 text-primary" />
-          </div>
-          <h3 className="text-xl font-semibold mb-2">Visual MDX Studio</h3>
-          <p className="text-muted-foreground text-sm mb-6">
-            Write with a live preview. Edit MDX with frontmatter, custom components, and real-time rendering.
-          </p>
-
-          {/* Mock Editor UI */}
-          <div className="mt-auto rounded-xl border border-border bg-background shadow-sm p-3">
-            <div className="flex items-center gap-1.5 mb-3 border-b border-border pb-2">
-              <div className="w-2 h-2 rounded-full bg-red-400/80" />
-              <div className="w-2 h-2 rounded-full bg-yellow-400/80" />
-              <div className="w-2 h-2 rounded-full bg-green-400/80" />
-              <div className="ml-2 text-[10px] text-muted-foreground font-mono">post.mdx</div>
+            <div className="mt-5 space-y-4 border-l border-border/70 pl-4">
+              {historyMoments.map((moment) => (
+                <div key={moment.label} className="relative">
+                  <span className="absolute -left-[1.15rem] top-1.5 h-2.5 w-2.5 rounded-full bg-primary" />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-medium tracking-[-0.01em] text-foreground">{moment.label}</span>
+                    <span className="font-mono text-[0.62rem] uppercase tracking-[0.18em] text-muted-foreground">
+                      {moment.time}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-sm leading-6 text-muted-foreground">{moment.detail}</p>
+                </div>
+              ))}
             </div>
-            <div className="space-y-2">
-              <div className="h-5 w-3/4 bg-muted rounded-md" />
-              <div className="h-3 w-full bg-muted/50 rounded-md" />
-              <div className="h-3 w-5/6 bg-muted/50 rounded-md" />
-              <div className="h-16 w-full bg-primary/5 dark:bg-primary/10 rounded-lg border border-primary/20 flex items-center justify-center">
-                <span className="text-[10px] text-primary font-mono">{"<Component />"}</span>
+          </div>
+
+          <div className="surface-card rounded-[1.75rem] border p-6">
+            <div className="flex items-center gap-3">
+              <GitBranch className="h-5 w-5 text-primary" />
+              <h3 className="text-lg font-semibold tracking-[-0.03em] text-foreground">Git workflow stays legible</h3>
+            </div>
+            <div className="mt-5 space-y-3 font-mono text-[0.68rem] uppercase tracking-[0.18em] text-muted-foreground">
+              <div className="rounded-2xl border border-border/70 bg-background px-4 py-3">draft → docs-main</div>
+              <div className="rounded-2xl border border-border/70 bg-background px-4 py-3">
+                review → editor approved
               </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Card: Draft → Review → Publish */}
-        <div className="rounded-3xl bg-muted dark:bg-card border border-border p-8 flex flex-col">
-          <div className="h-12 w-12 rounded-2xl bg-primary/10 flex items-center justify-center mb-6">
-            <GitPullRequest className="h-6 w-6 text-primary" />
-          </div>
-          <h3 className="text-xl font-semibold mb-2">Draft → Review → Publish</h3>
-          <p className="text-muted-foreground text-sm mb-6">
-            Full editorial workflow with draft, review, approval, and publish states. Perfect for teams.
-          </p>
-
-          {/* Mini Workflow Diagram */}
-          <div className="mt-auto flex items-center gap-2">
-            <div className="flex-1 rounded-lg bg-background border border-border px-3 py-2 text-center">
-              <span className="text-xs font-medium text-muted-foreground">Draft</span>
-            </div>
-            <span className="text-muted-foreground text-xs">→</span>
-            <div className="flex-1 rounded-lg bg-background border border-border px-3 py-2 text-center">
-              <span className="text-xs font-medium text-muted-foreground">Review</span>
-            </div>
-            <span className="text-muted-foreground text-xs">→</span>
-            <div className="flex-1 rounded-lg bg-primary/10 border border-primary/20 px-3 py-2 text-center">
-              <span className="text-xs font-medium text-primary">Publish</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Card: Version History */}
-        <div className="rounded-3xl bg-muted dark:bg-card border border-border p-8 flex flex-col">
-          <div className="h-12 w-12 rounded-2xl bg-primary/10 flex items-center justify-center mb-6">
-            <History className="h-6 w-6 text-primary" />
-          </div>
-          <h3 className="text-xl font-semibold mb-2">Version History</h3>
-          <p className="text-muted-foreground text-sm mb-6">
-            Every edit creates a snapshot. Compare versions, revert changes, and never lose content.
-          </p>
-
-          {/* Mini Version Timeline */}
-          <div className="mt-auto space-y-3 pl-4 border-l-2 border-border">
-            <div className="flex items-center gap-2 relative">
-              <div className="absolute -left-[21px] w-2.5 h-2.5 rounded-full bg-primary ring-2 ring-background" />
-              <span className="text-xs font-medium text-foreground">Current version</span>
-              <span className="text-[10px] text-muted-foreground ml-auto">2m ago</span>
-            </div>
-            <div className="flex items-center gap-2 relative">
-              <div className="absolute -left-[21px] w-2.5 h-2.5 rounded-full bg-muted-foreground/30 ring-2 ring-background" />
-              <span className="text-xs text-muted-foreground">Updated heading</span>
-              <span className="text-[10px] text-muted-foreground ml-auto">1h ago</span>
-            </div>
-            <div className="flex items-center gap-2 relative">
-              <div className="absolute -left-[21px] w-2.5 h-2.5 rounded-full bg-muted-foreground/30 ring-2 ring-background" />
-              <span className="text-xs text-muted-foreground">Initial draft</span>
-              <span className="text-[10px] text-muted-foreground ml-auto">3h ago</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Card: Git Native Workflow */}
-        <div className="rounded-3xl bg-muted dark:bg-card border border-border p-8 flex flex-col">
-          <div className="h-12 w-12 rounded-2xl bg-primary/10 flex items-center justify-center mb-6">
-            <GitBranch className="h-6 w-6 text-primary" />
-          </div>
-          <h3 className="text-xl font-semibold mb-2">Git Native Workflow</h3>
-          <p className="text-muted-foreground text-sm mb-6">
-            Content lives in your repo. Every save is a Git commit. No vendor lock-in, ever.
-          </p>
-
-          {/* Mini Git Log */}
-          <div className="mt-auto rounded-xl border border-border bg-card p-3 shadow-sm">
-            <div className="flex items-center gap-2 text-xs font-mono text-muted-foreground mb-3">
-              <GitBranch className="h-3.5 w-3.5" />
-              <span>main</span>
-            </div>
-            <div className="pl-2 border-l-2 border-border ml-1.5 space-y-3 py-1">
-              <div className="flex items-center gap-2 text-xs">
-                <div className="w-2 h-2 rounded-full bg-primary" />
-                <span className="text-foreground font-medium truncate">feat: update pricing page</span>
-              </div>
-              <div className="flex items-center gap-2 text-xs">
-                <div className="w-2 h-2 rounded-full bg-primary" />
-                <span className="text-foreground font-medium truncate">docs: add install guide</span>
+              <div className="rounded-2xl border border-primary/15 bg-primary/10 px-4 py-3 text-primary">
+                publish → PR lane ready
               </div>
             </div>
           </div>
