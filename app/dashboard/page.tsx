@@ -1,5 +1,5 @@
 import { ConvexHttpClient } from "convex/browser"
-import { AlertCircle } from "lucide-react"
+import { AlertCircle, FolderGit2, LayoutGrid } from "lucide-react"
 import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 import { ProjectList } from "@/components/project-list"
@@ -39,8 +39,6 @@ export default async function DashboardPage() {
     redirect("/login?error=invalid_token")
   }
 
-  // For PAT users, fetch projects server-side since they lack a Convex auth session.
-  // OAuth users get live data via useQuery in the client components.
   let serverProjects: any[] | undefined
   const cookieStore = await cookies()
   const isPatUser = !!cookieStore.get("github_pat")?.value
@@ -51,7 +49,6 @@ export default async function DashboardPage() {
       try {
         const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL)
         const sqt = await mintServerQueryToken()
-        // Use access-scoped query: own projects + shared projects via repoAccessCache
         const projects = await convex.query(api.projects.listAccessibleProjectsForUser, {
           userId: patUserId,
           serverQueryToken: sqt,
@@ -64,42 +61,94 @@ export default async function DashboardPage() {
   }
 
   return (
-    <div className="container mx-auto py-8 px-4">
-      <div className="flex flex-col gap-2 mb-8">
-        <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-        <p className="text-muted-foreground">Manage your content projects.</p>
-      </div>
+    <div className="mx-auto flex w-full max-w-7xl flex-col gap-10 px-4 py-10 sm:px-6">
+      <section className="rounded-[2rem] border border-border/70 bg-muted/20 p-6 sm:p-8">
+        <div className="flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
+          <div className="max-w-3xl">
+            <p className="font-mono text-[0.72rem] uppercase tracking-[0.24em] text-muted-foreground">Workspace</p>
+            <h1 className="mt-4 text-4xl font-semibold tracking-[-0.05em] text-foreground sm:text-5xl">Dashboard</h1>
+            <p className="mt-4 max-w-2xl text-sm leading-7 text-muted-foreground sm:text-base">
+              Recent projects stay front and center. Repositories remain the system of record when you need setup, sync,
+              and broader content organization.
+            </p>
+          </div>
 
-      {error && (
-        <Alert variant="destructive" className="mb-6">
+          <div className="grid gap-3 sm:grid-cols-2 lg:max-w-md">
+            <div className="rounded-[1.5rem] border border-border/70 bg-background/80 p-4">
+              <div className="flex items-center gap-3">
+                <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-muted text-foreground">
+                  <LayoutGrid className="h-4 w-4" />
+                </span>
+                <div>
+                  <p className="font-mono text-[0.62rem] uppercase tracking-[0.18em] text-muted-foreground">
+                    Recent projects
+                  </p>
+                  <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                    Return to active Studio work without hunting through setup screens.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-[1.5rem] border border-border/70 bg-background/80 p-4">
+              <div className="flex items-center gap-3">
+                <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-muted text-foreground">
+                  <FolderGit2 className="h-4 w-4" />
+                </span>
+                <div>
+                  <p className="font-mono text-[0.62rem] uppercase tracking-[0.18em] text-muted-foreground">
+                    Repository hubs
+                  </p>
+                  <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                    Open a repo hub for config sync, orphan cleanup, settings, and new project setup.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {error ? (
+        <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>Error</AlertTitle>
           <AlertDescription>{error}</AlertDescription>
         </Alert>
-      )}
+      ) : null}
 
-      {/* Convex-backed project list (client component, with server fallback for PAT users) */}
-      <div className="mb-10">
-        <ProjectList serverProjects={serverProjects} />
-      </div>
+      <ProjectList serverProjects={serverProjects} />
 
-      {/* GitHub repos with connected status */}
-      <div className="space-y-4">
-        <div className="flex flex-col gap-1">
-          <h2 className="text-xl font-semibold tracking-tight">Your Repositories</h2>
-          <p className="text-sm text-muted-foreground">
-            Connected repos are shown first. Select a repository to manage its projects.
+      <section className="space-y-5">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div className="space-y-2">
+            <p className="font-mono text-[0.68rem] uppercase tracking-[0.22em] text-muted-foreground">
+              Repository hubs
+            </p>
+            <h2 className="text-2xl font-semibold tracking-[-0.04em] text-foreground sm:text-3xl">
+              Choose the repo you want to manage
+            </h2>
+          </div>
+          <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
+            Connected repositories stay together, while the rest remain ready for setup when you need another content
+            surface.
           </p>
         </div>
 
         {!error && repos.length === 0 ? (
-          <div className="text-center py-12 border rounded-lg bg-muted/10">
-            <p className="text-muted-foreground">No repositories found.</p>
+          <div className="flex flex-col items-center justify-center rounded-[1.75rem] border border-dashed border-border/70 bg-muted/20 px-6 py-14 text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-background text-muted-foreground">
+              <FolderGit2 className="h-5 w-5" />
+            </div>
+            <h3 className="mt-5 text-lg font-semibold tracking-[-0.03em] text-foreground">No repositories found</h3>
+            <p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">
+              Connect a GitHub account with repository access, then return here to open a repository hub.
+            </p>
           </div>
         ) : (
           <RepoGrid repos={repos} serverProjects={serverProjects} />
         )}
-      </div>
+      </section>
     </div>
   )
 }
