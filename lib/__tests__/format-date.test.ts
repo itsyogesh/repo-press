@@ -12,6 +12,7 @@ describe("formatUtcDate", () => {
   })
 
   it("returns N/A for missing or invalid values", () => {
+    expect(formatUtcDate(0)).toBe("1970-01-01")
     expect(formatUtcDate(undefined)).toBe("N/A")
     expect(formatUtcDate(null)).toBe("N/A")
     expect(formatUtcDate("not-a-date")).toBe("N/A")

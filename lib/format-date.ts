@@ -1,5 +1,5 @@
 export function formatUtcDate(value: number | string | null | undefined) {
-  if (!value) {
+  if (value === null || value === undefined) {
     return "N/A"
   }
 
