@@ -4,7 +4,6 @@ import { slide } from "@remotion/transitions/slide"
 import { wipe } from "@remotion/transitions/wipe"
 import type React from "react"
 import { AbsoluteFill, Audio, staticFile, useVideoConfig } from "remotion"
-import { z } from "zod"
 import { CTAScene } from "../components/scenes/CTAScene"
 import { FrameworkScene } from "../components/scenes/FrameworkScene"
 import { IntroScene } from "../components/scenes/IntroScene"
@@ -14,13 +13,16 @@ import { MDXEditorFeature } from "./MDXEditorFeature"
 import { StudioDemo } from "./StudioDemo"
 import { WorkflowFeature } from "./WorkflowFeature"
 
-// ─── Zod schema ──────────────────────────────────────────────────────────────
-export const tutorialVideoSchema = z.object({
-  musicVolume: z.number().min(0).max(1).default(0.25),
-  sfxVolume: z.number().min(0).max(1).default(0.7),
-})
+// ─── Props ───────────────────────────────────────────────────────────────────
+export type TutorialVideoProps = {
+  musicVolume: number
+  sfxVolume: number
+}
 
-export type TutorialVideoProps = z.infer<typeof tutorialVideoSchema>
+export const tutorialVideoDefaultProps: TutorialVideoProps = {
+  musicVolume: 0.25,
+  sfxVolume: 0.7,
+}
 
 // ─── Scene durations ─────────────────────────────────────────────────────────
 const SCENE_DURATIONS_S = {
