@@ -1,6 +1,7 @@
 import type { ReactNode } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it, vi } from "vitest"
+import { formatDashboardDate } from "@/lib/dashboard-date"
 
 vi.mock("next/link", () => ({
   default: ({ href, className, children }: { href: string; className?: string; children: ReactNode }) => (
@@ -11,7 +12,6 @@ vi.mock("next/link", () => ({
 }))
 
 import {
-  formatProjectUpdatedDate,
   getProjectContentRootLabel,
   getProjectFrameworkLabel,
   getProjectSourceLabel,
@@ -30,8 +30,8 @@ describe("ProjectCard", () => {
     expect(getProjectSourceLabel({ frameworkSource: undefined, detectedFramework: "contentlayer" })).toBe("Detected")
     expect(getProjectSourceLabel({ frameworkSource: undefined, detectedFramework: "detected" })).toBe("Manual")
 
-    expect(formatProjectUpdatedDate(Date.parse("2026-04-08T10:20:30.000Z"))).toBe("2026-04-08")
-    expect(formatProjectUpdatedDate(0)).toBe("N/A")
+    expect(formatDashboardDate(Date.parse("2026-04-08T10:20:30.000Z"))).toBe("Apr 8, 2026")
+    expect(formatDashboardDate(0)).toBe("N/A")
   })
 
   it("renders stacked project details without the overflowing badge", () => {
@@ -60,7 +60,7 @@ describe("ProjectCard", () => {
     expect(html).toContain(">docs<")
     expect(html).toContain(">Manual<")
     expect(html).toContain("Updated")
-    expect(html).toContain("2026-04-08")
+    expect(html).toContain("Apr 8, 2026")
     expect(html).not.toContain('data-slot="badge"')
   })
 })

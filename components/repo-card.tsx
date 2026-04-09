@@ -1,8 +1,9 @@
-import { Calendar, CheckCircle2, Eye, GitFork, Plus, Star } from "lucide-react"
+import { CheckCircle2, Eye, GitFork, Plus, Star } from "lucide-react"
 import Link from "next/link"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { getDashboardDateParts } from "@/lib/dashboard-date"
 import type { GitHubRepo } from "@/lib/github"
 
 interface RepoCardProps {
@@ -14,14 +15,10 @@ export function getRepoConnectionLabel(connectedProjectCount: number) {
   return connectedProjectCount > 0 ? "Connected" : "Set up"
 }
 
-export function formatRepoUpdatedDate(updatedAt?: string | null) {
-  return updatedAt ? new Date(updatedAt).toISOString().slice(0, 10) : "N/A"
-}
-
 export function RepoCard({ repo, connectedProjectCount = 0 }: RepoCardProps) {
   const isConnected = connectedProjectCount > 0
   const connectionLabel = getRepoConnectionLabel(connectedProjectCount)
-  const updatedDate = formatRepoUpdatedDate(repo.updated_at)
+  const updatedDate = getDashboardDateParts(repo.updated_at)
 
   return (
     <Card className="flex flex-col h-full">
@@ -72,8 +69,14 @@ export function RepoCard({ repo, connectedProjectCount = 0 }: RepoCardProps) {
             <span>{repo.watchers_count}</span>
           </div>
           <div className="flex items-center gap-1">
-            <Calendar className="h-3 w-3" />
-            <span>{repo.updated_at ? <time dateTime={repo.updated_at}>{updatedDate}</time> : updatedDate}</span>
+            <span>
+              Updated{" "}
+              {updatedDate.dateTime ? (
+                <time dateTime={updatedDate.dateTime}>{updatedDate.label}</time>
+              ) : (
+                updatedDate.label
+              )}
+            </span>
           </div>
         </div>
 

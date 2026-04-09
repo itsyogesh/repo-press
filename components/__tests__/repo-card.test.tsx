@@ -1,6 +1,7 @@
 import type { ReactNode } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it, vi } from "vitest"
+import { formatDashboardDate } from "@/lib/dashboard-date"
 
 vi.mock("next/link", () => ({
   default: ({ href, className, children }: { href: string; className?: string; children: ReactNode }) => (
@@ -10,15 +11,15 @@ vi.mock("next/link", () => ({
   ),
 }))
 
-import { formatRepoUpdatedDate, getRepoConnectionLabel, RepoCard } from "@/components/repo-card"
+import { getRepoConnectionLabel, RepoCard } from "@/components/repo-card"
 
 describe("RepoCard", () => {
   it("derives readable labels for the stacked repo card", () => {
     expect(getRepoConnectionLabel(3)).toBe("Connected")
     expect(getRepoConnectionLabel(0)).toBe("Set up")
 
-    expect(formatRepoUpdatedDate("2026-04-09T10:20:30.000Z")).toBe("2026-04-09")
-    expect(formatRepoUpdatedDate(undefined)).toBe("N/A")
+    expect(formatDashboardDate("2026-04-09T10:20:30.000Z")).toBe("Apr 9, 2026")
+    expect(formatDashboardDate(undefined)).toBe("N/A")
   })
 
   it("renders repo identity and metadata in wrap-safe rows", () => {
@@ -47,7 +48,8 @@ describe("RepoCard", () => {
     expect(html).toContain(">Private<")
     expect(html).toContain(">Connected<")
     expect(html).toContain(">3 projects<")
-    expect(html).toContain("2026-04-09")
+    expect(html).toContain("Updated")
+    expect(html).toContain("Apr 9, 2026")
     expect(html).toContain("flex-wrap")
     expect(html).not.toContain("truncate")
     expect(html).not.toContain("line-clamp-1")

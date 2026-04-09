@@ -4,6 +4,7 @@ import { ArrowRight, Folder, GitBranch } from "lucide-react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { getDashboardDateParts } from "@/lib/dashboard-date"
 
 interface ProjectCardProps {
   project: {
@@ -65,17 +66,13 @@ export function getProjectSourceLabel(
   return "Manual"
 }
 
-export function formatProjectUpdatedDate(updatedAt: number) {
-  return updatedAt ? new Date(updatedAt).toISOString().slice(0, 10) : "N/A"
-}
-
 export function ProjectCard({ project }: ProjectCardProps) {
   const repoLabel = `${project.repoOwner}/${project.repoName}`
   const contentRootLabel = getProjectContentRootLabel(project.contentRoot)
   const contentRootTitle = project.contentRoot || "Repository root"
   const frameworkLabel = getProjectFrameworkLabel(project)
   const sourceLabel = getProjectSourceLabel(project)
-  const updatedLabel = formatProjectUpdatedDate(project.updatedAt)
+  const updatedDate = getDashboardDateParts(project.updatedAt)
 
   return (
     <Card className="flex h-full flex-col">
@@ -102,12 +99,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
             <span className="whitespace-nowrap">{sourceLabel}</span>
           )}
           <span className="whitespace-nowrap">
-            Updated{" "}
-            {updatedLabel !== "N/A" ? (
-              <time dateTime={new Date(project.updatedAt).toISOString()}>{updatedLabel}</time>
-            ) : (
-              "N/A"
-            )}
+            Updated {updatedDate.dateTime ? <time dateTime={updatedDate.dateTime}>{updatedDate.label}</time> : "N/A"}
           </span>
         </div>
 
