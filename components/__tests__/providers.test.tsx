@@ -65,4 +65,24 @@ describe("Providers", () => {
 
     expect(html).toContain("data-auth-provider")
   })
+
+  it("creates a client only when dashboard routes need one", async () => {
+    const { getOrCreateConvexClient } = await import("@/components/providers")
+    const existingClient = { close: vi.fn() }
+    const createClient = vi.fn(() => ({ close: vi.fn() }))
+
+    expect(getOrCreateConvexClient(existingClient, false, "https://example.convex.cloud", createClient)).toBe(
+      existingClient,
+    )
+    expect(getOrCreateConvexClient(null, true, "https://example.convex.cloud", createClient)).not.toBeNull()
+    expect(createClient).toHaveBeenCalledTimes(1)
+  })
+
+  it("closes an existing client when releasing it", async () => {
+    const { closeConvexClient } = await import("@/components/providers")
+    const client = { close: vi.fn() }
+
+    expect(closeConvexClient(client)).toBeNull()
+    expect(client.close).toHaveBeenCalledTimes(1)
+  })
 })
