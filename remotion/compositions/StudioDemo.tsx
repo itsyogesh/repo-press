@@ -1,4 +1,5 @@
 import { AbsoluteFill, interpolate, Sequence, spring, useCurrentFrame, useVideoConfig } from "remotion"
+import { geistFamily, geistMonoFamily } from "../fonts"
 
 const ACCENT = "#3b82f6"
 const BG = "#000000"
@@ -10,13 +11,16 @@ const Scene: React.FC<{ children: React.ReactNode; label: string; step: number }
   const { fps } = useVideoConfig()
 
   const labelOpacity = spring({ frame, fps, config: { damping: 20 } })
-  const contentOpacity = interpolate(frame, [8, 20], [0, 1], { extrapolateRight: "clamp" })
+  const contentOpacity = interpolate(frame, [8, 20], [0, 1], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  })
 
   return (
     <AbsoluteFill
       style={{
         backgroundColor: BG,
-        fontFamily: "system-ui, -apple-system, sans-serif",
+        fontFamily: geistFamily,
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
@@ -66,7 +70,10 @@ const ConnectScene: React.FC = () => {
 
   const cardScale = spring({ frame, fps, config: { damping: 12, stiffness: 80 }, delay: 10 })
   const buttonProgress = spring({ frame, fps, config: { damping: 15 }, delay: 40 })
-  const checkOpacity = interpolate(frame, [55, 65], [0, 1], { extrapolateRight: "clamp" })
+  const checkOpacity = interpolate(frame, [55, 65], [0, 1], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  })
 
   return (
     <Scene label="Connect" step={1}>
@@ -74,7 +81,7 @@ const ConnectScene: React.FC = () => {
         <div
           style={{
             transform: `scale(${cardScale})`,
-            border: `1px solid #333`,
+            border: "1px solid #333",
             borderRadius: 16,
             padding: "32px 40px",
             width: 480,
@@ -95,7 +102,7 @@ const ConnectScene: React.FC = () => {
           </div>
           <div
             style={{
-              backgroundColor: interpolate(buttonProgress, [0, 1], [0, 1]) > 0.5 ? ACCENT : "#222",
+              backgroundColor: buttonProgress > 0.5 ? ACCENT : "#222",
               borderRadius: 8,
               padding: "10px 0",
               textAlign: "center" as const,
@@ -179,7 +186,7 @@ const EditScene: React.FC = () => {
             <div style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: "#22c55e" }} />
             <span style={{ color: MUTED, fontSize: 13, marginLeft: 8 }}>getting-started.mdx</span>
           </div>
-          <div style={{ padding: "16px 20px", fontFamily: "ui-monospace, monospace", fontSize: 14, lineHeight: 1.7 }}>
+          <div style={{ padding: "16px 20px", fontFamily: geistMonoFamily, fontSize: 14, lineHeight: 1.7 }}>
             {lines.map((line, i) => {
               const charCount = interpolate(frame, [i * 5 + 5, i * 5 + 15], [0, line.text.length], {
                 extrapolateLeft: "clamp",
@@ -234,7 +241,6 @@ const ReviewScene: React.FC = () => {
               backgroundColor: showApproved ? "#052e16" : "#1c1917",
               color: showApproved ? "#22c55e" : "#fbbf24",
               border: `1px solid ${showApproved ? "#166534" : "#854d0e"}`,
-              transition: "all 0.3s",
               display: "flex",
               alignItems: "center",
               gap: 10,
@@ -347,7 +353,7 @@ const PublishScene: React.FC = () => {
                 padding: "4px 12px",
                 borderRadius: 6,
                 fontSize: 15,
-                fontFamily: "ui-monospace, monospace",
+                fontFamily: geistMonoFamily,
                 fontWeight: 600,
               }}
             >
@@ -364,16 +370,16 @@ const PublishScene: React.FC = () => {
 export const StudioDemo: React.FC = () => {
   return (
     <AbsoluteFill style={{ backgroundColor: BG }}>
-      <Sequence from={0} durationInFrames={75}>
+      <Sequence from={0} durationInFrames={75} premountFor={30}>
         <ConnectScene />
       </Sequence>
-      <Sequence from={75} durationInFrames={75}>
+      <Sequence from={75} durationInFrames={75} premountFor={30}>
         <EditScene />
       </Sequence>
-      <Sequence from={150} durationInFrames={75}>
+      <Sequence from={150} durationInFrames={75} premountFor={30}>
         <ReviewScene />
       </Sequence>
-      <Sequence from={225} durationInFrames={75}>
+      <Sequence from={225} durationInFrames={75} premountFor={30}>
         <PublishScene />
       </Sequence>
     </AbsoluteFill>

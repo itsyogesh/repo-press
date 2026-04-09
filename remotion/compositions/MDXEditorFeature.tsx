@@ -1,4 +1,5 @@
 import { AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion"
+import { geistFamily, geistMonoFamily } from "../fonts"
 
 const ACCENT = "#3b82f6"
 const BG = "#000000"
@@ -74,7 +75,7 @@ const EditorPane: React.FC = () => {
       <div
         style={{
           padding: "12px 16px",
-          fontFamily: "ui-monospace, monospace",
+          fontFamily: geistMonoFamily,
           fontSize: 11,
           lineHeight: 1.6,
           overflow: "hidden",
@@ -148,12 +149,7 @@ const PreviewPane: React.FC = () => {
             extrapolateLeft: "clamp",
             extrapolateRight: "clamp",
           })
-          const sectionSlide = spring({
-            frame,
-            fps,
-            config: { damping: 15 },
-            delay: section.delay,
-          })
+          const sectionSlide = spring({ frame, fps, config: { damping: 15 }, delay: section.delay })
 
           if (section.type === "title") {
             return (
@@ -222,7 +218,7 @@ const PreviewPane: React.FC = () => {
                   borderRadius: 8,
                   border: "1px solid #1e3a5f",
                   padding: "8px 12px",
-                  fontFamily: "ui-monospace, monospace",
+                  fontFamily: geistMonoFamily,
                   fontSize: 12,
                   color: "#22c55e",
                   marginBottom: 12,
@@ -278,7 +274,7 @@ export const MDXEditorFeature: React.FC = () => {
     <AbsoluteFill
       style={{
         backgroundColor: BG,
-        fontFamily: "system-ui, -apple-system, sans-serif",
+        fontFamily: geistFamily,
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
