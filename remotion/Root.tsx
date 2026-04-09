@@ -1,10 +1,10 @@
 import "./fonts"
-import { Composition } from "remotion"
+import { Composition, registerRoot } from "remotion"
 import { GitNativeFeature } from "./compositions/GitNativeFeature"
-import { LaunchVideo, launchVideoSchema } from "./compositions/LaunchVideo"
+import { LaunchVideo, launchVideoDefaultProps } from "./compositions/LaunchVideo"
 import { MDXEditorFeature } from "./compositions/MDXEditorFeature"
 import { StudioDemo } from "./compositions/StudioDemo"
-import { TutorialVideo, tutorialVideoSchema } from "./compositions/TutorialVideo"
+import { TutorialVideo, tutorialVideoDefaultProps } from "./compositions/TutorialVideo"
 import { WorkflowFeature } from "./compositions/WorkflowFeature"
 
 export const RemotionRoot = () => {
@@ -51,8 +51,7 @@ export const RemotionRoot = () => {
         fps={30}
         width={1280}
         height={720}
-        schema={tutorialVideoSchema}
-        defaultProps={tutorialVideoSchema.parse({})}
+        defaultProps={tutorialVideoDefaultProps}
       />
       <Composition
         id="LaunchVideo"
@@ -61,9 +60,10 @@ export const RemotionRoot = () => {
         fps={30}
         width={1280}
         height={720}
-        schema={launchVideoSchema}
-        defaultProps={launchVideoSchema.parse({})}
+        defaultProps={launchVideoDefaultProps}
       />
     </>
   )
 }
+
+registerRoot(RemotionRoot)
