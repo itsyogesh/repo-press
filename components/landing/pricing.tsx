@@ -15,8 +15,8 @@ export default function Pricing() {
   return (
     <section id="pricing" className="container mx-auto px-4 py-24">
       <div className="mx-auto flex max-w-[58rem] flex-col items-center space-y-4 text-center mb-16">
-        <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-4 py-1.5 text-sm font-medium text-primary">
-          <Sparkles className="h-4 w-4" />
+        <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-4 py-1.5 text-sm font-medium text-foreground">
+          <Sparkles className="h-4 w-4 text-primary" />
           Early Access
         </div>
         <h2 className="text-3xl font-bold tracking-tight md:text-4xl">Free. Open Source. Always.</h2>
