@@ -7,6 +7,7 @@ import Hero from "@/components/landing/hero"
 import HowItWorks from "@/components/landing/how-it-works"
 import Navbar from "@/components/landing/navbar"
 import Pricing from "@/components/landing/pricing"
+import { VideoPreview } from "@/components/landing/video-preview"
 
 export default function LandingPage() {
   return (
@@ -14,6 +15,7 @@ export default function LandingPage() {
       <Navbar />
       <main className="flex-1">
         <Hero />
+        <VideoPreview />
         <HowItWorks />
         <FeatureGrid />
         <Comparison />

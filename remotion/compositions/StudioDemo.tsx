@@ -1,6 +1,8 @@
 import { AbsoluteFill, interpolate, Sequence, spring, useCurrentFrame, useVideoConfig } from "remotion"
 import { geistFamily, geistMonoFamily } from "../fonts"
 
+export { studioDemoComposition } from "./studio-demo-composition"
+
 const ACCENT = "#3b82f6"
 const BG = "#000000"
 const FG = "#ffffff"

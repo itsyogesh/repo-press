@@ -4,6 +4,7 @@ import { GitNativeFeature } from "./compositions/GitNativeFeature"
 import { LaunchVideo, launchVideoDefaultProps } from "./compositions/LaunchVideo"
 import { MDXEditorFeature } from "./compositions/MDXEditorFeature"
 import { StudioDemo } from "./compositions/StudioDemo"
+import { studioDemoComposition } from "./compositions/studio-demo-composition"
 import { TutorialVideo, tutorialVideoDefaultProps } from "./compositions/TutorialVideo"
 import { WorkflowFeature } from "./compositions/WorkflowFeature"
 
@@ -11,7 +12,14 @@ export const RemotionRoot = () => {
   return (
     <>
       {/* ── Feature compositions (building blocks) ─────────────────────── */}
-      <Composition id="StudioDemo" component={StudioDemo} durationInFrames={300} fps={30} width={1280} height={720} />
+      <Composition
+        id={studioDemoComposition.id}
+        component={StudioDemo}
+        durationInFrames={studioDemoComposition.durationInFrames}
+        fps={studioDemoComposition.fps}
+        width={studioDemoComposition.width}
+        height={studioDemoComposition.height}
+      />
       <Composition
         id="GitNativeFeature"
         component={GitNativeFeature}
