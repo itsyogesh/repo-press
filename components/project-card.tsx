@@ -2,9 +2,10 @@
 
 import { ArrowRight, Folder, GitBranch } from "lucide-react"
 import Link from "next/link"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { getDashboardDateParts } from "@/lib/dashboard-date"
+import { formatUtcDate } from "@/lib/format-date"
+import { cn } from "@/lib/utils"
 
 interface ProjectCardProps {
   project: {
@@ -22,97 +23,79 @@ interface ProjectCardProps {
   }
 }
 
-function normalizeProjectField(value: string | undefined) {
-  return value?.trim().toLowerCase() ?? ""
-}
-
-export function getProjectContentRootLabel(contentRoot: string) {
-  const segments = contentRoot.split("/").filter(Boolean)
-  return segments.at(-1) ?? "Repo root"
-}
-
-export function getProjectFrameworkLabel(
-  project: Pick<ProjectCardProps["project"], "detectedFramework" | "contentType">,
-) {
-  const detectedFramework = normalizeProjectField(project.detectedFramework)
-  if (
-    detectedFramework &&
-    detectedFramework !== "custom" &&
-    detectedFramework !== "config" &&
-    detectedFramework !== "detected"
-  ) {
-    return project.detectedFramework ?? project.contentType
-  }
-  return project.contentType
-}
-
-export function getProjectSourceLabel(
-  project: Pick<ProjectCardProps["project"], "frameworkSource" | "detectedFramework">,
-) {
-  if (project.frameworkSource === "config") {
-    return "Config"
-  }
-
-  const detectedFramework = normalizeProjectField(project.detectedFramework)
-  if (
-    detectedFramework &&
-    detectedFramework !== "custom" &&
-    detectedFramework !== "config" &&
-    detectedFramework !== "detected"
-  ) {
-    return "Detected"
-  }
-
-  return "Manual"
-}
-
 export function ProjectCard({ project }: ProjectCardProps) {
+  const updatedOn = formatUtcDate(project.updatedAt)
   const repoLabel = `${project.repoOwner}/${project.repoName}`
-  const contentRootLabel = getProjectContentRootLabel(project.contentRoot)
-  const contentRootTitle = project.contentRoot || "Repository root"
-  const frameworkLabel = getProjectFrameworkLabel(project)
-  const sourceLabel = getProjectSourceLabel(project)
-  const updatedDate = getDashboardDateParts(project.updatedAt)
 
   return (
-    <Card className="flex h-full flex-col">
-      <CardHeader className="space-y-3">
-        <div className="min-w-0 space-y-1">
-          <CardTitle className="text-lg leading-tight break-words">{project.name}</CardTitle>
-          <CardDescription className="truncate text-sm">{repoLabel}</CardDescription>
-        </div>
-        <div className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground" title={contentRootTitle}>
-          <Folder className="h-3.5 w-3.5 shrink-0" />
-          <span className="truncate">{contentRootLabel}</span>
-        </div>
-      </CardHeader>
-      <CardContent className="flex flex-1 flex-col gap-4 pt-0">
-        <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-          <span className="flex items-center gap-1 whitespace-nowrap">
-            <GitBranch className="h-3 w-3" />
-            {project.branch}
-          </span>
-          <span className="whitespace-nowrap">{frameworkLabel}</span>
-          {sourceLabel === "Config" ? (
-            <span className="whitespace-nowrap font-medium text-studio-success">Config</span>
-          ) : (
-            <span className="whitespace-nowrap">{sourceLabel}</span>
-          )}
-          <span className="whitespace-nowrap">
-            Updated {updatedDate.dateTime ? <time dateTime={updatedDate.dateTime}>{updatedDate.label}</time> : "N/A"}
-          </span>
+    <article className="surface-card flex h-full flex-col rounded-[1.5rem] border p-5 sm:p-6">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="font-mono text-[0.65rem] uppercase tracking-[0.2em] text-muted-foreground">{repoLabel}</p>
+          <h3 className="mt-3 truncate text-xl font-semibold tracking-[-0.03em] text-foreground">{project.name}</h3>
         </div>
 
-        <Link
-          href={`/dashboard/${project.repoOwner}/${project.repoName}/studio?branch=${project.branch}&projectId=${project._id}`}
-          className="mt-2 w-full"
-        >
-          <Button className="w-full" variant="default">
+        {project.detectedFramework && project.detectedFramework !== "custom" ? (
+          <Badge
+            variant="secondary"
+            className="shrink-0 rounded-full px-2.5 py-1 text-[0.65rem] uppercase tracking-[0.16em]"
+          >
+            {project.detectedFramework}
+          </Badge>
+        ) : null}
+      </div>
+
+      <dl className="mt-6 grid gap-4 text-sm">
+        <div className="flex items-start justify-between gap-4">
+          <dt className="shrink-0 font-mono text-[0.65rem] uppercase tracking-[0.18em] text-muted-foreground">Path</dt>
+          <dd className="min-w-0 text-right text-muted-foreground">
+            <span className="inline-flex max-w-full items-center gap-1.5 truncate">
+              <Folder className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">{project.contentRoot || "Repository root"}</span>
+            </span>
+          </dd>
+        </div>
+
+        <div className="flex items-start justify-between gap-4">
+          <dt className="shrink-0 font-mono text-[0.65rem] uppercase tracking-[0.18em] text-muted-foreground">
+            Branch
+          </dt>
+          <dd className="text-right text-muted-foreground">
+            <span className="inline-flex items-center gap-1.5">
+              <GitBranch className="h-3.5 w-3.5 shrink-0" />
+              {project.branch}
+            </span>
+          </dd>
+        </div>
+
+        <div className="flex items-start justify-between gap-4">
+          <dt className="shrink-0 font-mono text-[0.65rem] uppercase tracking-[0.18em] text-muted-foreground">Type</dt>
+          <dd className="text-right text-foreground">
+            <span className="capitalize">{project.contentType}</span>
+            <span
+              className={cn("ml-2 text-muted-foreground", project.frameworkSource === "config" && "text-foreground")}
+            >
+              · {project.frameworkSource === "config" ? "Config" : "Manual"}
+            </span>
+          </dd>
+        </div>
+      </dl>
+
+      <div className="mt-auto flex items-center justify-between gap-4 pt-6">
+        <p className="text-xs text-muted-foreground">
+          Updated{" "}
+          {project.updatedAt ? <time dateTime={new Date(project.updatedAt).toISOString()}>{updatedOn}</time> : "N/A"}
+        </p>
+
+        <Button asChild variant="ghost" size="sm" className="-mr-2 px-2 text-foreground hover:bg-muted/70">
+          <Link
+            href={`/dashboard/${project.repoOwner}/${project.repoName}/studio?branch=${project.branch}&projectId=${project._id}`}
+          >
             Open Studio
-            <ArrowRight className="ml-2 h-4 w-4" />
-          </Button>
-        </Link>
-      </CardContent>
-    </Card>
+            <ArrowRight className="h-4 w-4" />
+          </Link>
+        </Button>
+      </div>
+    </article>
   )
 }

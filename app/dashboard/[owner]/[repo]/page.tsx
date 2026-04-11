@@ -71,7 +71,7 @@ export default async function RepoPage({ params }: RepoPageProps) {
   const configSynced = hasConfig && !syncError
 
   return (
-    <div className="container mx-auto py-8 px-4">
+    <div className="mx-auto w-full max-w-7xl px-4 py-10 sm:px-6">
       <RepoProjectHub
         owner={owner}
         repo={repo}

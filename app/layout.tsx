@@ -1,7 +1,8 @@
-import { Analytics } from "@vercel/analytics/next"
 import type { Metadata } from "next"
 import { Geist, Geist_Mono } from "next/font/google"
 import type React from "react"
+import { AnalyticsWrapper } from "@/components/analytics-wrapper"
+import { CookieConsent } from "@/components/cookie-consent"
 import { Providers } from "@/components/providers"
 import { Toaster } from "@/components/ui/sonner"
 import "./globals.css"
@@ -79,7 +80,8 @@ export default function RootLayout({
         <Providers>
           {children}
           <Toaster />
-          <Analytics />
+          <CookieConsent />
+          <AnalyticsWrapper />
         </Providers>
       </body>
     </html>

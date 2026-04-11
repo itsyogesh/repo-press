@@ -425,6 +425,8 @@ export function FileTree({
           <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-studio-fg-muted group-focus-within:text-studio-accent transition-colors" />
           <Input
             ref={searchInputRef}
+            id="file-tree-search"
+            name="file-tree-search"
             placeholder="Search files..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
