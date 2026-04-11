@@ -233,9 +233,10 @@ const TreeItem = React.forwardRef<HTMLDivElement, TreeItemProps>(
       asChild = false,
       children,
       onClick,
-      ...props
+      onKeyDown,
+      ..._props
     },
-    ref,
+    _ref,
   ) => {
     const {
       expandedIds,
@@ -264,19 +265,38 @@ const TreeItem = React.forwardRef<HTMLDivElement, TreeItemProps>(
         <File className="h-4 w-4" />
       )
 
-    const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const activateNode = (multiSelect: boolean) => {
       if (hasChildren) toggleExpanded(nodeId)
-      handleSelection(nodeId, e.ctrlKey || e.metaKey)
+      handleSelection(nodeId, multiSelect)
       onNodeClick?.(nodeId, data)
+    }
+
+    const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+      activateNode(e.ctrlKey || e.metaKey)
       onClick?.(e)
+    }
+
+    const handleKeyPress = (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (e.key !== "Enter" && e.key !== " ") {
+        onKeyDown?.(e)
+        return
+      }
+
+      e.preventDefault()
+      activateNode(e.ctrlKey || e.metaKey)
+      onKeyDown?.(e)
     }
 
     return (
       <div className="select-none">
         <motion.div
+          role="button"
+          tabIndex={0}
+          aria-label={label}
           className={cn(treeItemVariants({ variant, selected: isSelected, className }))}
           style={{ paddingLeft: level * indent + 8 }}
           onClick={handleClick}
+          onKeyDown={handleKeyPress}
           whileTap={{ scale: 0.98, transition: { duration: 0.1 } }}
         >
           {/* Tree Lines */}

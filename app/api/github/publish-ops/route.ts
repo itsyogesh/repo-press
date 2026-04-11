@@ -302,6 +302,10 @@ export async function POST(request: Request) {
       }
     }
 
+    if (!branchName) {
+      return NextResponse.json({ error: "Failed to resolve publish branch" }, { status: 500 })
+    }
+
     const mediaCreateCount = mediaBatchOps.filter((o) => o.action === "create").length
     const mediaUpdateCount = mediaBatchOps.filter((o) => o.action === "update").length
 

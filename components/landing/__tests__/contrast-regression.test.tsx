@@ -94,7 +94,7 @@ describe("landing contrast regressions", () => {
     const darkPrimary = parseOklch(extractDarkVar(css, "--primary"))
     const darkPrimaryForeground = parseOklch(extractDarkVar(css, "--primary-foreground"))
 
-    expect(extractRootVar(css, "--primary-foreground")).toBe("oklch(0.985 0 0)")
+    expect(extractRootVar(css, "--primary-foreground")).toBe("oklch(0.985 0.002 247.839)")
     expect(contrastRatio(primaryForeground, primary)).toBeGreaterThanOrEqual(4.5)
     expect(contrastRatio(mutedForeground, muted)).toBeGreaterThanOrEqual(4.5)
     expect(contrastRatio(destructiveForeground, destructive)).toBeGreaterThanOrEqual(4.5)

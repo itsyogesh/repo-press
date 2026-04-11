@@ -136,16 +136,13 @@ describe("FolderPickerDialog", () => {
       expect(screen.getAllByText("content")[0]).toBeInTheDocument()
     })
 
-    // Find the content row and click the expand button (chevron)
-    // The content folder has a chevron button next to it
+    // Find the content row and click it to expand (clicking the row toggles expansion)
     const contentButtons = screen.getAllByText("content")
     const contentButton = contentButtons[0]
-    const contentRow = contentButton.closest("div")
-    // The expand button is the first button in the row (chevron)
-    const chevronButton = contentRow?.querySelector("button")
+    const contentRow = contentButton.closest("[role='button']") as HTMLElement
 
-    if (chevronButton) {
-      fireEvent.click(chevronButton)
+    if (contentRow) {
+      fireEvent.click(contentRow)
     }
 
     // Wait for children to load

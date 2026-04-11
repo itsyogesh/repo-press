@@ -78,7 +78,7 @@ The only chromatic color in the system. Use it exclusively for: primary CTAs, ac
 |------|-------|-------|
 | Success | `oklch(0.64 0.19 145)` ≈ `#2da84a` | Published status, successful save |
 | Warning | `oklch(0.75 0.18 75)` ≈ `#d4860a` | In review, scheduled, attention needed |
-| Destructive (`--destructive`) | `oklch(0.577 0.245 27.325)` | Delete actions, errors |
+| Destructive (`--destructive`) | `oklch(0.54 0.16 27.325)` | Delete actions, errors |
 | Draft indicator | `oklch(0.556 0 0)` = muted gray | Draft documents, unpublished state |
 
 ---

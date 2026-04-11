@@ -16,7 +16,8 @@ const { dnsLookupMock } = vi.hoisted(() => ({
   dnsLookupMock: vi.fn(),
 }))
 
-vi.mock("node:dns/promises", () => ({
+vi.mock(import("node:dns/promises"), () => ({
+  default: { lookup: dnsLookupMock },
   lookup: dnsLookupMock,
 }))
 

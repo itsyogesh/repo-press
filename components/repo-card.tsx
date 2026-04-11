@@ -2,7 +2,7 @@ import { ArrowRight, CheckCircle2, GitBranch, GitFork, Plus } from "lucide-react
 import Link from "next/link"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { formatUtcDate } from "@/lib/format-date"
+import { formatDashboardDate } from "@/lib/dashboard-date"
 import type { GitHubRepo } from "@/lib/github"
 import { cn } from "@/lib/utils"
 
@@ -11,9 +11,13 @@ interface RepoCardProps {
   connectedProjectCount?: number
 }
 
+export function getRepoConnectionLabel(count: number): string {
+  return count > 0 ? "Connected" : "Set up"
+}
+
 export function RepoCard({ repo, connectedProjectCount = 0 }: RepoCardProps) {
   const isConnected = connectedProjectCount > 0
-  const updatedOn = formatUtcDate(repo.updated_at)
+  const updatedOn = formatDashboardDate(repo.updated_at)
 
   return (
     <article
@@ -25,7 +29,7 @@ export function RepoCard({ repo, connectedProjectCount = 0 }: RepoCardProps) {
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <p className="font-mono text-[0.65rem] uppercase tracking-[0.2em] text-muted-foreground">{repo.full_name}</p>
-          <h3 className="mt-3 truncate text-xl font-semibold tracking-[-0.03em] text-foreground">{repo.name}</h3>
+          <h3 className="mt-3 text-xl font-semibold tracking-[-0.03em] text-foreground">{repo.name}</h3>
         </div>
 
         <Badge
@@ -57,7 +61,7 @@ export function RepoCard({ repo, connectedProjectCount = 0 }: RepoCardProps) {
         <div>
           <dt className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-muted-foreground">Projects</dt>
           <dd className="mt-1 text-foreground">
-            {isConnected ? `${connectedProjectCount} connected` : "Not connected yet"}
+            {isConnected ? `${connectedProjectCount} projects` : "Not connected yet"}
           </dd>
         </div>
         <div>
@@ -82,7 +86,7 @@ export function RepoCard({ repo, connectedProjectCount = 0 }: RepoCardProps) {
         </div>
       </dl>
 
-      <div className="mt-auto flex items-center justify-between gap-4 pt-6">
+      <div className="mt-auto flex flex-wrap items-center justify-between gap-4 pt-6">
         <div className="inline-flex items-center gap-2 text-xs text-muted-foreground">
           {repo.language ? <span>{repo.language}</span> : null}
           {repo.forks_count > 0 ? (

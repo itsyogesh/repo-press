@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from "vitest"
 import { transpileAdapter } from "../esbuild-browser"
 import { evaluateAdapter } from "../evaluate-adapter"
