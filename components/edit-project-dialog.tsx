@@ -1,18 +1,18 @@
 "use client"
 
+import { useQuery } from "convex/react"
 import { Folder, FolderOpen, Loader2, Save } from "lucide-react"
 import { useEffect, useState, useTransition } from "react"
-import { useQuery } from "convex/react"
 import { toast } from "sonner"
 import { updateProjectInConfigAction } from "@/app/dashboard/[owner]/[repo]/config-actions"
+import { api } from "@/convex/_generated/api"
+import type { Id } from "@/convex/_generated/dataModel"
+import { FolderPickerDialog } from "./folder-picker-dialog"
 import { Button } from "./ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog"
 import { Input } from "./ui/input"
 import { Label } from "./ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select"
-import type { Id } from "@/convex/_generated/dataModel"
-import { api } from "@/convex/_generated/api"
-import { FolderPickerDialog } from "./folder-picker-dialog"
 
 const FRAMEWORK_OPTIONS = [
   { value: "auto", label: "Auto-detect" },
