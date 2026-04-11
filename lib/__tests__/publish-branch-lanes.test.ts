@@ -20,7 +20,13 @@ vi.mock("@/convex/auth", () => ({
 
 import { markCommitted as markExplorerOpsCommitted } from "@/convex/explorerOps"
 import { markCommitted as markMediaOpsCommitted } from "@/convex/mediaOps"
-import { create, deactivateCurrentForProject, getCurrentForProject, listOpenForProject } from "@/convex/publishBranches"
+import {
+  create,
+  deactivateCurrentForProject,
+  getCurrentForProject,
+  listBranchNamesForProject,
+  listOpenForProject,
+} from "@/convex/publishBranches"
 
 function createProject() {
   return {
@@ -198,6 +204,35 @@ describe("Publish branch lanes", () => {
       "publish_branch_current",
       "publish_branch_inactive",
     ])
+  })
+
+  it("lists all publish branch names for collision checks", async () => {
+    const ctx = createCtx({
+      get: vi.fn().mockResolvedValue(createProject()),
+      query: vi.fn().mockReturnValue({
+        withIndex: () => ({
+          collect: vi.fn().mockResolvedValue([
+            {
+              _id: "publish_branch_current",
+              projectId: "project_1",
+              branchName: "repopress/hello",
+            },
+            {
+              _id: "publish_branch_inactive",
+              projectId: "project_1",
+              branchName: "repopress/hello-2",
+            },
+          ]),
+        }),
+      }),
+    })
+
+    const result = await (listBranchNamesForProject as any).handler(ctx, {
+      projectId: "project_1",
+      userId: "user_owner",
+    })
+
+    expect(result).toEqual(["repopress/hello", "repopress/hello-2"])
   })
 
   it("stores publishBranchId on committed explorer ops", async () => {

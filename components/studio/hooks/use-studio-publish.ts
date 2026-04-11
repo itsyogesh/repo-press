@@ -80,6 +80,9 @@ export function useStudioPublish({
         if (!response.ok) throw new Error(data.error || "Failed to publish")
 
         toast.success(data.prUrl ? "Pushed to PR" : "Published")
+        if (typeof data.warning === "string" && data.warning.length > 0) {
+          toast(data.warning)
+        }
         setPublishDialogOpen(false)
       } catch (error: any) {
         console.error("Error publishing:", error)

@@ -2,6 +2,17 @@
 
 RepoPress is a Git-native headless CMS for GitHub repositories. It provides visual MDX editing with draft/publish workflows. Content stays in Git; operational state (drafts, projects, taxonomy) lives in Convex.
 
+## 🎨 Design System
+
+**Read `DESIGN.md` at the repo root before building any UI.** It is the authoritative design system specification for RepoPress, covering color tokens, typography, component patterns, spacing, elevation, and an agent prompt guide. Key rules:
+
+- Font: Geist Sans (UI) + Geist Mono (code, paths, technical labels)
+- Colors: Balanced monochrome tokens (`bg-background`, `bg-card`, `bg-muted`) + one Signal Slate accent (`oklch(0.52 0.13 255)` light / `oklch(0.72 0.11 255)` dark) for CTAs and active states only
+- Weights: 400 (body) | 500 (UI labels, nav) | 600 (headings) — never raw `font-bold` in UI chrome
+- Radius: 6px inputs/buttons | 8px cards | 10px modals
+- Always use semantic tokens (`text-foreground`, `text-muted-foreground`, `border-border`); never raw hex or `bg-white`/`text-black`
+- Reject "AI slop": no equal-weight icon-card grids, no default shadcn gray layouts, no safe corporate section templates
+
 ## ⚠️ Git Best Practices - CRITICAL
 
 **NEVER work directly on the `main` branch. This is a hard rule.**
