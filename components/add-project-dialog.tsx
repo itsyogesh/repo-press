@@ -1,6 +1,6 @@
 "use client"
 
-import { Loader2, Plus } from "lucide-react"
+import { Folder, FolderOpen, Loader2, Plus } from "lucide-react"
 import { useState, useTransition } from "react"
 import { toast } from "sonner"
 import { addProjectToConfigAction } from "@/app/dashboard/[owner]/[repo]/config-actions"
@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "./ui/input"
 import { Label } from "./ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select"
+import { FolderPickerDialog } from "./folder-picker-dialog"
 
 const FRAMEWORK_OPTIONS = [
   { value: "auto", label: "Auto-detect" },
@@ -55,6 +56,7 @@ export function AddProjectDialog({ owner, repo, defaultBranch, open, onOpenChang
   const [contentType, setContentType] = useState("custom")
   const [branch, setBranch] = useState("")
   const [error, setError] = useState<string | null>(null)
+  const [folderPickerOpen, setFolderPickerOpen] = useState(false)
 
   const projectId = slugify(name)
 
@@ -65,6 +67,7 @@ export function AddProjectDialog({ owner, repo, defaultBranch, open, onOpenChang
     setContentType("custom")
     setBranch("")
     setError(null)
+    setFolderPickerOpen(false)
   }
 
   const handleSubmit = () => {
@@ -135,17 +138,41 @@ export function AddProjectDialog({ owner, repo, defaultBranch, open, onOpenChang
           </div>
 
           <div className="grid gap-2">
-            <Label htmlFor="content-root">Content Root</Label>
-            <Input
-              id="content-root"
-              placeholder="e.g. content/blog (empty = repo root)"
-              value={contentRoot}
-              onChange={(e) => setContentRoot(e.target.value)}
-              disabled={isPending}
-            />
+            <Label>Content Root</Label>
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Folder className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input
+                  readOnly
+                  value={contentRoot || "(repo root)"}
+                  onClick={() => !isPending && setFolderPickerOpen(true)}
+                  className="pl-9 cursor-pointer"
+                  disabled={isPending}
+                />
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={() => setFolderPickerOpen(true)}
+                disabled={isPending}
+                title="Browse directories"
+              >
+                <FolderOpen className="h-4 w-4" />
+              </Button>
+            </div>
             <p className="text-xs text-muted-foreground">
-              Relative path to a folder that already exists in your repository. Leave empty to use the repo root.
+              Browse and select a folder from your repository, or use the repo root.
             </p>
+            <FolderPickerDialog
+              open={folderPickerOpen}
+              onOpenChange={setFolderPickerOpen}
+              onSelect={(path) => setContentRoot(path)}
+              owner={owner}
+              repo={repo}
+              branch={branch.trim() || defaultBranch}
+              initialPath={contentRoot}
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-4">

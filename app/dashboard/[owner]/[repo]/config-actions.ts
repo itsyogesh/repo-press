@@ -66,7 +66,10 @@ function getConfigProjectIdsFromJson(rawJson: string) {
 }
 
 type ConfigActionResult =
-  | { success: true; syncResult?: { synced: string[]; created: string[]; unchanged: string[] } }
+  | {
+      success: true
+      syncResult?: { synced: string[]; created: string[]; unchanged: string[] }
+    }
   | { success: false; error: string }
 
 type ProjectResolutionResult = {
@@ -93,9 +96,16 @@ async function resolveProjectOwnerActionContext(projectId: string): Promise<Proj
     throw new Error("Project not found")
   }
 
-  const { role } = await resolveRepoRole(token, project.repoOwner, project.repoName, actingUserId)
-  if (role !== "owner") {
-    throw new Error("Unauthorized: owner access required")
+  // Primary check: Convex project ownership. This is the authoritative record and
+  // works regardless of OAuth scope limitations that can prevent GitHub's permissions
+  // field from being returned by repos.get().
+  const isConvexOwner = (project as any).userId === actingUserId
+  if (!isConvexOwner) {
+    // Fallback: GitHub admin access (e.g. org admins who didn't create the project).
+    const { role } = await resolveRepoRole(token, project.repoOwner, project.repoName, actingUserId)
+    if (role !== "owner") {
+      throw new Error("Unauthorized: owner access required")
+    }
   }
 
   const projectAccessToken = await mintProjectAccessToken({
@@ -187,12 +197,42 @@ export async function updateProjectInConfigAction(
   repo: string,
   branch: string,
   configProjectId: string,
-  updates: Partial<Pick<ProjectConfig, "name" | "framework" | "contentType" | "branch" | "preview" | "components">>,
+  updates: Partial<
+    Pick<ProjectConfig, "name" | "framework" | "contentType" | "branch" | "preview" | "components" | "contentRoot">
+  >,
 ): Promise<ConfigActionResult> {
   try {
     const { token, actingUserId } = await resolveAuthContext()
     await requireWriteAccess(token, owner, repo, actingUserId)
     const { config, sha } = await fetchConfigOrThrow(token, owner, repo, branch)
+
+    // Validate contentRoot directory exists if it's being updated
+    if (updates.contentRoot !== undefined && updates.contentRoot !== "") {
+      const { createGitHubClient } = await import("@/lib/github")
+      const octokit = createGitHubClient(token)
+      try {
+        const { data } = await octokit.repos.getContent({
+          owner,
+          repo,
+          path: updates.contentRoot,
+          ref: branch,
+        })
+        if (!Array.isArray(data)) {
+          return {
+            success: false,
+            error: `"${updates.contentRoot}" is a file, not a folder.`,
+          }
+        }
+      } catch (err: any) {
+        if (err.status === 404) {
+          return {
+            success: false,
+            error: `Folder "${updates.contentRoot}" does not exist in ${owner}/${repo} on branch ${branch}.`,
+          }
+        }
+        // Non-404 errors: let through to avoid blocking on transient failures
+      }
+    }
 
     const updatedConfig = updateProject(config, configProjectId, updates)
     await commitConfig(

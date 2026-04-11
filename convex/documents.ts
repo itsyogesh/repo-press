@@ -246,7 +246,11 @@ export const remove = mutation({
 
     await resolveProjectAccess(
       ctx,
-      { projectId: doc.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken },
+      {
+        projectId: doc.projectId,
+        userId: args.userId,
+        projectAccessToken: args.projectAccessToken,
+      },
       "editor",
     )
 
@@ -272,6 +276,38 @@ export const search = query({
   },
 })
 
+export const hasContentForProject = query({
+  args: {
+    projectId: v.id("projects"),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const access = await resolveProjectReader(ctx, args)
+    if (!access) return true // fail closed — assume content exists if unauthorized
+
+    const firstDoc = await ctx.db
+      .query("documents")
+      .withIndex("by_projectId", (q) => q.eq("projectId", args.projectId))
+      .first()
+    if (firstDoc) return true
+
+    const firstFolder = await ctx.db
+      .query("folderMeta")
+      .withIndex("by_projectId", (q) => q.eq("projectId", args.projectId))
+      .first()
+    if (firstFolder) return true
+
+    const firstCollection = await ctx.db
+      .query("collections")
+      .withIndex("by_projectId", (q) => q.eq("projectId", args.projectId))
+      .first()
+    if (firstCollection) return true
+
+    return false
+  },
+})
+
 // Save draft - creates a history entry and updates the document
 export const saveDraft = mutation({
   args: {
@@ -289,7 +325,11 @@ export const saveDraft = mutation({
 
     const { userId } = await resolveProjectAccess(
       ctx,
-      { projectId: doc.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken },
+      {
+        projectId: doc.projectId,
+        userId: args.userId,
+        projectAccessToken: args.projectAccessToken,
+      },
       "editor",
     )
 
@@ -349,7 +389,11 @@ export const publish = mutation({
 
     await resolveProjectAccess(
       ctx,
-      { projectId: doc.projectId, userId: args.editedBy, projectAccessToken: args.projectAccessToken },
+      {
+        projectId: doc.projectId,
+        userId: args.editedBy,
+        projectAccessToken: args.projectAccessToken,
+      },
       "editor",
     )
 
@@ -397,7 +441,11 @@ export const transitionStatus = mutation({
 
     await resolveProjectAccess(
       ctx,
-      { projectId: doc.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken },
+      {
+        projectId: doc.projectId,
+        userId: args.userId,
+        projectAccessToken: args.projectAccessToken,
+      },
       "editor",
     )
 
