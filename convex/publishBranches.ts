@@ -63,7 +63,7 @@ export const listOpenForProject = query({
   },
 })
 
-/** Lists every publish branch name a project has already used. */
+/** Lists branch names from open (active + inactive) publish branches for allocation. */
 export const listBranchNamesForProject = query({
   args: {
     projectId: v.id("projects"),
@@ -74,11 +74,18 @@ export const listBranchNamesForProject = query({
     const access = await resolveProjectReader(ctx, args)
     if (!access) return []
 
-    const branches = await ctx.db
-      .query("publishBranches")
-      .withIndex("by_projectId", (q) => q.eq("projectId", args.projectId))
-      .collect()
-    return branches.map((branch) => branch.branchName)
+    const [activeBranches, inactiveBranches] = await Promise.all([
+      ctx.db
+        .query("publishBranches")
+        .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", "active"))
+        .collect(),
+      ctx.db
+        .query("publishBranches")
+        .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", "inactive"))
+        .collect(),
+    ])
+
+    return [...activeBranches, ...inactiveBranches].map((branch) => branch.branchName)
   },
 })
 

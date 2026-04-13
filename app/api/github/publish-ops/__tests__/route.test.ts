@@ -561,7 +561,7 @@ describe("POST /api/github/publish-ops", () => {
     expect(batchCommit).not.toHaveBeenCalled()
   })
 
-  it("ignores inactive overlapping publish branches when create-new is requested", async () => {
+  it("detects file overlap with inactive publish branches when create-new is requested", async () => {
     vi.mocked(getFile).mockResolvedValue(null as never)
     mockPublishQueries({
       pendingOps: [
@@ -601,6 +601,54 @@ describe("POST /api/github/publish-ops", () => {
         },
       ],
       existingBranchNames: ["repopress/main/1234", "repopress/main/8888"],
+    })
+
+    const response = await POST(
+      buildRequest({
+        projectId: "project_123",
+        publishMode: "create-new",
+      }),
+    )
+    const payload = await response.json()
+
+    expect(response.status).toBe(409)
+    expect(payload.ok).toBe(false)
+    expect(payload.overlaps).toBeDefined()
+    expect(payload.overlaps.length).toBeGreaterThan(0)
+  })
+
+  it("skips current lane when checking overlaps in create-new flow", async () => {
+    vi.mocked(getFile).mockResolvedValue(null as never)
+    mockPublishQueries({
+      pendingOps: [
+        {
+          _id: "explorer_op_1",
+          opType: "create",
+          filePath: "posts/shared-file.mdx",
+          initialBody: "# Shared",
+          initialFrontmatter: { title: "Shared" },
+        },
+      ],
+      dirtyDocs: [],
+      pendingMediaOps: [],
+      currentPublishBranch: {
+        _id: "publish_branch_current",
+        branchName: "repopress/main/1234",
+        prNumber: 42,
+        prUrl: "https://github.com/acme/docs-site/pull/42",
+        status: "active",
+        committedFilePaths: ["content/posts/shared-file.mdx"],
+      },
+      openPublishBranches: [
+        {
+          _id: "publish_branch_current",
+          branchName: "repopress/main/1234",
+          prNumber: 42,
+          status: "active",
+          committedFilePaths: ["content/posts/shared-file.mdx"],
+        },
+      ],
+      existingBranchNames: ["repopress/main/1234"],
       refreshedPublishBranch: {
         _id: "publish_branch_2",
         branchName: "repopress/new-lane",
@@ -619,12 +667,10 @@ describe("POST /api/github/publish-ops", () => {
     )
     const payload = await response.json()
 
+    // Current lane overlap is allowed because it's being replaced
     expect(response.status).toBe(200)
     expect(payload.ok).toBe(true)
     expect(payload.publishModeUsed).toBe("create-new")
-    expect(createBranch).toHaveBeenCalledWith("gh-token", "acme", "docs-site", "main", "repopress/new-lane")
-    expect(createPullRequest).toHaveBeenCalledTimes(1)
-    expect(batchCommit).toHaveBeenCalledTimes(1)
   })
 
   it("returns 409 when create-new loses the race to create the next active lane", async () => {

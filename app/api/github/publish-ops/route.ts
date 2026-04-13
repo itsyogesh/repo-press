@@ -227,7 +227,7 @@ export async function POST(request: Request) {
       })
       const operationPaths = new Set(operations.map((op) => op.path))
       const overlaps = openPublishBranches.flatMap((branch) =>
-        branch._id === publishBranch?._id || branch.status === "inactive"
+        branch._id === currentPublishBranchId
           ? []
           : (branch.committedFilePaths ?? [])
               .filter((path) => operationPaths.has(path))
@@ -443,6 +443,7 @@ async function createAvailablePublishBranch({
 }) {
   const takenBranchNames = new Set(existingBranchNames)
 
+  // Try pretty ordinal names first (repopress/scope, repopress/scope-2, ...)
   for (let ordinal = 1; ordinal <= 50; ordinal += 1) {
     const candidate = buildPublishBranchName(scope, ordinal)
     if (takenBranchNames.has(candidate)) continue
@@ -465,7 +466,18 @@ async function createAvailablePublishBranch({
     }
   }
 
-  throw new Error(`Failed to allocate a publish branch name for scope "${scope}"`)
+  // Fallback: use a timestamp suffix to guarantee a unique name
+  const timestamp = Date.now()
+  const fallback = `repopress/${scope}-t${timestamp}`
+  try {
+    await createBranch(token, owner, repo, baseBranch, fallback)
+    return fallback
+  } catch (error) {
+    if (isGitHubBranchExistsError(error)) {
+      throw new Error(`Failed to allocate a publish branch name for scope "${scope}" (timestamp collision)`)
+    }
+    throw error
+  }
 }
 
 function isGitHubBranchExistsError(error: unknown) {
