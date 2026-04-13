@@ -201,12 +201,12 @@ SITE_URL=https://your-project.convex.site
 
 You need to run both the Next.js and Convex dev servers concurrently in separate terminals:
 
-**Terminal 1 — Convex:**
+**Terminal 1 - Convex:**
 ```bash
 npx convex dev
 ```
 
-**Terminal 2 — Next.js:**
+**Terminal 2 - Next.js:**
 ```bash
 npx next dev --port 3001
 ```
@@ -223,7 +223,7 @@ Open [http://localhost:3001](http://localhost:3001) to see the app.
 4. **RepoPress auto-detects** your framework and configures frontmatter fields
 5. **Open the Studio** to visually edit MDX files with live preview
 6. **Save drafts** to Convex (no Git commit until you publish)
-7. **Move through workflows** — draft → in review → approved → published
+7. **Move through workflows** - draft → in review → approved → published
 8. **Publish** commits the content directly to your GitHub branch
 9. **Track history** of every edit with version snapshots and the ability to revert
 

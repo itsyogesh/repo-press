@@ -1,12 +1,12 @@
 // ---------------------------------------------------------------------------
-// Component Serializer — deterministic JSX output from ComponentNode
+// Component Serializer - deterministic JSX output from ComponentNode
 // ---------------------------------------------------------------------------
 //
 // Contract:
-//   1. Deterministic — same input always produces identical output.
-//   2. Prop ordering — lexicographic by prop name.
-//   3. Self-closing nodes — single-line JSX (`<Foo bar="baz" />`).
-//   4. Nodes with children — open/close tags on separate lines.
+//   1. Deterministic - same input always produces identical output.
+//   2. Prop ordering - lexicographic by prop name.
+//   3. Self-closing nodes - single-line JSX (`<Foo bar="baz" />`).
+//   4. Nodes with children - open/close tags on separate lines.
 //   5. Value formatting follows strict type rules.
 // ---------------------------------------------------------------------------
 

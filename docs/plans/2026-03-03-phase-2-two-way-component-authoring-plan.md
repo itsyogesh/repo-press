@@ -1,4 +1,4 @@
-# RepoPress Phase 2 — Two-Way Component Authoring Implementation Plan
+# RepoPress Phase 2 - Two-Way Component Authoring Implementation Plan
 
 > **Status:** COMPLETE  
 > **Done:** Phases 1-5 were delivered (registry/catalog/node/serializer, schema-driven insert UX, Blob-primary upload with fallback, diagnostics alignment, tests/docs/guardrails).  
@@ -98,7 +98,7 @@ This plan is decision-complete for direct implementation.
 3. Data flow:
    - form -> `ComponentNode` -> serializer -> MDX insert -> `content` change -> preview update.
 
-## Phase 1 — Registry + Catalog + Node + Serializer Foundations
+## Phase 1 - Registry + Catalog + Node + Serializer Foundations
 1. Add `component-registry.ts` with merge logic for config + adapter components.
 2. Add computed capability flags (`media`, `configurable`, `inline`).
 3. Add `component-catalog.ts` projection layer.
@@ -115,7 +115,7 @@ This plan is decision-complete for direct implementation.
 2. Serializer output is stable and ordered.
 3. Self-closing output is single-line JSX.
 
-## Phase 2 — Schema-Driven Insert UX
+## Phase 2 - Schema-Driven Insert UX
 1. Add:
    - `components/studio/component-insert-modal.tsx`
    - `components/studio/component-prop-form.tsx`
@@ -134,7 +134,7 @@ This plan is decision-complete for direct implementation.
 2. Generated MDX persists through save/publish.
 3. Preview changes only after source update.
 
-## Phase 3 — Blob-Primary Media Upload Integration
+## Phase 3 - Blob-Primary Media Upload Integration
 1. Add `@vercel/blob` if missing.
 2. Implement `/api/media/upload` Blob-first route.
 3. Add `lib/studio/media-upload.ts` client helper.
@@ -150,7 +150,7 @@ This plan is decision-complete for direct implementation.
 2. GitHub fallback works when Blob unavailable.
 3. Preview renders both formats.
 
-## Phase 4 — Runtime/Diagnostics Alignment
+## Phase 4 - Runtime/Diagnostics Alignment
 1. Validate inserted node props in preview runtime path.
 2. Improve warnings for bad expression props without crashes.
 3. Enforce sync contract boundaries (no direct preview mutation outside MDX source changes).
@@ -160,7 +160,7 @@ This plan is decision-complete for direct implementation.
 2. Warnings are actionable.
 3. Preview contract preserved.
 
-## Phase 5 — Verification, Docs, and Guardrails
+## Phase 5 - Verification, Docs, and Guardrails
 1. Update `docs/summary-and-next-phase.md` with delivered Phase 2 behavior.
 2. Document registry -> catalog -> node -> serializer architecture.
 3. Add integration/regression coverage for insertion and save/publish round-trip.

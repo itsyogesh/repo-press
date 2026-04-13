@@ -3,7 +3,7 @@ import type { Metadata } from "next"
 import Link from "next/link"
 
 export const metadata: Metadata = {
-  title: "Documentation — RepoPress",
+  title: "Documentation - RepoPress",
   description: "Everything you need to get started with RepoPress, the visual editor for GitHub content.",
 }
 

@@ -1,15 +1,15 @@
 // ---------------------------------------------------------------------------
-// Component Catalog — UI projection from registry
+// Component Catalog - UI projection from registry
 // ---------------------------------------------------------------------------
 //
 // The catalog is a **read-only view** derived entirely from the registry.
-// It never mutates or extends registry data — it only projects it into a
+// It never mutates or extends registry data - it only projects it into a
 // shape convenient for UI rendering (sorted list with display labels).
 // ---------------------------------------------------------------------------
 
 import type { RepoComponentDef } from "./component-registry"
 
-/** Catalog entry — same shape as `RepoComponentDef` (identity projection). */
+/** Catalog entry - same shape as `RepoComponentDef` (identity projection). */
 export type CatalogEntry = RepoComponentDef
 
 /** Options for {@link buildComponentCatalog}. */
@@ -19,7 +19,7 @@ export type BuildComponentCatalogOptions = {
    * `source === "config"` or `source === "merged"`.
    *
    * Set this when `repopress.config.json` explicitly lists at least one
-   * component — adapter-only auto-discovered components become noise for
+   * component - adapter-only auto-discovered components become noise for
    * non-technical users writing blog posts.
    */
   hasProjectComponents?: boolean
@@ -33,7 +33,7 @@ export type BuildComponentCatalogOptions = {
  * - Description: passthrough from registry (may be `undefined`).
  *
  * When `options.hasProjectComponents` is `true`, only `"config"` and
- * `"merged"` source components are included — adapter-only auto-discovered
+ * `"merged"` source components are included - adapter-only auto-discovered
  * components are excluded.
  */
 export function buildComponentCatalog(

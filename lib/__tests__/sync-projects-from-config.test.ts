@@ -163,7 +163,7 @@ describe("syncProjectsFromConfig", () => {
       ).rejects.toThrow("Unauthorized: no valid authentication")
     })
 
-    it("accepts OAuth session user — ignores actingUserId", async () => {
+    it("accepts OAuth session user - ignores actingUserId", async () => {
       safeGetAuthUserMock.mockResolvedValue({ _id: "oauth_user" })
       const ctx = createCtx()
 
@@ -448,7 +448,7 @@ describe("syncProjectsFromConfig", () => {
       const patch = vi.fn()
       const ctx = createCtx({ repoProjects: [otherBranchProject], patch })
 
-      // Sync from main — config does NOT contain "release-docs"
+      // Sync from main - config does NOT contain "release-docs"
       const result = await (syncProjectsFromConfig as any).handler(ctx, BASE_ARGS)
 
       // "release-docs" is no longer in the config, so it must be orphaned
@@ -472,7 +472,7 @@ describe("syncProjectsFromConfig", () => {
       const patch = vi.fn()
       const ctx = createCtx({ repoProjects: [configManagedProject], patch })
 
-      // Config is empty + runOrphanDetection: false — simulates Studio sync on feature branch
+      // Config is empty + runOrphanDetection: false - simulates Studio sync on feature branch
       const result = await (syncProjectsFromConfig as any).handler(ctx, {
         ...BASE_ARGS,
         projects: [],
@@ -607,7 +607,7 @@ describe("getOrCreate", () => {
     const result = await (getOrCreate as any).handler(ctx, GET_OR_CREATE_ARGS)
 
     expect(result).toBe("proj_orphan")
-    // Should NOT patch to clear configRemoved — orphan cleanup is explicit
+    // Should NOT patch to clear configRemoved - orphan cleanup is explicit
     expect(patch).not.toHaveBeenCalled()
   })
 
@@ -821,7 +821,7 @@ describe("removeAllOrphans", () => {
     expect(tombstoneInserts).toHaveLength(0)
   })
 
-  it("dedupes tombstones — skips insert when tombstone already exists", async () => {
+  it("dedupes tombstones - skips insert when tombstone already exists", async () => {
     const orphan = makeProject({
       _id: "orphan_dup",
       configProjectId: "old-blog",

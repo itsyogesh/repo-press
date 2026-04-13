@@ -1,4 +1,4 @@
-# RepoPress — Production Deployment Guide
+# RepoPress - Production Deployment Guide
 
 Step-by-step instructions for deploying RepoPress to production. This guide covers Convex, Vercel, GitHub OAuth, and DNS setup.
 
@@ -32,7 +32,7 @@ Step-by-step instructions for deploying RepoPress to production. This guide cove
    | Variable | Value | Notes |
    |----------|-------|-------|
    | `GITHUB_CLIENT_ID` | Your GitHub OAuth App client ID | Must be a **separate** OAuth App from dev |
-   | `GITHUB_CLIENT_SECRET` | Your GitHub OAuth App client secret | — |
+   | `GITHUB_CLIENT_SECRET` | Your GitHub OAuth App client secret | - |
    | `BETTER_AUTH_SECRET` | A new random 32+ character string | **Do NOT reuse the dev secret** |
    | `SITE_URL` | `https://<your-project>.convex.site` | Your Convex production site URL |
 
@@ -58,7 +58,7 @@ Step-by-step instructions for deploying RepoPress to production. This guide cove
 
    > ⚠️ The callback URL MUST point to your **Convex site URL**, not your Vercel domain. Better Auth runs inside Convex.
 
-3. **Copy the Client ID and Client Secret** — you already set these in Step 1.
+3. **Copy the Client ID and Client Secret** - you already set these in Step 1.
 
 ---
 
@@ -81,7 +81,7 @@ Step-by-step instructions for deploying RepoPress to production. This guide cove
 
 3. **Trigger a deploy** (push to main or manual deploy from Vercel dashboard).
 
-4. **Verify**: Visit `https://your-domain.com` — the landing page should load.
+4. **Verify**: Visit `https://your-domain.com` - the landing page should load.
 
 ---
 
@@ -113,7 +113,7 @@ Step-by-step instructions for deploying RepoPress to production. This guide cove
 
 1. Go to https://search.google.com/search-console
 2. Add your domain as a property
-3. Verify ownership (DNS TXT record or HTML file — Vercel supports both)
+3. Verify ownership (DNS TXT record or HTML file - Vercel supports both)
 4. Submit sitemap: `https://your-domain.com/sitemap.xml`
 5. Request indexing for key pages:
    - `/`

@@ -81,7 +81,7 @@ export const contentlayerAdapter: FrameworkAdapter = {
       score += 35
     }
 
-    // Config file presence is strong evidence — fixes the Fumadocs priority bug
+    // Config file presence is strong evidence - fixes the Fumadocs priority bug
     if (
       ctx.rootFileNames.includes("contentlayer.config.ts") ||
       ctx.rootFileNames.includes("contentlayer.config.js") ||

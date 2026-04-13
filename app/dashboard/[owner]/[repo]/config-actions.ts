@@ -132,7 +132,7 @@ export async function addProjectToConfigAction(
     await requireWriteAccess(token, owner, repo, actingUserId)
 
     // Validate that contentRoot exists as a directory in the repo before committing.
-    // Empty contentRoot means repo root — always valid, skip the check.
+    // Empty contentRoot means repo root - always valid, skip the check.
     // Note: getRepoContents swallows 404 and returns []. We call Octokit directly here
     // so we can distinguish "not found" from "transient error".
     if (project.contentRoot) {
@@ -158,7 +158,7 @@ export async function addProjectToConfigAction(
             error: `Folder "${project.contentRoot}" does not exist in this repository on branch "${branch}".`,
           }
         }
-        // Non-404 errors (rate limit, network) — allow through so a transient failure doesn't block creation
+        // Non-404 errors (rate limit, network) - allow through so a transient failure doesn't block creation
       }
     }
 
@@ -274,7 +274,7 @@ export async function removeProjectFromConfigAction(
       updatedConfig = removeProject(config, configProjectId)
     } catch (err: any) {
       if (err.message?.includes("not found in config")) {
-        // Project is already absent — idempotent success. Skip the GitHub commit
+        // Project is already absent - idempotent success. Skip the GitHub commit
         // and fall through to sync so Convex orphan detection can clean up.
         skipCommit = true
       } else {
@@ -293,7 +293,7 @@ export async function removeProjectFromConfigAction(
         `chore(repopress): remove project "${configProjectId}"`,
       )
     }
-    // If the project is not in the config, skip the commit — it was already
+    // If the project is not in the config, skip the commit - it was already
     // removed (e.g. the config was manually cleared). The sync below will
     // trigger orphan detection and flag the Convex record appropriately.
 
@@ -413,7 +413,7 @@ export async function cleanUpAllOrphansAction(
   try {
     const { token, actingUserId } = await resolveAuthContext()
 
-    // Require owner role — consistent with deleteProjectPermanentlyAction
+    // Require owner role - consistent with deleteProjectPermanentlyAction
     const { role } = await resolveRepoRole(token, owner, repo, actingUserId)
     if (role !== "owner") {
       throw new Error("Unauthorized: owner access required to remove all orphans")

@@ -49,11 +49,11 @@ High-level plan and rationale. Break into phases if helpful.
 
 ## Milestones & Tasks
 Concrete checklist with owners (use GitHub usernames) and clear deliverables.
-- [ ] Design: document data model — @alice
-- [ ] Implement API + Convex function — @bob
-- [ ] UI: editor save button + state — @frontend
-- [ ] Tests: unit + e2e — @qa
-- [ ] Docs + changelog — @writer
+- [ ] Design: document data model - @alice
+- [ ] Implement API + Convex function - @bob
+- [ ] UI: editor save button + state - @frontend
+- [ ] Tests: unit + e2e - @qa
+- [ ] Docs + changelog - @writer
 
 (Prefer small, verifiable tasks; each task should map to a PR.)
 
@@ -88,7 +88,7 @@ Short, ordered list of the next actions after plan approval.
 
 Notes for contributors
 - Use this file to collect feedback; use PRs for implementation work.
-- Do not push experimental branches directly to `main` — open a feature branch and reference this plan in the PR description.
+- Do not push experimental branches directly to `main` - open a feature branch and reference this plan in the PR description.
 - Keep tasks small and link each task to a PR or issue.
 
 (Template inspired by planning patterns used in high-quality AI products; adapt as needed.)

@@ -65,7 +65,7 @@ export function evaluateAdapter(code: string): RepoPressPreviewAdapter {
   }
 
   // Fix #2: Shadow dangerous globals in adapter evaluation.
-  // Adapter code comes from the user's GitHub repo — a compromised repo could
+  // Adapter code comes from the user's GitHub repo - a compromised repo could
   // exfiltrate session tokens via fetch/XMLHttpRequest/etc.
   // SECURITY: This is defence-in-depth. Task 4 will replace `new Function()`.
   const blockedGlobals = [

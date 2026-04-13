@@ -23,15 +23,15 @@ export default function ConnectingARepoPage() {
       </p>
       <ul className="mb-4 list-inside list-disc space-y-2 text-muted-foreground">
         <li>
-          <strong className="text-foreground">Read access</strong> to your repositories — to fetch file trees and
+          <strong className="text-foreground">Read access</strong> to your repositories - to fetch file trees and
           content.
         </li>
         <li>
-          <strong className="text-foreground">Write access</strong> to your repositories — to commit published changes
+          <strong className="text-foreground">Write access</strong> to your repositories - to commit published changes
           back to Git.
         </li>
         <li>
-          <strong className="text-foreground">User profile</strong> — to display your name and avatar in the dashboard.
+          <strong className="text-foreground">User profile</strong> - to display your name and avatar in the dashboard.
         </li>
       </ul>
       <p className="mb-4 leading-relaxed text-muted-foreground">
@@ -52,7 +52,7 @@ export default function ConnectingARepoPage() {
       <h2 className="mb-4 mt-12 text-2xl font-semibold">Selecting a Repository</h2>
       <p className="mb-4 leading-relaxed text-muted-foreground">
         After signing in, navigate to the dashboard. You&rsquo;ll see a list of all repositories accessible to your
-        GitHub account — both personal and organization repositories. Click on any repository to begin setting up a
+        GitHub account - both personal and organization repositories. Click on any repository to begin setting up a
         project.
       </p>
 
@@ -63,19 +63,19 @@ export default function ConnectingARepoPage() {
       </p>
       <ul className="mb-4 list-inside list-disc space-y-2 text-muted-foreground">
         <li>
-          <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm">content/</span> — Hugo, Gatsby, and many
+          <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm">content/</span> - Hugo, Gatsby, and many
           static site generators
         </li>
         <li>
-          <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm">src/content/</span> — Astro content
+          <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm">src/content/</span> - Astro content
           collections
         </li>
         <li>
-          <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm">app/</span> — Next.js co-located MDX pages
+          <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm">app/</span> - Next.js co-located MDX pages
         </li>
         <li>
           <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm">posts/</span> or{" "}
-          <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm">blog/</span> — Custom blog directories
+          <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm">blog/</span> - Custom blog directories
         </li>
       </ul>
       <p className="mb-4 leading-relaxed text-muted-foreground">
@@ -90,21 +90,21 @@ export default function ConnectingARepoPage() {
       </p>
       <ul className="mb-4 list-inside list-disc space-y-2 text-muted-foreground">
         <li>
-          <strong className="text-foreground">Next.js</strong> — Detected via{" "}
+          <strong className="text-foreground">Next.js</strong> - Detected via{" "}
           <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm">next.config.js</span> or{" "}
           <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm">next.config.mjs</span>
         </li>
         <li>
-          <strong className="text-foreground">Astro</strong> — Detected via{" "}
+          <strong className="text-foreground">Astro</strong> - Detected via{" "}
           <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm">astro.config.mjs</span>
         </li>
         <li>
-          <strong className="text-foreground">Hugo</strong> — Detected via{" "}
+          <strong className="text-foreground">Hugo</strong> - Detected via{" "}
           <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm">hugo.toml</span> or{" "}
           <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm">config.toml</span>
         </li>
         <li>
-          <strong className="text-foreground">Gatsby</strong> — Detected via{" "}
+          <strong className="text-foreground">Gatsby</strong> - Detected via{" "}
           <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm">gatsby-config.js</span>
         </li>
       </ul>
@@ -117,7 +117,7 @@ export default function ConnectingARepoPage() {
       <h2 className="mb-4 mt-12 text-2xl font-semibold">Multiple projects from one repository</h2>
       <p className="mb-4 leading-relaxed text-muted-foreground">
         You can create multiple RepoPress projects from the same GitHub repository. This is useful when you have
-        different content areas — for example, a{" "}
+        different content areas - for example, a{" "}
         <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm">blog/</span> directory and a{" "}
         <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm">docs/</span> directory that you want to
         manage separately. Each project can have its own content root, collaborators, and publishing settings.

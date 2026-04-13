@@ -19,7 +19,7 @@ function makeNode(overrides: Partial<ComponentNode> & { name: string }): Compone
 // Self-closing (no children)
 // ---------------------------------------------------------------------------
 
-describe("serializeComponentNode — self-closing", () => {
+describe("serializeComponentNode - self-closing", () => {
   it("produces single-line self-closing JSX with no props", () => {
     const node = makeNode({ name: "Divider" })
     expect(serializeComponentNode(node)).toBe("<Divider />")
@@ -53,7 +53,7 @@ describe("serializeComponentNode — self-closing", () => {
 // With children (open/close tags)
 // ---------------------------------------------------------------------------
 
-describe("serializeComponentNode — with children", () => {
+describe("serializeComponentNode - with children", () => {
   it("produces open/close tags with children content", () => {
     const node = makeNode({
       name: "Callout",
@@ -106,7 +106,7 @@ describe("serializeComponentNode — with children", () => {
 // Prop ordering (lexicographic)
 // ---------------------------------------------------------------------------
 
-describe("serializeComponentNode — prop ordering", () => {
+describe("serializeComponentNode - prop ordering", () => {
   it("orders props lexicographically", () => {
     const node = makeNode({
       name: "Widget",
@@ -133,7 +133,7 @@ describe("serializeComponentNode — prop ordering", () => {
 // Value formatting by type
 // ---------------------------------------------------------------------------
 
-describe("serializeComponentNode — value formatting", () => {
+describe("serializeComponentNode - value formatting", () => {
   it("formats string values with double quotes", () => {
     const node = makeNode({
       name: "Tag",
@@ -202,7 +202,7 @@ describe("serializeComponentNode — value formatting", () => {
 // Omission of empty/undefined values
 // ---------------------------------------------------------------------------
 
-describe("serializeComponentNode — omission", () => {
+describe("serializeComponentNode - omission", () => {
   it("omits undefined prop values", () => {
     const node = makeNode({
       name: "Widget",
@@ -235,7 +235,7 @@ describe("serializeComponentNode — omission", () => {
 // String escaping
 // ---------------------------------------------------------------------------
 
-describe("serializeComponentNode — escaping", () => {
+describe("serializeComponentNode - escaping", () => {
   it("escapes double quotes in string values", () => {
     const node = makeNode({
       name: "Tag",
@@ -268,7 +268,7 @@ describe("serializeComponentNode — escaping", () => {
 // Determinism
 // ---------------------------------------------------------------------------
 
-describe("serializeComponentNode — determinism", () => {
+describe("serializeComponentNode - determinism", () => {
   it("produces identical output across repeated calls", () => {
     const node = makeNode({
       name: "Complex",

@@ -24,7 +24,7 @@ export default function FeatureGrid() {
             Everything you need to edit content. Nothing you don't.
           </h2>
           <p className="text-base leading-7 text-muted-foreground sm:text-lg sm:leading-8">
-            A focused workspace for writing, previewing, and publishing — without the complexity of a traditional CMS.
+            A focused workspace for writing, previewing, and publishing - without the complexity of a traditional CMS.
           </p>
         </div>
 
@@ -39,7 +39,7 @@ export default function FeatureGrid() {
                 One workspace for everything.
               </h3>
               <p className="max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base sm:leading-7">
-                Edit your content, preview the result, check version history, and publish — all in one screen. No
+                Edit your content, preview the result, check version history, and publish - all in one screen. No
                 hunting through menus or switching between tools.
               </p>
             </div>

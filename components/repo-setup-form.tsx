@@ -286,7 +286,7 @@ export function RepoSetupForm({
     )
   }
 
-  // No config found — show init form (primary case for this page)
+  // No config found - show init form (primary case for this page)
   return (
     <Card className="w-full max-w-md mx-auto">
       <CardHeader>
@@ -447,7 +447,7 @@ export function RepoSetupForm({
             <AlertCircle className="h-4 w-4 text-studio-attention" />
             <AlertTitle className="text-studio-attention text-sm">Limited Access Detected</AlertTitle>
             <AlertDescription className="text-xs text-studio-attention">
-              We could not confirm write access. If you have push permissions, you can still try — GitHub will verify
+              We could not confirm write access. If you have push permissions, you can still try - GitHub will verify
               your access.
             </AlertDescription>
           </Alert>

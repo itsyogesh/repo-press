@@ -84,7 +84,7 @@ export function RemoveProjectDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className="sm:max-w-md"
-        // Same Radix aria-hidden race fix as EditProjectDialog — see that file for details.
+        // Same Radix aria-hidden race fix as EditProjectDialog - see that file for details.
         onCloseAutoFocus={(e) => e.preventDefault()}
       >
         <DialogHeader>
@@ -96,7 +96,7 @@ export function RemoveProjectDialog({
             {isConfigManaged ? (
               <>
                 This will remove <strong>{project.name}</strong> from the config file on GitHub. The project data in
-                RepoPress will be flagged for review — you can choose to delete it permanently or keep it as a manual
+                RepoPress will be flagged for review - you can choose to delete it permanently or keep it as a manual
                 project.
               </>
             ) : (

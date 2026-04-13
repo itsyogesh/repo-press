@@ -39,7 +39,7 @@ const SCENE_DURATIONS_S = {
   cta: 6,
 }
 // 11 scenes, 10 transitions at ~0.83s (25f @ 30fps) each
-// ~61s raw - 8.33s overlap = ~53s total. Placeholder — verify in Studio.
+// ~61s raw - 8.33s overlap = ~53s total. Placeholder - verify in Studio.
 
 // ─── Component ───────────────────────────────────────────────────────────────
 export const TutorialVideo: React.FC<TutorialVideoProps> = ({ musicVolume = 0.25, sfxVolume: _sfxVolume = 0.7 }) => {
@@ -50,7 +50,7 @@ export const TutorialVideo: React.FC<TutorialVideoProps> = ({ musicVolume = 0.25
 
   return (
     <AbsoluteFill style={{ backgroundColor: "#000000" }}>
-      {/* Background music — looped, fades out in last 2s */}
+      {/* Background music - looped, fades out in last 2s */}
       <Audio
         src={staticFile("remotion/music-tutorial.mp3")}
         loop
@@ -66,7 +66,7 @@ export const TutorialVideo: React.FC<TutorialVideoProps> = ({ musicVolume = 0.25
       />
 
       <TransitionSeries>
-        {/* 1 — Intro */}
+        {/* 1 - Intro */}
         <TransitionSeries.Sequence durationInFrames={s(SCENE_DURATIONS_S.intro)} premountFor={30}>
           <IntroScene title="RepoPress" subtitle="The Git-native headless CMS for developers" badge="Tutorial" />
         </TransitionSeries.Sequence>
@@ -75,7 +75,7 @@ export const TutorialVideo: React.FC<TutorialVideoProps> = ({ musicVolume = 0.25
           presentation={fade()}
         />
 
-        {/* 2 — Title: Connect your repo */}
+        {/* 2 - Title: Connect your repo */}
         <TransitionSeries.Sequence durationInFrames={s(SCENE_DURATIONS_S.titleConnect)} premountFor={30}>
           <TitleDropScene step={1} title="Connect Your Repo" accent="Link any GitHub repository in seconds" />
         </TransitionSeries.Sequence>
@@ -84,7 +84,7 @@ export const TutorialVideo: React.FC<TutorialVideoProps> = ({ musicVolume = 0.25
           presentation={slide({ direction: "from-right" })}
         />
 
-        {/* 3 — Frameworks */}
+        {/* 3 - Frameworks */}
         <TransitionSeries.Sequence durationInFrames={s(SCENE_DURATIONS_S.frameworks)} premountFor={30}>
           <FrameworkScene title="Works With Your Stack" />
         </TransitionSeries.Sequence>
@@ -93,7 +93,7 @@ export const TutorialVideo: React.FC<TutorialVideoProps> = ({ musicVolume = 0.25
           presentation={wipe({ direction: "from-left" })}
         />
 
-        {/* 4 — Git-native feature */}
+        {/* 4 - Git-native feature */}
         <TransitionSeries.Sequence durationInFrames={s(SCENE_DURATIONS_S.gitNative)} premountFor={30}>
           <AbsoluteFill
             style={{ display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "#000000" }}
@@ -106,7 +106,7 @@ export const TutorialVideo: React.FC<TutorialVideoProps> = ({ musicVolume = 0.25
           presentation={slide({ direction: "from-right" })}
         />
 
-        {/* 5 — Title: Write MDX */}
+        {/* 5 - Title: Write MDX */}
         <TransitionSeries.Sequence durationInFrames={s(SCENE_DURATIONS_S.titleEditor)} premountFor={30}>
           <TitleDropScene step={2} title="Write in MDX" accent="Live preview as you type" />
         </TransitionSeries.Sequence>
@@ -115,7 +115,7 @@ export const TutorialVideo: React.FC<TutorialVideoProps> = ({ musicVolume = 0.25
           presentation={fade()}
         />
 
-        {/* 6 — MDX Editor feature */}
+        {/* 6 - MDX Editor feature */}
         <TransitionSeries.Sequence durationInFrames={s(SCENE_DURATIONS_S.mdxEditor)} premountFor={30}>
           <AbsoluteFill
             style={{ display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "#000000" }}
@@ -128,7 +128,7 @@ export const TutorialVideo: React.FC<TutorialVideoProps> = ({ musicVolume = 0.25
           presentation={wipe({ direction: "from-right" })}
         />
 
-        {/* 7 — Title: Workflow */}
+        {/* 7 - Title: Workflow */}
         <TransitionSeries.Sequence durationInFrames={s(SCENE_DURATIONS_S.titleWorkflow)} premountFor={30}>
           <TitleDropScene step={3} title="Publish With Confidence" accent="Draft → Review → Approve → Publish" />
         </TransitionSeries.Sequence>
@@ -137,7 +137,7 @@ export const TutorialVideo: React.FC<TutorialVideoProps> = ({ musicVolume = 0.25
           presentation={slide({ direction: "from-right" })}
         />
 
-        {/* 8 — Workflow feature */}
+        {/* 8 - Workflow feature */}
         <TransitionSeries.Sequence durationInFrames={s(SCENE_DURATIONS_S.workflow)} premountFor={30}>
           <AbsoluteFill
             style={{ display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "#000000" }}
@@ -150,7 +150,7 @@ export const TutorialVideo: React.FC<TutorialVideoProps> = ({ musicVolume = 0.25
           presentation={fade()}
         />
 
-        {/* 9 — Title: Studio */}
+        {/* 9 - Title: Studio */}
         <TransitionSeries.Sequence durationInFrames={s(SCENE_DURATIONS_S.titleStudio)} premountFor={30}>
           <TitleDropScene step={4} title="Studio Editor" accent="Real-time preview with split-pane editing" />
         </TransitionSeries.Sequence>
@@ -159,7 +159,7 @@ export const TutorialVideo: React.FC<TutorialVideoProps> = ({ musicVolume = 0.25
           presentation={wipe({ direction: "from-left" })}
         />
 
-        {/* 10 — Studio Demo */}
+        {/* 10 - Studio Demo */}
         <TransitionSeries.Sequence durationInFrames={s(SCENE_DURATIONS_S.studio)} premountFor={30}>
           <AbsoluteFill
             style={{ display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "#000000" }}
@@ -172,7 +172,7 @@ export const TutorialVideo: React.FC<TutorialVideoProps> = ({ musicVolume = 0.25
           presentation={fade()}
         />
 
-        {/* 11 — CTA */}
+        {/* 11 - CTA */}
         <TransitionSeries.Sequence durationInFrames={s(SCENE_DURATIONS_S.cta)} premountFor={30}>
           <CTAScene headline="Start editing your docs today." url="repopress.app" />
         </TransitionSeries.Sequence>

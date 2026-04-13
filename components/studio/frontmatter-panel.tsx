@@ -28,7 +28,7 @@ export function FrontmatterPanel({
   const [showEmptySchema, setShowEmptySchema] = React.useState(false)
   const [userInteracted, setUserInteracted] = React.useState(false)
 
-  // Tracks fields the user has started editing — prevents them from jumping
+  // Tracks fields the user has started editing - prevents them from jumping
   // between "fields in file" and "empty schema" sections mid-session.
   const [activatedFields, setActivatedFields] = React.useState<Set<string>>(new Set())
 

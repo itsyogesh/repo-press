@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// Component Registry — single runtime source of truth
+// Component Registry - single runtime source of truth
 // ---------------------------------------------------------------------------
 
 /** Allowed prop types for component definitions. */
@@ -30,7 +30,7 @@ export type RepoComponentCapabilityFlags = {
 /**
  * Canonical component definition used throughout the studio runtime.
  *
- * The registry is the **single** source of truth — all other layers
+ * The registry is the **single** source of truth - all other layers
  * (catalog, node builder, serializer) derive from it.
  */
 export type RepoComponentDef = {
@@ -54,9 +54,9 @@ export type RepoComponentDef = {
  * Derive capability flags from a component definition.
  *
  * Rules:
- * - `inline`  — true when `kind === "text"`.
- * - `media`   — true when any prop has `type === "image"`.
- * - `configurable` — true when `props.length > 0`.
+ * - `inline`  - true when `kind === "text"`.
+ * - `media`   - true when any prop has `type === "image"`.
+ * - `configurable` - true when `props.length > 0`.
  */
 export function deriveCapabilities(props: RepoComponentPropDef[], kind: "flow" | "text"): RepoComponentCapabilityFlags {
   return {
@@ -67,7 +67,7 @@ export function deriveCapabilities(props: RepoComponentPropDef[], kind: "flow" |
 }
 
 // ---------------------------------------------------------------------------
-// Config / Adapter input shapes (loose — match existing Convex `v.any()`)
+// Config / Adapter input shapes (loose - match existing Convex `v.any()`)
 // ---------------------------------------------------------------------------
 
 /** Shape coming from `repopress.config.json` → `project.components`. */
@@ -300,12 +300,12 @@ export function getFrameworkFallbacks(framework?: string): Record<string, Config
     }
   }
 
-  // jekyll / hugo — markdown-first, no JSX components
+  // jekyll / hugo - markdown-first, no JSX components
   if (fw.includes("jekyll") || fw.includes("hugo")) {
     return {}
   }
 
-  // generic / custom / contentlayer / next-mdx / unknown — safe common defaults
+  // generic / custom / contentlayer / next-mdx / unknown - safe common defaults
   return {
     Callout: {
       props: [
@@ -360,7 +360,7 @@ export const KNOWN_ADAPTER_FALLBACKS = getFrameworkFallbacks("fumadocs")
 /**
  * Detect whether an adapter entry is a schema object (with props/hasChildren/kind)
  * or a bare React component function. Adapter `components` from `RepoPressPreviewAdapter`
- * are `Record<string, React.ComponentType>` — i.e. functions, not schema objects.
+ * are `Record<string, React.ComponentType>` - i.e. functions, not schema objects.
  *
  * When the entry is a function, we treat it as a component-existence signal only:
  * the name goes into the registry, but props/hasChildren/kind use defaults.
@@ -421,7 +421,7 @@ function normalizeProps(
  *
  * Adapter components may be either schema objects (`AdapterComponentEntry`)
  * or bare React component functions (`React.ComponentType`). When a function
- * is encountered, we treat it as an existence signal only — the name enters
+ * is encountered, we treat it as an existence signal only - the name enters
  * the registry with default props/hasChildren/kind, and config (if present)
  * takes precedence for schema metadata.
  *
@@ -453,7 +453,7 @@ export function buildComponentRegistry(
     // Always check KNOWN_ADAPTER_FALLBACKS as a last resort for well-known component names
     // (fumadocs-era DocsImage/DocsVideo/Callout). This covers projects whose adapter exposes
     // these components as bare React functions (no inline schema) and whose config doesn't
-    // define them explicitly — regardless of which framework the project uses.
+    // define them explicitly - regardless of which framework the project uses.
     const fallback =
       !fromConfig && !hasAdapterSchema(fromAdapter)
         ? (frameworkFallbacks[name] ?? KNOWN_ADAPTER_FALLBACKS[name])

@@ -55,7 +55,7 @@ export default async function DashboardPage() {
         })
         serverProjects = projects
       } catch {
-        // Server project fetch failed — client will show empty state
+        // Server project fetch failed - client will show empty state
       }
     }
   }

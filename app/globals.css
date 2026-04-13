@@ -197,7 +197,7 @@
   --color-surface-panel: var(--surface-panel);
   --color-surface-panel-muted: var(--surface-panel-muted);
 
-  /* Studio semantic tokens — extend existing OKLCH system */
+  /* Studio semantic tokens - extend existing OKLCH system */
   --color-studio-canvas: var(--background);
   --color-studio-canvas-inset: var(--sidebar);
   --color-studio-canvas-overlay: var(--popover);

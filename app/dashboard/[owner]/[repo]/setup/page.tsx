@@ -56,17 +56,17 @@ export default async function SetupPage({ params }: SetupPageProps) {
   const { config: repoConfig, errorType, error: configError } = await fetchRepoConfig(token, owner, repo, defaultBranch)
 
   // Auto-redirect: if config exists and valid, sync and go to hub.
-  // Skip when the branch is inferred — let the user verify it in the form first.
+  // Skip when the branch is inferred - let the user verify it in the form first.
   if (repoConfig && actingUserId && !defaultBranchInferred) {
     try {
       await syncProjectsServerSide(token, owner, repo, defaultBranch, actingUserId)
       redirect(`/dashboard/${owner}/${repo}`)
     } catch {
-      // Sync failed — fall through to render form with error context
+      // Sync failed - fall through to render form with error context
     }
   }
 
-  // Viewers cannot init — show read-only message
+  // Viewers cannot init - show read-only message
   const isWriter = repoRole === "owner" || repoRole === "editor"
 
   // Run framework detection

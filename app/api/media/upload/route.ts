@@ -18,7 +18,7 @@ export const runtime = "nodejs"
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
 
-// Maximum upload size — 50MB (base64 string is ~33% larger than binary)
+// Maximum upload size - 50MB (base64 string is ~33% larger than binary)
 const MAX_UPLOAD_BASE64_LENGTH = Math.ceil(50 * 1024 * 1024 * (4 / 3))
 
 interface UploadRequest {
@@ -90,7 +90,7 @@ export async function POST(request: Request) {
     // Capture base-branch SHA at staging time for later publish conflict detection.
     const baseShaAtStage = await getExistingFileShaSafe(token, owner, repo, githubPath, project.branch)
 
-    // Upload to Convex file storage — no branch or Blob token required.
+    // Upload to Convex file storage - no branch or Blob token required.
     const { storageId } = await uploadToConvexStorage({
       convex,
       api,

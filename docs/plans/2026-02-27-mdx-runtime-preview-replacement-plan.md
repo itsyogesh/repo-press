@@ -1,4 +1,4 @@
-# RepoPress Studio — MDX Runtime Preview First (Full Replacement Plan)
+# RepoPress Studio - MDX Runtime Preview First (Full Replacement Plan)
 
 > **Status:** COMPLETE  
 > **Done:** MDX runtime preview replacement and related architecture from this plan were delivered.  

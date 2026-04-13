@@ -282,7 +282,7 @@ After thoroughly analyzing the entire codebase, here are the key findings:
 
 - Already shows all available components from adapter + schema
 - Already integrates with MDXEditor via `insertJsx$` publisher
-- **BUT:** Inserts component with EMPTY props only — no property editor
+- **BUT:** Inserts component with EMPTY props only - no property editor
 
 **2. JSX Component Descriptors** (`components/studio/jsx-component-descriptors.tsx`)
 
@@ -300,7 +300,7 @@ After thoroughly analyzing the entire codebase, here are the key findings:
 
 **4. Preview Runtime** (`components/mdx-runtime/PreviewRuntime.tsx`)
 
-- Debounced updates (300ms) — works well
+- Debounced updates (300ms) - works well
 - Missing component placeholders render gracefully
 - Asset URL resolution built-in
 
@@ -358,11 +358,11 @@ type: "string" | "number" | "boolean" | "expression" | "image";
 
 ### Files to Modify for Two-Way
 
-1. **components/studio/insert-repo-component.tsx** — Add dialog after selection
-2. **components/studio/jsx-component-descriptors.tsx** — Dynamic props from schema
-3. **components/studio/repo-jsx-bridge.tsx** — Property editing mode
-4. **NEW: components/studio/component-property-editor.tsx** — Form dialog
-5. **NEW: components/studio/property-form-fields.tsx** — Schema-driven fields
+1. **components/studio/insert-repo-component.tsx** - Add dialog after selection
+2. **components/studio/jsx-component-descriptors.tsx** - Dynamic props from schema
+3. **components/studio/repo-jsx-bridge.tsx** - Property editing mode
+4. **NEW: components/studio/component-property-editor.tsx** - Form dialog
+5. **NEW: components/studio/property-form-fields.tsx** - Schema-driven fields
 
 ### Recommended Implementation Order
 
@@ -402,7 +402,7 @@ type: "string" | "number" | "boolean" | "expression" | "image";
 
 _Generated: March 2026_
 
-## Part 5: Phase 2 — Two-Way Component Authoring (Delivered)
+## Part 5: Phase 2 - Two-Way Component Authoring (Delivered)
 
 ### What Was Implemented
 
@@ -461,11 +461,11 @@ repopress.config.json + adapter
 
 #### Key Types
 
-- `RepoComponentPropType` — `"string" | "number" | "boolean" | "expression" | "image"`
-- `RepoComponentPropDef` — `{ name, type, label?, default? }`
-- `RepoComponentCapabilityFlags` — `{ inline?, media?, configurable? }`
-- `RepoComponentDef` — `{ name, version?, displayName?, description?, props, hasChildren, kind, source, capabilities? }`
-- `ComponentNode` — `{ name, kind, props, hasChildren, children? }`
+- `RepoComponentPropType` - `"string" | "number" | "boolean" | "expression" | "image"`
+- `RepoComponentPropDef` - `{ name, type, label?, default? }`
+- `RepoComponentCapabilityFlags` - `{ inline?, media?, configurable? }`
+- `RepoComponentDef` - `{ name, version?, displayName?, description?, props, hasChildren, kind, source, capabilities? }`
+- `ComponentNode` - `{ name, kind, props, hasChildren, children? }`
 
 #### Registry Merge Strategy
 
@@ -477,8 +477,8 @@ repopress.config.json + adapter
 
 #### Component Insert Modal (Two-Step)
 
-1. **Pick** — Catalog list sorted alphabetically, badges for source (Config/Adapter/Merged), icons for capability (media/inline/configurable).
-2. **Configure** — Dynamic prop form. Components with no props and no children insert immediately (skip step 2).
+1. **Pick** - Catalog list sorted alphabetically, badges for source (Config/Adapter/Merged), icons for capability (media/inline/configurable).
+2. **Configure** - Dynamic prop form. Components with no props and no children insert immediately (skip step 2).
 
 Insert flow enforces the sync contract:
 
@@ -491,7 +491,7 @@ Preview updates **only** derive from MDX source state changes. No direct preview
 #### Blob-Primary Media Upload
 
 - Route: `POST /api/media/upload`
-- Strategy: `storagePreference` param — `"auto"` (Blob first, GitHub fallback), `"blob"` (fail if unavailable), `"github"` (force GitHub).
+- Strategy: `storagePreference` param - `"auto"` (Blob first, GitHub fallback), `"blob"` (fail if unavailable), `"github"` (force GitHub).
 - Client helper: `uploadMedia()` in `lib/studio/media-upload.ts`.
 - Integrated in: editor image plugin handler + image prop control in component form.
 
@@ -513,10 +513,10 @@ Troubleshooting (Blob private store):
 
 #### Runtime Diagnostics
 
-- `validateProps()` in `repo-jsx-bridge.tsx` — validates MDAST props against component schema.
-- Improved expression evaluation warnings — includes expression text, component name, prop name, reason.
+- `validateProps()` in `repo-jsx-bridge.tsx` - validates MDAST props against component schema.
+- Improved expression evaluation warnings - includes expression text, component name, prop name, reason.
 - Prop warning badges on hover overlay in WYSIWYG editor.
-- Warnings logged via `console.warn` with `[RepoPress]` prefix — never crashes.
+- Warnings logged via `console.warn` with `[RepoPress]` prefix - never crashes.
 
 #### Feature Flag
 

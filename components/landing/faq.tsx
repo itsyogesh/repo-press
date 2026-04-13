@@ -4,7 +4,7 @@ const faqs = [
   {
     question: "Do I need to know how to code?",
     answer:
-      "No. If you can use Google Docs, you can use RepoPress. The visual editor handles formatting, images, and metadata — you never need to touch code or a terminal. You do need a GitHub account, which is free to create.",
+      "No. If you can use Google Docs, you can use RepoPress. The visual editor handles formatting, images, and metadata - you never need to touch code or a terminal. You do need a GitHub account, which is free to create.",
   },
   {
     question: "Is RepoPress free?",
@@ -24,7 +24,7 @@ const faqs = [
   {
     question: "Where is my content stored?",
     answer:
-      "Your content stays in your GitHub repository. RepoPress reads from and writes to your repo directly — there is no separate database. If you stop using RepoPress, your content is exactly where you left it.",
+      "Your content stays in your GitHub repository. RepoPress reads from and writes to your repo directly - there is no separate database. If you stop using RepoPress, your content is exactly where you left it.",
   },
   {
     question: "Does it work with private repos?",

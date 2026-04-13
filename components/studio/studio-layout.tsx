@@ -455,7 +455,7 @@ function StudioLayoutInner({
     adapterDiagnostics,
   } = useStudio()
 
-  // Framework adapter for file naming / frontmatter — uses the project's detectedFramework string
+  // Framework adapter for file naming / frontmatter - uses the project's detectedFramework string
   const frameworkAdapter = React.useMemo(() => {
     const fw = studioQueries.project?.detectedFramework as string | undefined
     return fw ? getFrameworkAdapter(fw) : null
@@ -626,7 +626,7 @@ function StudioLayoutInner({
         filePath = parentPath ? `${parentPath}/${fileName}` : fileName
       }
       // For index-if-empty: the actual file is at filePath (e.g. slug/index.mdx)
-      // but it may include a newly created subfolder — keep filePath as-is.
+      // but it may include a newly created subfolder - keep filePath as-is.
       try {
         const fm = initialFrontmatter ?? {}
         const title =
@@ -1003,7 +1003,7 @@ function StudioLayoutInner({
   const lastScrollSource = React.useRef<"editor" | "preview">("editor")
   const scrollSyncSettleTimer = React.useRef<number | null>(null)
 
-  // Scroll anchor cache — keyed by container, invalidated when scrollHeight or width changes
+  // Scroll anchor cache - keyed by container, invalidated when scrollHeight or width changes
   const headingsCache = React.useRef<
     Map<HTMLDivElement, { scrollHeight: number; clientWidth: number; anchors: ScrollSyncAnchor[] }>
   >(new Map())
@@ -1062,7 +1062,7 @@ function StudioLayoutInner({
       // root.scrollHeight slightly underestimates due to padding/margin.
       const end = Math.min(maxScroll, Math.max(start, start + root.scrollHeight - container.clientHeight))
 
-      // Collect scroll anchors — cached by scrollHeight + clientWidth so we
+      // Collect scroll anchors - cached by scrollHeight + clientWidth so we
       // re-measure on content changes and panel resizes.
       let anchors: ScrollSyncAnchor[]
       const cached = headingsCache.current.get(container)
@@ -1084,7 +1084,7 @@ function StudioLayoutInner({
         anchors,
       }
     },
-    // headingsCache is a ref — stable reference, no dep needed
+    // headingsCache is a ref - stable reference, no dep needed
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   )
@@ -1883,7 +1883,7 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
   const studioFile = useStudioFile(initialFile, currentPath)
   const { selectedFile } = studioFile
 
-  // 2. Queries hook — pass the local tree state so overlayTree uses the async-fetched
+  // 2. Queries hook - pass the local tree state so overlayTree uses the async-fetched
   // tree rather than the outer StudioProvider's empty initialTree.
   const studioQueries = useStudioQueries(selectedFile?.path, { tree })
   const {
@@ -1945,7 +1945,7 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
       components: componentSchema,
       // Resolve insert-picker components by contentRoot:
       //  1. If the adapter declares componentsByContext for this root, use that (fully context-aware).
-      //  2. Otherwise fall back to standardComponents — the universal safe set that never includes
+      //  2. Otherwise fall back to standardComponents - the universal safe set that never includes
       //     docs-only components like DocsImage/DocsVideo that come from the adapter layer.
       //     The full previewContext.context.components (adapter-augmented) is still used for
       //     *rendering* existing MDX; we deliberately exclude adapter additions from the insert picker

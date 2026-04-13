@@ -119,7 +119,7 @@ export function EditProjectDialog({
 
     setError(null)
     startTransition(async () => {
-      // Config file always lives on the default branch — not the project's content branch
+      // Config file always lives on the default branch - not the project's content branch
       const result = await updateProjectInConfigAction(owner, repo, defaultBranch, configProjectId, {
         name: name.trim(),
         framework,
@@ -145,7 +145,7 @@ export function EditProjectDialog({
         className="sm:max-w-lg"
         // Prevent Radix from restoring focus to the dropdown trigger after close.
         // When this dialog is opened via a DropdownMenuItem, the trigger no longer
-        // holds meaningful focus context — auto-focus return causes aria-hidden to
+        // holds meaningful focus context - auto-focus return causes aria-hidden to
         // persist on the page container, freezing the UI.
         onCloseAutoFocus={(e) => e.preventDefault()}
       >
@@ -196,7 +196,7 @@ export function EditProjectDialog({
                   </Button>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  No content exists yet — you can change the content root.
+                  No content exists yet - you can change the content root.
                 </p>
                 <FolderPickerDialog
                   open={folderPickerOpen}

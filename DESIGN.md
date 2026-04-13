@@ -1,23 +1,23 @@
 # RepoPress Design System
 
-> A Git-native headless CMS for developer-content teams. The interface is a precision instrument — confident, calm, and structured. Every element earns its place.
+> A Git-native headless CMS for developer-content teams. The interface is a precision instrument - confident, calm, and structured. Every element earns its place.
 
 ---
 
 ## 1. Visual Theme & Atmosphere
 
-RepoPress sits at the intersection of developer infrastructure and content creation. The visual language should feel like a HUD over source control — clean authority, not dashboard clutter. Editors and engineers should both feel at home.
+RepoPress sits at the intersection of developer infrastructure and content creation. The visual language should feel like a HUD over source control - clean authority, not dashboard clutter. Editors and engineers should both feel at home.
 
-The foundational aesthetic is **balanced monochrome** with a single chromatic signal. Light mode surfaces are near-white with a barely-warm undertone (not clinical pure white). Dark mode is a near-black canvas where content emerges through luminance hierarchy — this is not a "toggled" dark mode but a first-class visual register. Both modes receive equal design care.
+The foundational aesthetic is **balanced monochrome** with a single chromatic signal. Light mode surfaces are near-white with a barely-warm undertone (not clinical pure white). Dark mode is a near-black canvas where content emerges through luminance hierarchy - this is not a "toggled" dark mode but a first-class visual register. Both modes receive equal design care.
 
-The typography system uses **Geist** — precision-engineered, slightly geometric, clean without being cold. Display sizes use aggressive negative letter-spacing (following Vercel conventions) to create compressed, authoritative headlines. Body text breathes at relaxed line-heights. Geist Mono handles all code, paths, and technical labels.
+The typography system uses **Geist** - precision-engineered, slightly geometric, clean without being cold. Display sizes use aggressive negative letter-spacing (following Vercel conventions) to create compressed, authoritative headlines. Body text breathes at relaxed line-heights. Geist Mono handles all code, paths, and technical labels.
 
-The **Signal Slate** accent — a desaturated indigo-blue — appears only on CTAs, active states, focus rings, and key interactive elements. It reads as "action" against the neutral field without disrupting the monochrome register. Every other UI element lives in the achromatic scale.
+The **Signal Slate** accent - a desaturated indigo-blue - appears only on CTAs, active states, focus rings, and key interactive elements. It reads as "action" against the neutral field without disrupting the monochrome register. Every other UI element lives in the achromatic scale.
 
 **Key Characteristics:**
 - Geist Sans as the primary typeface; Geist Mono for code and technical content
 - Near-white light canvas (`oklch(0.99 0.003 75)`) with warm undertone; near-black dark canvas (`oklch(0.13 0 0)`)
-- Signal Slate accent (`oklch(0.52 0.13 255)` light / `oklch(0.72 0.11 255)` dark) — the only chromatic color
+- Signal Slate accent (`oklch(0.52 0.13 255)` light / `oklch(0.72 0.11 255)` dark) - the only chromatic color
 - Whisper-weight borders throughout: semi-transparent in dark mode, near-invisible solid in light mode
 - Shadow-as-border technique (single 1px ring shadow) for surface containment without outline artifacts
 - Negative letter-spacing at display scales; tracking loosens toward normal at body sizes
@@ -53,7 +53,7 @@ The **Signal Slate** accent — a desaturated indigo-blue — appears only on CT
 | Tertiary / `--muted-foreground` | `oklch(0.556 0 0)` ≈ `#787878` | `oklch(0.708 0 0)` ≈ `#a8a8a8` | Labels, metadata, timestamps |
 | Disabled | `oklch(0.70 0 0)` ≈ `#aaaaaa` | `oklch(0.439 0 0)` ≈ `#5a5a5a` | Inactive elements |
 
-### Signal Slate — The One Accent
+### Signal Slate - The One Accent
 The only chromatic color in the system. Use it exclusively for: primary CTAs, active/selected state indicators, focus rings, links in body copy, and the active item in navigation.
 
 | Variant | Light Token | Dark Token | Notes |
@@ -362,7 +362,7 @@ Base unit: **4px**
 
 ### Whitespace Principles
 - Use asymmetric spacing intentionally: top-heavy padding in cards (more padding-top than padding-bottom) creates visual weight.
-- Section breaks should be breath — use `space-12` to `space-16` vertical gaps between distinct sections.
+- Section breaks should be breath - use `space-12` to `space-16` vertical gaps between distinct sections.
 - Never use padding to fix alignment problems. Fix the layout structure instead.
 - Dense editor UIs (file tree, document list) use `space-1` to `space-2` vertical gaps with `space-3` to `space-4` horizontal padding.
 
@@ -375,7 +375,7 @@ Shadows define hierarchy, not decoration. All shadows are monochromatic.
 
 **Light Mode**
 ```
-Level 0 (flat):     no shadow — use border only
+Level 0 (flat):     no shadow - use border only
 Level 1 (raised):   rgba(0,0,0,0.04) 0px 1px 3px  [cards in content area]
 Level 2 (floating): rgba(0,0,0,0.08) 0px 4px 16px, rgba(0,0,0,0.04) 0px 0px 0px 1px  [dropdowns, popovers]
 Level 3 (modal):    rgba(0,0,0,0.12) 0px 8px 32px, rgba(0,0,0,0.06) 0px 0px 0px 1px  [modals, dialogs]
@@ -401,7 +401,7 @@ box-shadow: rgba(255,255,255,0.06) 0px 0px 0px 1px;
 This avoids the visual doubling that `border` + `box-shadow` can create and prevents layout shifts on focus.
 
 ### Glass / Backdrop Blur
-Use backdrop blur **selectively** — only for top bar or sidebar on mobile overlay:
+Use backdrop blur **selectively** - only for top bar or sidebar on mobile overlay:
 ```css
 backdrop-filter: blur(12px) saturate(1.4);
 background: rgba(255,255,255,0.85); /* light */
@@ -415,23 +415,23 @@ Never apply blur to card grids or the main content area.
 
 ### ✅ Do
 - Use Geist Mono for **all** file paths, branch names, commit SHAs, frontmatter keys, and inline code
-- Use Signal Slate **only** for the primary interactive action per context — one accent per view
+- Use Signal Slate **only** for the primary interactive action per context - one accent per view
 - Use `--muted` backgrounds for secondary containers; avoid inventing new surface colors
-- Keep borders at `1px solid --border` — never go to `2px` borders on UI chrome
+- Keep borders at `1px solid --border` - never go to `2px` borders on UI chrome
 - Write layouts that communicate hierarchy through **whitespace and scale**, not color
-- Show document status with the defined badge system — draft = gray, published = green, etc.
+- Show document status with the defined badge system - draft = gray, published = green, etc.
 - Prefer table layouts for structured metadata, card layouts for browsable content
 - Use consistent 8px radius for inputs/buttons and 10px for floating panels
-- Give dark mode equal care — test every new component in both modes
+- Give dark mode equal care - test every new component in both modes
 
 ### ❌ Don't
 - Add a second chromatic accent color (no "also use teal for X")
-- Use `bg-white` or `text-black` directly — always use semantic tokens
-- Use shadows for decoration — only for elevation hierarchy
-- Create generic "card grid" layouts with equal-weight items — establish a clear visual hierarchy
+- Use `bg-white` or `text-black` directly - always use semantic tokens
+- Use shadows for decoration - only for elevation hierarchy
+- Create generic "card grid" layouts with equal-weight items - establish a clear visual hierarchy
 - Apply backdrop blur to cards or non-overlay elements
-- Use `font-weight: 700` in UI chrome — reserve it for inline prose bold only
-- Make interactive states only color-dependent — always include a shape/position change
+- Use `font-weight: 700` in UI chrome - reserve it for inline prose bold only
+- Make interactive states only color-dependent - always include a shape/position change
 - Use rounded-full (9999px) on anything except pills, avatars, and toggles
 - Add "AI slop" chrome: generic feature icon grids, default shadcn gray cards, safe corporate section layouts
 - Use positive letter-spacing on body or UI text (exception: uppercase overlines at 11px)
@@ -477,7 +477,7 @@ Status:        draft=gray | in_review=amber | approved=emerald | published=green
 ### Example Agent Prompts
 
 **Building a new page or section:**
-> "Build a [page/section] using RepoPress design system: Geist font, near-white/near-black backgrounds (bg-background), Signal Slate accent (oklch(0.52 0.13 255) in CSS), 8px card radius, 1px border tokens. No generic card grids — establish clear visual hierarchy through scale and whitespace. Match Vercel/Linear precision."
+> "Build a [page/section] using RepoPress design system: Geist font, near-white/near-black backgrounds (bg-background), Signal Slate accent (oklch(0.52 0.13 255) in CSS), 8px card radius, 1px border tokens. No generic card grids - establish clear visual hierarchy through scale and whitespace. Match Vercel/Linear precision."
 
 **Building a new component:**
 > "Create a [component] following RepoPress tokens: use `bg-card border border-border rounded-lg` for containers, `text-foreground` and `text-muted-foreground` for text hierarchy, Signal Slate only for the primary CTA. Use Geist Mono for any file paths or code content. Three font weights max: 400/500/600."

@@ -60,7 +60,7 @@ export const FrameworkScene: React.FC<FrameworkSceneProps> = ({ title = "Works W
         {title}
       </div>
 
-      {/* Logo grid — 5 logos, staggered entrance */}
+      {/* Logo grid - 5 logos, staggered entrance */}
       <div
         style={{
           display: "flex",

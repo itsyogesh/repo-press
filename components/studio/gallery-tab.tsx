@@ -57,13 +57,13 @@ function deriveSectionSlug(filePath: string | undefined, contentRoot: string | u
     // Strip the known contentRoot prefix, then take the first folder segment
     relative = filePath.slice(root.length)
   } else if (!root) {
-    // No contentRoot configured — skip the first segment (assumed to be the top-level
+    // No contentRoot configured - skip the first segment (assumed to be the top-level
     // content container, e.g. "content/" or "docs/") and look one level deeper
     const firstSlash = filePath.indexOf("/")
     if (firstSlash === -1) return undefined
     relative = filePath.slice(firstSlash + 1)
   } else {
-    // contentRoot doesn't match this path — cannot determine section reliably
+    // contentRoot doesn't match this path - cannot determine section reliably
     return undefined
   }
 
@@ -237,9 +237,9 @@ export function GalleryTab({
 
       const { found, inserted } = data as { found: number; inserted: number; updated: number }
       if (inserted > 0) {
-        toast.success(`Found ${found} images — ${inserted} newly added to gallery`)
+        toast.success(`Found ${found} images - ${inserted} newly added to gallery`)
       } else {
-        toast.success(`Scanned ${found} images — gallery is up to date`)
+        toast.success(`Scanned ${found} images - gallery is up to date`)
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to scan repository")

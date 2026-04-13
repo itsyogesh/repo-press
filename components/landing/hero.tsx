@@ -37,7 +37,7 @@ export default function Hero() {
 
             <p className="max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg sm:leading-8">
               RepoPress gives you a visual editor for the Markdown and MDX files already in your repository. Edit,
-              preview, and publish — changes go back to GitHub as pull requests.
+              preview, and publish - changes go back to GitHub as pull requests.
             </p>
           </div>
 

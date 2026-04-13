@@ -57,7 +57,7 @@ export async function resolveProjectAccess(
       requireRole(role, minimumRole)
       return { userId: authUserId, role, project }
     } catch {
-      // Cache expired or not owner — fall through to projectAccessToken
+      // Cache expired or not owner - fall through to projectAccessToken
     }
   }
 

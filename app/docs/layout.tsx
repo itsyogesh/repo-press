@@ -5,8 +5,8 @@ import { DocsSidebar } from "./docs-sidebar"
 
 export const metadata: Metadata = {
   title: {
-    template: "%s — RepoPress Docs",
-    default: "Documentation — RepoPress",
+    template: "%s - RepoPress Docs",
+    default: "Documentation - RepoPress",
   },
   description: "Learn how to use RepoPress, the Git-native headless CMS.",
 }

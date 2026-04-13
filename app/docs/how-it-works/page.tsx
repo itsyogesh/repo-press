@@ -24,15 +24,15 @@ export default function HowItWorksPage() {
       </p>
       <ul className="mb-4 list-inside list-disc space-y-2 text-muted-foreground">
         <li>
-          <strong className="text-foreground">The editor</strong> — The Studio interface you see in your browser. It
+          <strong className="text-foreground">The editor</strong> - The Studio interface you see in your browser. It
           loads your files, lets you edit them visually, and shows a live preview.
         </li>
         <li>
-          <strong className="text-foreground">A real-time backend</strong> — Stores your drafts and project settings so
+          <strong className="text-foreground">A real-time backend</strong> - Stores your drafts and project settings so
           you can work without affecting your live site until you are ready to publish.
         </li>
         <li>
-          <strong className="text-foreground">Your GitHub repository</strong> — The source of truth. RepoPress reads
+          <strong className="text-foreground">Your GitHub repository</strong> - The source of truth. RepoPress reads
           your files from GitHub and commits changes back when you hit publish.
         </li>
       </ul>
@@ -57,7 +57,7 @@ export default function HowItWorksPage() {
 
       <h3 className="mb-3 mt-8 text-lg font-semibold">3. Save as a draft</h3>
       <p className="mb-4 leading-relaxed text-muted-foreground">
-        Every edit is automatically saved as a draft. Drafts are separate from your live site — nothing changes in your
+        Every edit is automatically saved as a draft. Drafts are separate from your live site - nothing changes in your
         repository until you explicitly publish. You can work on multiple pages without worrying about incomplete
         updates.
       </p>
@@ -86,22 +86,22 @@ export default function HowItWorksPage() {
       <p className="mb-4 leading-relaxed text-muted-foreground">Every document moves through a clear workflow:</p>
       <ul className="mb-4 list-inside list-disc space-y-2 text-muted-foreground">
         <li>
-          <strong className="text-foreground">Draft</strong> — You are editing. Changes are saved automatically but have
+          <strong className="text-foreground">Draft</strong> - You are editing. Changes are saved automatically but have
           not been published yet.
         </li>
         <li>
-          <strong className="text-foreground">Review</strong> — Optionally share the document with your team for
+          <strong className="text-foreground">Review</strong> - Optionally share the document with your team for
           feedback before publishing.
         </li>
         <li>
-          <strong className="text-foreground">Approved</strong> — Reviewed and ready to go live.
+          <strong className="text-foreground">Approved</strong> - Reviewed and ready to go live.
         </li>
         <li>
-          <strong className="text-foreground">Published</strong> — Committed to your GitHub repository. The changes are
+          <strong className="text-foreground">Published</strong> - Committed to your GitHub repository. The changes are
           live.
         </li>
         <li>
-          <strong className="text-foreground">Archived</strong> — No longer active, but still in your repository history
+          <strong className="text-foreground">Archived</strong> - No longer active, but still in your repository history
           if you need it.
         </li>
       </ul>

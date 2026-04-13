@@ -114,7 +114,7 @@ export function AppSettingsContent() {
         <Card className="border-border/70">
           <CardHeader className="pb-3">
             <CardTitle className="text-base font-medium">About</CardTitle>
-            <CardDescription>RepoPress — Git-native headless CMS.</CardDescription>
+            <CardDescription>RepoPress - Git-native headless CMS.</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex items-start gap-3">

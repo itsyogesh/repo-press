@@ -9,7 +9,7 @@ interface TitleDropSceneProps {
   accent?: string
 }
 
-/** Large chapter title that drops in — used between feature sections in TutorialVideo */
+/** Large chapter title that drops in - used between feature sections in TutorialVideo */
 export const TitleDropScene: React.FC<TitleDropSceneProps> = ({ step, title, accent }) => {
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()

@@ -1,15 +1,15 @@
-# RepoPress — Production Launch & Website Redesign Plan
+# RepoPress - Production Launch & Website Redesign Plan
 
 ## Summary
 
-RepoPress MVP is built. This plan covers two parallel workstreams to prepare for public launch: (1) production hardening — security fixes, infrastructure, SEO, legal compliance, and (2) a full website redesign — new design system, expanded landing page, new pages (blog, about, docs, pricing, legal), and programmatic Remotion demo videos. Both workstreams run on separate Git branches and merge to `main` before launch.
+RepoPress MVP is built. This plan covers two parallel workstreams to prepare for public launch: (1) production hardening - security fixes, infrastructure, SEO, legal compliance, and (2) a full website redesign - new design system, expanded landing page, new pages (blog, about, docs, pricing, legal), and programmatic Remotion demo videos. Both workstreams run on separate Git branches and merge to `main` before launch.
 
 ## Context
 
 - **Repository**: [itsyogesh/repo-press](https://github.com/itsyogesh/repo-press)
 - **MVP state**: Core Studio editor, GitHub OAuth, document workflows, multi-project all functional
 - **Prior plans**: `STUDIO-REDESIGN-FINAL-PLAN.md` (Studio UI research), `.github/plans/dashboard_redesign_plan.md` (dashboard shell)
-- **Design reference**: [pagescms.org](https://pagescms.org) — clean, minimal, confident
+- **Design reference**: [pagescms.org](https://pagescms.org) - clean, minimal, confident
 - **Security audit**: Completed with 2 CRITICAL + 6 HIGH + 8 MEDIUM findings
 - **Competitor research**: Analyzed Decap (19K★), TinaCMS (13K★), Outstatic (3K★), Sveltia (2.3K★), Keystatic (2K★), Pages CMS, Contentlayer (dead)
 
@@ -53,7 +53,7 @@ RepoPress MVP is built. This plan covers two parallel workstreams to prepare for
 ### Out-of-scope (post-launch)
 - Rate limiting on API routes (mitigate with Upstash post-launch)
 - MDX `new Function()` sandbox hardening (Studio preview is logged-in-only)
-- Advanced docs search (Algolia/Orama — wait until >10 docs pages)
+- Advanced docs search (Algolia/Orama - wait until >10 docs pages)
 - Pricing page evolution (revisit after first 100 signups)
 - Convex function bundle size audit
 - Dashboard/Studio redesign (separate workstream per existing plans)
@@ -91,17 +91,17 @@ Merge order: `release/production-hardening` first (security gates), then `featur
 
 ---
 
-## Phase 0 — Security & Build Gate 🔴 BLOCKING
+## Phase 0 - Security & Build Gate 🔴 BLOCKING
 
 Everything else is blocked until this phase passes. All tasks on `release/production-hardening` branch.
 
-### TODO 0.1 — Fix Convex auth vulnerabilities (CRITICAL)
+### TODO 0.1 - Fix Convex auth vulnerabilities (CRITICAL)
 
 **File**: `convex/projects.ts`
 
 **Problem (verified)**:
 - `export const list` (line 23): Public query that accepts arbitrary `userId` with ZERO session verification. Any client can enumerate any user's projects.
-- `getByRepo` (line ~116): Has conditional auth that fails open — if no OAuth session found, the query proceeds without verification instead of rejecting.
+- `getByRepo` (line ~116): Has conditional auth that fails open - if no OAuth session found, the query proceeds without verification instead of rejecting.
 
 **Fix**:
 - Remove or convert `list` to `internalQuery`. UI already uses auth-gated `listMyProjects`, `listMyProjectsForRepo`, and `listAccessibleProjects`.
@@ -110,7 +110,7 @@ Everything else is blocked until this phase passes. All tasks on `release/produc
 
 **Acceptance**: Unauthenticated call to `projects:list` returns 401 or empty result set.
 
-### TODO 0.2 — Standardize route-level auth (HIGH)
+### TODO 0.2 - Standardize route-level auth (HIGH)
 
 **Files**: All `app/api/github/*.ts` and `app/api/media/*.ts` routes
 
@@ -131,7 +131,7 @@ API routes check GitHub token presence but NOT RepoPress project access. User A 
 
 **Acceptance**: Authenticated user cannot access another user's project data via API routes.
 
-### TODO 0.3 — Add route input validation
+### TODO 0.3 - Add route input validation
 
 **File**: `app/api/github/save/route.ts`
 
@@ -142,7 +142,7 @@ API routes check GitHub token presence but NOT RepoPress project access. User A 
 
 **Acceptance**: `path=../../etc/passwd` returns 400; valid path returns 200.
 
-### TODO 0.4 — Fix webhook error disclosure (HIGH)
+### TODO 0.4 - Fix webhook error disclosure (HIGH)
 
 **File**: `app/api/webhooks/github/route.ts` (line 72)
 
@@ -152,13 +152,13 @@ API routes check GitHub token presence but NOT RepoPress project access. User A 
 
 **Acceptance**: Error responses contain no internal details (stack traces, function names, database info).
 
-### TODO 0.5 — Webhook URL validation (MEDIUM)
+### TODO 0.5 - Webhook URL validation (MEDIUM)
 
 **File**: `convex/webhooks.ts`
 
 **Problem (verified)**: No validation on webhook URLs. Users can store URLs pointing to `localhost`, `127.0.0.1`, private IPs (`10.x`, `172.16-31.x`, `192.168.x`), creating SSRF risk via stored webhooks.
 
-**Reference**: `app/api/media/download-external/route.ts` has SSRF protection — use as reference.
+**Reference**: `app/api/media/download-external/route.ts` has SSRF protection - use as reference.
 
 **Fix**:
 - Block URLs pointing to localhost, 127.0.0.1, ::1, 10.x.x.x, 172.16-31.x.x, 192.168.x.x
@@ -167,28 +167,28 @@ API routes check GitHub token presence but NOT RepoPress project access. User A 
 
 **Acceptance**: `url=http://localhost:3000` returns validation error.
 
-### TODO 0.6 — Remove build bypass
+### TODO 0.6 - Remove build bypass
 
 **File**: `next.config.mjs`
 
 **Problem (verified)**:
-- Line 4: `typescript: { ignoreBuildErrors: true }` — suppresses ALL type errors during build
-- Line 7: `images: { unoptimized: true }` — disables Next.js Image optimization
+- Line 4: `typescript: { ignoreBuildErrors: true }` - suppresses ALL type errors during build
+- Line 7: `images: { unoptimized: true }` - disables Next.js Image optimization
 
 **Fix**:
 1. Delete both flags from `next.config.mjs`
-2. Fix 3 Tailwind v4 gradient warnings (verified — only 3, not 9 as originally claimed):
+2. Fix 3 Tailwind v4 gradient warnings (verified - only 3, not 9 as originally claimed):
    - `components/landing/hero.tsx:32` → `bg-gradient-to-r` → `bg-linear-to-r`
    - `components/landing/cta.tsx:27` → `bg-gradient-to-r` → `bg-linear-to-r`
    - `components/landing/feature-grid.tsx:128` → `bg-gradient-to-br` → `bg-linear-to-br`
 3. Fix any TypeScript errors that surface
 4. Run: `npm run lint:fix && npm run build`
 
-**Note**: `studio-layout.tsx` and `chart.tsx` are clean — no gradient issues (original plan was wrong about these two files).
+**Note**: `studio-layout.tsx` and `chart.tsx` are clean - no gradient issues (original plan was wrong about these two files).
 
 **Acceptance**: `npm run build` exits 0 with no suppression flags.
 
-### TODO 0.7 — Add production security headers
+### TODO 0.7 - Add production security headers
 
 **File**: `next.config.mjs`
 
@@ -201,21 +201,21 @@ Permissions-Policy: camera=(), microphone=()
 Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://*.convex.cloud https://*.convex.site https://api.github.com;
 ```
 
-CSP is permissive initially — tighten post-launch after monitoring for violations.
+CSP is permissive initially - tighten post-launch after monitoring for violations.
 
 **Acceptance**: `curl -I` on production shows all headers present.
 
 ---
 
-## Phase 1 — Design System Overhaul (Redesign Branch)
+## Phase 1 - Design System Overhaul (Redesign Branch)
 
 Foundation for the entire visual redesign. Must complete before any page work. All tasks on `feature/website-redesign` branch.
 
-### TODO 1.1 — New color token system
+### TODO 1.1 - New color token system
 
 **File**: `app/globals.css`
 
-**Current state (verified)**: OKLCH color system with achromatic (zero-chroma) tokens — effectively already black/white, but accent is also achromatic.
+**Current state (verified)**: OKLCH color system with achromatic (zero-chroma) tokens - effectively already black/white, but accent is also achromatic.
 
 **Fix**: Introduce electric blue accent while keeping black/white base:
 ```css
@@ -233,7 +233,7 @@ Maintain all existing shadcn token names for compatibility. Remove orange/pink/p
 
 **Acceptance**: All existing components render correctly with new tokens; blue accent visible on CTAs, links, and focus states.
 
-### TODO 1.2 — Normalize component radius
+### TODO 1.2 - Normalize component radius
 
 **Current state (verified)**: Inconsistent across the site:
 - Landing: `rounded-full` buttons, `rounded-3xl` and `rounded-[2.5rem]` cards
@@ -249,11 +249,11 @@ Update `--radius` CSS variable and button component defaults.
 
 **Acceptance**: Consistent border radius across landing and dashboard.
 
-### TODO 1.3 — Replace hardcoded colors with design tokens
+### TODO 1.3 - Replace hardcoded colors with design tokens
 
 **Files**: `components/landing/*.tsx`
 
-**Problem (verified — 20+ instances)**:
+**Problem (verified - 20+ instances)**:
 ```
 cta.tsx: bg-zinc-50, bg-zinc-900, text-zinc-900, text-zinc-600, bg-zinc-100, border-zinc-200
 feature-grid.tsx: bg-zinc-50, bg-zinc-900, text-zinc-400, bg-zinc-100, border-zinc-200, bg-zinc-800
@@ -272,7 +272,7 @@ feature-grid.tsx: bg-purple-500/10
 
 **Acceptance**: `grep -r "bg-zinc-\|text-zinc-\|bg-orange\|bg-pink\|bg-purple" components/landing/` returns empty.
 
-### TODO 1.4 — Typography scale
+### TODO 1.4 - Typography scale
 
 **Current state**: Geist Sans + Geist Mono already configured. No explicit type scale system.
 
@@ -291,11 +291,11 @@ feature-grid.tsx: bg-purple-500/10
 
 ---
 
-## Phase 2 — Landing Page Redesign (Redesign Branch)
+## Phase 2 - Landing Page Redesign (Redesign Branch)
 
-Reference: pagescms.org — clean, minimal, confident. Lead with unique differentiators.
+Reference: pagescms.org - clean, minimal, confident. Lead with unique differentiators.
 
-### TODO 2.1 — Remove fake social proof
+### TODO 2.1 - Remove fake social proof
 
 **Files (verified)**:
 - `components/landing/hero.tsx` line 77: `"Join 80,000+ developers"` + avatar stack placeholder
@@ -309,7 +309,7 @@ Reference: pagescms.org — clean, minimal, confident. Lead with unique differen
 
 **Acceptance**: Zero fabricated numbers anywhere on `/`.
 
-### TODO 2.2 — Hero section redesign
+### TODO 2.2 - Hero section redesign
 
 **File**: `components/landing/hero.tsx`
 
@@ -317,7 +317,7 @@ Reference: pagescms.org — clean, minimal, confident. Lead with unique differen
 
 **New design**:
 - Headline: "Your repo is your CMS" or "Git-Native Headless CMS for GitHub"
-- Sub-headline: "Works with Next.js, Astro, Hugo, Docusaurus, and more — auto-detected"
+- Sub-headline: "Works with Next.js, Astro, Hugo, Docusaurus, and more - auto-detected"
 - Framework logo grid (8+ icons) below headline
 - Animated Studio demo (Remotion video or high-quality static screenshot) replacing mock editor
 - Primary CTA: "Connect a repo → free" (`rounded-full`, electric blue)
@@ -326,25 +326,25 @@ Reference: pagescms.org — clean, minimal, confident. Lead with unique differen
 
 **Acceptance**: Hero communicates value prop in under 5 seconds.
 
-### TODO 2.3 — Feature section redesign
+### TODO 2.3 - Feature section redesign
 
 **File**: `components/landing/feature-grid.tsx`
 
 **Current state**: Bento grid with generic placeholder illustrations and hardcoded zinc colors.
 
 **New design**: Restructure around RepoPress's unique competitive advantages:
-1. **Framework Auto-Detection** (UNIQUE — no competitor has this) — lead feature
-2. **Visual MDX Editor** (Studio) — screenshot or demo clip
+1. **Framework Auto-Detection** (UNIQUE - no competitor has this) - lead feature
+2. **Visual MDX Editor** (Studio) - screenshot or demo clip
 3. **Document Workflows** (draft → review → approved → published → archived)
-4. **Document History & Revert** — timeline visualization
-5. **Webhooks for CI/CD** — automation flow diagram
-6. **Multi-Project per Repo** — dashboard preview
+4. **Document History & Revert** - timeline visualization
+5. **Webhooks for CI/CD** - automation flow diagram
+6. **Multi-Project per Repo** - dashboard preview
 
 Each card: icon + heading + 1-2 sentence description + visual. Black/white cards with blue accent icons.
 
 **Acceptance**: Features section highlights what competitors don't have.
 
-### TODO 2.4 — Add "How It Works" section
+### TODO 2.4 - Add "How It Works" section
 
 **Create**: `components/landing/how-it-works.tsx`
 
@@ -358,7 +358,7 @@ Minimal illustrations per step. Horizontal on desktop, vertical on mobile.
 
 **Acceptance**: New visitor understands the workflow in one scroll.
 
-### TODO 2.5 — Add comparison section
+### TODO 2.5 - Add comparison section
 
 **Create**: `components/landing/comparison.tsx`
 
@@ -378,7 +378,7 @@ Clean table design with electric blue check marks.
 
 **Acceptance**: Comparison clearly shows RepoPress advantages.
 
-### TODO 2.6 — Add FAQ section
+### TODO 2.6 - Add FAQ section
 
 **Create**: `components/landing/faq.tsx`
 
@@ -392,7 +392,7 @@ Use shadcn Accordion component. Questions:
 
 **Acceptance**: FAQ answers common first-visit questions.
 
-### TODO 2.7 — CTA section redesign
+### TODO 2.7 - CTA section redesign
 
 **File**: `components/landing/cta.tsx`
 
@@ -407,13 +407,13 @@ Use shadcn Accordion component. Questions:
 
 **Acceptance**: No fabricated social proof; clean design consistent with hero.
 
-### TODO 2.8 — Footer redesign
+### TODO 2.8 - Footer redesign
 
 **File**: `components/landing/footer.tsx`
 
 **Current state**: Minimal footer, missing standard SaaS links.
 
-**New design** — 4-column layout:
+**New design** - 4-column layout:
 | Product | Resources | Legal | Community |
 |---|---|---|---|
 | Features | Blog | Privacy | GitHub |
@@ -424,7 +424,7 @@ Plus: GitHub star badge, "Built with ❤️ and Git" tagline.
 
 **Acceptance**: Footer has all standard links including Privacy, Terms, Blog, Docs.
 
-### TODO 2.9 — Navbar improvements
+### TODO 2.9 - Navbar improvements
 
 **File**: `components/landing/navbar.tsx`
 
@@ -438,7 +438,7 @@ Plus: GitHub star badge, "Built with ❤️ and Git" tagline.
 
 **Acceptance**: Navbar works on all screen sizes; hamburger menu on mobile.
 
-### TODO 2.10 — Landing page composition update
+### TODO 2.10 - Landing page composition update
 
 **File**: `app/page.tsx`
 
@@ -458,15 +458,15 @@ Update page composition to include new sections:
 
 ---
 
-## Phase 3 — New Pages (Redesign Branch)
+## Phase 3 - New Pages (Redesign Branch)
 
-### TODO 3.1 — Blog infrastructure + first posts
+### TODO 3.1 - Blog infrastructure + first posts
 
 **Create**:
-- `app/blog/page.tsx` — blog index with card grid
-- `app/blog/[slug]/page.tsx` — individual post layout with prose styling
-- `content/blog/` — MDX files with gray-matter frontmatter
-- `lib/blog.ts` — blog utility functions (list posts, get post by slug, parse frontmatter)
+- `app/blog/page.tsx` - blog index with card grid
+- `app/blog/[slug]/page.tsx` - individual post layout with prose styling
+- `content/blog/` - MDX files with gray-matter frontmatter
+- `lib/blog.ts` - blog utility functions (list posts, get post by slug, parse frontmatter)
 
 **Frontmatter schema**:
 ```yaml
@@ -481,9 +481,9 @@ image: "/images/blog/introducing-repopress/cover.png"
 ```
 
 **First 3 posts**:
-1. "Introducing RepoPress" — launch announcement, what it is, why
-2. "Why Git-Native CMS" — philosophy, comparison with database-backed CMS
-3. "Getting Started with RepoPress" — tutorial walkthrough
+1. "Introducing RepoPress" - launch announcement, what it is, why
+2. "Why Git-Native CMS" - philosophy, comparison with database-backed CMS
+3. "Getting Started with RepoPress" - tutorial walkthrough
 
 Blog index: card grid with title, date, excerpt, reading time. Responsive (1 col mobile, 2 col tablet, 3 col desktop).
 
@@ -491,7 +491,7 @@ Blog post: clean prose layout using `@tailwindcss/typography` (already in deps v
 
 **Acceptance**: `/blog` renders post list; `/blog/introducing-repopress` renders full post with proper styling.
 
-### TODO 3.2 — About page
+### TODO 3.2 - About page
 
 **Create**: `app/about/page.tsx`
 
@@ -504,32 +504,32 @@ Sections:
 
 **Acceptance**: `/about` returns 200 with meaningful, non-placeholder content.
 
-### TODO 3.3 — Docs pages (minimal)
+### TODO 3.3 - Docs pages (minimal)
 
 **Create**:
-- `app/docs/layout.tsx` — docs layout with sidebar navigation
-- `app/docs/page.tsx` — docs index/overview
+- `app/docs/layout.tsx` - docs layout with sidebar navigation
+- `app/docs/page.tsx` - docs index/overview
 - `content/docs/getting-started.mdx`
 - `content/docs/how-it-works.mdx`
 - `content/docs/connecting-a-repo.mdx`
 - `content/docs/studio-editor.mdx`
-- `lib/docs.ts` — docs utility functions
+- `lib/docs.ts` - docs utility functions
 
 **Sidebar**: Render navigation from a simple config array or `folderMeta` pattern already in the codebase.
 
 4 pages minimum:
-1. **Getting Started** — Prerequisites, login, connect first repo
-2. **How It Works** — Architecture overview for technical users
-3. **Connecting a Repo** — Step-by-step repo setup + project creation
-4. **Studio Editor** — MDX editor features, save/publish flow
+1. **Getting Started** - Prerequisites, login, connect first repo
+2. **How It Works** - Architecture overview for technical users
+3. **Connecting a Repo** - Step-by-step repo setup + project creation
+4. **Studio Editor** - MDX editor features, save/publish flow
 
 **Acceptance**: `/docs/getting-started` is indexable, renders in <2s, passes Lighthouse 90+.
 
-### TODO 3.4 — Legal pages
+### TODO 3.4 - Legal pages
 
 **Create**:
-- `app/privacy/page.tsx` — Privacy Policy
-- `app/terms/page.tsx` — Terms of Service
+- `app/privacy/page.tsx` - Privacy Policy
+- `app/terms/page.tsx` - Terms of Service
 
 Use a generated template (e.g., Termly, or a reasonable open-source template). Label "Last updated: [date]" and "This is a general policy template." at the top.
 
@@ -537,50 +537,50 @@ Add footer links from `components/landing/footer.tsx`.
 
 **Acceptance**: `/privacy` and `/terms` return 200; both linked from footer.
 
-### TODO 3.5 — Pricing / free tier statement
+### TODO 3.5 - Pricing / free tier statement
 
-**Decision**: "Free during early access — always open-source" (lowest friction for first launch).
+**Decision**: "Free during early access - always open-source" (lowest friction for first launch).
 
 **Options** (decide before building):
-- **Option A**: Prominent badge on hero section — "Free & Open Source" pill
+- **Option A**: Prominent badge on hero section - "Free & Open Source" pill
 - **Option B**: Dedicated `/pricing` page with free tier details and future plans
-- **Recommendation**: Both — badge on hero + simple pricing page
+- **Recommendation**: Both - badge on hero + simple pricing page
 
 **Acceptance**: First-time visitor can answer "what does this cost?" in under 10 seconds.
 
 ---
 
-## Phase 4 — Production Infrastructure (Hardening Branch)
+## Phase 4 - Production Infrastructure (Hardening Branch)
 
-### TODO 4.1 — Production Convex deployment
+### TODO 4.1 - Production Convex deployment
 
 - Create a separate Convex production deployment (independent of dev)
 - Set all environment variables in Convex production dashboard:
-  - `GITHUB_CLIENT_ID` — production GitHub OAuth App
-  - `GITHUB_CLIENT_SECRET` — production secret
-  - `BETTER_AUTH_SECRET` — generate NEW random secret for prod (do NOT reuse dev)
-  - `SITE_URL` — production Convex site URL (e.g., `https://repopress.convex.site`)
+  - `GITHUB_CLIENT_ID` - production GitHub OAuth App
+  - `GITHUB_CLIENT_SECRET` - production secret
+  - `BETTER_AUTH_SECRET` - generate NEW random secret for prod (do NOT reuse dev)
+  - `SITE_URL` - production Convex site URL (e.g., `https://repopress.convex.site`)
 - Update GitHub OAuth App: add production callback URL `https://<prod>.convex.site/api/auth/callback/github`
 - Run `npx convex deploy --prod` to push schema and functions
 
 **Acceptance**: OAuth login works on production domain without affecting dev environment.
 
-### TODO 4.2 — Vercel production environment
+### TODO 4.2 - Vercel production environment
 
 - Set environment variables in Vercel dashboard:
-  - `NEXT_PUBLIC_CONVEX_URL` — production Convex URL
-  - `NEXT_PUBLIC_CONVEX_SITE_URL` — production Convex site URL
-  - `CONVEX_DEPLOYMENT` — production deployment string
-  - `NEXT_PUBLIC_APP_URL` — canonical production domain
+  - `NEXT_PUBLIC_CONVEX_URL` - production Convex URL
+  - `NEXT_PUBLIC_CONVEX_SITE_URL` - production Convex site URL
+  - `CONVEX_DEPLOYMENT` - production deployment string
+  - `NEXT_PUBLIC_APP_URL` - canonical production domain
 - Confirm `NEXT_PUBLIC_APP_URL` is used in `metadataBase` (ties to TODO 5.1)
-- Add startup env validation — fail fast if required vars missing:
+- Add startup env validation - fail fast if required vars missing:
   ```typescript
   if (!process.env.NEXT_PUBLIC_CONVEX_URL) throw new Error("NEXT_PUBLIC_CONVEX_URL is required")
   ```
 
 **Acceptance**: `/_next/static` assets and API routes all resolve on production domain.
 
-### TODO 4.3 — GitHub Actions CI
+### TODO 4.3 - GitHub Actions CI
 
 **Create**: `.github/workflows/ci.yml`
 
@@ -632,7 +632,7 @@ jobs:
 
 **Acceptance**: PR to main shows three green check marks (lint, typecheck, test).
 
-### TODO 4.4 — Error monitoring
+### TODO 4.4 - Error monitoring
 
 **Decision needed**: Sentry free tier vs Vercel built-in (Pro plan only).
 
@@ -648,7 +648,7 @@ jobs:
 
 **Acceptance**: A thrown error in a route handler appears in error dashboard within 60 seconds.
 
-### TODO 4.5 — Rollback runbook
+### TODO 4.5 - Rollback runbook
 
 **Create**: `docs/runbook/rollback.md` (or internal doc)
 
@@ -664,14 +664,14 @@ Contents:
 
 ---
 
-## Phase 5 — SEO & Discovery (Hardening Branch)
+## Phase 5 - SEO & Discovery (Hardening Branch)
 
-### TODO 5.1 — Root metadata and OG
+### TODO 5.1 - Root metadata and OG
 
 **File**: `app/layout.tsx`
 
 **Current state (verified)**:
-- Line 15: `generator: "v0.app"` — must remove (reveals build tool, no SEO value)
+- Line 15: `generator: "v0.app"` - must remove (reveals build tool, no SEO value)
 - Missing: `metadataBase`, `openGraph`, `twitter` card config, `robots`
 
 **Fix**:
@@ -679,12 +679,12 @@ Contents:
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || "https://repopress.dev"),
   title: {
-    default: "RepoPress — Git-Native Headless CMS",
+    default: "RepoPress - Git-Native Headless CMS",
     template: "%s | RepoPress",
   },
   description: "Visual MDX editing with draft/publish workflows for GitHub repositories. Works with Next.js, Astro, Hugo, Docusaurus, and more.",
   openGraph: {
-    title: "RepoPress — Git-Native Headless CMS",
+    title: "RepoPress - Git-Native Headless CMS",
     description: "Visual MDX editing with draft/publish workflows for GitHub repos.",
     url: "/",
     siteName: "RepoPress",
@@ -706,7 +706,7 @@ Remove `generator: "v0.app"`.
 
 **Acceptance**: OG scraper shows image and title for root URL.
 
-### TODO 5.2 — Sitemap and robots
+### TODO 5.2 - Sitemap and robots
 
 **Create**: `app/sitemap.ts`
 ```typescript
@@ -739,7 +739,7 @@ export default function robots() {
 
 **Acceptance**: `/sitemap.xml` and `/robots.txt` return valid content on production.
 
-### TODO 5.3 — OG image
+### TODO 5.3 - OG image
 
 **Create**: `app/opengraph-image.tsx`
 
@@ -751,7 +751,7 @@ Using Next.js `ImageResponse` API:
 
 **Acceptance**: Link preview on Twitter/Slack shows the OG image correctly.
 
-### TODO 5.4 — Google Search Console
+### TODO 5.4 - Google Search Console
 
 Manual step (not code):
 - Add domain to Google Search Console
@@ -762,9 +762,9 @@ Manual step (not code):
 
 ---
 
-## Phase 6 — Remotion Videos & Polish (Redesign Branch)
+## Phase 6 - Remotion Videos & Polish (Redesign Branch)
 
-### TODO 6.1 — Set up Remotion
+### TODO 6.1 - Set up Remotion
 
 **Install** (pnpm, as per project lockfile):
 ```bash
@@ -777,7 +777,7 @@ pnpm add remotion @remotion/cli @remotion/renderer @remotion/transitions zod
 **Directory structure**:
 ```
 remotion/
-  Root.tsx                        # Composition registry — all compositions declared here
+  Root.tsx                        # Composition registry - all compositions declared here
   remotion.config.ts              # Remotion configuration
   compositions/
     StudioDemo.tsx                # Full product walkthrough (main hero video)
@@ -797,7 +797,7 @@ remotion/
     StatusBadge.tsx               # Document status badge (draft, published, etc.)
 ```
 
-**`remotion/Root.tsx` — Composition registry** (must use `<Folder>` for organization):
+**`remotion/Root.tsx` - Composition registry** (must use `<Folder>` for organization):
 ```tsx
 import { Composition, Folder } from "remotion";
 import { StudioDemo, StudioDemoSchema } from "./compositions/StudioDemo";
@@ -832,27 +832,27 @@ export const RemotionRoot = () => {
 
 **Key setup rules** (enforced by Remotion skill):
 - `fps: 30` for all compositions (standard for desktop product demos)
-- `width: 1920, height: 1080` (16:9 — embeds cleanly at all hero widths)
-- Place all static assets (screenshots, logos) in `remotion/public/` and reference with `staticFile()` — NEVER use relative paths
-- **CSS transitions and Tailwind animation classes (e.g. `animate-fadeIn`) are FORBIDDEN** — Remotion's renderer does not execute them correctly. All motion MUST be driven by `useCurrentFrame()`.
+- `width: 1920, height: 1080` (16:9 - embeds cleanly at all hero widths)
+- Place all static assets (screenshots, logos) in `remotion/public/` and reference with `staticFile()` - NEVER use relative paths
+- **CSS transitions and Tailwind animation classes (e.g. `animate-fadeIn`) are FORBIDDEN** - Remotion's renderer does not execute them correctly. All motion MUST be driven by `useCurrentFrame()`.
 
 **Acceptance**: `npx remotion preview` opens the Studio and renders a test composition without errors.
 
-### TODO 6.2 — Studio demo video
+### TODO 6.2 - Studio demo video
 
 **Composition**: `remotion/compositions/StudioDemo.tsx`  
 **Duration**: ~30 seconds at 30fps = 900 frames total  
 **Resolution**: 1920×1080 (16:9)
 
-**Scene flow** — use `<TransitionSeries>` from `@remotion/transitions` for all scene cuts:
-1. **LoginScene** (~4s / 120 frames) — GitHub OAuth button + click → redirect
-2. **RepoSelectScene** (~4s / 120 frames) — dashboard list, cursor selects a repo
-3. **DetectScene** (~5s / 150 frames) — scanning animation with framework logos appearing one by one
-4. **StudioOpenScene** (~4s / 120 frames) — editor sliding open with MDX content loading
-5. **EditScene** (~8s / 240 frames) — typing in editor, live preview updating in sync
-6. **PublishScene** (~5s / 150 frames) — publish button → commit animation → GitHub link
+**Scene flow** - use `<TransitionSeries>` from `@remotion/transitions` for all scene cuts:
+1. **LoginScene** (~4s / 120 frames) - GitHub OAuth button + click → redirect
+2. **RepoSelectScene** (~4s / 120 frames) - dashboard list, cursor selects a repo
+3. **DetectScene** (~5s / 150 frames) - scanning animation with framework logos appearing one by one
+4. **StudioOpenScene** (~4s / 120 frames) - editor sliding open with MDX content loading
+5. **EditScene** (~8s / 240 frames) - typing in editor, live preview updating in sync
+6. **PublishScene** (~5s / 150 frames) - publish button → commit animation → GitHub link
 
-**Scene transitions** — use `fade()` with `linearTiming({ durationInFrames: 15 })` between scenes:
+**Scene transitions** - use `fade()` with `linearTiming({ durationInFrames: 15 })` between scenes:
 ```tsx
 import { TransitionSeries, linearTiming } from "@remotion/transitions";
 import { fade } from "@remotion/transitions/fade";
@@ -870,7 +870,7 @@ import { fade } from "@remotion/transitions/fade";
 ```
 
 **Animation patterns per scene**:
-- UI element entrances (cards, buttons sliding in): `spring({ frame, fps, config: { damping: 200 } })` — smooth, no bounce
+- UI element entrances (cards, buttons sliding in): `spring({ frame, fps, config: { damping: 200 } })` - smooth, no bounce
 - Cursor movement: `interpolate(frame, [0, 30], [startX, endX], { extrapolateRight: "clamp" })`
 - Framework logos appearing sequentially: staggered `spring` with `delay` per logo index
 - Typing effect (EditScene): string slice by frame `content.slice(0, Math.floor(frame / 1.5))`
@@ -889,7 +889,7 @@ import { z } from "zod";
 export const StudioDemoSchema = z.object({ showCaptions: z.boolean() });
 ```
 
-**Always premount sequences** to avoid pop-in artifacts — use `premountFor={fps}` on every `<Sequence>`.
+**Always premount sequences** to avoid pop-in artifacts - use `premountFor={fps}` on every `<Sequence>`.
 
 **Assets**: Place all UI screenshots in `remotion/public/screenshots/`. Reference via:
 ```tsx
@@ -903,7 +903,7 @@ Embed in hero: `<video autoPlay muted loop playsInline>` (no Remotion client bun
 
 **Acceptance**: Demo video plays in hero, communicates full product flow in under 30 seconds. No pop-in, no frame jitter.
 
-### TODO 6.3 — Feature highlight videos
+### TODO 6.3 - Feature highlight videos
 
 Short (8-10 second / 240-300 frame) compositions for the 3 feature cards. Each is self-contained, loops cleanly.
 
@@ -926,7 +926,7 @@ Short (8-10 second / 240-300 frame) compositions for the 3 feature cards. Each i
 - Use `<Sequence premountFor={fps}>` for the preview panel
 
 **General rules for all 3**:
-- All animations via `useCurrentFrame()` + `interpolate`/`spring` — **zero CSS animations**
+- All animations via `useCurrentFrame()` + `interpolate`/`spring` - **zero CSS animations**
 - `useVideoConfig()` to get `fps` for all time calculations (never hardcode frame counts for timing)
 - Use `extrapolateRight: "clamp"` and `extrapolateLeft: "clamp"` on all `interpolate` calls that should not overflow
 - Assets loaded via `staticFile()` for screenshots, `<Img>` not `<img>`
@@ -942,7 +942,7 @@ Place rendered files in `public/videos/` and embed in feature cards.
 
 **Acceptance**: All 3 videos render without errors, loop cleanly, and are embedded in the correct feature cards.
 
-### TODO 6.4 — Cookie consent banner
+### TODO 6.4 - Cookie consent banner
 
 **Create**: `components/cookie-consent.tsx`
 
@@ -956,14 +956,14 @@ Minimal banner (GDPR compliance for EU visitors):
 
 ---
 
-## Phase 7 — Launch Ops
+## Phase 7 - Launch Ops
 
-### TODO 7.1 — README update
+### TODO 7.1 - README update
 
 **File**: `README.md`
 
 Fixes:
-- Line 90: `middleware.ts` → `proxy.ts` (verified — middleware.ts was deleted, proxy.ts is the replacement)
+- Line 90: `middleware.ts` → `proxy.ts` (verified - middleware.ts was deleted, proxy.ts is the replacement)
 - Update feature list to match new landing page
 - Add screenshots (from Remotion renders or actual product)
 - Update setup instructions to match current dev flow
@@ -971,7 +971,7 @@ Fixes:
 
 **Acceptance**: New contributor can run dev server without asking questions.
 
-### TODO 7.2 — CONTRIBUTING.md
+### TODO 7.2 - CONTRIBUTING.md
 
 **Create**: `CONTRIBUTING.md`
 
@@ -985,7 +985,7 @@ Sections:
 
 **Acceptance**: Contributor guide is clear, accurate, and complete.
 
-### TODO 7.3 — Launch smoke test
+### TODO 7.3 - Launch smoke test
 
 Full manual test checklist:
 1. `npm run build` exits 0 (no suppressions)
@@ -1004,7 +1004,7 @@ Full manual test checklist:
 
 **Acceptance**: All flows complete without console errors; all Lighthouse targets met.
 
-### TODO 7.4 — Launch prep materials
+### TODO 7.4 - Launch prep materials
 
 - 60-word tagline for Product Hunt / Hacker News
 - 300-word product description
@@ -1022,10 +1022,10 @@ Full manual test checklist:
 | Original Claim | Verified Finding |
 |---|---|
 | "~9 Biome Tailwind shorthand warnings" in 5 files | 3 warnings in 3 files only (hero, cta, feature-grid) |
-| `studio-layout.tsx` has gradient issues | Clean — no gradient classes found |
-| `chart.tsx` has gradient issues | Clean — no gradient classes found |
+| `studio-layout.tsx` has gradient issues | Clean - no gradient classes found |
+| `chart.tsx` has gradient issues | Clean - no gradient classes found |
 | Security scope: 2 Convex queries only | Actually 2 CRITICAL + 6 HIGH + 8 MEDIUM issues |
-| "Hotjar >30% CTA click rate" as launch gate | Not a ship gate — post-launch measurement only |
+| "Hotjar >30% CTA click rate" as launch gate | Not a ship gate - post-launch measurement only |
 | No mention of route-level auth gaps | 4 API routes missing project access checks |
 | No rollback plan | Added as TODO 4.5 |
 | No environment validation | Added to TODO 4.2 |
@@ -1035,18 +1035,18 @@ Full manual test checklist:
 ## Competitive Positioning (Research Summary)
 
 **RepoPress's unique advantages** (no single competitor has all of these):
-1. **Framework auto-detection** — 8+ frameworks (Next.js, Astro, Hugo, Docusaurus, Jekyll, Fumadocs, Nextra, Contentlayer) — zero manual config
-2. **Document history + revert** — full version timeline, one-click revert
-3. **Webhooks for CI/CD** — built-in webhook management with event filtering
-4. **Advanced workflow states** — 6 states (draft → in_review → approved → published → scheduled → archived) vs competitors' 1-2
-5. **Multi-project per repo** — different content roots within the same repository
+1. **Framework auto-detection** - 8+ frameworks (Next.js, Astro, Hugo, Docusaurus, Jekyll, Fumadocs, Nextra, Contentlayer) - zero manual config
+2. **Document history + revert** - full version timeline, one-click revert
+3. **Webhooks for CI/CD** - built-in webhook management with event filtering
+4. **Advanced workflow states** - 6 states (draft → in_review → approved → published → scheduled → archived) vs competitors' 1-2
+5. **Multi-project per repo** - different content roots within the same repository
 
 **Market positioning**: "The CMS for developers who use multiple frameworks"
 
 **Key competitor vulnerabilities**:
 - Decap CMS (19K★): Legacy codebase, complex config, no framework detection
 - TinaCMS (13K★): Heavy, requires TinaCloud for collaboration features
-- Contentlayer (3.5K★): Unmaintained/dead — cautionary tale for sustainability messaging
+- Contentlayer (3.5K★): Unmaintained/dead - cautionary tale for sustainability messaging
 - Keystatic (2K★): Limited to React frameworks
 
 ## Risks & Mitigations
@@ -1062,8 +1062,8 @@ Full manual test checklist:
 
 ## Open Questions
 
-1. **Domain**: What is the canonical production domain? (DNS propagation = 24-48hr — resolve immediately)
-2. **Error monitoring**: Sentry free tier or Vercel built-in? (Depends on Vercel plan — Hobby = Sentry, Pro = either)
+1. **Domain**: What is the canonical production domain? (DNS propagation = 24-48hr - resolve immediately)
+2. **Error monitoring**: Sentry free tier or Vercel built-in? (Depends on Vercel plan - Hobby = Sentry, Pro = either)
 3. **Remotion hosting**: Self-host rendered videos on Vercel or use external CDN?
 4. **Pricing model long-term**: Free forever (open-source sustainability?) vs. eventual SaaS tier?
 5. **Analytics provider**: Vercel Analytics only, or add Plausible/PostHog for more detail?
@@ -1148,6 +1148,6 @@ Full manual test checklist:
 
 1. Confirm open decisions (domain, error monitoring, Remotion hosting)
 2. Create feature branches from `main`
-3. Start Phase 0 (security) — all 7 tasks can begin in parallel
+3. Start Phase 0 (security) - all 7 tasks can begin in parallel
 4. Start Phase 1 (design system) in parallel on redesign branch
-5. DNS setup for production domain (start immediately — 24-48hr propagation)
+5. DNS setup for production domain (start immediately - 24-48hr propagation)

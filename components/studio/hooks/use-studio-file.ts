@@ -356,7 +356,7 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
 
     if (!openFilesHydrated) return
 
-    // Don't validate open files against an empty tree — the real tree is still loading client-side.
+    // Don't validate open files against an empty tree - the real tree is still loading client-side.
     // Filtering against [] would wipe all open tabs and overwrite localStorage before tree arrives.
     if (tree.length === 0) return
 

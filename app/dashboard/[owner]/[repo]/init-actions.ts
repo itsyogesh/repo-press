@@ -47,7 +47,7 @@ export async function initRepoPressAction(
   // Access check: verify the user can at least read the repo.
   // We don't pre-block "viewer" role because org editors with a cold cache
   // are downgraded to "viewer" by the content probe. Instead, we let
-  // batchCommit attempt the write — GitHub's API is the final authority.
+  // batchCommit attempt the write - GitHub's API is the final authority.
   const { role: resolvedRole } = await resolveRepoRole(token, owner, repo, actingUserId)
   if (!resolvedRole) {
     return { success: false, error: "No access to this repository" }

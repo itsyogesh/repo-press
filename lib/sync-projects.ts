@@ -8,7 +8,7 @@ import { createServerQueryContext, resolveActingUserId } from "@/lib/server-cont
 /**
  * Server-side project sync from repopress.config.json.
  * Works for both OAuth and PAT users (reads token from cookies).
- * Uses ConvexHttpClient + serverQueryToken — does NOT require fetchAuthMutation.
+ * Uses ConvexHttpClient + serverQueryToken - does NOT require fetchAuthMutation.
  */
 export async function syncProjectsServerSide(
   token: string,

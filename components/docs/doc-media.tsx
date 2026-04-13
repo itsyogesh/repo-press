@@ -7,7 +7,7 @@ import { getVideoInfo } from "@/lib/studio/video-embed"
 import { cn } from "@/lib/utils"
 
 /**
- * DocsImage — Display an image with optional alt text and caption.
+ * DocsImage - Display an image with optional alt text and caption.
  * Matches the rich rendering style used in standardComponents.
  */
 export const DocsImage = React.forwardRef<
@@ -56,7 +56,7 @@ export const DocsImage = React.forwardRef<
 DocsImage.displayName = "DocsImage"
 
 /**
- * DocsVideo — Embed a video (YouTube, Vimeo, or direct URL).
+ * DocsVideo - Embed a video (YouTube, Vimeo, or direct URL).
  * Uses the shared video parser so Studio and preview runtimes stay consistent.
  */
 export const DocsVideo = React.forwardRef<
@@ -105,7 +105,7 @@ export const DocsVideo = React.forwardRef<
 DocsVideo.displayName = "DocsVideo"
 
 /**
- * Callout — Display an informational or warning callout.
+ * Callout - Display an informational or warning callout.
  */
 export const Callout = React.forwardRef<
   HTMLDivElement,

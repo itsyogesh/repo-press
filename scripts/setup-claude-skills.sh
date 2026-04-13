@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# RepoPress — Claude Code Skills & Plugins Bootstrap
+# RepoPress - Claude Code Skills & Plugins Bootstrap
 # =============================================================================
 # Run this once after cloning the repo to install all recommended skills.
 #
@@ -21,7 +21,7 @@
 set -euo pipefail
 
 echo "============================================"
-echo "  RepoPress — Installing Claude Code Skills"
+echo "  RepoPress - Installing Claude Code Skills"
 echo "============================================"
 echo ""
 

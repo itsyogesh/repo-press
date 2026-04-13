@@ -11,7 +11,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const post = getPost(slug)
   if (!post) return { title: "Not Found" }
   return {
-    title: `${post.title} — RepoPress Blog`,
+    title: `${post.title} - RepoPress Blog`,
     description: post.excerpt,
   }
 }

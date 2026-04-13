@@ -1,5 +1,5 @@
 // Shared field grouping constants and helpers used by both the Smart Create dialog
-// and the Frontmatter panel. Single source of truth — update here, not in consumers.
+// and the Frontmatter panel. Single source of truth - update here, not in consumers.
 
 import type { MergedFieldDef } from "./resolve"
 import type { FieldGroup, FrontmatterFieldDef, GroupedField } from "./types"

@@ -132,7 +132,7 @@ export const hugoAdapter: FrameworkAdapter = {
     ) {
       score += 70
     } else if (ctx.rootFileNames.includes("config.toml")) {
-      // config.toml is less specific — could be other tools
+      // config.toml is less specific - could be other tools
       score += 50
     }
 

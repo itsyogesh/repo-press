@@ -4,7 +4,7 @@ import Footer from "@/components/landing/footer"
 import Navbar from "@/components/landing/navbar"
 
 export const metadata: Metadata = {
-  title: "About — RepoPress",
+  title: "About - RepoPress",
   description:
     "RepoPress is a visual editor for content that lives in GitHub. Edit docs and blog posts without touching code.",
 }
@@ -46,7 +46,7 @@ const principles = [
   {
     title: "Built for everyone who writes",
     description:
-      "Whether you maintain docs, write blog posts, or manage a content team — RepoPress gives you a visual editor without asking you to learn Git commands.",
+      "Whether you maintain docs, write blog posts, or manage a content team - RepoPress gives you a visual editor without asking you to learn Git commands.",
   },
   {
     title: "No lock-in, ever",
@@ -79,14 +79,14 @@ export default function AboutPage() {
             <div className="max-w-3xl mx-auto">
               <h2 className="text-xl font-semibold text-foreground mb-4">Why we built this</h2>
               <p className="text-muted-foreground leading-relaxed mb-6">
-                If your website runs on GitHub — whether it is a documentation site, a blog, or a marketing page —
+                If your website runs on GitHub - whether it is a documentation site, a blog, or a marketing page -
                 updating content means opening a code editor, writing Markdown, and pushing a commit. That works for
                 developers, but it shuts out everyone else on the team.
               </p>
               <p className="text-muted-foreground leading-relaxed mb-6">
                 RepoPress is a visual editor that connects directly to your GitHub repository. You see your files, edit
                 them in a clean interface with a live preview, and publish changes as a pull request. No terminal, no
-                Markdown syntax, no merge conflicts. Your content stays as standard files in your repo — we never move
+                Markdown syntax, no merge conflicts. Your content stays as standard files in your repo - we never move
                 it to a separate database.
               </p>
               <p className="text-muted-foreground leading-relaxed">

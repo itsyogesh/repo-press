@@ -45,7 +45,7 @@ export default function Footer() {
               </div>
             </Link>
             <p className="max-w-sm text-sm leading-6 text-muted-foreground">
-              A visual editor for anyone managing content in GitHub repositories — no terminal required.
+              A visual editor for anyone managing content in GitHub repositories - no terminal required.
             </p>
             <a
               href="https://github.com/itsyogesh/repo-press"

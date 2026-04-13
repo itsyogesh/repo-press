@@ -2,7 +2,7 @@ import { getFileContent, getRepoContents } from "@/lib/github"
 import { allAdapters } from "./adapters"
 import type { DetectionContext, FrameworkAdapter, FrameworkConfig } from "./types"
 
-// Mutable adapter registry — starts with built-in adapters
+// Mutable adapter registry - starts with built-in adapters
 const registry: FrameworkAdapter[] = [...allAdapters]
 
 export function registerAdapter(adapter: FrameworkAdapter) {
@@ -45,7 +45,7 @@ export async function buildDetectionContext(
       packageJson = JSON.parse(content)
     }
   } catch {
-    // No package.json — could be Hugo, Jekyll, or non-JS framework
+    // No package.json - could be Hugo, Jekyll, or non-JS framework
   }
 
   try {
@@ -137,7 +137,7 @@ export async function detectFramework(
           folderScore = folderResult.score
           if (folderResult.contentType) folderContentType = folderResult.contentType
         } catch {
-          // Folder detection failed — continue with repo-level score only
+          // Folder detection failed - continue with repo-level score only
         }
       }
 

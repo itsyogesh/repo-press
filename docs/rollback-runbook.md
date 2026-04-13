@@ -1,4 +1,4 @@
-# RepoPress — Production Rollback Runbook
+# RepoPress - Production Rollback Runbook
 
 This document covers rollback procedures for production incidents.
 

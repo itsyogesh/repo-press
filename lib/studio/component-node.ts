@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// ComponentNode — intermediate model between form state and serializer
+// ComponentNode - intermediate model between form state and serializer
 // ---------------------------------------------------------------------------
 //
 // The node captures a fully-resolved snapshot of a component instance that

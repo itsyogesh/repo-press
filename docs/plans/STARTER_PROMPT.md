@@ -1,4 +1,4 @@
-# MDX Runtime Hardening — Starter Prompt
+# MDX Runtime Hardening - Starter Prompt
 
 > **Status:** LEGACY STARTER PROMPT  
 > Prefer: `docs/plans/2026-03-03-mdx-runtime-hardening-handover-starter-prompt.md` for current execution order and baseline alignment.
@@ -18,11 +18,11 @@ Start with Task 1: Persistent Adapter Cache.
 Follow this workflow for each task:
 
 1. IMPLEMENT: Write the code according to the plan
-2. LINT: Run `npm run lint` — fix all errors
-3. TYPECHECK: Run `npx tsc --noEmit` — fix all type errors
+2. LINT: Run `npm run lint` - fix all errors
+3. TYPECHECK: Run `npx tsc --noEmit` - fix all type errors
 4. TESTS: Run any existing tests if applicable
 5. MANUAL TEST: Verify the feature works manually
-6. BUILD: Run `npm run build` — must pass
+6. BUILD: Run `npm run build` - must pass
 7. COMMIT: Create commit with descriptive message (DO NOT PUSH)
 8. UPDATE PLAN: Update docs/plans/2026-03-02-mdx-runtime-hardening-plan.md:
    - Mark completed steps with [x]
@@ -31,7 +31,7 @@ Follow this workflow for each task:
 
 After completing Task 1, proceed to Task 2, and so on.
 
-Track progress in the plan document itself — use it as the source of truth.
+Track progress in the plan document itself - use it as the source of truth.
 
 DO NOT SKIP any workflow step.
 DO NOT PUSH commits.

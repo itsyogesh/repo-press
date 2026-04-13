@@ -9,7 +9,7 @@ const features = [
   "Full version history",
   "Webhook integrations",
   "Multi-project workspace",
-  "GitHub login — no extra accounts",
+  "GitHub login - no extra accounts",
 ]
 
 export default function Pricing() {

@@ -1,4 +1,4 @@
-// Thin re-export wrapper — preserves backward compatibility for existing imports.
+// Thin re-export wrapper - preserves backward compatibility for existing imports.
 // All logic now lives in lib/framework-adapters/.
 
 export {

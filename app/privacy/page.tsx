@@ -3,8 +3,8 @@ import Footer from "@/components/landing/footer"
 import Navbar from "@/components/landing/navbar"
 
 export const metadata: Metadata = {
-  title: "Privacy Policy — RepoPress",
-  description: "Privacy policy for RepoPress — the visual editor for content in GitHub repositories.",
+  title: "Privacy Policy - RepoPress",
+  description: "Privacy policy for RepoPress - the visual editor for content in GitHub repositories.",
 }
 
 export default function PrivacyPage() {
@@ -18,7 +18,7 @@ export default function PrivacyPage() {
 
             <p className="text-muted-foreground leading-relaxed mb-8">
               Your privacy matters. This policy explains what information RepoPress collects, how we use it, and the
-              choices you have. We believe in transparency and keeping your data where it belongs—in your Git
+              choices you have. We believe in transparency and keeping your data where it belongs-in your Git
               repositories.
             </p>
 
@@ -161,7 +161,7 @@ export default function PrivacyPage() {
               </li>
               <li>
                 <strong className="text-foreground">Data portability:</strong> Your content is always in your Git
-                repository—there&apos;s nothing to export
+                repository-there&apos;s nothing to export
               </li>
             </ul>
 

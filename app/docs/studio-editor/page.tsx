@@ -3,7 +3,7 @@ import Link from "next/link"
 
 export const metadata: Metadata = {
   title: "Studio Editor",
-  description: "Write and publish with the RepoPress Studio — visual editing, live preview, and version history.",
+  description: "Write and publish with the RepoPress Studio - visual editing, live preview, and version history.",
 }
 
 export default function StudioEditorPage() {
@@ -12,7 +12,7 @@ export default function StudioEditorPage() {
       <h1 className="mb-6 text-3xl font-semibold tracking-tight">Studio Editor</h1>
 
       <p className="mb-4 leading-relaxed text-muted-foreground">
-        The Studio is the heart of RepoPress — a visual editor for MDX and Markdown files that commits directly to your
+        The Studio is the heart of RepoPress - a visual editor for MDX and Markdown files that commits directly to your
         GitHub repository. This guide covers every part of the editing experience.
       </p>
 
@@ -21,17 +21,17 @@ export default function StudioEditorPage() {
       <p className="mb-4 leading-relaxed text-muted-foreground">The Studio is organized into three resizable panels:</p>
       <ul className="mb-4 list-inside list-disc space-y-2 text-muted-foreground">
         <li>
-          <strong className="text-foreground">File Tree (Left)</strong> — Browse your repository&rsquo;s content
+          <strong className="text-foreground">File Tree (Left)</strong> - Browse your repository&rsquo;s content
           directory. Click any file to open it in the editor. Directories are collapsible, and the current file is
           highlighted.
         </li>
         <li>
-          <strong className="text-foreground">Editor (Center)</strong> — The main editing area. Edit frontmatter fields
+          <strong className="text-foreground">Editor (Center)</strong> - The main editing area. Edit frontmatter fields
           at the top and content below. A formatting toolbar provides quick access to headings, bold, italic, links,
           images, and code blocks.
         </li>
         <li>
-          <strong className="text-foreground">Preview (Right)</strong> — A real-time rendered preview of your MDX
+          <strong className="text-foreground">Preview (Right)</strong> - A real-time rendered preview of your MDX
           content. As you type, the preview updates instantly so you can see exactly how your content will look.
         </li>
       </ul>
@@ -49,22 +49,22 @@ export default function StudioEditorPage() {
       </p>
       <ul className="mb-4 list-inside list-disc space-y-2 text-muted-foreground">
         <li>
-          <strong className="text-foreground">Text fields</strong> — For{" "}
+          <strong className="text-foreground">Text fields</strong> - For{" "}
           <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm">title</span>,{" "}
           <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm">description</span>, and other string values
         </li>
         <li>
-          <strong className="text-foreground">Date pickers</strong> — For{" "}
+          <strong className="text-foreground">Date pickers</strong> - For{" "}
           <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm">date</span> and{" "}
           <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm">publishedAt</span> fields
         </li>
         <li>
-          <strong className="text-foreground">Tag inputs</strong> — For array fields like{" "}
+          <strong className="text-foreground">Tag inputs</strong> - For array fields like{" "}
           <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm">tags</span> and{" "}
           <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm">categories</span>
         </li>
         <li>
-          <strong className="text-foreground">Toggles</strong> — For boolean fields like{" "}
+          <strong className="text-foreground">Toggles</strong> - For boolean fields like{" "}
           <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm">draft</span>
         </li>
       </ul>
@@ -81,15 +81,15 @@ export default function StudioEditorPage() {
       </p>
       <ul className="mb-4 list-inside list-disc space-y-2 text-muted-foreground">
         <li>
-          <strong className="text-foreground">Auto-save</strong> — Drafts are saved automatically as you type, with a
+          <strong className="text-foreground">Auto-save</strong> - Drafts are saved automatically as you type, with a
           brief debounce to avoid excessive writes.
         </li>
         <li>
-          <strong className="text-foreground">Draft indicator</strong> — A status indicator in the editor header shows
+          <strong className="text-foreground">Draft indicator</strong> - A status indicator in the editor header shows
           whether your changes are saved, saving, or unsaved.
         </li>
         <li>
-          <strong className="text-foreground">Discard changes</strong> — You can discard a draft at any time to revert
+          <strong className="text-foreground">Discard changes</strong> - You can discard a draft at any time to revert
           to the last published version from Git.
         </li>
       </ul>

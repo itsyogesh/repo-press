@@ -57,7 +57,7 @@ export function VideoPreview() {
         </p>
         <h2 className="text-3xl font-semibold tracking-tight md:text-4xl">See RepoPress in action</h2>
         <p className="max-w-[48rem] text-balance text-muted-foreground sm:text-lg sm:leading-7">
-          See how one config file connects your repo, opens the browser studio, and creates a pull request — the
+          See how one config file connects your repo, opens the browser studio, and creates a pull request - the
           complete flow in 20 seconds.
         </p>
       </div>

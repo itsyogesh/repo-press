@@ -5,12 +5,12 @@ const notes = [
     name: "Decap CMS",
     tension: "Functional but dated. The editing experience hasn't kept up with modern tools.",
     response:
-      "RepoPress gives you a clean, visual editor with live preview — designed for how people write today, not ten years ago.",
+      "RepoPress gives you a clean, visual editor with live preview - designed for how people write today, not ten years ago.",
   },
   {
     name: "TinaCMS",
     tension: "Powerful, but requires developer setup before content teams can use it.",
-    response: "RepoPress works out of the box. Connect your repo and start editing — no build step or config needed.",
+    response: "RepoPress works out of the box. Connect your repo and start editing - no build step or config needed.",
   },
   {
     name: "CloudCannon",
@@ -20,7 +20,7 @@ const notes = [
 ]
 
 const commitments = [
-  "Your content stays in GitHub — no separate database, no vendor lock-in.",
+  "Your content stays in GitHub - no separate database, no vendor lock-in.",
   "Edit, preview, and publish from a single workspace.",
   "Works with your existing repository structure. No migration required.",
   "Open source and free to use. Self-host if you prefer.",

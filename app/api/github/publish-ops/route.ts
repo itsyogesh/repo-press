@@ -712,7 +712,7 @@ async function fetchConvexStorageBytes({
 /**
  * Rewrite any /api/media/resolve proxy URLs in frontmatter values to root-relative paths.
  * Extracts the `path` query param and strips the `/public` prefix (since frameworks serve `public/` at root).
- * Only string values matching isStudioMediaResolveUrl() are modified — all other values pass through unchanged.
+ * Only string values matching isStudioMediaResolveUrl() are modified - all other values pass through unchanged.
  */
 function rewriteProxyUrls(frontmatter: Record<string, unknown>): Record<string, unknown> {
   const rewritten: Record<string, unknown> = {}
@@ -736,7 +736,7 @@ function rewriteProxyUrls(frontmatter: Record<string, unknown>): Record<string, 
 
 function proxyUrlToRootRelative(proxyUrl: string): string {
   try {
-    // Parse the proxy URL — it may be relative so we use a dummy base.
+    // Parse the proxy URL - it may be relative so we use a dummy base.
     const parsed = new URL(proxyUrl, "http://localhost")
     const rawPath = parsed.searchParams.get("path")
     if (!rawPath) return proxyUrl

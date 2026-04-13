@@ -73,7 +73,7 @@ export function useStudioPublish({
 
         if (response.status === 409 && data.conflicts) {
           setPublishConflicts(data.conflicts)
-          toast.error("Conflicts detected — resolve before publishing")
+          toast.error("Conflicts detected - resolve before publishing")
           return
         }
 

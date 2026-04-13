@@ -13,7 +13,7 @@ const steps = [
     eyebrow: "02 / Detect",
     title: "RepoPress finds your content automatically.",
     description:
-      "We scan your repository, detect the framework, and locate your docs and blog posts — no configuration needed.",
+      "We scan your repository, detect the framework, and locate your docs and blog posts - no configuration needed.",
     detail: "Supports Fumadocs, Nextra, Astro, Hugo, Docusaurus, Jekyll, and more.",
   },
   {

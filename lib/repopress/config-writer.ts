@@ -39,7 +39,7 @@ export function addProject(config: RepoPressConfig, project: NewProjectDef): Rep
 
 /**
  * Updates properties of an existing project. `contentRoot` and `id` are
- * immutable — attempting to change them throws.
+ * immutable - attempting to change them throws.
  */
 export function updateProject(
   config: RepoPressConfig,
@@ -60,7 +60,7 @@ export function updateProject(
 
 /**
  * Removes a project from the config. Removing the last project produces
- * a valid config with an empty projects array — callers should then delete
+ * a valid config with an empty projects array - callers should then delete
  * the config file rather than committing an empty list.
  */
 export function removeProject(config: RepoPressConfig, configProjectId: string): RepoPressConfig {

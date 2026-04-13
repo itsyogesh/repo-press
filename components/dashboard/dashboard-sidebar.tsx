@@ -140,7 +140,7 @@ export function DashboardSidebar() {
                   <SidebarMenuButton
                     asChild
                     isActive={pathname.endsWith("/studio") || pathname.includes("/studio/")}
-                    tooltip={hasProjectContext ? "Studio" : "Studio — select project"}
+                    tooltip={hasProjectContext ? "Studio" : "Studio - select project"}
                   >
                     <Link href={studioLink}>
                       <Pencil className="size-4" />
@@ -152,7 +152,7 @@ export function DashboardSidebar() {
                   <SidebarMenuButton
                     asChild
                     isActive={pathname.includes("/history")}
-                    tooltip={hasProjectContext ? "History" : "History — select project"}
+                    tooltip={hasProjectContext ? "History" : "History - select project"}
                   >
                     <Link href={historyLink}>
                       <Clock className="size-4" />

@@ -13,7 +13,7 @@ const _geistMono = Geist_Mono({ subsets: ["latin"] })
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || "https://repopress.dev"),
   title: {
-    default: "RepoPress — Your Repo is Your CMS",
+    default: "RepoPress - Your Repo is Your CMS",
     template: "%s | RepoPress",
   },
   description:
@@ -37,7 +37,7 @@ export const metadata: Metadata = {
     apple: "/apple-icon.png",
   },
   openGraph: {
-    title: "RepoPress — Your Repo is Your CMS",
+    title: "RepoPress - Your Repo is Your CMS",
     description:
       "Git-native headless CMS for GitHub repositories. Visual MDX editing with draft/publish workflows. Your content stays in Git.",
     url: "/",
@@ -48,13 +48,13 @@ export const metadata: Metadata = {
         url: "/opengraph-image",
         width: 1200,
         height: 630,
-        alt: "RepoPress — Your Repo is Your CMS",
+        alt: "RepoPress - Your Repo is Your CMS",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "RepoPress — Your Repo is Your CMS",
+    title: "RepoPress - Your Repo is Your CMS",
     description:
       "Git-native headless CMS for GitHub repositories. Visual MDX editing with draft/publish workflows. Your content stays in Git.",
     images: ["/opengraph-image"],

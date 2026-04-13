@@ -37,7 +37,7 @@ const STUDIO_SAFE_RENDERERS: Record<string, React.ComponentType<any>> = {
       return (
         <div className="my-6 flex items-center justify-center gap-2 rounded-xl border border-dashed border-studio-border p-6 text-sm text-studio-fg-muted font-sans">
           <ImageIcon className="h-5 w-5 opacity-50 shrink-0" />
-          <span>DynamicImage — no source provided</span>
+          <span>DynamicImage - no source provided</span>
         </div>
       )
     }
@@ -94,7 +94,7 @@ function validateProps(componentName: string, props: Record<string, any>, schema
   for (const propDef of schema.props) {
     const value = props[propDef.name]
 
-    // Skip undefined — optional props are fine
+    // Skip undefined - optional props are fine
     if (value === undefined) continue
 
     // Type validation
@@ -121,7 +121,7 @@ function validateProps(componentName: string, props: Record<string, any>, schema
           )
         }
         break
-      // "expression" can be any type after evaluation — no validation needed
+      // "expression" can be any type after evaluation - no validation needed
     }
   }
 
@@ -164,7 +164,7 @@ export function RepoJsxBridge({ mdastNode, descriptor }: RepoJsxBridgeProps) {
           } else {
             // Improved warning: actionable, includes the expression
             evalWarnings.push(
-              `<${descriptor.name}> prop "${attr.name}": expression \`${expression}\` could not be evaluated — ${evaluated.reason}. The prop will be undefined in the preview.`,
+              `<${descriptor.name}> prop "${attr.name}": expression \`${expression}\` could not be evaluated - ${evaluated.reason}. The prop will be undefined in the preview.`,
             )
             result[attr.name] = undefined
           }

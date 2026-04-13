@@ -82,7 +82,7 @@ export function AddProjectDialog({ owner, repo, defaultBranch, open, onOpenChang
 
     setError(null)
     startTransition(async () => {
-      // Config file always lives on the default branch — not the project's content branch
+      // Config file always lives on the default branch - not the project's content branch
       const result = await addProjectToConfigAction(owner, repo, defaultBranch, {
         id: projectId,
         name: name.trim(),

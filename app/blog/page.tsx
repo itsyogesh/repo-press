@@ -6,7 +6,7 @@ import Navbar from "@/components/landing/navbar"
 import { getAllPosts } from "@/lib/blog-data"
 
 export const metadata: Metadata = {
-  title: "Blog — RepoPress",
+  title: "Blog - RepoPress",
   description: "News, updates, and insights from the RepoPress team.",
 }
 

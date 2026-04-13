@@ -2,7 +2,7 @@
 
 > **Plan Version:** 1.0  
 > **Created:** 2026-03-02  
-> **Status:** IN PROGRESS (Tasks 1-2 complete, Tasks 3-6 pending — next phase after PR #8)
+> **Status:** IN PROGRESS (Tasks 1-2 complete, Tasks 3-6 pending - next phase after PR #8)
 > **Done:** Plan structure complete; Task 1 and Task 2 are implemented, verified, and committed. All work included in PR #8.
 > **Left:** Execute Tasks 3-6 (Private Asset URL Signing, Expression Sandbox, Compile Cache, Plugin Merge Determinism).
 > **Last Audited:** 2026-03-04 (PR #8 submitted with all work through Task 2 + additional studio hardening)

@@ -2,19 +2,19 @@
 
 ## Summary
 
-The dashboard (`/dashboard`) has zero navigation chrome — no header, sidebar, user menu, logout, or theme toggle. The primary user (non-technical content editor) needs the fastest path to the Studio editor, but the current layout is a flat wall of developer-oriented repo cards with GitHub vanity metrics. This plan adds a reusable header, collapsible sidebar with recent projects, user menu with logout, and improves card content to show CMS-relevant data.
+The dashboard (`/dashboard`) has zero navigation chrome - no header, sidebar, user menu, logout, or theme toggle. The primary user (non-technical content editor) needs the fastest path to the Studio editor, but the current layout is a flat wall of developer-oriented repo cards with GitHub vanity metrics. This plan adds a reusable header, collapsible sidebar with recent projects, user menu with logout, and improves card content to show CMS-relevant data.
 
 ## Context
 
 - **GitHub Issue**: [#20](https://github.com/itsyogesh/repo-press/issues/20)
-- **Prior art**: `components/settings/settings-layout.tsx` — existing layout pattern with header + sidebar
-- **Studio page**: Uses `h-screen` full-takeover layout — dashboard layout must not interfere
+- **Prior art**: `components/settings/settings-layout.tsx` - existing layout pattern with header + sidebar
+- **Studio page**: Uses `h-screen` full-takeover layout - dashboard layout must not interfere
 - **Existing components to reuse**: `Avatar`, `DropdownMenu`, `Sidebar`, `StudioPageThemeToggle`, `signOut` from auth-client
 
 ## Goals
 
 - **Primary**: Content editor can open their most recent project in Studio within 2 seconds of landing on the dashboard.
-- **Secondary**: Dashboard has standard SaaS chrome (header with logo, user menu, theme toggle, logout) — reusable across all dashboard pages.
+- **Secondary**: Dashboard has standard SaaS chrome (header with logo, user menu, theme toggle, logout) - reusable across all dashboard pages.
 - **Tertiary**: Project and repo cards show CMS-relevant information instead of GitHub vanity metrics.
 
 ## Success Criteria / Acceptance
@@ -28,7 +28,7 @@ The dashboard (`/dashboard`) has zero navigation chrome — no header, sidebar, 
 - [ ] Repos section has a client-side search/filter bar
 - [ ] Project list shows a loading skeleton instead of blank (`null`) while loading
 - [ ] Dashboard layout does NOT break Studio (`h-screen` full-screen layout still works)
-- [ ] All existing functionality preserved — no regressions on repo hub, setup, settings, studio pages
+- [ ] All existing functionality preserved - no regressions on repo hub, setup, settings, studio pages
 - [ ] Header component is reusable (can be dropped into other dashboard pages)
 
 ## Scope
@@ -46,7 +46,7 @@ The dashboard (`/dashboard`) has zero navigation chrome — no header, sidebar, 
 
 ### Out-of-scope
 - Profile/account management page (just the link in the dropdown)
-- Global settings page (just the link — settings is already per-repo)
+- Global settings page (just the link - settings is already per-repo)
 - Keyboard shortcuts / command palette on dashboard (Phase 3 polish)
 - Pagination / infinite scroll for repos (Phase 3)
 - Welcome banner / onboarding wizard for new users (Phase 3)
@@ -61,14 +61,14 @@ The dashboard (`/dashboard`) has zero navigation chrome — no header, sidebar, 
 
 ## Dependencies
 
-- No external dependencies — all required UI primitives already exist in the project
+- No external dependencies - all required UI primitives already exist in the project
 - Convex `documents` table already has a `by_projectId_status` index (verify before implementing)
 
 ## Proposed Approach
 
 ### Phase 1: Dashboard Shell (Header + Sidebar + Layout)
 
-The highest-impact change — adds navigation chrome and instant project access.
+The highest-impact change - adds navigation chrome and instant project access.
 
 **1a. DashboardHeader component** (`components/dashboard/dashboard-header.tsx`)
 - Reusable client component
@@ -95,7 +95,7 @@ The highest-impact change — adds navigation chrome and instant project access.
 - Server component that wraps `{children}` with header + sidebar
 - **Critical constraint**: Must use `flex` layout with `min-h-screen` (NOT `h-screen`) so Studio's own `h-screen` container works
 - Pattern: `<div class="flex min-h-screen"><Sidebar /><div class="flex-1 flex flex-col"><Header /><main>{children}</main></div></div>`
-- The sidebar needs Convex data (recent projects) — use a client component wrapper
+- The sidebar needs Convex data (recent projects) - use a client component wrapper
 
 **1e. Loading skeleton for project list** (modify `components/project-list.tsx`)
 - Replace `return null` (line 26) with a 3-card skeleton grid
@@ -104,7 +104,7 @@ The highest-impact change — adds navigation chrome and instant project access.
 ### Phase 2: Card Improvements
 
 **2a. Convex query for document counts** (`convex/documents.ts`)
-- New query: `countByProject` — takes `projectId`, returns `{ draft: number, published: number, total: number, lastEditedAt: number | null }`
+- New query: `countByProject` - takes `projectId`, returns `{ draft: number, published: number, total: number, lastEditedAt: number | null }`
 - Uses existing `by_projectId_status` index
 - Consider: batch query for multiple projectIds to avoid N+1
 
@@ -118,14 +118,14 @@ The highest-impact change — adds navigation chrome and instant project access.
 - Remove: stars, forks, watchers icons and counts
 - Add: project count (already exists), last content edit time, total documents across projects
 - Keep: Private badge, Connected/Set up badge, description, date
-- The "Set up" badge should look less like a button — reduce visual weight
+- The "Set up" badge should look less like a button - reduce visual weight
 
 **2d. Repo search/filter bar** (new component or inline in `components/repo-grid.tsx`)
 - Text input for filtering by repo name (client-side, repos already in memory)
 - Toggle: "All" / "Connected" (filter by `connectedProjectCount > 0`)
 - Place between section header and grid
 
-### Phase 3: Polish (Future — not in this PR)
+### Phase 3: Polish (Future - not in this PR)
 
 - Welcome banner for new users
 - Dashboard-level command palette (`⌘K`)
@@ -134,18 +134,18 @@ The highest-impact change — adds navigation chrome and instant project access.
 
 ## Milestones & Tasks
 
-### Phase 1 — Dashboard Shell
-- [ ] `components/dashboard/dashboard-header.tsx` — reusable header with logo + theme toggle + user menu
-- [ ] `components/dashboard/user-menu.tsx` — avatar dropdown with profile, settings, logout
-- [ ] `components/dashboard/dashboard-sidebar.tsx` — collapsible sidebar with recent projects + nav
-- [ ] `app/dashboard/layout.tsx` — layout wrapper (must not break Studio)
-- [ ] Update `components/project-list.tsx` — loading skeleton instead of `null`
+### Phase 1 - Dashboard Shell
+- [ ] `components/dashboard/dashboard-header.tsx` - reusable header with logo + theme toggle + user menu
+- [ ] `components/dashboard/user-menu.tsx` - avatar dropdown with profile, settings, logout
+- [ ] `components/dashboard/dashboard-sidebar.tsx` - collapsible sidebar with recent projects + nav
+- [ ] `app/dashboard/layout.tsx` - layout wrapper (must not break Studio)
+- [ ] Update `components/project-list.tsx` - loading skeleton instead of `null`
 - [ ] Verify: Studio, settings, repo hub, setup pages all render correctly with new layout
 
-### Phase 2 — Card Improvements
-- [ ] `convex/documents.ts` — add `countByProject` query (or batch variant)
-- [ ] Update `components/project-card.tsx` — draft/published counts, relative time, compact CTA
-- [ ] Update `components/repo-card.tsx` — CMS metrics, remove vanity stats
+### Phase 2 - Card Improvements
+- [ ] `convex/documents.ts` - add `countByProject` query (or batch variant)
+- [ ] Update `components/project-card.tsx` - draft/published counts, relative time, compact CTA
+- [ ] Update `components/repo-card.tsx` - CMS metrics, remove vanity stats
 - [ ] Add repo search/filter to `components/repo-grid.tsx` or new component
 - [ ] Add `lib/format-relative-time.ts` utility (or inline)
 
@@ -153,11 +153,11 @@ The highest-impact change — adds navigation chrome and instant project access.
 
 | Risk | Impact | Mitigation |
 |------|--------|------------|
-| Dashboard layout breaks Studio's `h-screen` | High — Studio becomes unusable | Use `flex-1 min-h-0` pattern; test Studio rendering after layout change |
-| Sidebar Convex query on every page load | Medium — performance | Recent projects query is small (5 items), already indexed. Cache via `useQuery`. |
-| PAT user logout doesn't clear cookies properly | Medium — session lingers | Test both OAuth and PAT logout paths explicitly |
-| `countByProject` N+1 queries for many projects | Medium — slow dashboard | Implement batch variant or use a single aggregate query |
-| Sidebar breaks mobile layout | Medium — mobile unusable | Use sheet/drawer overlay on mobile (shadcn Sidebar supports this) |
+| Dashboard layout breaks Studio's `h-screen` | High - Studio becomes unusable | Use `flex-1 min-h-0` pattern; test Studio rendering after layout change |
+| Sidebar Convex query on every page load | Medium - performance | Recent projects query is small (5 items), already indexed. Cache via `useQuery`. |
+| PAT user logout doesn't clear cookies properly | Medium - session lingers | Test both OAuth and PAT logout paths explicitly |
+| `countByProject` N+1 queries for many projects | Medium - slow dashboard | Implement batch variant or use a single aggregate query |
+| Sidebar breaks mobile layout | Medium - mobile unusable | Use sheet/drawer overlay on mobile (shadcn Sidebar supports this) |
 
 ## Open Questions
 
@@ -167,8 +167,8 @@ The highest-impact change — adds navigation chrome and instant project access.
 
 ## Docs / Files to Update
 
-- `CLAUDE.md` / `AGENTS.md` — Add dashboard layout pattern, document the `DashboardHeader` reuse convention
-- `.github/copilot-instructions.md` — Add dashboard shell pattern
+- `CLAUDE.md` / `AGENTS.md` - Add dashboard layout pattern, document the `DashboardHeader` reuse convention
+- `.github/copilot-instructions.md` - Add dashboard shell pattern
 
 ## Reviewers and Approvers
 

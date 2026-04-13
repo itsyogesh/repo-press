@@ -32,7 +32,7 @@ const GithubIcon: React.FC = () => (
   </svg>
 )
 
-// Browser chrome wrapper — gives every scene the same desktop + window + caption frame
+// Browser chrome wrapper - gives every scene the same desktop + window + caption frame
 const BrowserScene: React.FC<{
   children: React.ReactNode
   label: string
@@ -306,7 +306,7 @@ const DashboardScene: React.FC = () => {
       url="repopress.app/dashboard"
       caption="Your repositories, one click from the studio"
     >
-      {/* Loading progress bar — fills after "Open Studio" click */}
+      {/* Loading progress bar - fills after "Open Studio" click */}
       <div
         style={{
           position: "absolute",
@@ -430,7 +430,7 @@ const EditScene: React.FC = () => {
 
   const autosaveOpacity = spring({ frame, fps, config: SPRING_SMOOTH, delay: 160 })
 
-  // Only the currently-typing line gets a cursor — no multi-cursor glitch
+  // Only the currently-typing line gets a cursor - no multi-cursor glitch
   const activeSlowId =
     frame >= 4 && frame < 52
       ? "fm-title"
@@ -460,7 +460,7 @@ const EditScene: React.FC = () => {
       label="Edit"
       step={3}
       url="repopress.app/dashboard/acme/docs/studio"
-      caption="Write in the studio — drafts save automatically"
+      caption="Write in the studio - drafts save automatically"
     >
       <div style={{ display: "flex", height: "100%" }}>
         {/* File tree sidebar */}
@@ -718,7 +718,7 @@ const PublishScene: React.FC = () => {
           </div>
         </div>
 
-        {/* Success card — always rendered; opacity drives visibility */}
+        {/* Success card - always rendered; opacity drives visibility */}
         <div
           style={{
             position: "absolute",

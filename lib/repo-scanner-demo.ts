@@ -60,7 +60,7 @@ export function buildRepoScannerDemo(input: string): RepoScannerDemoResult {
 
   // Bare owner/repo with no domain (e.g. "acme/docs")
   if (/^[^/\s:]+\/[^/\s]+$/.test(trimmed)) {
-    return { error: "Add the full URL — try: https://github.com/owner/repo" }
+    return { error: "Add the full URL - try: https://github.com/owner/repo" }
   }
 
   // Non-GitHub domain
@@ -70,7 +70,7 @@ export function buildRepoScannerDemo(input: string): RepoScannerDemoResult {
 
   // GitHub URL with extra path suffix (tree, blob, issues, etc.)
   if (/github\.com\/[^/\s]+\/[^/\s]+\/.+/i.test(trimmed)) {
-    return { error: "Paste the repository root — remove everything after the repo name." }
+    return { error: "Paste the repository root - remove everything after the repo name." }
   }
 
   const match = trimmed.match(/^(?:https?:\/\/)?(?:www\.)?github\.com\/([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/i)

@@ -254,7 +254,7 @@ export function StudioHeader({
         <Dialog open={showShortcuts} onOpenChange={setShowShortcuts}>
           <DialogContent
             className="max-w-lg"
-            // Same Radix aria-hidden race fix — opened from DropdownMenuItem, see edit-project-dialog.tsx for details.
+            // Same Radix aria-hidden race fix - opened from DropdownMenuItem, see edit-project-dialog.tsx for details.
             onCloseAutoFocus={(e) => e.preventDefault()}
           >
             <DialogHeader>

@@ -34,7 +34,7 @@ export async function removeProjectFromConfig(
   const { config, sha, error, errorType } = await readConfig(githubToken, owner, repo, branch)
 
   if (!config || !sha) {
-    // Config doesn't exist — nothing to remove, consider it a no-op success
+    // Config doesn't exist - nothing to remove, consider it a no-op success
     if (errorType === "not-found") {
       return { success: true, deletedFile: false }
     }
@@ -47,7 +47,7 @@ export async function removeProjectFromConfig(
   // 2. Check if this project exists in the config
   const projectIndex = config.projects.findIndex((p) => p.id === configProjectId)
   if (projectIndex === -1) {
-    // Project not in config — no-op
+    // Project not in config - no-op
     return { success: true, deletedFile: false }
   }
 

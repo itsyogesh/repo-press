@@ -39,7 +39,7 @@ export const listByProject = query({
   },
 })
 
-/** Internal version of listByProject — no auth, for use by actions like syncTreeTitles. */
+/** Internal version of listByProject - no auth, for use by actions like syncTreeTitles. */
 export const listByProjectInternal = internalQuery({
   args: { projectId: v.id("projects") },
   handler: async (ctx, args) => {
@@ -90,7 +90,7 @@ export const get = query({
   },
 })
 
-// Internal only — not callable from the client. Use getOrCreate for client-facing usage.
+// Internal only - not callable from the client. Use getOrCreate for client-facing usage.
 export const create = internalMutation({
   args: {
     projectId: v.id("projects"),
@@ -198,7 +198,7 @@ export const getOrCreateInternal = internalMutation({
   },
 })
 
-// Generic update for document metadata. Status changes are NOT allowed here —
+// Generic update for document metadata. Status changes are NOT allowed here -
 // use `publish` or `transitionStatus` instead.
 export const update = mutation({
   args: {
@@ -285,7 +285,7 @@ export const hasContentForProject = query({
   },
   handler: async (ctx, args) => {
     const access = await resolveProjectReader(ctx, args)
-    if (!access) return true // fail closed — assume content exists if unauthorized
+    if (!access) return true // fail closed - assume content exists if unauthorized
 
     const firstDoc = await ctx.db
       .query("documents")
@@ -408,7 +408,7 @@ export const publish = mutation({
 })
 
 // Status transition state machine.
-// "published" is NOT a valid target here — publishing requires a GitHub commit
+// "published" is NOT a valid target here - publishing requires a GitHub commit
 // and must go through the `publish` mutation instead.
 export const transitionStatus = mutation({
   args: {
@@ -601,7 +601,7 @@ export const syncTreeTitles = action({
 
             const content = await response.text()
 
-            // Extract title from frontmatter (simple regex — no gray-matter in Convex)
+            // Extract title from frontmatter (simple regex - no gray-matter in Convex)
             let title =
               file.path
                 .split("/")

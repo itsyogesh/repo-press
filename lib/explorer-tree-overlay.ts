@@ -191,10 +191,10 @@ export function filterTree(
       } else {
         // Directory node
         if (matches(node)) {
-          // Dir name matches — include it with all its children
+          // Dir name matches - include it with all its children
           filtered.push(node)
         } else if (node.children) {
-          // Dir name doesn't match — recurse and include only if children match
+          // Dir name doesn't match - recurse and include only if children match
           const matchingChildren = filterNodes(node.children)
           if (matchingChildren.length > 0) {
             filtered.push({

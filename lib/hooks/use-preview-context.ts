@@ -281,7 +281,7 @@ export function usePreviewContext({
   enabledPlugins,
   pluginRegistry,
 }: UsePreviewContextOptions): UsePreviewContextResult {
-  // Stabilize array/object refs from Convex queries — they return new references
+  // Stabilize array/object refs from Convex queries - they return new references
   // on every subscription fire even when the data is identical, which would
   // otherwise cascade into a new `key` → new store subscription every time.
   const pluginsKey = useMemo(() => JSON.stringify(enabledPlugins || []), [enabledPlugins])

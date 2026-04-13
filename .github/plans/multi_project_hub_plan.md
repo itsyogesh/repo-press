@@ -16,7 +16,7 @@ Goals
 
 Phases & Tasks
 --------------
-Task 1 — Config sync & schema
+Task 1 - Config sync & schema
   1.1 Add tombstone table `deletedConfigProjects` to schema.
   1.2 Extend `projects` table with `configProjectId`, `configVersion`, `configPath`, `previewEntry`, `enabledPlugins`, `components`, `frameworkSource`.
   1.3 Implement `syncProjectsFromConfig` mutation that:
@@ -24,15 +24,15 @@ Task 1 — Config sync & schema
     - Matches entries by `configProjectId` or legacy repo+branch+contentRoot
     - Creates/patches projects and skips tombstoned entries
 
-Task 2 — Safe removal & server actions
+Task 2 - Safe removal & server actions
   2.1 Add server action `removeProjectFromConfig(owner, repo, branch, configProjectId, token)` that updates or deletes the config file on GitHub.
   2.2 Implement two-phase project deletion: soft-delete + scheduled batch cleanup and tombstone recording for config-driven removals.
 
-Task 3 — Settings UI & Hub component
+Task 3 - Settings UI & Hub component
   3.1 Add Project Hub component (dashboard) wiring to `listProjectsForRepo` and show config/manual source.
   3.2 Add Settings page actions: AddProjectDialog, EditProjectDialog, RemoveProjectDialog; hook remove to server action above.
 
-Task 4 — Tests & verification
+Task 4 - Tests & verification
   4.1 Add unit tests for sync logic (matching, tombstone skipping, migration path).
   4.2 Add route/action tests for config removal and error paths.
   4.3 Add UI integration smoke tests for Settings Hub flows.

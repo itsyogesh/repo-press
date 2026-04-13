@@ -173,7 +173,7 @@ export function FolderPickerDialog({
               animateExpand
             >
               <Tree>
-                {/* Repo root — always present */}
+                {/* Repo root - always present */}
                 <TreeItem
                   nodeId=""
                   label="(repo root)"

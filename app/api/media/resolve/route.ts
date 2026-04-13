@@ -44,7 +44,7 @@ export async function GET(request: Request) {
         if (payload?.userId && payload?.projectId === projectId) {
           actingUserId = payload.userId
           projectAccessToken = queryAccessToken
-          // githubToken is not available via projectAccessToken — resolved via cookies below
+          // githubToken is not available via projectAccessToken - resolved via cookies below
         }
       } catch {
         // Token verification failed, fall back to cookie-based auth
@@ -61,7 +61,7 @@ export async function GET(request: Request) {
         githubToken = auth.githubToken
       } catch (e) {
         if (!actingUserId) {
-          // No auth at all — reject the request
+          // No auth at all - reject the request
           if (e instanceof RouteAuthError) {
             return NextResponse.json({ error: e.message }, { status: e.status })
           }
@@ -82,7 +82,7 @@ export async function GET(request: Request) {
     const githubPath = repoPath.replace(/^\/+/, "")
     const githubPathCandidates = getGitHubPathCandidates(githubPath)
 
-    // Look up pending op — try both /images/... and /public/images/... since
+    // Look up pending op - try both /images/... and /public/images/... since
     // images are staged with the full repo path (public/) but authored/referenced
     // as the web URL path (/images/...). e.g. staged key = /public/images/blog/photo.jpg,
     // authored value = /images/blog/photo.jpg (after toPublicAssetPath strips the prefix).
@@ -134,7 +134,7 @@ export async function GET(request: Request) {
       if (!storageUrl) {
         return NextResponse.json({ error: "Media not found" }, { status: 404 })
       }
-      // Redirect to the Convex CDN URL — no need to proxy bytes through Next.js.
+      // Redirect to the Convex CDN URL - no need to proxy bytes through Next.js.
       return NextResponse.redirect(storageUrl, { status: 302 })
     }
 

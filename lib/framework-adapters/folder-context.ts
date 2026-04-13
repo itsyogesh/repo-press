@@ -9,7 +9,7 @@
  * - Naming strategy (from adapter, falling back to "slug")
  * - File extension (from adapter, falling back to ".md" for custom repos)
  *
- * All computation is synchronous — no async detection per folder.
+ * All computation is synchronous - no async detection per folder.
  */
 
 import type { FrameworkAdapter, FrontmatterFieldDef, NamingStrategy } from "./types"
@@ -158,7 +158,7 @@ export function getFolderContext(folderPath: string, adapter: FrameworkAdapter |
     }
   }
 
-  // No match — fall back to title-cased folder name + " File"
+  // No match - fall back to title-cased folder name + " File"
   const folderLabel = segment.charAt(0).toUpperCase() + segment.slice(1)
   return {
     contentLabel: `${folderLabel} File`,

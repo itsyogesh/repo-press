@@ -32,7 +32,7 @@ const SCENE_DURATIONS_S = {
   cta: 5,
 }
 // 6 scenes, 5 transitions at ~0.83s each
-// ~33s raw - 4.17s overlap = ~29s total. Placeholder — verify in Studio.
+// ~33s raw - 4.17s overlap = ~29s total. Placeholder - verify in Studio.
 
 // ─── Component ───────────────────────────────────────────────────────────────
 export const LaunchVideo: React.FC<LaunchVideoProps> = ({ musicVolume = 0.3, sfxVolume: _sfxVolume = 0.7 }) => {
@@ -43,7 +43,7 @@ export const LaunchVideo: React.FC<LaunchVideoProps> = ({ musicVolume = 0.3, sfx
 
   return (
     <AbsoluteFill style={{ backgroundColor: "#000000" }}>
-      {/* Background music — looped, fades out in last 2s */}
+      {/* Background music - looped, fades out in last 2s */}
       <Audio
         src={staticFile("remotion/music-launch.mp3")}
         loop
@@ -59,11 +59,11 @@ export const LaunchVideo: React.FC<LaunchVideoProps> = ({ musicVolume = 0.3, sfx
       />
 
       <TransitionSeries>
-        {/* 1 — Intro */}
+        {/* 1 - Intro */}
         <TransitionSeries.Sequence durationInFrames={s(SCENE_DURATIONS_S.intro)} premountFor={30}>
           <IntroScene
             title="RepoPress is Live"
-            subtitle="Git-native headless CMS — now in early access"
+            subtitle="Git-native headless CMS - now in early access"
             badge="Launch"
           />
         </TransitionSeries.Sequence>
@@ -72,7 +72,7 @@ export const LaunchVideo: React.FC<LaunchVideoProps> = ({ musicVolume = 0.3, sfx
           presentation={fade()}
         />
 
-        {/* 2 — Frameworks */}
+        {/* 2 - Frameworks */}
         <TransitionSeries.Sequence durationInFrames={s(SCENE_DURATIONS_S.frameworks)} premountFor={30}>
           <FrameworkScene title="Every Framework. One CMS." />
         </TransitionSeries.Sequence>
@@ -81,7 +81,7 @@ export const LaunchVideo: React.FC<LaunchVideoProps> = ({ musicVolume = 0.3, sfx
           presentation={slide({ direction: "from-right" })}
         />
 
-        {/* 3 — Git Native */}
+        {/* 3 - Git Native */}
         <TransitionSeries.Sequence durationInFrames={s(SCENE_DURATIONS_S.gitNative)} premountFor={30}>
           <AbsoluteFill
             style={{ display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "#000000" }}
@@ -94,7 +94,7 @@ export const LaunchVideo: React.FC<LaunchVideoProps> = ({ musicVolume = 0.3, sfx
           presentation={wipe({ direction: "from-left" })}
         />
 
-        {/* 4 — Studio Demo */}
+        {/* 4 - Studio Demo */}
         <TransitionSeries.Sequence durationInFrames={s(SCENE_DURATIONS_S.studio)} premountFor={30}>
           <AbsoluteFill
             style={{ display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "#000000" }}
@@ -107,7 +107,7 @@ export const LaunchVideo: React.FC<LaunchVideoProps> = ({ musicVolume = 0.3, sfx
           presentation={fade()}
         />
 
-        {/* 5 — Workflow */}
+        {/* 5 - Workflow */}
         <TransitionSeries.Sequence durationInFrames={s(SCENE_DURATIONS_S.workflow)} premountFor={30}>
           <AbsoluteFill
             style={{ display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "#000000" }}
@@ -120,9 +120,9 @@ export const LaunchVideo: React.FC<LaunchVideoProps> = ({ musicVolume = 0.3, sfx
           presentation={slide({ direction: "from-right" })}
         />
 
-        {/* 6 — CTA */}
+        {/* 6 - CTA */}
         <TransitionSeries.Sequence durationInFrames={s(SCENE_DURATIONS_S.cta)} premountFor={30}>
-          <CTAScene headline="RepoPress — Now in Early Access" url="repopress.app" />
+          <CTAScene headline="RepoPress - Now in Early Access" url="repopress.app" />
         </TransitionSeries.Sequence>
       </TransitionSeries>
     </AbsoluteFill>

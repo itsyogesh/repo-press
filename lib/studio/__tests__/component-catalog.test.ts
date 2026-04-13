@@ -172,7 +172,7 @@ describe("groupByCategory", () => {
 })
 
 // ---------------------------------------------------------------------------
-// buildComponentCatalog — hasProjectComponents filtering
+// buildComponentCatalog - hasProjectComponents filtering
 // ---------------------------------------------------------------------------
 
 describe("buildComponentCatalog – hasProjectComponents filtering", () => {

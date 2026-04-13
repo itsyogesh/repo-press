@@ -39,13 +39,13 @@ describe("buildRepoScannerDemo", () => {
 
   it("returns a hint for bare owner/repo slugs", () => {
     expect(buildRepoScannerDemo("acme/docs")).toEqual({
-      error: "Add the full URL — try: https://github.com/owner/repo",
+      error: "Add the full URL - try: https://github.com/owner/repo",
     })
   })
 
   it("returns a hint for GitHub tree/blob URLs", () => {
     expect(buildRepoScannerDemo("https://github.com/acme/docs/tree/main")).toEqual({
-      error: "Paste the repository root — remove everything after the repo name.",
+      error: "Paste the repository root - remove everything after the repo name.",
     })
   })
 })

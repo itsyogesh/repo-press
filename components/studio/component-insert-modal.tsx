@@ -26,14 +26,14 @@ import { useStudio } from "./studio-context"
 import { VideoPreview as StudioVideoPreview } from "./video-preview"
 
 // ---------------------------------------------------------------------------
-// LiveConfigurePreview — reacts to formState for known component types
+// LiveConfigurePreview - reacts to formState for known component types
 // ---------------------------------------------------------------------------
 
 function LiveConfigurePreview({ def, formState }: { def: RepoComponentDef; formState: PropFormState }) {
   const studio = useStudio()
   const normalizedName = def.name.replace(/Adapter$/i, "").toLowerCase()
 
-  // DocsImage / image component — show actual image when src is provided
+  // DocsImage / image component - show actual image when src is provided
   if (
     (normalizedName === "docsimage" || normalizedName === "image") &&
     typeof formState.src === "string" &&
@@ -66,7 +66,7 @@ function LiveConfigurePreview({ def, formState }: { def: RepoComponentDef; formS
     )
   }
 
-  // DocsVideo / video component — show actual embedded player
+  // DocsVideo / video component - show actual embedded player
   if (
     (normalizedName === "docsvideo" || normalizedName === "video") &&
     typeof formState.src === "string" &&
@@ -84,7 +84,7 @@ function LiveConfigurePreview({ def, formState }: { def: RepoComponentDef; formS
     )
   }
 
-  // Callout — show a styled live callout preview
+  // Callout - show a styled live callout preview
   if (normalizedName === "callout") {
     const type = typeof formState.type === "string" ? formState.type : "info"
     const title = typeof formState.title === "string" ? formState.title : ""
@@ -114,7 +114,7 @@ function LiveConfigurePreview({ def, formState }: { def: RepoComponentDef; formS
     )
   }
 
-  // Default fallback — static wireframe preview
+  // Default fallback - static wireframe preview
   return <ComponentPreview name={def.name} className="shadow-none border-none bg-transparent" />
 }
 
@@ -156,7 +156,7 @@ interface ComponentInsertModalProps {
   adapterComponents?: Record<string, any> | null
   /** Project config components (from repopress.config.json). */
   projectComponents?: Record<string, any> | null
-  /** Detected framework (e.g. "fumadocs", "nextra", "astro") — used for fallback component schemas. */
+  /** Detected framework (e.g. "fumadocs", "nextra", "astro") - used for fallback component schemas. */
   framework?: string
   /** Optional repo context for image uploads in prop form. */
   repoContext?: {
@@ -183,8 +183,8 @@ type ModalStep = "pick" | "configure"
 
 /**
  * Two-step modal for component insertion:
- * 1. **Pick** — choose a component from the catalog.
- * 2. **Configure** — fill in props (and optional children), then insert.
+ * 1. **Pick** - choose a component from the catalog.
+ * 2. **Configure** - fill in props (and optional children), then insert.
  *
  * The registry is built on each open from adapter + project components
  * (single source of truth). Catalog is a read-only projection.
@@ -266,7 +266,7 @@ export function ComponentInsertModal({
     return result
   }, [catalog, searchQuery, activeCategory])
 
-  // Main catalog — excludes recently-used items when the recently-used section
+  // Main catalog - excludes recently-used items when the recently-used section
   // is visible, so components don't appear in both sections simultaneously.
   const mainCatalog = React.useMemo(() => {
     if (recentCatalog.length === 0 || searchQuery || activeCategory !== "All") {
@@ -476,7 +476,7 @@ export function ComponentInsertModal({
               </div>
 
               <div className="flex-1 flex overflow-hidden min-h-0">
-                {/* Left panel — live preview */}
+                {/* Left panel - live preview */}
                 <div className="hidden md:flex flex-1 items-center justify-center p-10 border-r border-studio-border bg-studio-canvas-inset/20 relative overflow-hidden">
                   <div
                     className="absolute inset-0 opacity-[0.03] dark:opacity-[0.06] pointer-events-none"
@@ -500,7 +500,7 @@ export function ComponentInsertModal({
                   </div>
                 </div>
 
-                {/* Right panel — form */}
+                {/* Right panel - form */}
                 <div className="w-full md:w-[360px] flex flex-col min-h-0">
                   <ScrollArea className="flex-1 min-h-0">
                     <div className="p-5 space-y-5">

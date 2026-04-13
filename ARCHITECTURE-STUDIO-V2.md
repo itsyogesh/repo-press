@@ -1,22 +1,22 @@
-# Studio V2 Architecture — End-to-End Redesign
+# Studio V2 Architecture - End-to-End Redesign
 
 ## Problem Statement
 
 The studio has several interconnected issues that share a root cause: the system assumes one framework per repo and uses schema-first rendering. In reality:
 
-1. **One repo, many content types** — A repo can have `content/blog/` (Contentlayer), `docs/` (Fumadocs), and `content/marketing/` (custom) in the same repo. Each folder has different frontmatter schemas.
+1. **One repo, many content types** - A repo can have `content/blog/` (Contentlayer), `docs/` (Fumadocs), and `content/marketing/` (custom) in the same repo. Each folder has different frontmatter schemas.
 
-2. **Schema-file mismatch** — The editor shows framework schema fields as primary (often empty), while the file's actual fields are buried under "Additional fields from file". The file's real data should be primary.
+2. **Schema-file mismatch** - The editor shows framework schema fields as primary (often empty), while the file's actual fields are buried under "Additional fields from file". The file's real data should be primary.
 
-3. **Framework detection is repo-level** — Detection reads root `package.json` + root config files. It can't distinguish between blog (Contentlayer) and docs (Fumadocs) in the same repo.
+3. **Framework detection is repo-level** - Detection reads root `package.json` + root config files. It can't distinguish between blog (Contentlayer) and docs (Fumadocs) in the same repo.
 
-4. **No field-name resolution in editor** — Preview resolves `heading` → title via semantic fallbacks. Editor binds by exact name only, so schema field "title" is empty while file field "heading" has the value.
+4. **No field-name resolution in editor** - Preview resolves `heading` → title via semantic fallbacks. Editor binds by exact name only, so schema field "title" is empty while file field "heading" has the value.
 
-5. **File tree shows filenames, not titles** — Sidebar shows `complete-guide-to-top-level-domains.mdx` instead of the parsed document title "A Complete Guide to Top-Level Domain".
+5. **File tree shows filenames, not titles** - Sidebar shows `complete-guide-to-top-level-domains.mdx` instead of the parsed document title "A Complete Guide to Top-Level Domain".
 
-6. **Broken preview images** — Image paths in frontmatter are repo-relative (e.g. `/images/cover.jpg`). Preview renders them against the Next.js server, not GitHub.
+6. **Broken preview images** - Image paths in frontmatter are repo-relative (e.g. `/images/cover.jpg`). Preview renders them against the Next.js server, not GitHub.
 
-7. **No project switching** — Users can create multiple projects from the same repo, but there's no way to switch between them in the studio.
+7. **No project switching** - Users can create multiple projects from the same repo, but there's no way to switch between them in the studio.
 
 ---
 
@@ -131,7 +131,7 @@ Output: [...Phase1+2 results (isInFile=true), ...Phase3 results (isInFile=false)
 │  ↳ Cover image                                          │
 │                                                         │
 │  ▸ Show 2 available schema fields                       │
-│    (draft, icon — not in this file)                     │
+│    (draft, icon - not in this file)                     │
 │                                                         │
 └─────────────────────────────────────────────────────────┘
 ```
@@ -185,7 +185,7 @@ Sidebar shows `complete-guide-to-top-level-domains.mdx` instead of "A Complete G
 
 **Implementation in Convex:**
 ```
-convex/documents.ts — Add:
+convex/documents.ts - Add:
   syncTreeTitles: action({
     args: { projectId, files: [{ path, sha }] },
     handler: fetches missing files from GitHub, calls getOrCreate for each
@@ -226,7 +226,7 @@ Users create multiple projects from the same repo (blog, docs, marketing) but ca
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-**Data source:** Query `projects.getByRepo({ userId, repoOwner, repoName })` — returns all projects for this repo.
+**Data source:** Query `projects.getByRepo({ userId, repoOwner, repoName })` - returns all projects for this repo.
 
 **Switching:** Navigate to `/dashboard/{owner}/{repo}/studio?projectId={selectedId}`. This reloads the studio page server-side with the new project's `contentRoot`, `detectedFramework`, etc.
 

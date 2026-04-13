@@ -3,8 +3,8 @@ import Footer from "@/components/landing/footer"
 import Navbar from "@/components/landing/navbar"
 
 export const metadata: Metadata = {
-  title: "Terms of Service — RepoPress",
-  description: "Terms of service for RepoPress — the visual editor for content in GitHub repositories.",
+  title: "Terms of Service - RepoPress",
+  description: "Terms of service for RepoPress - the visual editor for content in GitHub repositories.",
 }
 
 export default function TermsPage() {
@@ -66,7 +66,7 @@ export default function TermsPage() {
               manage through our service.
             </p>
             <ul className="list-disc list-inside space-y-2 text-muted-foreground">
-              <li>All content stays in your GitHub repository—we never copy or store it in our databases</li>
+              <li>All content stays in your GitHub repository-we never copy or store it in our databases</li>
               <li>You retain all rights to your content, including intellectual property rights</li>
               <li>You are solely responsible for the content you publish through RepoPress</li>
               <li>If you stop using RepoPress, your content remains exactly where it is in your repository</li>

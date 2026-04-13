@@ -328,7 +328,7 @@ export function RepoProjectHub({
               <Badge
                 variant="outline"
                 className="rounded-full px-2.5 py-1 text-[0.65rem] uppercase tracking-[0.16em]"
-                title={defaultBranchInferred ? "Branch detected heuristically — verify this is correct" : undefined}
+                title={defaultBranchInferred ? "Branch detected heuristically - verify this is correct" : undefined}
               >
                 <GitBranch className="h-3.5 w-3.5" />
                 {defaultBranch}
