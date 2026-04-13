@@ -1,7 +1,9 @@
 "use client"
 
 import { DiffEditor } from "@monaco-editor/react"
-import { useMemo, useState } from "react"
+import { Loader2 } from "lucide-react"
+import { useTheme } from "next-themes"
+import { useEffect, useMemo, useState } from "react"
 import { cn } from "@/lib/utils"
 
 interface DiffViewerProps {
@@ -13,6 +15,12 @@ interface DiffViewerProps {
 
 export function DiffViewer({ originalValue, modifiedValue, language = "markdown", className }: DiffViewerProps) {
   const [viewMode, setViewMode] = useState<"split" | "inline">("split")
+  const { resolvedTheme } = useTheme()
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => setMounted(true), [])
+
+  const monacoTheme = mounted && resolvedTheme === "light" ? "light" : "vs-dark"
 
   const options = useMemo(
     () => ({
@@ -60,7 +68,13 @@ export function DiffViewer({ originalValue, modifiedValue, language = "markdown"
           modified={modifiedValue}
           language={language}
           options={options}
-          theme="vs-dark"
+          theme={monacoTheme}
+          loading={
+            <div className="flex items-center justify-center h-full text-muted-foreground gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span className="text-sm">Loading diff editor…</span>
+            </div>
+          }
         />
       </div>
     </div>
