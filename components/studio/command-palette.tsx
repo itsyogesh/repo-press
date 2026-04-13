@@ -1,6 +1,6 @@
 "use client"
 
-import { Code, FileText, History, Home, Moon, PanelLeft, Plus, Save, Search, Sparkles, Split, Sun } from "lucide-react"
+import { Code, FileText, History, Home, Moon, PanelLeft, Plus, Save, Search, Split, Sun } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useTheme } from "next-themes"
 import * as React from "react"
@@ -40,10 +40,10 @@ function PaletteIconShell({ children, tone = "default" }: { children: React.Reac
   return (
     <div
       className={cn(
-        "flex size-9 shrink-0 items-center justify-center rounded-xl border bg-studio-canvas-inset/60",
+        "flex size-7 shrink-0 items-center justify-center rounded-md",
         tone === "accent"
-          ? "border-studio-accent/15 bg-studio-accent-muted/70 text-studio-accent"
-          : "border-studio-border/60 text-studio-fg-muted",
+          ? "border border-studio-accent/20 bg-studio-accent-muted/60 text-studio-accent"
+          : "text-studio-fg-muted",
       )}
     >
       {children}
@@ -208,29 +208,11 @@ export function CommandPalette({
       title="Command Palette"
       description="Search files, actions, and navigation"
     >
-      <div className="border-b border-border/70 px-[var(--space-panel-lg)] py-4">
-        <div className="flex items-start justify-between gap-4">
-          <div className="space-y-1">
-            <div className="inline-flex items-center gap-2 rounded-full border border-studio-accent/15 bg-studio-accent-muted/70 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-studio-accent">
-              <Sparkles className="h-3 w-3" />
-              Studio command center
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold tracking-tight text-studio-fg">Search files, actions, and views</h2>
-              <p className="text-sm text-studio-fg-muted">Jump anywhere in the studio without breaking flow.</p>
-            </div>
-          </div>
-          <div className="hidden items-center gap-1 rounded-full border border-studio-border/70 bg-studio-canvas px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.18em] text-studio-fg-muted sm:flex">
-            <Search className="h-3 w-3" />
-            ⌘K
-          </div>
-        </div>
-      </div>
       <CommandInput value={query} onValueChange={setQuery} placeholder="Search files, actions, and pages..." />
       <CommandList className="max-h-[30rem] px-3 pb-3">
         <CommandEmpty>
           <div className="space-y-2 py-4">
-            <div className="mx-auto flex size-12 items-center justify-center rounded-2xl border border-studio-border/70 bg-studio-canvas-inset/40">
+            <div className="mx-auto flex size-12 items-center justify-center rounded-lg border border-studio-border/70 bg-studio-canvas-inset/40">
               <Search className="h-5 w-5 text-studio-fg-muted" />
             </div>
             <div className="space-y-1">
@@ -291,11 +273,6 @@ export function CommandPalette({
                 <div className="flex min-w-0 flex-1 flex-col">
                   <div className="flex items-center gap-2">
                     <span className="truncate text-sm font-medium text-studio-fg">{file.title || file.name}</span>
-                    {file.title ? (
-                      <Badge variant="outline" className="h-5 rounded-full px-1.5 text-[10px] text-studio-fg-muted">
-                        title
-                      </Badge>
-                    ) : null}
                   </div>
                   <span className="truncate text-xs text-studio-fg-muted">{file.path}</span>
                 </div>
@@ -398,6 +375,17 @@ export function CommandPalette({
           </CommandItem>
         </CommandGroup>
       </CommandList>
+      <div className="flex items-center gap-4 border-t border-border/60 px-4 py-2">
+        <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+          <span className="font-mono">↑↓</span> navigate
+        </span>
+        <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+          <span className="font-mono">↵</span> open
+        </span>
+        <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+          <span className="font-mono">esc</span> close
+        </span>
+      </div>
     </CommandDialog>
   )
 }

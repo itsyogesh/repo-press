@@ -118,7 +118,7 @@ function CommandItem({ className, ...props }: React.ComponentProps<typeof Comman
     <CommandPrimitive.Item
       data-slot="command-item"
       className={cn(
-        "relative flex cursor-pointer items-center gap-3 rounded-lg border border-transparent px-[var(--space-cluster)] py-3 text-[0.95rem] leading-5 outline-hidden select-none transition-[background-color,border-color,color,box-shadow] duration-150 ease-out hover:bg-secondary/80 data-[selected=true]:border-border/80 data-[selected=true]:bg-accent/80 data-[selected=true]:text-foreground data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 motion-reduce:transition-none [&_svg:not([class*='text-'])]:text-muted-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "relative flex cursor-pointer items-center gap-3 rounded-lg border border-transparent px-[var(--space-cluster)] py-3 text-[0.95rem] leading-5 outline-hidden select-none transition-[background-color,border-color,color,box-shadow] duration-150 ease-out hover:bg-secondary/80 data-[selected=true]:border-primary/20 data-[selected=true]:bg-primary/10 data-[selected=true]:text-foreground data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 motion-reduce:transition-none [&_svg:not([class*='text-'])]:text-muted-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className,
       )}
       {...props}
@@ -130,7 +130,7 @@ function CommandShortcut({ className, ...props }: React.ComponentProps<"span">) 
   return (
     <span
       data-slot="command-shortcut"
-      className={cn("text-muted-foreground ml-auto text-[0.7rem] font-medium uppercase tracking-[0.18em]", className)}
+      className={cn("ml-auto font-mono text-[0.7rem] font-medium text-muted-foreground", className)}
       {...props}
     />
   )
