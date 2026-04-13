@@ -4,284 +4,246 @@ import { geistFamily, geistMonoFamily } from "../fonts"
 
 export { studioDemoComposition } from "./studio-demo-composition"
 
-// ── Shared primitives ────────────────────────────────────────────────────────
+// ── Layout constants ──────────────────────────────────────────────────────────
 
-const Scene: React.FC<{ children: React.ReactNode; label: string; step: number }> = ({ children, label, step }) => {
+const BROWSER_W = 1040
+const BROWSER_TOOLBAR_H = 44
+const BROWSER_CONTENT_H = 400
+
+// ── Shared primitives ─────────────────────────────────────────────────────────
+
+const TrafficLights: React.FC = () => (
+  <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+    <div style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: "#ef4444" }} />
+    <div style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: "#eab308" }} />
+    <div style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: COLORS.green }} />
+  </div>
+)
+
+const GithubIcon: React.FC = () => (
+  <svg width="28" height="28" viewBox="0 0 24 24" fill={COLORS.fg} role="img" aria-label="GitHub">
+    <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
+  </svg>
+)
+
+// Browser chrome wrapper — gives every scene the same desktop + window + caption frame
+const BrowserScene: React.FC<{
+  children: React.ReactNode
+  label: string
+  step: number
+  url: string
+  caption: string
+}> = ({ children, label, step, url, caption }) => {
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()
 
   const labelOpacity = spring({ frame, fps, config: { damping: 20 } })
-  const contentOpacity = interpolate(frame, [8, 20], [0, 1], {
+  const browserEnter = interpolate(frame, [0, 10], [0, 1], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
   })
+  const captionOpacity = spring({ frame, fps, config: { damping: 25 }, delay: 18 })
 
   return (
     <AbsoluteFill
       style={{
-        backgroundColor: COLORS.bg,
+        backgroundColor: COLORS.desktopBg,
         fontFamily: geistFamily,
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        padding: 60,
       }}
     >
+      {/* Step label row */}
       <div
         style={{
-          position: "absolute",
-          top: 40,
-          left: 60,
+          width: BROWSER_W,
           display: "flex",
           alignItems: "center",
-          gap: 12,
+          gap: 10,
+          marginBottom: 12,
           opacity: labelOpacity,
         }}
       >
         <div
           style={{
-            width: 28,
-            height: 28,
-            borderRadius: 14,
+            width: 24,
+            height: 24,
+            borderRadius: 12,
             backgroundColor: COLORS.accent,
-            color: COLORS.bg,
+            color: "#fff",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            fontSize: 14,
+            fontSize: 12,
             fontWeight: 700,
           }}
         >
           {step}
         </div>
         <span
-          style={{ color: COLORS.muted, fontSize: 16, fontWeight: 500, letterSpacing: 2, textTransform: "uppercase" }}
+          style={{
+            color: COLORS.muted,
+            fontSize: 13,
+            fontWeight: 500,
+            letterSpacing: 2,
+            textTransform: "uppercase" as const,
+          }}
         >
           {label}
         </span>
       </div>
-      <div style={{ opacity: contentOpacity, width: "100%" }}>{children}</div>
+
+      {/* Browser window */}
+      <div
+        style={{
+          width: BROWSER_W,
+          opacity: browserEnter,
+          borderRadius: 10,
+          overflow: "hidden",
+          border: `1px solid ${COLORS.browserBorder}`,
+          boxShadow: "0 24px 64px rgba(0,0,0,0.55)",
+        }}
+      >
+        {/* Toolbar */}
+        <div
+          style={{
+            height: BROWSER_TOOLBAR_H,
+            backgroundColor: COLORS.browserChrome,
+            borderBottom: `1px solid ${COLORS.browserBorder}`,
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            padding: "0 16px",
+          }}
+        >
+          <TrafficLights />
+          <div
+            style={{
+              flex: 1,
+              maxWidth: 520,
+              height: 26,
+              backgroundColor: COLORS.browserBar,
+              borderRadius: 6,
+              border: `1px solid ${COLORS.browserBorder}`,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              margin: "0 auto",
+            }}
+          >
+            <span style={{ color: COLORS.muted, fontSize: 12, fontFamily: geistMonoFamily }}>{url}</span>
+          </div>
+          <div style={{ width: 72, flexShrink: 0 }} />
+        </div>
+
+        {/* Content area */}
+        <div
+          style={{
+            height: BROWSER_CONTENT_H,
+            backgroundColor: COLORS.bg,
+            overflow: "hidden",
+            position: "relative",
+          }}
+        >
+          {children}
+        </div>
+      </div>
+
+      {/* Caption pill */}
+      <div style={{ marginTop: 14, opacity: captionOpacity }}>
+        <div
+          style={{
+            backgroundColor: "rgba(255,255,255,0.06)",
+            border: "1px solid rgba(255,255,255,0.11)",
+            borderRadius: 20,
+            padding: "7px 20px",
+            color: COLORS.fg,
+            fontSize: 14,
+            fontWeight: 500,
+            letterSpacing: 0.2,
+          }}
+        >
+          {caption}
+        </div>
+      </div>
     </AbsoluteFill>
   )
 }
 
-// Pill caption strip that appears at the bottom of every scene.
-const CaptionBar: React.FC<{ text: string }> = ({ text }) => {
+// ── Scene 1: Setup (0–120 frames = 4s) ───────────────────────────────────────
+
+const SetupScene: React.FC = () => {
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()
-  const opacity = spring({ frame, fps, config: { damping: 25 }, delay: 20 })
+
+  const cardEnter = spring({ frame, fps, config: { damping: 14, stiffness: 80 }, delay: 5 })
+  const badgeOpacity = spring({ frame, fps, config: { damping: 18 }, delay: 48 })
+  const btnEnter = spring({ frame, fps, config: { damping: 15 }, delay: 78 })
+  const btnActive = frame >= 92
 
   return (
-    <div
-      style={{
-        position: "absolute",
-        bottom: 40,
-        left: 0,
-        right: 0,
-        display: "flex",
-        justifyContent: "center",
-        opacity,
-      }}
+    <BrowserScene
+      label="Setup"
+      step={1}
+      url="repopress.app/setup"
+      caption="One config file. RepoPress handles the rest."
     >
-      <div
-        style={{
-          backgroundColor: "rgba(255,255,255,0.07)",
-          border: "1px solid rgba(255,255,255,0.13)",
-          borderRadius: 24,
-          padding: "8px 22px",
-          color: COLORS.fg,
-          fontSize: 15,
-          fontWeight: 500,
-          fontFamily: geistFamily,
-          letterSpacing: 0.2,
-        }}
-      >
-        {text}
-      </div>
-    </div>
-  )
-}
-
-// ── Scene 1: Config ──────────────────────────────────────────────────────────
-
-const CONFIG_LINES: Array<{ text: string; color: string; callout?: string }> = [
-  { text: "{", color: COLORS.fg },
-  { text: '  "version": 1,', color: COLORS.fg },
-  { text: '  "projects": [', color: COLORS.fg },
-  { text: "    {", color: COLORS.fg },
-  { text: '      "name": "My Docs",', color: COLORS.muted },
-  { text: '      "contentRoot": "docs",', color: COLORS.accent, callout: "Your content folder" },
-  { text: '      "framework": "auto"', color: COLORS.accent, callout: "Auto-detected" },
-  { text: "    }", color: COLORS.fg },
-  { text: "  ]", color: COLORS.fg },
-  { text: "}", color: COLORS.fg },
-]
-
-const FRAMES_PER_LINE = 14
-
-const ConfigScene: React.FC = () => {
-  const frame = useCurrentFrame()
-  const { fps } = useVideoConfig()
-
-  const windowScale = spring({ frame, fps, config: { damping: 14, stiffness: 80 }, delay: 5 })
-
-  return (
-    <Scene label="Config" step={1}>
-      <div style={{ display: "flex", justifyContent: "center" }}>
+      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100%" }}>
         <div
           style={{
-            transform: `scale(${windowScale})`,
+            transform: `scale(${cardEnter})`,
             transformOrigin: "center",
             backgroundColor: COLORS.surface,
-            borderRadius: 12,
             border: `1px solid ${COLORS.border}`,
-            width: 640,
-            overflow: "hidden",
+            borderRadius: 10,
+            padding: "28px 36px",
+            width: 440,
           }}
         >
+          <div style={{ color: COLORS.fg, fontSize: 17, fontWeight: 600, marginBottom: 20 }}>Connect a Repository</div>
+
+          {/* Repo row */}
           <div
             style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 14,
+              marginBottom: 16,
+              padding: "12px 16px",
+              backgroundColor: COLORS.surfaceHigh,
+              borderRadius: 8,
+              border: `1px solid ${COLORS.border}`,
+            }}
+          >
+            <GithubIcon />
+            <div>
+              <div style={{ color: COLORS.fg, fontSize: 15, fontWeight: 600, fontFamily: geistMonoFamily }}>
+                acme/docs
+              </div>
+              <div style={{ color: COLORS.muted, fontSize: 12 }}>main · last updated 2 days ago</div>
+            </div>
+          </div>
+
+          {/* Config detected badge */}
+          <div
+            style={{
+              opacity: badgeOpacity,
               display: "flex",
               alignItems: "center",
               gap: 8,
-              padding: "12px 16px",
-              borderBottom: `1px solid ${COLORS.borderSubtle}`,
-            }}
-          >
-            <div style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: "#ef4444" }} />
-            <div style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: "#eab308" }} />
-            <div style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: COLORS.green }} />
-            <span style={{ color: COLORS.muted, fontSize: 13, marginLeft: 8, fontFamily: geistMonoFamily }}>
-              repopress.config.json
-            </span>
-          </div>
-          <div style={{ padding: "16px 20px", fontFamily: geistMonoFamily, fontSize: 14, lineHeight: 1.8 }}>
-            {CONFIG_LINES.map((line, i) => {
-              const lineStart = i * FRAMES_PER_LINE + 10
-              const charCount = interpolate(frame, [lineStart, lineStart + 12], [0, line.text.length], {
-                extrapolateLeft: "clamp",
-                extrapolateRight: "clamp",
-              })
-              const calloutOpacity = line.callout
-                ? spring({ frame: Math.max(0, frame - (lineStart + 12)), fps, config: { damping: 18 } })
-                : 0
-              const calloutX = line.callout
-                ? interpolate(frame, [lineStart + 12, lineStart + 22], [20, 0], {
-                    extrapolateLeft: "clamp",
-                    extrapolateRight: "clamp",
-                  })
-                : 0
-
-              return (
-                <div
-                  key={line.text}
-                  style={{ color: line.color, minHeight: 24, display: "flex", alignItems: "center" }}
-                >
-                  <span>
-                    {line.text.slice(0, Math.floor(charCount))}
-                    {charCount > 0 && charCount < line.text.length && (
-                      <span style={{ opacity: frame % 15 < 8 ? 1 : 0, color: COLORS.accent }}>▎</span>
-                    )}
-                  </span>
-                  {line.callout && (
-                    <span
-                      style={{
-                        marginLeft: 12,
-                        opacity: calloutOpacity,
-                        transform: `translateX(${calloutX}px)`,
-                        backgroundColor: "rgba(59,130,246,0.12)",
-                        border: "1px solid rgba(59,130,246,0.3)",
-                        borderRadius: 6,
-                        padding: "2px 8px",
-                        fontSize: 11,
-                        fontWeight: 600,
-                        color: COLORS.accent,
-                        letterSpacing: 0.3,
-                        fontFamily: geistFamily,
-                      }}
-                    >
-                      {line.callout}
-                    </span>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      </div>
-      <CaptionBar text="Drop one file in your repo root" />
-    </Scene>
-  )
-}
-
-// ── Scene 2: Connect ─────────────────────────────────────────────────────────
-
-const GithubIcon: React.FC = () => (
-  <svg width="36" height="36" viewBox="0 0 24 24" fill={COLORS.fg} role="img" aria-label="GitHub">
-    <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
-  </svg>
-)
-
-const Tag: React.FC<{ text: string }> = ({ text }) => (
-  <span
-    style={{
-      backgroundColor: "#1e293b",
-      color: COLORS.accent,
-      fontSize: 12,
-      fontWeight: 500,
-      padding: "4px 10px",
-      borderRadius: 6,
-    }}
-  >
-    {text}
-  </span>
-)
-
-const ConnectScene: React.FC = () => {
-  const frame = useCurrentFrame()
-  const { fps } = useVideoConfig()
-
-  const cardScale = spring({ frame, fps, config: { damping: 12, stiffness: 80 }, delay: 10 })
-  const detectBadgeOpacity = spring({ frame, fps, config: { damping: 18 }, delay: 10 })
-  const buttonProgress = spring({ frame, fps, config: { damping: 15 }, delay: 40 })
-  const checkOpacity = interpolate(frame, [55, 65], [0, 1], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-  })
-
-  return (
-    <Scene label="Connect" step={2}>
-      <div style={{ display: "flex", justifyContent: "center" }}>
-        <div
-          style={{
-            transform: `scale(${cardScale})`,
-            border: `1px solid ${COLORS.border}`,
-            borderRadius: 16,
-            padding: "32px 40px",
-            width: 480,
-            backgroundColor: COLORS.surface,
-          }}
-        >
-          {/* Config-detected indicator — shows the link between the config file and this step */}
-          <div
-            style={{
-              opacity: detectBadgeOpacity,
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
               marginBottom: 20,
-              backgroundColor: "rgba(34,197,94,0.1)",
-              border: "1px solid rgba(34,197,94,0.3)",
+              backgroundColor: "rgba(34,197,94,0.09)",
+              border: "1px solid rgba(34,197,94,0.28)",
               borderRadius: 8,
-              padding: "6px 12px",
-              width: "fit-content",
+              padding: "8px 14px",
             }}
           >
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" role="img" aria-label="Config detected">
-              <circle cx="6" cy="6" r="5" fill="none" stroke={COLORS.green} strokeWidth="1.5" />
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" role="img" aria-label="Config detected">
+              <circle cx="7" cy="7" r="6" fill="none" stroke={COLORS.green} strokeWidth="1.5" />
               <path
-                d="M3.5 6l1.5 1.5 3-3"
+                d="M4.5 7l2 2 3-3.5"
                 stroke={COLORS.green}
                 strokeWidth="1.5"
                 strokeLinecap="round"
@@ -289,208 +251,474 @@ const ConnectScene: React.FC = () => {
               />
             </svg>
             <span style={{ color: COLORS.green, fontSize: 12, fontWeight: 600, fontFamily: geistMonoFamily }}>
-              repopress.config.json detected
+              repopress.config.json detected · 12 files · fumadocs
             </span>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20 }}>
-            <GithubIcon />
-            <div>
-              <div style={{ color: COLORS.fg, fontSize: 20, fontWeight: 600 }}>my-docs-site</div>
-              <div style={{ color: COLORS.muted, fontSize: 14 }}>tarun/my-docs-site · main</div>
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
-            <Tag text="MDX" />
-            <Tag text="fumadocs" />
-            <Tag text="12 files" />
-          </div>
+          {/* Open Dashboard button */}
           <div
             style={{
-              backgroundColor: buttonProgress > 0.5 ? COLORS.accent : COLORS.surfaceHigh,
+              opacity: btnEnter,
+              backgroundColor: btnActive ? COLORS.accent : COLORS.surfaceHigh,
               borderRadius: 8,
               padding: "10px 0",
               textAlign: "center" as const,
               color: COLORS.fg,
-              fontSize: 15,
+              fontSize: 14,
               fontWeight: 600,
-              transform: `scaleX(${buttonProgress})`,
-              transformOrigin: "left",
+              border: btnActive ? "none" : `1px solid ${COLORS.border}`,
             }}
           >
-            {checkOpacity > 0.5 ? "✓ Connected" : "Connect Repository"}
+            Open Dashboard →
           </div>
         </div>
       </div>
-      <CaptionBar text="RepoPress finds your project automatically" />
-    </Scene>
+    </BrowserScene>
   )
 }
 
-// ── Scene 3: Edit ─────────────────────────────────────────────────────────────
+// ── Scene 2: Dashboard (120–240 frames = 4s) ──────────────────────────────────
+
+const SIDEBAR_NAV = [
+  { id: "nav-dashboard", label: "Dashboard", active: true },
+  { id: "nav-projects", label: "Projects", active: false },
+  { id: "nav-settings", label: "Settings", active: false },
+]
+
+const DashboardScene: React.FC = () => {
+  const frame = useCurrentFrame()
+  const { fps } = useVideoConfig()
+
+  const cardHighlight = spring({ frame, fps, config: { damping: 16 }, delay: 50 })
+  const btnClicked = frame >= 75
+
+  return (
+    <BrowserScene
+      label="Dashboard"
+      step={2}
+      url="repopress.app/dashboard"
+      caption="Your repositories, one click from the studio"
+    >
+      <div style={{ display: "flex", height: "100%" }}>
+        {/* Left sidebar */}
+        <div
+          style={{
+            width: 196,
+            borderRight: `1px solid ${COLORS.borderSubtle}`,
+            backgroundColor: COLORS.surface,
+            padding: "16px 0",
+            flexShrink: 0,
+          }}
+        >
+          {SIDEBAR_NAV.map((item) => (
+            <div
+              key={item.id}
+              style={{
+                padding: "8px 20px",
+                color: item.active ? COLORS.fg : COLORS.muted,
+                fontSize: 13,
+                fontWeight: item.active ? 600 : 400,
+                backgroundColor: item.active ? "rgba(255,255,255,0.05)" : "transparent",
+              }}
+            >
+              {item.label}
+            </div>
+          ))}
+        </div>
+
+        {/* Main area */}
+        <div style={{ flex: 1, padding: "24px 28px" }}>
+          <div style={{ color: COLORS.fg, fontSize: 16, fontWeight: 600, marginBottom: 5 }}>Your Projects</div>
+          <div style={{ color: COLORS.muted, fontSize: 13, marginBottom: 20 }}>1 repository connected</div>
+
+          {/* Project card */}
+          <div
+            style={{
+              border: `1px solid ${cardHighlight > 0.5 ? COLORS.accent : COLORS.border}`,
+              borderRadius: 10,
+              padding: "20px 24px",
+              backgroundColor: COLORS.surfaceHigh,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              boxShadow: cardHighlight > 0.5 ? "0 0 0 3px rgba(59,130,246,0.15)" : "none",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+              <GithubIcon />
+              <div>
+                <div style={{ color: COLORS.fg, fontSize: 15, fontWeight: 600, fontFamily: geistMonoFamily }}>
+                  acme/docs
+                </div>
+                <div style={{ color: COLORS.muted, fontSize: 12 }}>fumadocs · 12 files · main</div>
+              </div>
+            </div>
+            <div
+              style={{
+                backgroundColor: btnClicked ? "#1d4ed8" : COLORS.accent,
+                borderRadius: 7,
+                padding: "8px 18px",
+                color: "#fff",
+                fontSize: 13,
+                fontWeight: 600,
+              }}
+            >
+              {btnClicked ? "Opening..." : "Open Studio →"}
+            </div>
+          </div>
+        </div>
+      </div>
+    </BrowserScene>
+  )
+}
+
+// ── Scene 3: Edit (240–420 frames = 6s) ──────────────────────────────────────
+
+const EDITOR_LINES = [
+  { id: "fm1", text: "---", color: COLORS.muted },
+  { id: "fm-title", text: 'title: "Getting Started"', color: COLORS.accent },
+  { id: "fm-desc", text: 'description: "Deploy your first docs"', color: COLORS.accent },
+  { id: "fm2", text: "---", color: COLORS.muted },
+  { id: "blank1", text: "", color: COLORS.fg },
+  { id: "h1", text: "# Getting Started", color: COLORS.fg },
+  { id: "blank2", text: "", color: COLORS.fg },
+  { id: "body1", text: "Connect your repo and edit MDX files", color: COLORS.muted },
+  { id: "body2", text: "directly in the browser.", color: COLORS.muted },
+  { id: "blank3", text: "", color: COLORS.fg },
+  { id: "cta", text: "Changes are saved automatically.", color: COLORS.green },
+]
+
+const FILE_TREE_ITEMS = [
+  { id: "ft-docs", label: "docs/", indent: 0, isFolder: true, isActive: false },
+  { id: "ft-index", label: "index.mdx", indent: 1, isFolder: false, isActive: false },
+  { id: "ft-gs", label: "getting-started.mdx", indent: 1, isFolder: false, isActive: true },
+  { id: "ft-adv", label: "advanced.mdx", indent: 1, isFolder: false, isActive: false },
+  { id: "ft-api", label: "api-reference.mdx", indent: 1, isFolder: false, isActive: false },
+]
 
 const EditScene: React.FC = () => {
   const frame = useCurrentFrame()
+  const { fps } = useVideoConfig()
 
-  const lines = [
-    { text: "---", color: COLORS.muted },
-    { text: 'title: "Getting Started"', color: COLORS.accent },
-    { text: 'description: "Deploy your first docs"', color: COLORS.accent },
-    { text: "---", color: COLORS.muted },
-    { text: "", color: COLORS.fg },
-    { text: "# Getting Started", color: COLORS.fg },
-    { text: "", color: COLORS.fg },
-    { text: "RepoPress reads your `repopress.config.json`", color: COLORS.muted },
-    { text: "to detect your content and framework.", color: COLORS.muted },
-    { text: "", color: COLORS.fg },
-    { text: "> Your docs stay in Git. Always.", color: COLORS.green },
-  ]
+  const autosaveOpacity = spring({ frame, fps, config: { damping: 20 }, delay: 110 })
 
   return (
-    <Scene label="Edit" step={3}>
-      <div style={{ display: "flex", justifyContent: "center" }}>
+    <BrowserScene
+      label="Edit"
+      step={3}
+      url="repopress.app/dashboard/acme/docs/studio"
+      caption="Write in the studio — drafts save automatically"
+    >
+      <div style={{ display: "flex", height: "100%" }}>
+        {/* File tree sidebar */}
         <div
           style={{
+            width: 172,
+            borderRight: `1px solid ${COLORS.borderSubtle}`,
             backgroundColor: COLORS.surface,
-            borderRadius: 12,
-            border: `1px solid ${COLORS.border}`,
-            width: 640,
-            overflow: "hidden",
+            padding: "10px 0",
+            flexShrink: 0,
           }}
         >
+          {FILE_TREE_ITEMS.map((item) => (
+            <div
+              key={item.id}
+              style={{
+                padding: `5px ${6 + item.indent * 14}px`,
+                color: item.isActive ? COLORS.fg : COLORS.muted,
+                fontSize: 12,
+                fontFamily: geistMonoFamily,
+                backgroundColor: item.isActive ? "rgba(59,130,246,0.12)" : "transparent",
+                borderLeft: item.isActive ? `2px solid ${COLORS.accent}` : "2px solid transparent",
+                fontWeight: item.isFolder ? 600 : 400,
+              }}
+            >
+              {item.isFolder ? "▸ " : ""}
+              {item.label}
+            </div>
+          ))}
+        </div>
+
+        {/* Editor panel */}
+        <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+          {/* Tab bar */}
           <div
             style={{
+              height: 34,
+              borderBottom: `1px solid ${COLORS.borderSubtle}`,
               display: "flex",
               alignItems: "center",
-              gap: 8,
-              padding: "12px 16px",
-              borderBottom: `1px solid ${COLORS.borderSubtle}`,
+              padding: "0 14px",
             }}
           >
-            <div style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: "#ef4444" }} />
-            <div style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: "#eab308" }} />
-            <div style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: COLORS.green }} />
-            <span style={{ color: COLORS.muted, fontSize: 13, marginLeft: 8 }}>getting-started.mdx</span>
+            <div
+              style={{
+                backgroundColor: COLORS.surfaceHigh,
+                borderRadius: "4px 4px 0 0",
+                padding: "5px 12px",
+                color: COLORS.fg,
+                fontSize: 12,
+                fontFamily: geistMonoFamily,
+                border: `1px solid ${COLORS.border}`,
+                borderBottom: `1px solid ${COLORS.bg}`,
+              }}
+            >
+              getting-started.mdx
+            </div>
           </div>
-          <div style={{ padding: "16px 20px", fontFamily: geistMonoFamily, fontSize: 14, lineHeight: 1.7 }}>
-            {lines.map((line, i) => {
-              const charCount = interpolate(frame, [i * 5 + 5, i * 5 + 15], [0, line.text.length], {
+
+          {/* Code content */}
+          <div
+            style={{
+              flex: 1,
+              padding: "14px 18px",
+              fontFamily: geistMonoFamily,
+              fontSize: 13,
+              lineHeight: 1.7,
+              overflow: "hidden",
+            }}
+          >
+            {EDITOR_LINES.map((line, idx) => {
+              const lineStart = idx * 9 + 4
+              const charCount = interpolate(frame, [lineStart, lineStart + 10], [0, line.text.length], {
                 extrapolateLeft: "clamp",
                 extrapolateRight: "clamp",
               })
               return (
-                <div key={`line-${i}-${line.text.slice(0, 10)}`} style={{ color: line.color, minHeight: 20 }}>
+                <div key={line.id} style={{ color: line.color, minHeight: 22 }}>
                   {line.text.slice(0, Math.floor(charCount))}
                   {charCount > 0 && charCount < line.text.length && (
-                    <span style={{ opacity: frame % 15 < 8 ? 1 : 0, color: COLORS.accent }}>▎</span>
+                    <span style={{ opacity: frame % 16 < 8 ? 1 : 0, color: COLORS.accent }}>▎</span>
                   )}
                 </div>
               )
             })}
           </div>
+
+          {/* Status bar */}
+          <div
+            style={{
+              height: 30,
+              borderTop: `1px solid ${COLORS.borderSubtle}`,
+              backgroundColor: COLORS.surface,
+              display: "flex",
+              alignItems: "center",
+              padding: "0 16px",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 6, opacity: autosaveOpacity }}>
+              <div style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: COLORS.green }} />
+              <span style={{ color: COLORS.muted, fontSize: 11, fontFamily: geistMonoFamily }}>
+                Draft · Auto-saved 2s ago
+              </span>
+            </div>
+          </div>
         </div>
       </div>
-      <CaptionBar text="Edit in the browser — content stays in Git" />
-    </Scene>
+    </BrowserScene>
   )
 }
 
-// ── Scene 4: Publish ──────────────────────────────────────────────────────────
+// ── Scene 4: Publish (420–600 frames = 6s) ────────────────────────────────────
+
+const BG_HINT_FILES = [
+  { id: "bg-docs", text: "docs/" },
+  { id: "bg-gs", text: "getting-started.mdx" },
+  { id: "bg-idx", text: "index.mdx" },
+]
+
+const BG_HINT_LINES = [
+  { id: "bg-fm1", text: "---" },
+  { id: "bg-title", text: 'title: "Getting Started"' },
+  { id: "bg-fm2", text: "---" },
+  { id: "bg-blank", text: "" },
+  { id: "bg-h1", text: "# Getting Started" },
+]
+
+const CLICK_FRAME = 75
 
 const PublishScene: React.FC = () => {
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()
 
-  const buttonScale = spring({ frame, fps, config: { damping: 12 }, delay: 5 })
-  const clickFrame = 25
-  const clicked = frame > clickFrame
-  const ripple = interpolate(frame, [clickFrame, clickFrame + 15], [0, 1], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-  })
-  const shaReveal = interpolate(frame, [clickFrame + 15, clickFrame + 35], [0, 1], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-  })
-  const commitSha = "a3f7b2c"
-  const shaChars = Math.floor(shaReveal * commitSha.length)
+  const modalEnter = spring({ frame, fps, config: { damping: 14, stiffness: 90 } })
+  const btnClicked = frame >= CLICK_FRAME
+  const modalExitOpacity = btnClicked
+    ? interpolate(frame, [CLICK_FRAME, CLICK_FRAME + 14], [1, 0], {
+        extrapolateLeft: "clamp",
+        extrapolateRight: "clamp",
+      })
+    : 1
+  const successOpacity = spring({ frame, fps, config: { damping: 20 }, delay: CLICK_FRAME + 18 })
 
   return (
-    <Scene label="Publish" step={4}>
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 32 }}>
+    <BrowserScene
+      label="Publish"
+      step={4}
+      url="repopress.app/dashboard/acme/docs/studio"
+      caption="Publish creates a PR. Merge = live."
+    >
+      <div
+        style={{
+          height: "100%",
+          position: "relative",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        {/* Dimmed editor background hint */}
         <div
           style={{
-            transform: `scale(${buttonScale * (clicked ? 0.95 : 1)})`,
-            backgroundColor: clicked ? "#1d4ed8" : COLORS.accent,
-            borderRadius: 12,
-            padding: "14px 48px",
-            color: COLORS.fg,
-            fontSize: 18,
-            fontWeight: 700,
-            position: "relative",
-            overflow: "hidden",
+            position: "absolute",
+            inset: 0,
+            backgroundColor: "rgba(0,0,0,0.6)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 32,
           }}
         >
-          {clicked && (
+          <div style={{ color: "rgba(125,133,144,0.25)", fontSize: 11, fontFamily: geistMonoFamily }}>
+            {BG_HINT_FILES.map((f) => (
+              <div key={f.id} style={{ padding: "3px 0" }}>
+                {f.text}
+              </div>
+            ))}
+          </div>
+          <div style={{ color: "rgba(125,133,144,0.18)", fontSize: 11, fontFamily: geistMonoFamily }}>
+            {BG_HINT_LINES.map((l) => (
+              <div key={l.id} style={{ minHeight: 17 }}>
+                {l.text}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* PR Modal */}
+        <div
+          style={{
+            position: "relative",
+            zIndex: 10,
+            transform: `scale(${modalEnter})`,
+            transformOrigin: "center",
+            opacity: modalExitOpacity,
+            backgroundColor: COLORS.surface,
+            border: `1px solid ${COLORS.border}`,
+            borderRadius: 10,
+            padding: "24px 28px",
+            width: 420,
+            boxShadow: "0 20px 56px rgba(0,0,0,0.65)",
+          }}
+        >
+          <div style={{ color: COLORS.fg, fontSize: 16, fontWeight: 700, marginBottom: 18 }}>
+            Publish via Pull Request
+          </div>
+
+          {/* Branch field */}
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ color: COLORS.muted, fontSize: 12, fontWeight: 500, marginBottom: 6 }}>Branch</div>
             <div
               style={{
-                position: "absolute",
-                top: "50%",
-                left: "50%",
-                width: ripple * 200,
-                height: ripple * 200,
-                borderRadius: "50%",
-                backgroundColor: "rgba(255,255,255,0.2)",
-                transform: "translate(-50%, -50%)",
-              }}
-            />
-          )}
-          {clicked ? "Publishing..." : "Publish to GitHub"}
-        </div>
-        {shaReveal > 0 && (
-          <div style={{ display: "flex", alignItems: "center", gap: 12, opacity: shaReveal }}>
-            <svg width="20" height="20" viewBox="0 0 16 16" fill={COLORS.accent} role="img" aria-label="Success">
-              <path d="M8 0C3.58 0 0 3.58 0 8s3.58 8 8 8 8-3.58 8-8-3.58-8-8-8zM6.354 11.354l-3.708-3.708 1.415-1.415L6.354 8.52l5.585-5.585 1.415 1.415-7 7z" />
-            </svg>
-            <span style={{ color: COLORS.fg, fontSize: 16, fontWeight: 500 }}>Committed to</span>
-            <code
-              style={{
-                backgroundColor: "#1e293b",
-                color: COLORS.accent,
-                padding: "4px 12px",
+                backgroundColor: COLORS.surfaceHigh,
+                border: `1px solid ${COLORS.border}`,
                 borderRadius: 6,
-                fontSize: 15,
+                padding: "8px 12px",
+                color: COLORS.fg,
+                fontSize: 13,
                 fontFamily: geistMonoFamily,
-                fontWeight: 600,
               }}
             >
-              {commitSha.slice(0, shaChars)}
-              {shaChars < commitSha.length && <span style={{ opacity: frame % 10 < 5 ? 1 : 0 }}>_</span>}
-            </code>
+              repopress/update-getting-started
+            </div>
+          </div>
+
+          {/* PR Title field */}
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ color: COLORS.muted, fontSize: 12, fontWeight: 500, marginBottom: 6 }}>
+              Pull Request title
+            </div>
+            <div
+              style={{
+                backgroundColor: COLORS.surfaceHigh,
+                border: `1px solid ${COLORS.accent}`,
+                borderRadius: 6,
+                padding: "8px 12px",
+                color: COLORS.fg,
+                fontSize: 13,
+              }}
+            >
+              Update getting started guide
+            </div>
+          </div>
+
+          {/* Create PR button */}
+          <div
+            style={{
+              backgroundColor: btnClicked ? "#1d4ed8" : COLORS.accent,
+              borderRadius: 7,
+              padding: "10px 0",
+              textAlign: "center" as const,
+              color: "#fff",
+              fontSize: 14,
+              fontWeight: 600,
+            }}
+          >
+            {btnClicked ? "Creating..." : "Create Pull Request →"}
+          </div>
+        </div>
+
+        {/* Success card */}
+        {successOpacity > 0 && (
+          <div
+            style={{
+              position: "absolute",
+              zIndex: 20,
+              opacity: successOpacity,
+              transform: `scale(${0.92 + successOpacity * 0.08})`,
+              transformOrigin: "center",
+              backgroundColor: COLORS.surface,
+              border: "1px solid rgba(34,197,94,0.4)",
+              borderRadius: 10,
+              padding: "22px 28px",
+              width: 380,
+              boxShadow: "0 20px 56px rgba(0,0,0,0.65)",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+              <svg width="18" height="18" viewBox="0 0 16 16" fill={COLORS.green} role="img" aria-label="PR opened">
+                <path d="M7.177 3.073L9.573.677A.25.25 0 0110 .854v4.792a.25.25 0 01-.427.177L7.177 3.427a.25.25 0 010-.354zM3.75 2.5a.75.75 0 100 1.5.75.75 0 000-1.5zm-2.25.75a2.25 2.25 0 113 2.122v5.256a2.251 2.251 0 11-1.5 0V5.372A2.25 2.25 0 011.5 3.25zM11 2.5h-1V4h1a1 1 0 011 1v5.628a2.251 2.251 0 101.5 0V5A2.5 2.5 0 0011 2.5zm1 10.25a.75.75 0 111.5 0 .75.75 0 01-1.5 0zM3.75 12a.75.75 0 100 1.5.75.75 0 000-1.5z" />
+              </svg>
+              <span style={{ color: COLORS.green, fontSize: 14, fontWeight: 700 }}>Pull Request #42 opened</span>
+            </div>
+            <div style={{ color: COLORS.muted, fontSize: 13, fontFamily: geistMonoFamily, marginBottom: 4 }}>
+              repopress/update-getting-started → main
+            </div>
+            <div style={{ color: COLORS.muted, fontSize: 12, marginTop: 8 }}>Merge to publish your changes live.</div>
           </div>
         )}
       </div>
-      <CaptionBar text="One click commits directly to your branch" />
-    </Scene>
+    </BrowserScene>
   )
 }
 
 // ── Main composition ──────────────────────────────────────────────────────────
-// Total: 160 + 120 + 180 + 140 = 600 frames (20 s at 30 fps)
+// Option B: Setup(0–120) · Dashboard(120–240) · Edit(240–420) · Publish(420–600)
+// 600 frames = 20 s at 30 fps
 
 export const StudioDemo: React.FC = () => {
   return (
-    <AbsoluteFill style={{ backgroundColor: COLORS.bg }}>
-      <Sequence from={0} durationInFrames={160} premountFor={30}>
-        <ConfigScene />
+    <AbsoluteFill style={{ backgroundColor: COLORS.desktopBg }}>
+      <Sequence from={0} durationInFrames={120} premountFor={30}>
+        <SetupScene />
       </Sequence>
-      <Sequence from={160} durationInFrames={120} premountFor={30}>
-        <ConnectScene />
+      <Sequence from={120} durationInFrames={120} premountFor={30}>
+        <DashboardScene />
       </Sequence>
-      <Sequence from={280} durationInFrames={180} premountFor={30}>
+      <Sequence from={240} durationInFrames={180} premountFor={30}>
         <EditScene />
       </Sequence>
-      <Sequence from={460} durationInFrames={140} premountFor={30}>
+      <Sequence from={420} durationInFrames={180} premountFor={30}>
         <PublishScene />
       </Sequence>
     </AbsoluteFill>
