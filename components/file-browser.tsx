@@ -1,6 +1,6 @@
 "use client"
 
-import { File, Folder } from "lucide-react"
+import { ChevronLeft, File, Folder, FolderOpen } from "lucide-react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import type { GitHubFile } from "@/lib/github"
@@ -33,30 +33,41 @@ export function FileBrowser({ files, currentPath = "", owner, repo, branch = "ma
     return `${resolvedBasePath}?${params.toString()}`
   }
 
+  const parentPath = currentPath.split("/").slice(0, -1).join("/")
+  const parentName = parentPath === "" ? `${owner}/${repo}` : parentPath.split("/").slice(-1)[0]
+
   return (
-    <div className="border rounded-lg overflow-hidden">
-      <div className="bg-muted/50 px-4 py-2 border-b flex items-center justify-between">
-        <p className="text-sm font-medium">Files</p>
-        <span className="text-xs text-muted-foreground">{files.length} items</span>
-      </div>
-      <div className="divide-y">
+    <div className="border-t border-border">
+      <div className="divide-y divide-border">
         {currentPath && (
-          <div className="p-0">
-            <Button
-              variant="ghost"
-              asChild
-              className="w-full justify-start gap-2 rounded-none px-4 py-2 h-auto font-normal hover:bg-muted/50"
-            >
-              <Link href={getHref(currentPath.split("/").slice(0, -1).join("/"))}>
-                <Folder className="h-4 w-4 shrink-0 text-blue-500" />
-                <span className="text-sm">..</span>
-              </Link>
-            </Button>
-          </div>
+          <Button
+            variant="ghost"
+            asChild
+            className="w-full justify-start gap-2.5 rounded-none px-4 py-2.5 h-auto font-normal text-muted-foreground hover:text-foreground hover:bg-muted/50"
+          >
+            <Link href={getHref(parentPath)}>
+              <ChevronLeft className="h-3.5 w-3.5 shrink-0" />
+              <span className="text-sm font-mono">{parentName}</span>
+            </Link>
+          </Button>
         )}
-        {sortedFiles.map((file) => (
-          <FileItem key={file.path} file={file} owner={owner} repo={repo} branch={branch} basePath={resolvedBasePath} />
-        ))}
+        {sortedFiles.length === 0 && !currentPath ? (
+          <div className="flex flex-col items-center gap-3 py-16 text-center">
+            <FolderOpen className="h-8 w-8 text-muted-foreground/50" />
+            <p className="text-sm text-muted-foreground">No files found in this directory.</p>
+          </div>
+        ) : (
+          sortedFiles.map((file) => (
+            <FileItem
+              key={file.path}
+              file={file}
+              owner={owner}
+              repo={repo}
+              branch={branch}
+              basePath={resolvedBasePath}
+            />
+          ))
+        )}
       </div>
     </div>
   )
@@ -89,15 +100,15 @@ function FileItem({ file, owner, repo, branch, basePath }: FileItemProps) {
     <Button
       variant="ghost"
       asChild
-      className={cn("w-full justify-start gap-2 rounded-none px-4 py-2 h-auto font-normal hover:bg-muted/50")}
+      className={cn("w-full justify-start gap-2.5 rounded-none px-4 py-2.5 h-auto font-normal hover:bg-muted/50")}
     >
       <Link href={getHref()}>
         {isDirectory ? (
-          <Folder className="h-4 w-4 shrink-0 text-blue-500" />
+          <Folder className="h-4 w-4 shrink-0 text-primary" />
         ) : (
           <File className="h-4 w-4 shrink-0 text-muted-foreground" />
         )}
-        <span className="text-sm truncate">{file.name}</span>
+        <span className="text-sm font-mono truncate">{file.name}</span>
       </Link>
     </Button>
   )

@@ -23,7 +23,6 @@ const timeline = [
 export default function Hero() {
   return (
     <section className="relative overflow-hidden px-4 pb-20 pt-10 sm:pb-24 lg:pb-28">
-
       <div className="mx-auto grid max-w-6xl gap-12 lg:grid-cols-[1.02fr_0.98fr] lg:items-center">
         <div className="flex flex-col gap-8">
           <div className="flex flex-col gap-5">

@@ -57,7 +57,9 @@ export default async function FilePage({ params, searchParams }: FilePageProps) 
         <div className="flex items-center justify-between">
           <RepoBreadcrumb owner={owner} repo={repo} path={path} branch={currentBranch} />
           <Button variant="outline" asChild>
-            <Link href={`/dashboard/${owner}/${repo}?path=${path.slice(0, -1).join("/")}&branch=${currentBranch}`}>
+            <Link
+              href={`/dashboard/${owner}/${repo}/files?path=${path.slice(0, -1).join("/")}&branch=${currentBranch}`}
+            >
               Back to Folder
             </Link>
           </Button>
