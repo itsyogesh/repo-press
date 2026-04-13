@@ -237,7 +237,7 @@ export function CommandPalette({
                 }}
                 onClick={() => handleSelect(`file:${file.path}`)}
               >
-                <PaletteIconShell tone="accent">
+                <PaletteIconShell>
                   <History className="h-4 w-4" />
                 </PaletteIconShell>
                 <div className="flex min-w-0 flex-1 flex-col">
