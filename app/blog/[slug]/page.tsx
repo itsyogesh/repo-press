@@ -93,7 +93,7 @@ function parseContent(content: string): RenderedBlock[] {
       rendered.push({
         key,
         element: (
-          <h2 key={key} className="mt-10 mb-4 text-2xl font-bold tracking-tight text-foreground">
+          <h2 key={key} className="mt-10 mb-4 text-2xl font-semibold tracking-tight text-foreground">
             {block.slice(3)}
           </h2>
         ),
@@ -185,7 +185,7 @@ export default async function BlogPostPage({ params }: { params: Promise<{ slug:
               <time dateTime={post.date} className="text-caption">
                 {formatDate(post.date)}
               </time>
-              <h1 className="mt-3 text-3xl font-bold tracking-tight text-foreground sm:text-4xl md:text-5xl">
+              <h1 className="mt-3 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl md:text-5xl">
                 {post.title}
               </h1>
               <p className="mt-4 text-body-large">{post.excerpt}</p>

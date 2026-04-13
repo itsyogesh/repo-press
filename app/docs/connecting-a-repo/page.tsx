@@ -3,13 +3,13 @@ import Link from "next/link"
 
 export const metadata: Metadata = {
   title: "Connecting a Repository",
-  description: "Learn how to connect and configure your GitHub repositories with RepoPress.",
+  description: "Connect your GitHub repository and choose a content folder to start editing.",
 }
 
 export default function ConnectingARepoPage() {
   return (
     <div>
-      <h1 className="mb-6 text-3xl font-bold tracking-tight">Connecting a Repository</h1>
+      <h1 className="mb-6 text-3xl font-semibold tracking-tight">Connecting a Repository</h1>
 
       <p className="mb-4 leading-relaxed text-muted-foreground">
         RepoPress connects to your GitHub repositories to read and write content. This guide covers everything from
@@ -17,9 +17,9 @@ export default function ConnectingARepoPage() {
       </p>
 
       {/* GitHub OAuth Permissions */}
-      <h2 className="mb-4 mt-12 text-2xl font-semibold">GitHub OAuth Permissions</h2>
+      <h2 className="mb-4 mt-12 text-2xl font-semibold">What we ask for when you sign in</h2>
       <p className="mb-4 leading-relaxed text-muted-foreground">
-        When you sign in with GitHub, RepoPress requests the following permissions:
+        When you sign in with GitHub, RepoPress requests permission to:
       </p>
       <ul className="mb-4 list-inside list-disc space-y-2 text-muted-foreground">
         <li>
@@ -35,7 +35,7 @@ export default function ConnectingARepoPage() {
         </li>
       </ul>
       <p className="mb-4 leading-relaxed text-muted-foreground">
-        RepoPress never stores your GitHub credentials. We use short-lived OAuth tokens that can be revoked at any time
+        RepoPress never stores your GitHub password. We use short-lived access tokens that you can revoke at any time
         from your{" "}
         <a
           href="https://github.com/settings/applications"
@@ -57,10 +57,9 @@ export default function ConnectingARepoPage() {
       </p>
 
       {/* Content Root Configuration */}
-      <h2 className="mb-4 mt-12 text-2xl font-semibold">Content Root Configuration</h2>
+      <h2 className="mb-4 mt-12 text-2xl font-semibold">Choosing a content folder</h2>
       <p className="mb-4 leading-relaxed text-muted-foreground">
-        The content root tells RepoPress where to look for editable content in your repository. Common content root
-        paths include:
+        The content folder tells RepoPress where your editable files live. Common locations include:
       </p>
       <ul className="mb-4 list-inside list-disc space-y-2 text-muted-foreground">
         <li>
@@ -80,15 +79,14 @@ export default function ConnectingARepoPage() {
         </li>
       </ul>
       <p className="mb-4 leading-relaxed text-muted-foreground">
-        You can change the content root at any time from the project settings. Only files within the content root are
-        editable through the Studio.
+        You can change the content folder at any time from project settings. Only files inside this folder appear in
+        the Studio editor.
       </p>
 
       {/* Framework Auto-Detection */}
-      <h2 className="mb-4 mt-12 text-2xl font-semibold">Framework Auto-Detection</h2>
+      <h2 className="mb-4 mt-12 text-2xl font-semibold">Automatic framework detection</h2>
       <p className="mb-4 leading-relaxed text-muted-foreground">
-        RepoPress scans your repository for common framework configuration files to auto-detect your stack. Currently
-        supported frameworks include:
+        RepoPress looks at your repository to identify which site framework you use. Currently supported:
       </p>
       <ul className="mb-4 list-inside list-disc space-y-2 text-muted-foreground">
         <li>
@@ -111,12 +109,12 @@ export default function ConnectingARepoPage() {
         </li>
       </ul>
       <p className="mb-4 leading-relaxed text-muted-foreground">
-        If your framework isn&rsquo;t auto-detected, you can manually configure the content root and file types during
+        If your framework is not detected automatically, you can set the content folder and file types manually during
         project setup.
       </p>
 
       {/* Multiple Projects */}
-      <h2 className="mb-4 mt-12 text-2xl font-semibold">Multiple Projects from the Same Repo</h2>
+      <h2 className="mb-4 mt-12 text-2xl font-semibold">Multiple projects from one repository</h2>
       <p className="mb-4 leading-relaxed text-muted-foreground">
         You can create multiple RepoPress projects from the same GitHub repository. This is useful when you have
         different content areas — for example, a{" "}
@@ -126,11 +124,11 @@ export default function ConnectingARepoPage() {
       </p>
 
       {/* Private Repo Support */}
-      <h2 className="mb-4 mt-12 text-2xl font-semibold">Private Repository Support</h2>
+      <h2 className="mb-4 mt-12 text-2xl font-semibold">Private repositories</h2>
       <p className="mb-4 leading-relaxed text-muted-foreground">
-        RepoPress fully supports private repositories. As long as your GitHub OAuth token has access to the repository,
-        you can connect it just like any public repository. All content is fetched through authenticated API calls and
-        is never cached on our servers beyond what&rsquo;s needed for the current editing session.
+        RepoPress works with private repositories. If your GitHub account has access to the repository, you can connect
+        it the same way you would a public one. Content is fetched through authenticated requests and is not stored on
+        our servers beyond your current editing session.
       </p>
 
       <p className="mb-4 leading-relaxed text-muted-foreground">

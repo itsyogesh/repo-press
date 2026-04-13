@@ -17,19 +17,19 @@ const guides = [
   {
     href: "/docs/how-it-works",
     title: "How It Works",
-    description: "Understand RepoPress's architecture and content flow.",
+    description: "See how RepoPress connects to your repository and manages content.",
     icon: BookOpen,
   },
   {
     href: "/docs/connecting-a-repo",
     title: "Connecting a Repository",
-    description: "Learn how to connect and configure your GitHub repos.",
+    description: "Connect your GitHub repo and choose a content folder to edit.",
     icon: GitBranch,
   },
   {
     href: "/docs/studio-editor",
     title: "Studio Editor",
-    description: "Master the visual MDX editor and publishing workflow.",
+    description: "Write and publish with the visual editor, live preview, and version history.",
     icon: PenTool,
   },
 ]
@@ -37,7 +37,7 @@ const guides = [
 export default function DocsPage() {
   return (
     <div>
-      <h1 className="mb-4 text-3xl font-bold tracking-tight md:text-4xl">Documentation</h1>
+      <h1 className="mb-4 text-3xl font-semibold tracking-tight md:text-4xl">Documentation</h1>
       <p className="mb-12 text-lg text-muted-foreground">Everything you need to get started with RepoPress.</p>
 
       <div className="grid gap-4 sm:grid-cols-2">

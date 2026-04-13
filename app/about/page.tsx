@@ -5,52 +5,52 @@ import Navbar from "@/components/landing/navbar"
 
 export const metadata: Metadata = {
   title: "About — RepoPress",
-  description: "Learn about RepoPress, the Git-native headless CMS for GitHub repositories.",
+  description: "RepoPress is a visual editor for content that lives in GitHub. Edit docs and blog posts without touching code.",
 }
 
 const techStack = [
   {
     name: "Next.js",
-    description: "React framework for production-grade web apps",
+    description: "Modern web framework for fast, reliable pages",
   },
   {
     name: "Convex",
-    description: "Reactive backend for real-time operational state",
+    description: "Real-time backend that keeps your edits in sync",
   },
   {
     name: "GitHub API",
-    description: "Direct integration with your repositories",
+    description: "Reads and writes directly to your repository",
   },
   {
     name: "Tailwind CSS",
-    description: "Utility-first styling with design tokens",
+    description: "Consistent, polished design across the app",
   },
   {
     name: "shadcn/ui",
-    description: "Accessible, composable UI components",
+    description: "Accessible interface components",
   },
 ]
 
 const principles = [
   {
-    title: "Git is the source of truth",
+    title: "Your content stays in GitHub",
     description:
-      "Your content lives in your repository. Every edit is a commit. Every change has history. No proprietary databases, no vendor lock-in.",
+      "Every edit becomes a real commit in your repository. No proprietary databases, no vendor lock-in. If you stop using RepoPress, your content is exactly where it has always been.",
   },
   {
     title: "Open source, always",
     description:
-      "MIT licensed and community-driven. Read the code, fork it, contribute to it. We believe the best tools are built in the open.",
+      "MIT licensed and community-driven. Read the code, fork it, contribute to it. The best tools are built in the open.",
   },
   {
-    title: "Developer experience first",
+    title: "Built for everyone who writes",
     description:
-      "Built by developers, for developers. We don't compromise on the tools and workflows you already love.",
+      "Whether you maintain docs, write blog posts, or manage a content team — RepoPress gives you a visual editor without asking you to learn Git commands.",
   },
   {
-    title: "No vendor lock-in",
+    title: "No lock-in, ever",
     description:
-      "Your content is Markdown and MDX in your repo. If you stop using RepoPress tomorrow, your content is exactly where it's always been.",
+      "Your content is standard Markdown and MDX in your repository. There is nothing to export, nothing to migrate. Your files are always yours.",
   },
 ]
 
@@ -62,12 +62,11 @@ export default function AboutPage() {
         {/* Hero */}
         <section className="container mx-auto px-4 py-16 md:py-24">
           <div className="max-w-3xl mx-auto text-center">
-            <h1 className="text-3xl md:text-5xl font-bold tracking-tight text-foreground mb-6">
-              Built for developers who love Git
+            <h1 className="text-3xl md:text-5xl font-semibold tracking-tight text-foreground mb-6">
+              A visual editor for content that lives in GitHub
             </h1>
             <p className="text-lg md:text-xl text-muted-foreground leading-relaxed max-w-2xl mx-auto">
-              RepoPress exists because content management shouldn&apos;t require abandoning Git. Your repo <em>is</em>{" "}
-              your CMS.
+              RepoPress exists because updating a blog post or documentation page shouldn&apos;t require a terminal. Your content stays in your repository. We just make it easier to edit.
             </p>
           </div>
         </section>
@@ -76,21 +75,15 @@ export default function AboutPage() {
         <section className="border-y border-border/40 bg-muted/30">
           <div className="container mx-auto px-4 py-16 md:py-20">
             <div className="max-w-3xl mx-auto">
-              <h2 className="text-xl font-semibold text-foreground mb-4">Our Mission</h2>
+              <h2 className="text-xl font-semibold text-foreground mb-4">Why we built this</h2>
               <p className="text-muted-foreground leading-relaxed mb-6">
-                Every developer knows the pain: you want a CMS for your content site, but traditional platforms force
-                you into proprietary dashboards, opaque databases, and workflows that feel nothing like the Git-based
-                development you love.
+                If your website runs on GitHub — whether it is a documentation site, a blog, or a marketing page — updating content means opening a code editor, writing Markdown, and pushing a commit. That works for developers, but it shuts out everyone else on the team.
               </p>
               <p className="text-muted-foreground leading-relaxed mb-6">
-                RepoPress takes a different approach. We built a headless CMS that treats your GitHub repository as the
-                single source of truth. Your content stays as Markdown and MDX files in your repo. Every edit creates a
-                real Git commit. Branches, pull requests, and code review—they all just work, because your content
-                workflow <em>is</em> your development workflow.
+                RepoPress is a visual editor that connects directly to your GitHub repository. You see your files, edit them in a clean interface with a live preview, and publish changes as a pull request. No terminal, no Markdown syntax, no merge conflicts. Your content stays as standard files in your repo — we never move it to a separate database.
               </p>
               <p className="text-muted-foreground leading-relaxed">
-                No databases to migrate. No proprietary formats to export. No vendor lock-in. Just your content, in your
-                repo, forever.
+                The result: writers and content teams can update the site themselves, while developers keep full control over the repository and review process.
               </p>
             </div>
           </div>
@@ -115,7 +108,7 @@ export default function AboutPage() {
         <section className="border-y border-border/40 bg-muted/30">
           <div className="container mx-auto px-4 py-16 md:py-20">
             <div className="max-w-3xl mx-auto">
-              <h2 className="text-xl font-semibold text-foreground mb-8">Tech Stack</h2>
+              <h2 className="text-xl font-semibold text-foreground mb-8">Built with</h2>
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {techStack.map((tech) => (
                   <div key={tech.name} className="rounded-lg border border-border/60 bg-card p-4">
@@ -136,8 +129,7 @@ export default function AboutPage() {
               <div className="flex-1">
                 <h3 className="font-semibold text-card-foreground text-lg mb-1">@itsyogesh</h3>
                 <p className="text-sm text-muted-foreground leading-relaxed">
-                  Full-stack developer who believes the best content management tools should feel like home for
-                  developers—built on Git, open source, and community-driven.
+                  Building tools that make content workflows simpler — open source, community-driven, and designed for teams of all sizes.
                 </p>
               </div>
               <div className="flex items-center gap-3 shrink-0">
@@ -168,10 +160,9 @@ export default function AboutPage() {
         <section className="border-t border-border/40 bg-muted/30">
           <div className="container mx-auto px-4 py-16 md:py-20">
             <div className="max-w-3xl mx-auto text-center">
-              <h2 className="text-xl font-semibold text-foreground mb-4">Open Source &amp; MIT Licensed</h2>
+              <h2 className="text-xl font-semibold text-foreground mb-4">Free and open source</h2>
               <p className="text-muted-foreground leading-relaxed mb-6 max-w-xl mx-auto">
-                RepoPress is free and open source. Browse the code, report issues, submit pull requests, or fork it and
-                make it your own.
+                RepoPress is MIT licensed. Browse the code, report issues, or contribute. The project grows because people like you use it and share feedback.
               </p>
               <a
                 href="https://github.com/itsyogesh/repo-press"

@@ -3,13 +3,13 @@ import Link from "next/link"
 
 export const metadata: Metadata = {
   title: "Studio Editor",
-  description: "Master the RepoPress Studio — the visual MDX editor with real-time preview and Git publishing.",
+  description: "Write and publish with the RepoPress Studio — visual editing, live preview, and version history.",
 }
 
 export default function StudioEditorPage() {
   return (
     <div>
-      <h1 className="mb-6 text-3xl font-bold tracking-tight">Studio Editor</h1>
+      <h1 className="mb-6 text-3xl font-semibold tracking-tight">Studio Editor</h1>
 
       <p className="mb-4 leading-relaxed text-muted-foreground">
         The Studio is the heart of RepoPress — a visual editor for MDX and Markdown files that commits directly to your

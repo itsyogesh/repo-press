@@ -4,7 +4,7 @@ import Navbar from "@/components/landing/navbar"
 
 export const metadata: Metadata = {
   title: "Terms of Service — RepoPress",
-  description: "Terms of service for RepoPress, the Git-native headless CMS for GitHub repositories.",
+  description: "Terms of service for RepoPress — the visual editor for content in GitHub repositories.",
 }
 
 export default function TermsPage() {
@@ -14,7 +14,7 @@ export default function TermsPage() {
       <main className="flex-1">
         <div className="container mx-auto px-4 py-16 md:py-24">
           <div className="max-w-3xl mx-auto">
-            <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-foreground mb-8">Terms of Service</h1>
+            <h1 className="text-3xl md:text-4xl font-semibold tracking-tight text-foreground mb-8">Terms of Service</h1>
 
             <p className="text-muted-foreground leading-relaxed mb-8">
               Welcome to RepoPress. By using our service, you agree to these terms. Please read them carefully.
@@ -31,9 +31,9 @@ export default function TermsPage() {
             {/* Description of Service */}
             <h2 className="text-xl font-semibold text-foreground mt-8 mb-4">Description of Service</h2>
             <p className="text-muted-foreground leading-relaxed">
-              RepoPress is a Git-native headless CMS that allows you to manage content stored in your GitHub
-              repositories. The service provides a visual editor (Studio) for creating and editing Markdown and MDX
-              files, with all changes committed directly to your repository via the GitHub API.
+              RepoPress is a visual editor for content stored in your GitHub
+              repositories. The service lets you create and edit Markdown and MDX
+              files in a Studio interface, with all changes committed directly to your repository via the GitHub API.
             </p>
 
             {/* GitHub Integration */}

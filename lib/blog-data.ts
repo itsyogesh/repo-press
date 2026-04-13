@@ -9,111 +9,107 @@ export interface BlogPost {
 export const blogPosts: BlogPost[] = [
   {
     slug: "introducing-repopress",
-    title: "Introducing RepoPress: Your Repo is Your CMS",
+    title: "Introducing RepoPress: Edit Your GitHub Content Without Touching Code",
     date: "2025-01-15",
     excerpt:
-      "Today we're launching RepoPress — a Git-native headless CMS that turns any GitHub repository into a visual content editor.",
-    content: `RepoPress is a new kind of content management system. Instead of storing your content in a proprietary database, RepoPress reads directly from your GitHub repository and commits changes back as standard Git commits.
+      "RepoPress is a visual editor that connects to your GitHub repository. Edit docs and blog posts, see a live preview, and publish changes — all without opening a terminal.",
+    content: `If your website runs on GitHub, updating content usually means opening a code editor, writing Markdown by hand, and pushing a commit. That works fine for developers, but it shuts out everyone else on the team.
 
-## Why RepoPress?
+RepoPress changes that. It connects to your GitHub repository and gives you a visual editor with a live preview. You see your files, click to edit, and publish when you are ready. Your content stays as standard files in your repo — we never move it to a separate database.
 
-Traditional headless CMS platforms require you to migrate your content to their database, learn their proprietary APIs, and accept vendor lock-in. RepoPress takes a different approach:
+## What you can do with RepoPress
 
-- **Your repo is your CMS** — content stays in Git, where it belongs
-- **Framework auto-detection** — connect your repo and we'll configure everything automatically
-- **Visual MDX editor** — write with a live preview, including custom React components
-- **Editorial workflows** — draft, review, approve, and publish with full version history
+- **Edit visually** — Write in a clean editor with formatting tools and a live preview. No Markdown syntax to memorize.
+- **Automatic setup** — Connect your repo and RepoPress detects your framework (Next.js, Astro, Hugo, Docusaurus, Jekyll, and more) and configures itself.
+- **Draft before you publish** — Every edit is saved as a draft. Nothing changes on your live site until you hit Publish.
+- **Full version history** — Every save is tracked. Roll back to any previous version.
 
-## How It Works
+## How it works
 
 1. Sign in with GitHub
 2. Select your repository
-3. RepoPress detects your framework (Next.js, Astro, Hugo, Docusaurus, Jekyll, etc.)
-4. Start editing with the visual Studio editor
+3. RepoPress detects your framework and finds your content files
+4. Start editing in the visual Studio
 
-Every save creates a version snapshot. When you publish, RepoPress commits directly to your repository. No database, no lock-in, no compromise.
+When you publish, RepoPress commits your changes directly to your repository. No proprietary database, no lock-in. Your content is always in your repo, in standard file formats.
 
-## What's Next
+## What is next
 
-We're just getting started. Upcoming features include real-time collaboration, advanced search, and plugin system for custom workflows. Star us on GitHub and follow along!`,
+We are building real-time collaboration, advanced search, and custom workflow plugins. Star us on GitHub to follow along.`,
   },
   {
     slug: "framework-auto-detection",
-    title: "How Framework Auto-Detection Works",
+    title: "How RepoPress Detects Your Framework Automatically",
     date: "2025-01-10",
     excerpt:
-      "RepoPress automatically detects your framework and configures itself. Here's how we built the detection engine.",
-    content: `One of RepoPress's most unique features is framework auto-detection. When you connect a repository, we automatically identify your framework and configure the CMS accordingly.
+      "When you connect a repository, RepoPress figures out what framework you use and sets itself up. Here is how that works.",
+    content: `One of the things that makes RepoPress different is automatic framework detection. You connect your repository, and RepoPress configures itself — no manual setup required.
 
-## The Detection Process
+## What happens when you connect a repo
 
-Our detection engine scans your repository for telltale signs:
+RepoPress looks at three things in your repository:
 
-1. **Package.json analysis** — we check dependencies for framework-specific packages
-2. **Config file detection** — we look for framework config files (next.config.js, astro.config.mjs, hugo.toml, etc.)
-3. **Content structure mapping** — we identify where your content lives based on framework conventions
+1. **Your dependencies** — It checks your package.json for framework-specific packages (like next, astro, or gatsby).
+2. **Configuration files** — It looks for files like next.config.js, astro.config.mjs, or hugo.toml.
+3. **Content structure** — It identifies where your content files live based on the conventions your framework uses.
 
-## Supported Frameworks
+## Supported frameworks
 
-Currently, RepoPress supports:
+RepoPress currently supports:
 
 - **Next.js** (including Fumadocs and Nextra)
 - **Astro**
 - **Hugo**
 - **Docusaurus**
 - **Jekyll**
-- **Any MDX/Markdown project**
+- **Any Markdown or MDX project**
 
-Each framework gets custom frontmatter field definitions. For example, Fumadocs projects get \`title\`, \`description\`, \`icon\`, and \`full\` fields, while Hugo projects get \`weight\`, \`draft\`, and \`tags\`.
+Each framework gets its own set of frontmatter fields. For example, Fumadocs projects get title, description, icon, and full fields. Hugo projects get weight, draft, and tags. You can always customize these.
 
-## Universal Fields
+## What if your framework is not detected?
 
-Regardless of framework, every project gets universal fields: \`title\`, \`description\`, and \`draft\`. These are the baseline that every content framework needs.
-
-## What Makes This Unique
-
-No other Git-native CMS offers framework auto-detection. Tools like Decap CMS, TinaCMS, and Keystatic all require manual configuration. RepoPress just works.`,
+If RepoPress does not recognize your setup, you can choose a content folder and configure file types manually during project setup. Any project with Markdown or MDX files will work — the framework detection just makes initial setup faster.`,
   },
   {
     slug: "why-git-native",
-    title: "Why We Chose Git-Native Over Traditional CMS",
+    title: "Why Your Content Should Stay in GitHub",
     date: "2025-01-05",
     excerpt:
-      "There are plenty of headless CMS options. Here's why we built RepoPress to keep content in Git instead of a proprietary database.",
-    content: `When we started building RepoPress, we had a fundamental choice: build another database-backed CMS or build something that works with Git natively. We chose Git.
+      "Most CMS tools copy your content into their own database. RepoPress takes a different approach: your files stay in your GitHub repository.",
+    content: `When we built RepoPress, we had a choice: build another CMS with its own database, or build something that works with files already in your repository. We chose the second option.
 
-## The Problem with Traditional CMS
+## The problem with most CMS tools
 
-Most headless CMS platforms store your content in their database. This creates several problems:
+Most content management platforms store your content in their database. That creates a few issues:
 
-- **Vendor lock-in** — your content is trapped in their system
-- **No version control** — you lose Git's powerful history and branching
-- **Separate workflow** — developers work in Git, content teams work in the CMS
-- **Migration pain** — moving between platforms means data export/import headaches
+- **Your content is locked in** — Moving to a different tool means exporting data and hoping the format is compatible.
+- **No real version history** — You lose the detailed change tracking that Git provides.
+- **Separate workflows** — Developers work in GitHub, content writers work in the CMS, and the two worlds rarely meet.
+- **Migration headaches** — Switching platforms means data exports, format conversions, and broken links.
 
-## The Git-Native Approach
+## How RepoPress is different
 
-RepoPress reads directly from your GitHub repository and commits changes back as standard Git commits. This means:
+RepoPress reads files directly from your GitHub repository and commits changes back when you publish. Here is what that means in practice:
 
-- **Your content stays in your repo** — you own it, forever
-- **Full Git history** — every change is tracked with proper commits
-- **Branch workflows** — use branches for content staging just like code
-- **No migration needed** — your content is already where it needs to be
+- **Your content stays in your repo** — Standard Markdown and MDX files, right where they have always been.
+- **Real version history** — Every publish creates a Git commit. You can see who changed what and when.
+- **One workflow for everyone** — Writers use the visual editor, developers review pull requests. Same repository, same process.
+- **Nothing to migrate** — Your content is already in the right place. There is nothing to export if you stop using RepoPress.
 
-## How We Make It Work
+## How it works under the hood
 
-The key insight is that content management doesn't require a separate database. Your Markdown and MDX files are already structured data. RepoPress adds a visual layer on top:
+The key idea is simple: your Markdown and MDX files are already structured content. RepoPress adds a visual editing layer on top:
 
-1. **Read** — we fetch your content from GitHub's API
-2. **Edit** — you write in our visual Studio editor with live preview
-3. **Save** — drafts are stored temporarily in Convex (our operational database)
-4. **Publish** — content is committed back to your repository
+1. **Read** — Your files are fetched from GitHub when you open a project.
+2. **Edit** — You write in the visual Studio editor with a live preview.
+3. **Save** — Drafts are stored temporarily so you can work without affecting your live site.
+4. **Publish** — Your content is committed back to your repository.
 
-The operational state (drafts, workflow status, version history) lives in Convex, but the content of truth is always your Git repository.
+The draft storage handles the editing workflow (saving progress, version snapshots, review status), but the published content always lives in your Git repository.
 
-## The Best of Both Worlds
+## The best of both worlds
 
-RepoPress gives you the convenience of a visual CMS with the power and ownership of Git. No compromise necessary.`,
+RepoPress gives you a visual editor that anyone on your team can use, with the ownership and version control that Git provides. No compromise.`,
   },
 ]
 
