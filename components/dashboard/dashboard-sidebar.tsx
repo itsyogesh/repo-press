@@ -1,9 +1,10 @@
 "use client"
 
 import { useQuery } from "convex/react"
-import { Box, Folder, Home, LayoutDashboard } from "lucide-react"
+import { Box, Clock, Folder, Home, LayoutDashboard, Pencil, Settings } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import { DashboardSidebarFooter } from "@/components/dashboard/sidebar-footer"
 import {
   Sidebar,
   SidebarContent,
@@ -25,11 +26,41 @@ const NAV_ITEMS = [
   { title: "Repositories", href: "/dashboard#repositories", icon: LayoutDashboard },
 ] as const
 
+/** Parse /dashboard/:owner/:repo from pathname, returning null if not a repo route */
+function parseRepoFromPath(pathname: string): { owner: string; repo: string } | null {
+  const match = pathname.match(/^\/dashboard\/([^/]+)\/([^/]+)/)
+  if (!match) return null
+  return { owner: match[1], repo: match[2] }
+}
+
 export function DashboardSidebar() {
   const pathname = usePathname()
   const projects = useQuery(api.projects.listAccessibleProjects)
 
   const recentProjects = projects ? [...projects].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 5) : undefined
+
+  const repoContext = parseRepoFromPath(pathname)
+  const isStudio = /\/studio(\/|$)/.test(pathname)
+
+  // Projects belonging to the currently viewed repo (undefined while loading)
+  const repoProjects =
+    projects && repoContext
+      ? projects.filter((p) => p.repoOwner === repoContext.owner && p.repoName === repoContext.repo)
+      : undefined
+
+  // When exactly one project exists, link directly into it.
+  // When multiple (or still loading), send to the repo hub for disambiguation.
+  const singleProject = repoProjects?.length === 1 ? repoProjects[0] : null
+  const studioLink = repoContext
+    ? singleProject
+      ? `/dashboard/${repoContext.owner}/${repoContext.repo}/studio?branch=${singleProject.branch}&projectId=${singleProject._id}`
+      : `/dashboard/${repoContext.owner}/${repoContext.repo}`
+    : "/dashboard"
+  const historyLink = repoContext
+    ? singleProject
+      ? `/dashboard/${repoContext.owner}/${repoContext.repo}/history?branch=${singleProject.branch}&projectId=${singleProject._id}`
+      : `/dashboard/${repoContext.owner}/${repoContext.repo}`
+    : "/dashboard"
 
   return (
     <Sidebar collapsible="icon" variant="sidebar">
@@ -78,6 +109,55 @@ export function DashboardSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
+        {/* Contextual repo sub-nav (visible when inside a repo route, except studio) */}
+        {repoContext && !isStudio && (
+          <SidebarGroup>
+            <SidebarGroupLabel className="truncate">
+              {repoContext.owner}/{repoContext.repo}
+            </SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={pathname.endsWith("/studio") || pathname.includes("/studio/")}
+                    tooltip={singleProject ? "Studio" : "Studio — select project"}
+                  >
+                    <Link href={studioLink}>
+                      <Pencil className="size-4" />
+                      <span>Studio</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={pathname.includes("/history")}
+                    tooltip={singleProject ? "History" : "History — select project"}
+                  >
+                    <Link href={historyLink}>
+                      <Clock className="size-4" />
+                      <span>History</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={pathname.endsWith("/settings") && pathname.includes(`/${repoContext.repo}/`)}
+                    tooltip="Settings"
+                  >
+                    <Link href={`/dashboard/${repoContext.owner}/${repoContext.repo}/settings`}>
+                      <Settings className="size-4" />
+                      <span>Settings</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
+
         <SidebarGroup>
           <SidebarGroupLabel>Recent Projects</SidebarGroupLabel>
           <SidebarGroupContent>
@@ -118,6 +198,7 @@ export function DashboardSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
+      <DashboardSidebarFooter />
       <SidebarRail />
     </Sidebar>
   )
