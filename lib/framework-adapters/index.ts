@@ -5,6 +5,7 @@ export { FIELD_GROUP_MAP, GROUP_LABELS, groupFields, groupMergedFields } from ".
 export { EXTENDED_UNIVERSAL_FIELDS, SEO_SCHEMA_FIELDS, UNIVERSAL_FIELDS } from "./fields"
 export {
   detectFramework,
+  detectFrameworkFromContext,
   getFrameworkAdapter,
   getFrameworkConfig,
   getRegisteredAdapters,

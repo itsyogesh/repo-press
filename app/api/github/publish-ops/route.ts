@@ -1,5 +1,4 @@
 import { ConvexHttpClient } from "convex/browser"
-import matter from "gray-matter"
 import { NextResponse } from "next/server"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
@@ -16,6 +15,7 @@ import {
 } from "@/lib/github"
 import { mintServerQueryToken } from "@/lib/project-access-token"
 import { buildPublishBranchName, derivePublishBranchScope } from "@/lib/publish-branch-name"
+import { parseContentFile, serializeContentFile } from "@/lib/repopress/content-file"
 import { RouteAuthError, resolveRouteAuth } from "@/lib/route-auth"
 import { isStudioMediaResolveUrl } from "@/lib/studio/media-resolve"
 
@@ -136,7 +136,13 @@ export async function POST(request: Request) {
         const doc = dirtyDocs.find((d) => d.filePath === op.filePath)
         const rawFrontmatter = doc ? doc.frontmatter || {} : op.initialFrontmatter || {}
         const rawBody = doc ? doc.body || "" : op.initialBody || ""
-        const fileContent = matter.stringify(rawBody, rewriteProxyUrls(rawFrontmatter))
+        const fileContent = serializeContentFile({
+          filePath: fullPath,
+          body: rawBody,
+          frontmatter: rewriteProxyUrls(rawFrontmatter),
+          metadataSource: "none",
+          metadataDefault: project.resolvedRuntime?.metadataDefault ?? "frontmatter",
+        })
 
         operations.push({
           path: fullPath,
@@ -178,7 +184,17 @@ export async function POST(request: Request) {
         }
       }
 
-      const fileContent = matter.stringify(doc.body || "", rewriteProxyUrls(doc.frontmatter || {}))
+      const existingFile = prefetchResults.get(`doc:${doc.filePath}`)
+      const metadataSource = existingFile
+        ? parseContentFile(existingFile.content || "", fullPath).metadataSource
+        : "none"
+      const fileContent = serializeContentFile({
+        filePath: fullPath,
+        body: doc.body || "",
+        frontmatter: rewriteProxyUrls(doc.frontmatter || {}),
+        metadataSource,
+        metadataDefault: project.resolvedRuntime?.metadataDefault ?? "frontmatter",
+      })
       operations.push({
         path: fullPath,
         content: fileContent,

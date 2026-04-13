@@ -2,12 +2,13 @@
 
 import { compile } from "@mdx-js/mdx"
 import remarkGfm from "remark-gfm"
-import { type ExtractedImport, remarkTransformImports } from "./transformImports"
+import { type ExtractedImport, remarkTransformImports, type TransformImportsData } from "./transformImports"
 
 export interface CompileMdxResult {
   code?: string
   error?: string
   imports?: ExtractedImport[]
+  diagnostics?: string[]
 }
 
 /**
@@ -65,7 +66,9 @@ export async function compileMdx(source: string, allowedImports: Record<string, 
       development: false,
     })
 
-    const imports = vfile.data.extractedImports as ExtractedImport[] | undefined
+    const transformData = vfile.data as TransformImportsData
+    const imports = transformData.extractedImports
+    const diagnostics = transformData.importDiagnostics
 
     let code = String(vfile)
 
@@ -78,6 +81,7 @@ export async function compileMdx(source: string, allowedImports: Record<string, 
     return {
       code,
       imports: imports || [],
+      diagnostics: diagnostics || [],
     }
   } catch (error: any) {
     return {

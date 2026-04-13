@@ -1,75 +1,8 @@
 "use client"
 
-import { Info } from "lucide-react"
-import type React from "react"
-
-export const DOCS_BLOB_BASE = "https://7azoq5njibf6vkft.public.blob.vercel-storage.com"
-
-export const REAL_DOCS_SETUP_MEDIA: any = {
-  cloudflare: {
-    videoUrl: "https://youtu.be/WwCFLfigqpg?si=T90pqRb-zkW4fMuz",
-    images: {
-      "step-2-api-tokens-nav": `${DOCS_BLOB_BASE}/docs/setup/cloudflare/step-2-api-tokens-nav.webp`,
-      "step-2-create-custom-token": `${DOCS_BLOB_BASE}/docs/setup/cloudflare/step-2-create-custom-token.webp`,
-      "step-2-create-test-custom-token": `${DOCS_BLOB_BASE}/docs/setup/cloudflare/step-2-create-test-custom-token.webp`,
-      "step-2-token-display": `${DOCS_BLOB_BASE}/docs/setup/cloudflare/step-2-token-display.webp`,
-      "step-2-token-permissions": `${DOCS_BLOB_BASE}/docs/setup/cloudflare/step-2-token-permissions.webp`,
-      "step-3-integration-form": `${DOCS_BLOB_BASE}/docs/setup/cloudflare/step-3-integration-form.webp`,
-    },
-  },
-  gandi: {
-    images: {
-      "step-1-create-token": `${DOCS_BLOB_BASE}/docs/setup/gandi/step-1-create-token.webp`,
-      "step-1-pat-section": `${DOCS_BLOB_BASE}/docs/setup/gandi/step-1-pat-section.webp`,
-      "step-1-user-settings": `${DOCS_BLOB_BASE}/docs/setup/gandi/step-1-user-settings.webp`,
-      "step-2-token-form": `${DOCS_BLOB_BASE}/docs/setup/gandi/step-2-token-form.webp`,
-      "step-3-permissions": `${DOCS_BLOB_BASE}/docs/setup/gandi/step-3-permissions.webp`,
-      "step-4-create-token": `${DOCS_BLOB_BASE}/docs/setup/gandi/step-4-create-token.webp`,
-      "step-4-token-display": `${DOCS_BLOB_BASE}/docs/setup/gandi/step-4-token-display.webp`,
-      "step-5-integration-form": `${DOCS_BLOB_BASE}/docs/setup/gandi/step-5-integration-form.webp`,
-    },
-  },
-  godaddy: {
-    videoUrl: "https://youtu.be/3WCzfVL-bRk?si=ncMNDQSc7RiedP1d",
-    images: {
-      "step-2-create-api-key": `${DOCS_BLOB_BASE}/docs/setup/godaddy/step-2-create-api-key.webp`,
-      "step-3-environment-selection": `${DOCS_BLOB_BASE}/docs/setup/godaddy/step-3-environment-selection.webp`,
-      "step-4-api-key-secret": `${DOCS_BLOB_BASE}/docs/setup/godaddy/step-4-api-key-secret.webp`,
-      "step-6-integration-form": `${DOCS_BLOB_BASE}/docs/setup/godaddy/step-6-integration-form.webp`,
-    },
-  },
-  namecheap: {
-    videoUrl: "https://youtu.be/snbECrsUdp4?si=pAxyo0mEzTYBxmQR",
-    images: {
-      "step-1-api-access-nav": `${DOCS_BLOB_BASE}/docs/setup/namecheap/step-1-api-access-nav.webp`,
-      "step-3-whitelist-ips": `${DOCS_BLOB_BASE}/docs/setup/namecheap/step-3-whitelist-ips.webp`,
-      "step-5-integration-form": `${DOCS_BLOB_BASE}/docs/setup/namecheap/step-5-integration-form.webp`,
-    },
-  },
-  namecom: {
-    images: {
-      "step-1-generate-token": `${DOCS_BLOB_BASE}/docs/setup/namecom/step-1-generate-token.webp`,
-      "step-2-username-token": `${DOCS_BLOB_BASE}/docs/setup/namecom/step-2-username-token.webp`,
-      "step-3-integration-form": `${DOCS_BLOB_BASE}/docs/setup/namecom/step-3-integration-form.webp`,
-    },
-  },
-  porkbun: {
-    videoUrl: "https://youtu.be/jLVBwxk4V6w?si=eZPfJwhKTiqwyTQI",
-    images: {
-      "step-1-api-access-nav": `${DOCS_BLOB_BASE}/docs/setup/porkbun/step-1-api-access-nav.webp`,
-      "step-1-create-api-key": `${DOCS_BLOB_BASE}/docs/setup/porkbun/step-1-create-api-key.webp`,
-      "step-1-api-credentials": `${DOCS_BLOB_BASE}/docs/setup/porkbun/step-1-api-credentials.webp`,
-      "step-2-integration-form": `${DOCS_BLOB_BASE}/docs/setup/porkbun/step-2-integration-form.webp`,
-    },
-  },
-  hostinger: {
-    images: {
-      "step-1-profile-nav": `${DOCS_BLOB_BASE}/docs/setup/hostinger/step-1-profile-nav.webp`,
-      "step-2-api-access": `${DOCS_BLOB_BASE}/docs/setup/hostinger/step-2-api-access.webp`,
-      "step-3-create-token": `${DOCS_BLOB_BASE}/docs/setup/hostinger/step-3-create-token.webp`,
-    },
-  },
-}
+import { AlertTriangle, CheckCircle, ChevronDown, ChevronRight, Info, XCircle } from "lucide-react"
+import React from "react"
+import * as jsxRuntime from "react/jsx-runtime"
 
 /**
  * Standard built-in components for RepoPress.
@@ -118,13 +51,118 @@ export const standardComponents: Record<string, React.ComponentType<any>> = {
   ),
   Image: (props) => <img {...props} className="rounded-lg border shadow-sm max-w-full" alt={props.alt || ""} />,
   Video: (props) => <video {...props} className="rounded-lg border shadow-sm max-w-full" controls />,
-  CopyIpsButton: (_props) => (
-    <button
-      type="button"
-      className="my-2 inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 px-3 gap-2 font-sans"
-    >
-      <Info className="h-3.5 w-3.5" />
-      Copy IP Addresses
-    </button>
-  ),
+}
+
+const LinkShim = React.forwardRef<
+  HTMLAnchorElement,
+  React.AnchorHTMLAttributes<HTMLAnchorElement> & { href?: string | URL | null }
+>(({ href, children, ...props }, ref) => {
+  const resolvedHref = href == null ? undefined : String(href)
+  return (
+    <a ref={ref} href={resolvedHref} {...props}>
+      {children}
+    </a>
+  )
+})
+LinkShim.displayName = "LinkShim"
+
+const ImageShim = React.forwardRef<
+  HTMLImageElement,
+  React.ImgHTMLAttributes<HTMLImageElement> & {
+    fill?: boolean
+    priority?: boolean
+    sizes?: string
+    quality?: number
+  }
+>(({ alt = "", fill, src, style, ...props }, ref) => {
+  const resolvedSrc =
+    typeof src === "string"
+      ? src
+      : src && typeof src === "object" && "src" in src
+        ? String((src as { src?: string }).src || "")
+        : ""
+
+  const nextStyle = fill
+    ? {
+        position: "absolute" as const,
+        inset: 0,
+        width: "100%",
+        height: "100%",
+        objectFit: "cover" as const,
+        ...style,
+      }
+    : style
+
+  return <img ref={ref} alt={alt} src={resolvedSrc} style={nextStyle} {...props} />
+})
+ImageShim.displayName = "ImageShim"
+
+const Cards = ({ children }: { children?: React.ReactNode }) => (
+  <div className="my-4 grid gap-4 md:grid-cols-2">{children}</div>
+)
+
+const File = ({ children }: { children?: React.ReactNode }) => (
+  <div className="rounded-md border border-studio-border/70 bg-background px-3 py-2 text-left font-mono text-xs shadow-sm">
+    {children}
+  </div>
+)
+
+const Files = ({ children }: { children?: React.ReactNode }) => (
+  <div className="my-4 space-y-2 rounded-xl border border-studio-border/70 bg-muted/20 p-4">{children}</div>
+)
+
+export const fumadocsDefaultComponents: Record<string, unknown> = {
+  ...standardComponents,
+  a: LinkShim,
+  img: ImageShim,
+  Link: LinkShim,
+  Image: ImageShim,
+  Card: standardComponents.Card,
+  Cards,
+  File,
+  Files,
+}
+
+export const standardAllowImports: Record<string, Record<string, unknown>> = {
+  react: {
+    Fragment: React.Fragment,
+    useState: React.useState,
+    useEffect: React.useEffect,
+    useMemo: React.useMemo,
+    useCallback: React.useCallback,
+  },
+  "react/jsx-runtime": {
+    Fragment: React.Fragment,
+    jsx: jsxRuntime.jsx,
+    jsxs: jsxRuntime.jsxs,
+  },
+  "lucide-react": {
+    Info,
+    AlertTriangle,
+    CheckCircle,
+    XCircle,
+    ChevronRight,
+    ChevronDown,
+  },
+  "next/link": {
+    default: LinkShim,
+  },
+  "next/image": {
+    default: ImageShim,
+  },
+  "fumadocs-ui/mdx": {
+    default: fumadocsDefaultComponents,
+    defaultComponents: fumadocsDefaultComponents,
+    Callout: standardComponents.Callout,
+    Step: standardComponents.Step,
+    Steps: standardComponents.Steps,
+    Tab: standardComponents.Tab,
+    Tabs: standardComponents.Tabs,
+    Card: standardComponents.Card,
+    Cards,
+    File,
+    Files,
+    Image: ImageShim,
+    Link: LinkShim,
+  },
 }

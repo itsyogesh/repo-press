@@ -45,27 +45,6 @@ export function getJsxComponentDescriptors(
   // 1. Built-in descriptors
   const baseDescriptors: JsxComponentDescriptor[] = [
     {
-      name: "DocsImage",
-      kind: "flow",
-      props: [
-        { name: "src", type: "expression" },
-        { name: "alt", type: "string" },
-        { name: "caption", type: "string" },
-      ],
-      hasChildren: false,
-      Editor: RepoJsxBridge,
-    },
-    {
-      name: "DocsVideo",
-      kind: "flow",
-      props: [
-        { name: "src", type: "expression" },
-        { name: "title", type: "string" },
-      ],
-      hasChildren: false,
-      Editor: RepoJsxBridge,
-    },
-    {
       name: "Callout",
       kind: "flow",
       props: [
@@ -101,13 +80,6 @@ export function getJsxComponentDescriptors(
       kind: "flow",
       props: [],
       hasChildren: true,
-      Editor: RepoJsxBridge,
-    },
-    {
-      name: "CopyIpsButton",
-      kind: "flow",
-      props: [],
-      hasChildren: false,
       Editor: RepoJsxBridge,
     },
     {

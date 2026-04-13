@@ -4,7 +4,13 @@ import { getGitHubToken } from "@/lib/auth-server"
 import { isGitHubRateLimitError } from "@/lib/repopress/github-request-control"
 import { collectRepoModuleBundle } from "@/lib/repopress/repo-module-bundle"
 
-export async function fetchAdapterSourceAction(owner: string, repo: string, branch: string, entryPath: string) {
+export async function fetchAdapterSourceAction(
+  owner: string,
+  repo: string,
+  branch: string,
+  entryPath: string,
+  runtimeRoot?: string | null,
+) {
   const token = await getGitHubToken()
   if (!token) return { success: false, error: "Not authenticated with GitHub" }
 
@@ -15,6 +21,7 @@ export async function fetchAdapterSourceAction(owner: string, repo: string, bran
       repo,
       branch,
       entryPath,
+      runtimeRoot,
     })
     if (!bundle.entrySource) {
       return {

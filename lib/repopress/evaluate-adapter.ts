@@ -1,6 +1,6 @@
 import React from "react"
 import * as jsxRuntime from "react/jsx-runtime"
-import { Callout, DocsImage, DocsVideo } from "@/components/docs/doc-media"
+import { standardAllowImports } from "@/lib/repopress/standard-library"
 import { withEvalGuard, withFunctionConstructorGuard } from "./function-constructor-guard"
 
 export interface RepoPressPreviewAdapter {
@@ -10,7 +10,7 @@ export interface RepoPressPreviewAdapter {
    * When the Studio is editing a document under a specific contentRoot,
    * the matching entry overrides `components` for the insert picker.
    *
-   * Example (in .repopress/mdx-preview.tsx):
+   * Example (in an optional RepoPress preview override):
    * ```ts
    * componentsByContext: {
    *   "content/blog": { Callout },
@@ -40,18 +40,23 @@ const ALLOWED_ADAPTER_MODULES: Record<string, unknown> = {
 
 // Standard RepoPress adapter shim modules
 const SHIM_MODULES: Record<string, Record<string, unknown>> = {
-  "@/components/docs/doc-media": {
-    DocsImage,
-    DocsVideo,
-    Callout,
-  },
-  "@components/docs/doc-media": {
-    DocsImage,
-    DocsVideo,
-    Callout,
-  },
-  "@/lib/constants/docs": { DOCS_SETUP_MEDIA: {} },
-  "@lib/constants/docs": { DOCS_SETUP_MEDIA: {} },
+  ...standardAllowImports,
+}
+
+function resolveComponentsExport(moduleExports: Record<string, any>) {
+  const candidates = ["useMDXComponents", "getMDXComponents"] as const
+
+  for (const key of candidates) {
+    const candidate = moduleExports[key]
+    if (typeof candidate !== "function") continue
+
+    const result = candidate({})
+    if (result && typeof result === "object") {
+      return result as Record<string, React.ComponentType<any>>
+    }
+  }
+
+  return undefined
 }
 
 export function evaluateAdapter(code: string): RepoPressPreviewAdapter {
@@ -114,8 +119,10 @@ export function evaluateAdapter(code: string): RepoPressPreviewAdapter {
   if (moduleExports.default) return moduleExports.default
 
   // If no explicit adapter object, maybe the file exports parts directly
+  const inferredComponents = resolveComponentsExport(moduleExports)
+
   return {
-    components: moduleExports.components,
+    components: inferredComponents ?? moduleExports.components,
     scope: moduleExports.scope,
     allowImports: moduleExports.allowImports,
   }

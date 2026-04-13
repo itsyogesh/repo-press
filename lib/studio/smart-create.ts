@@ -36,10 +36,11 @@ export function buildSiblingFields(frontmatter: Record<string, unknown>): Frontm
     .filter((field) => field.type !== "object")
 }
 
-function extensionFromPath(path: string | null | undefined): ".md" | ".mdx" | null {
+function extensionFromPath(path: string | null | undefined): ".md" | ".mdx" | ".markdown" | null {
   if (!path) return null
   if (/\.mdx$/i.test(path)) return ".mdx"
-  if (/\.(md|markdown)$/i.test(path)) return ".md"
+  if (/\.markdown$/i.test(path)) return ".markdown"
+  if (/\.md$/i.test(path)) return ".md"
   return null
 }
 
@@ -49,7 +50,7 @@ export function resolveSmartCreateExtension({
 }: {
   adapter: FrameworkAdapter | null
   siblingPath?: string | null
-}): ".md" | ".mdx" {
+}): ".md" | ".mdx" | ".markdown" {
   const siblingExtension = extensionFromPath(siblingPath)
   if (siblingExtension) return siblingExtension
 

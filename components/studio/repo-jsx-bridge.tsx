@@ -3,7 +3,6 @@
 import { ImageIcon, Info } from "lucide-react"
 import type React from "react"
 import { useMemo } from "react"
-import { REAL_DOCS_SETUP_MEDIA } from "@/lib/repopress/standard-library"
 import { resolveStudioAssetUrl } from "@/lib/studio/media-resolve"
 import { GenericJsxEditor } from "./jsx-component-descriptors"
 import { safeEvalJsExpression } from "./safe-jsx-prop-eval"
@@ -146,7 +145,6 @@ export function RepoJsxBridge({ mdastNode, descriptor }: RepoJsxBridgeProps) {
     // Build an evaluation scope for props
     const evalScope = {
       ...(adapter?.scope || {}),
-      DOCS_SETUP_MEDIA: (adapter?.scope as any)?.DOCS_SETUP_MEDIA || REAL_DOCS_SETUP_MEDIA,
     }
 
     attrs.forEach((attr: any) => {

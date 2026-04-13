@@ -8,20 +8,24 @@ function normalizeRepoPath(filePath: string) {
   return filePath.replace(/\\/g, "/").replace(/^\.?\//, "")
 }
 
-function extractRelativeImports(source: string) {
+function extractRepoLocalImports(source: string) {
   const imports = new Set<string>()
   for (const match of source.matchAll(IMPORT_RE)) {
     const specifier = match[1] || match[2]
-    if (specifier && (specifier.startsWith("./") || specifier.startsWith("../"))) {
+    if (
+      specifier &&
+      (specifier.startsWith("./") ||
+        specifier.startsWith("../") ||
+        specifier.startsWith("@/") ||
+        specifier.startsWith("~/"))
+    ) {
       imports.add(specifier)
     }
   }
   return Array.from(imports)
 }
 
-function candidatePaths(fromPath: string, specifier: string) {
-  const fromDir = path.posix.dirname(normalizeRepoPath(fromPath))
-  const base = path.posix.normalize(path.posix.join(fromDir, specifier))
+function candidatePathsForBase(base: string) {
   const ext = path.posix.extname(base)
 
   if (ext) {
@@ -44,6 +48,19 @@ function candidatePaths(fromPath: string, specifier: string) {
   ]
 }
 
+function candidatePaths(fromPath: string, specifier: string, runtimeRoot?: string | null) {
+  if (specifier.startsWith("@/") || specifier.startsWith("~/")) {
+    const root = normalizeRepoPath(runtimeRoot || "")
+    const aliasPath = specifier.slice(2)
+    const base = path.posix.normalize(root ? path.posix.join(root, aliasPath) : aliasPath)
+    return candidatePathsForBase(base)
+  }
+
+  const fromDir = path.posix.dirname(normalizeRepoPath(fromPath))
+  const base = path.posix.normalize(path.posix.join(fromDir, specifier))
+  return candidatePathsForBase(base)
+}
+
 function buildBundleSha(entries: Array<{ path: string; sha: string }>) {
   return entries
     .sort((a, b) => a.path.localeCompare(b.path))
@@ -57,27 +74,35 @@ export async function collectRepoModuleBundle({
   repo,
   branch,
   entryPath,
+  runtimeRoot,
 }: {
   token: string
   owner: string
   repo: string
   branch: string
   entryPath: string
+  runtimeRoot?: string | null
 }) {
   const scope = buildRequestScopeId(token)
   const normalizedEntryPath = normalizeRepoPath(entryPath)
   const sources: Record<string, string> = {}
   const shas: Array<{ path: string; sha: string }> = []
+  const fileCache = new Map<string, Awaited<ReturnType<typeof getFile>>>()
   let rateLimited = false
   let retryCount = 0
 
   const fetchModule = async (repoPath: string) => {
+    if (fileCache.has(repoPath)) {
+      return fileCache.get(repoPath)!
+    }
+
     const requestResult = await executeGitHubRequest({
       key: `repo-module:${scope}:${owner}/${repo}@${branch}:${repoPath}`,
       request: () => getFile(token, owner, repo, repoPath, branch),
     })
     rateLimited ||= requestResult.rateLimited
     retryCount += requestResult.retryCount
+    fileCache.set(repoPath, requestResult.value)
     return requestResult.value
   }
 
@@ -94,13 +119,11 @@ export async function collectRepoModuleBundle({
     sources[repoPath] = file.content
     shas.push({ path: repoPath, sha: file.sha })
 
-    for (const specifier of extractRelativeImports(file.content)) {
+    for (const specifier of extractRepoLocalImports(file.content)) {
       let resolvedPath: string | null = null
-      for (const candidate of candidatePaths(repoPath, specifier)) {
+      for (const candidate of candidatePaths(repoPath, specifier, runtimeRoot)) {
         const candidateFile = await fetchModule(candidate)
         if (candidateFile) {
-          sources[candidate] = candidateFile.content
-          shas.push({ path: candidate, sha: candidateFile.sha })
           resolvedPath = candidate
           break
         }

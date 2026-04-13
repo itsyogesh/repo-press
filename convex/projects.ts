@@ -339,6 +339,14 @@ const contentTypeValidator = v.union(
   v.literal("custom"),
 )
 
+const resolvedRuntimeValidator = v.object({
+  strategy: v.union(v.literal("native"), v.literal("override"), v.literal("generic-fallback")),
+  entryPath: v.union(v.string(), v.null()),
+  rootPath: v.union(v.string(), v.null()),
+  metadataDefault: v.union(v.literal("frontmatter"), v.literal("metadata-export")),
+  extensions: v.array(v.string()),
+})
+
 const projectArgs = {
   userId: v.string(),
   name: v.string(),
@@ -466,6 +474,7 @@ export const syncProjectsFromConfig = mutation({
         previewEntry: v.optional(v.string()),
         enabledPlugins: v.optional(v.array(v.string())),
         components: v.optional(v.any()),
+        resolvedRuntime: v.optional(resolvedRuntimeValidator),
       }),
     ),
   },
@@ -551,6 +560,7 @@ export const syncProjectsFromConfig = mutation({
           JSON.stringify(existing.enabledPlugins) !== JSON.stringify(p.enabledPlugins) ||
           JSON.stringify(existing.pluginRegistry) !== JSON.stringify(args.pluginRegistry) ||
           JSON.stringify(existing.components) !== JSON.stringify(p.components) ||
+          JSON.stringify(existing.resolvedRuntime) !== JSON.stringify(p.resolvedRuntime) ||
           existing.frameworkSource !== "config" ||
           // Re-added orphan: configRemoved was set but project is back in config
           existing.configRemoved !== undefined
@@ -569,6 +579,7 @@ export const syncProjectsFromConfig = mutation({
             enabledPlugins: p.enabledPlugins,
             pluginRegistry: args.pluginRegistry,
             components: p.components,
+            resolvedRuntime: p.resolvedRuntime,
             frameworkSource: "config",
             // Clear orphan flag if it was previously set
             configRemoved: undefined,
@@ -598,6 +609,7 @@ export const syncProjectsFromConfig = mutation({
           enabledPlugins: p.enabledPlugins,
           pluginRegistry: args.pluginRegistry,
           components: p.components,
+          resolvedRuntime: p.resolvedRuntime,
           frameworkSource: "config",
           createdAt: now,
           updatedAt: now,

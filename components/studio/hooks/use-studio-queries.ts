@@ -283,6 +283,15 @@ export function useStudioQueries(
     frontmatterSchema,
     fieldVariants,
     previewEntry: project?.previewEntry,
+    resolvedRuntime: project?.resolvedRuntime as
+      | {
+          strategy: "native" | "override" | "generic-fallback"
+          entryPath: string | null
+          rootPath: string | null
+          metadataDefault: "frontmatter" | "metadata-export"
+          extensions: string[]
+        }
+      | undefined,
     enabledPlugins: project?.enabledPlugins,
     pluginRegistry: project?.pluginRegistry as Record<string, string> | undefined,
     components: project?.components as Record<string, any> | undefined,

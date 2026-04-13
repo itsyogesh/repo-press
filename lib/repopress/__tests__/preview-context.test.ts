@@ -43,4 +43,13 @@ describe("buildMergedContext", () => {
     ).toBe("adapter:hero.png")
     expect(typeof merged.components?.Callout).toBe("function")
   })
+
+  it("includes built-in native runtime shims even without a project adapter", () => {
+    const merged = buildMergedContext(null, {})
+
+    expect(merged.allowImports?.["next/link"]?.default).toBeDefined()
+    expect(merged.allowImports?.["next/image"]?.default).toBeDefined()
+    expect(merged.allowImports?.["fumadocs-ui/mdx"]?.defaultComponents).toBeDefined()
+    expect(merged.allowImports?.["react/jsx-runtime"]?.jsx).toBeDefined()
+  })
 })

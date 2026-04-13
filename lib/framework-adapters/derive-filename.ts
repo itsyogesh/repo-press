@@ -18,7 +18,7 @@ import type { NamingStrategy } from "./types"
 export type DeriveFilenameOptions = {
   title: string
   strategy: NamingStrategy
-  extension: ".mdx" | ".md"
+  extension: ".mdx" | ".md" | ".markdown"
   /** Names already present in the target folder (filenames only, e.g. "my-post.mdx") */
   existingNames: string[]
   /** ISO date string or Date instance. Required when strategy === "date-slug". Defaults to today. */

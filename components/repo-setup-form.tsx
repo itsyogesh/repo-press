@@ -1,6 +1,5 @@
 "use client"
 
-import { useMutation, useQuery } from "convex/react"
 import {
   AlertCircle,
   CheckCircle2,
@@ -13,18 +12,15 @@ import {
   Sparkles,
 } from "lucide-react"
 import { useRouter } from "next/navigation"
-import type React from "react"
 import { useState, useTransition } from "react"
 import { toast } from "sonner"
 import { initRepoPressAction } from "@/app/dashboard/[owner]/[repo]/init-actions"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { api } from "@/convex/_generated/api"
 import type { RepoPressConfig } from "@/lib/config-schema"
 import { getFrameworkConfig, getRegisteredAdapters } from "@/lib/framework-adapters"
 import type { ConfigErrorType } from "@/lib/repopress/config"
@@ -65,18 +61,13 @@ export function RepoSetupForm({
   isWriter = true,
 }: RepoSetupFormProps) {
   const router = useRouter()
-  const user = useQuery(api.auth.getCurrentUser)
-  const getOrCreateProject = useMutation(api.projects.getOrCreate)
 
   const [selectedBranch, setSelectedBranch] = useState(defaultBranch)
   const [selectedFramework, setSelectedFramework] = useState(frameworkConfig.framework)
   const [contentPath, setContentPath] = useState(frameworkConfig.suggestedContentRoots[0] || "")
   const [contentType, setContentType] = useState<string>(frameworkConfig.contentType)
-  const [currentFields, setCurrentFields] = useState(frameworkConfig.frontmatterFields)
   const [architectureNote, setArchitectureNote] = useState(frameworkConfig.contentArchitecture?.architectureNote || "")
-  const [isLoading, setIsLoading] = useState(false)
   const [isInitializing, setIsInitializing] = useState(false)
-  const [showAdvanced, setShowAdvanced] = useState(false)
   const [folderPickerOpen, setFolderPickerOpen] = useState(false)
   const [isSyncPending, startSyncTransition] = useTransition()
 
@@ -87,7 +78,6 @@ export function RepoSetupForm({
     const config = getFrameworkConfig(newFramework)
     setContentType(config.contentType)
     setContentPath(config.suggestedContentRoots[0] || "")
-    setCurrentFields(config.frontmatterFields)
     setArchitectureNote(config.contentArchitecture?.architectureNote || "")
   }
 
@@ -126,39 +116,6 @@ export function RepoSetupForm({
       toast.error(err.message)
     } finally {
       setIsInitializing(false)
-    }
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-
-    if (!user?._id) {
-      toast.error("Not authenticated. Please sign in again.")
-      return
-    }
-
-    setIsLoading(true)
-
-    try {
-      const projectId = await getOrCreateProject({
-        userId: user._id as string,
-        name: `${owner}/${repo}`,
-        repoOwner: owner,
-        repoName: repo,
-        branch: selectedBranch,
-        contentRoot: contentPath,
-        detectedFramework: selectedFramework,
-        contentType: contentType as "blog" | "docs" | "pages" | "changelog" | "custom",
-        frontmatterSchema: currentFields,
-      })
-
-      toast.success("Project created successfully!")
-      router.push(`/dashboard/${owner}/${repo}/studio?branch=${selectedBranch}&projectId=${projectId}`)
-    } catch (error) {
-      console.error("Error creating project:", error)
-      toast.error("Failed to create project. Please try again.")
-    } finally {
-      setIsLoading(false)
     }
   }
 
@@ -314,7 +271,7 @@ export function RepoSetupForm({
           <Sparkles className="h-4 w-4 text-studio-accent" />
           <AlertTitle className="text-studio-accent">Initialize with Config (Recommended)</AlertTitle>
           <AlertDescription className="text-xs text-pretty text-studio-accent">
-            This adds a config file and preview adapter to your repo, enabling live MDX editing and project management.
+            This adds a lightweight RepoPress manifest. Native MDX runtime detection handles previews by default.
           </AlertDescription>
         </Alert>
 
@@ -458,7 +415,7 @@ export function RepoSetupForm({
           type="button"
           className="w-full"
           onClick={handleInitRepoPress}
-          disabled={isInitializing || isLoading || isSyncPending}
+          disabled={isInitializing || isSyncPending}
         >
           {isInitializing ? (
             <>
@@ -472,34 +429,6 @@ export function RepoSetupForm({
             </>
           )}
         </Button>
-
-        {/* Advanced: legacy manual path */}
-        <Collapsible open={showAdvanced} onOpenChange={setShowAdvanced}>
-          <CollapsibleTrigger asChild>
-            <Button variant="ghost" size="sm" className="w-full text-xs text-muted-foreground">
-              {showAdvanced ? "Hide advanced options" : "Advanced: Create without config file"}
-            </Button>
-          </CollapsibleTrigger>
-          <CollapsibleContent className="pt-2">
-            <form onSubmit={handleSubmit}>
-              <Button
-                type="submit"
-                variant="outline"
-                className="w-full"
-                disabled={isLoading || isInitializing || !user}
-              >
-                {isLoading ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Creating...
-                  </>
-                ) : (
-                  "Create without config file (advanced)"
-                )}
-              </Button>
-            </form>
-          </CollapsibleContent>
-        </Collapsible>
       </CardContent>
     </Card>
   )

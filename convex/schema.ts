@@ -1,6 +1,14 @@
 import { defineSchema, defineTable } from "convex/server"
 import { v } from "convex/values"
 
+const resolvedRuntimeValidator = v.object({
+  strategy: v.union(v.literal("native"), v.literal("override"), v.literal("generic-fallback")),
+  entryPath: v.union(v.string(), v.null()),
+  rootPath: v.union(v.string(), v.null()),
+  metadataDefault: v.union(v.literal("frontmatter"), v.literal("metadata-export")),
+  extensions: v.array(v.string()),
+})
+
 export default defineSchema({
   // ─── Better Auth tables ────────────────────────────────────
   users: defineTable({
@@ -84,6 +92,7 @@ export default defineSchema({
     enabledPlugins: v.optional(v.array(v.string())),
     pluginRegistry: v.optional(v.any()), // Map of pluginId -> manifestPath
     components: v.optional(v.any()), // Map of componentName -> { props, hasChildren, kind }
+    resolvedRuntime: v.optional(resolvedRuntimeValidator),
     frameworkSource: v.optional(v.union(v.literal("config"), v.literal("detected"))),
 
     // Orphan detection: set when a config-driven project is no longer in the config

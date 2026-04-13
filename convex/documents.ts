@@ -1,5 +1,6 @@
 import { v } from "convex/values"
 import { DOCUMENT_ALLOWED_TRANSITIONS, isPublishableDocumentStatus } from "../lib/document-status"
+import { extractTitleFromContentFile } from "../lib/repopress/content-file"
 import { internal } from "./_generated/api"
 import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server"
 import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
@@ -601,17 +602,7 @@ export const syncTreeTitles = action({
 
             const content = await response.text()
 
-            // Extract title from frontmatter (simple regex - no gray-matter in Convex)
-            let title =
-              file.path
-                .split("/")
-                .pop()
-                ?.replace(/\.(mdx?|markdown)$/i, "") || file.path
-            const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/)
-            if (fmMatch) {
-              const titleMatch = fmMatch[1].match(/^title:\s*["']?(.+?)["']?\s*$/m)
-              if (titleMatch) title = titleMatch[1].trim()
-            }
+            const title = extractTitleFromContentFile(content, file.path)
 
             await ctx.runMutation(internal.documents.getOrCreateInternal, {
               projectId: args.projectId,

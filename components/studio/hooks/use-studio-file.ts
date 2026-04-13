@@ -1,9 +1,9 @@
 "use client"
 
-import matter from "gray-matter"
 import * as React from "react"
 import { normalizeFrontmatterDates } from "@/lib/framework-adapters"
 import { type FileTreeNode, findTreeNode } from "@/lib/github"
+import { parseContentFile } from "@/lib/repopress/content-file"
 import { useStudio } from "../studio-context"
 
 interface InitialFile {
@@ -31,22 +31,12 @@ interface GitHubFileResponse {
   content: string
 }
 
-function parseFileSnapshot(rawContent: string, sha: string | null): CachedFileSnapshot {
-  try {
-    const { data, content } = matter(rawContent)
-    return {
-      content,
-      frontmatter: normalizeFrontmatterDates(data) as Record<string, unknown>,
-      sha,
-    }
-  } catch {
-    // Attempt to strip frontmatter even if gray-matter fails
-    const stripped = rawContent.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "")
-    return {
-      content: stripped,
-      frontmatter: {},
-      sha,
-    }
+function parseFileSnapshot(rawContent: string, filePath: string, sha: string | null): CachedFileSnapshot {
+  const parsed = parseContentFile(rawContent, filePath)
+  return {
+    content: parsed.body,
+    frontmatter: parsed.frontmatter,
+    sha,
   }
 }
 
@@ -233,7 +223,7 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
         const file = (await response.json()) as GitHubFileResponse
         if (requestVersionRef.current !== requestVersion) return
 
-        const snapshot = parseFileSnapshot(file.content, file.sha)
+        const snapshot = parseFileSnapshot(file.content, file.path, file.sha)
         fileCacheRef.current.set(filePath, snapshot)
         applySnapshot(filePath, snapshot)
       } catch (error) {
@@ -337,7 +327,7 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
 
   React.useEffect(() => {
     if (initialFile) {
-      const snapshot = parseFileSnapshot(initialFile.content, initialFile.sha)
+      const snapshot = parseFileSnapshot(initialFile.content, initialFile.path, initialFile.sha)
       fileCacheRef.current.set(initialFile.path, snapshot)
       applySnapshot(initialFile.path, snapshot)
       syncBrowserUrl(initialFile.path, "replace")

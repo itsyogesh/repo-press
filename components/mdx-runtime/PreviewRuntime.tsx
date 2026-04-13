@@ -2,14 +2,12 @@
 
 import { AlertCircle, Info, Settings } from "lucide-react"
 import React, { useEffect, useMemo, useRef, useState } from "react"
-import { DocsVideo as DocsMediaVideo } from "@/components/docs/doc-media"
 import type { RepoPressPreviewAdapter } from "@/lib/repopress/evaluate-adapter"
 
 import { cn } from "@/lib/utils"
 import { compileMdx } from "./compileMdx"
 import { ErrorBoundary } from "./ErrorBoundary"
 import { evaluateMdx } from "./evaluateMdx"
-import { FALLBACK_DOCS_SETUP_MEDIA, FALLBACK_FIXIE_IPS, FALLBACK_NAMECHEAP_URLS } from "./fallback-data"
 
 // Function to generate a simple hash of the source string to debounce/memoize
 function hashSource(str: string) {
@@ -151,39 +149,22 @@ export function PreviewRuntime({
     void compileInputsKey
     // Read latest values from refs (deps use content-based keys for stability)
     const currentAdapter = adapterRef.current
-    const currentFrontmatter = frontmatterRef.current
 
     let active = true
     const timeout = setTimeout(async () => {
       setIsCompiling(true)
       setWarnings([])
       try {
-        // Base set of allowed imports that are always available in RepoPress
-        const allowedConfig: Record<string, string[]> = {
-          "@/components/docs/doc-media": ["DocsVideo", "DocsImage", "Callout"],
-          "@/components/docs/copy-ips-button": ["CopyIpsButton"],
-          "@/lib/constants": ["FIXIE_IPS", "NAMECHEAP_URLS"],
-          "@/lib/constants/docs": ["DOCS_SETUP_MEDIA"],
-          react: ["useState", "useEffect", "useMemo", "useCallback"],
-          "lucide-react": ["Info", "AlertTriangle", "CheckCircle", "XCircle", "ChevronRight", "ChevronDown"],
-          "@/components/ui/8bit/button": ["Button"],
-          "@/components/ui/8bit/badge": ["Badge"],
-          "@/components/ui/8bit/card": ["Card"],
-        }
+        const allowedConfig = Object.fromEntries(
+          Object.entries(currentAdapter?.allowImports || {}).map(([key, val]) => [key, Object.keys(val as object)]),
+        ) as Record<string, string[]>
 
-        const allowImports = currentAdapter?.allowImports || {}
-        for (const [key, val] of Object.entries(allowImports)) {
-          if (!allowedConfig[key]) {
-            allowedConfig[key] = Object.keys(val as object)
-          } else {
-            // Merge keys if already exists
-            allowedConfig[key] = Array.from(new Set([...allowedConfig[key], ...Object.keys(val as object)]))
-          }
-        }
-
-        const { code, error: compileError, imports } = await compileMdx(source, allowedConfig)
+        const { code, error: compileError, imports, diagnostics } = await compileMdx(source, allowedConfig)
 
         if (!active) return
+        if (diagnostics?.length) {
+          setWarnings((prev) => Array.from(new Set([...prev, ...diagnostics])))
+        }
 
         if (compileError || !code) {
           setError(compileError || "Unknown compilation error")
@@ -236,45 +217,6 @@ export function PreviewRuntime({
           FileTree: (props) => (
             <div className="my-4 p-4 border rounded-md bg-muted/20 font-mono text-xs text-left">{props.children}</div>
           ),
-          DocsImage: (props) => {
-            const [isLoading, setIsLoading] = React.useState(true)
-            const resolvedSrc = props.src && resolveAssetUrl ? resolveAssetUrl(props.src) : props.src
-            return (
-              <div className="my-6 overflow-hidden rounded-xl border bg-muted/30 flex flex-col group relative text-left font-sans shadow-sm">
-                {resolvedSrc ? (
-                  <div className="relative">
-                    <img
-                      src={resolvedSrc}
-                      alt={props.alt || ""}
-                      className={cn(
-                        "w-full h-auto block transition-opacity duration-300",
-                        isLoading ? "opacity-0" : "opacity-100",
-                      )}
-                      onLoad={() => setIsLoading(false)}
-                    />
-                    {isLoading && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-muted/20 animate-pulse">
-                        <Info className="h-6 w-6 text-muted-foreground/30" />
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="aspect-video flex items-center justify-center">
-                    <div className="text-muted-foreground flex flex-col items-center gap-2">
-                      <Info className="h-8 w-8 opacity-20" />
-                      <span className="text-[10px] uppercase font-bold tracking-widest opacity-50">No Source</span>
-                    </div>
-                  </div>
-                )}
-                {props.caption && (
-                  <div className="p-3 bg-muted/20 border-t text-[11px] text-muted-foreground text-center italic">
-                    {props.caption}
-                  </div>
-                )}
-              </div>
-            )
-          },
-          DocsVideo: withAssetResolver(DocsMediaVideo, resolveAssetUrl),
           Image: (props) => {
             const src = props.src && resolveAssetUrl ? resolveAssetUrl(props.src) : props.src
             return <img {...props} src={src} className="rounded-lg border shadow-sm max-w-full" alt={props.alt || ""} />
@@ -288,36 +230,6 @@ export function PreviewRuntime({
               {props.children}
             </div>
           ),
-          DynamicImage: (props) => {
-            const fm = currentFrontmatter
-            const fallbackImage = typeof fm?.image === "string" ? fm.image : undefined
-            const fallbackSlug = typeof fm?.slug === "string" ? fm.slug : undefined
-
-            let src: string | undefined =
-              props.src || props.image || props.path || props.url || props.fileName || fallbackImage
-
-            if (src && fallbackSlug && !src.includes("/")) {
-              src = `/images/blog/${fallbackSlug}/${src}`
-            }
-
-            const resolvedSrc = src && resolveAssetUrl ? resolveAssetUrl(src) : src
-            if (!resolvedSrc) {
-              return (
-                <div className="my-6 rounded-xl border border-dashed border-muted-foreground/30 bg-muted/10 p-6 text-center text-sm text-muted-foreground">
-                  DynamicImage: no source
-                </div>
-              )
-            }
-
-            return (
-              <img
-                src={resolvedSrc}
-                alt={props.alt || (typeof fm?.title === "string" ? fm.title : "")}
-                className="my-6 rounded-xl border shadow-sm w-full h-auto object-cover"
-                loading="lazy"
-              />
-            )
-          },
           img: (props) => {
             const src = props.src && resolveAssetUrl ? resolveAssetUrl(props.src) : props.src
             return <img {...props} src={src} alt={props.alt || ""} />
@@ -335,19 +247,7 @@ export function PreviewRuntime({
             const src = props.src && resolveAssetUrl ? resolveAssetUrl(props.src) : props.src
             return <audio {...props} src={src} />
           },
-          CopyIpsButton: (_props) => (
-            <button
-              type="button"
-              className="my-2 inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 px-3 gap-2 font-sans"
-            >
-              <Info className="h-3.5 w-3.5" />
-              Copy IP Addresses
-            </button>
-          ),
         }
-
-        // Fix #9: Product-specific fallback data moved to fallback-data.ts
-        // and provided via imports above (FALLBACK_DOCS_SETUP_MEDIA, etc.)
 
         const adapterComponents: Record<string, React.ComponentType<any>> = {}
         for (const [name, component] of Object.entries(currentAdapter?.components || {})) {
@@ -380,12 +280,9 @@ export function PreviewRuntime({
           }
         }
 
-        // Studio preview: keep our own fallbacks for components whose adapter versions
-        // rely on CSS variables / dark-mode tokens not present in the studio iframe,
-        // or have production-specific sizing that breaks preview fidelity.
-        // DocsImage: adapter forces 16:9 crop via next/image width=1600 height=900
-        // Callout: adapter uses dark-themed CSS vars that render black in studio light theme
-        const STUDIO_PREFERRED_FALLBACKS = new Set(["DocsImage", "Callout"])
+        // Studio preview keeps its own Callout fallback because some native
+        // adapters depend on site-only CSS variables not present in Studio.
+        const STUDIO_PREFERRED_FALLBACKS = new Set(["Callout"])
         const componentsContext: Record<string, React.ComponentType<any>> = {
           ...standardComponents,
           ...Object.fromEntries(
@@ -471,19 +368,9 @@ export function PreviewRuntime({
           ...componentsContext,
           ...scopeComponents,
           ...importBindings,
-          FIXIE_IPS: FALLBACK_FIXIE_IPS,
-          NAMECHEAP_URLS: FALLBACK_NAMECHEAP_URLS,
-        }
-
-        // Robust DOCS_SETUP_MEDIA fallback
-        const fromAdapter = mergedScope.DOCS_SETUP_MEDIA
-        if (!fromAdapter || (typeof fromAdapter === "object" && Object.keys(fromAdapter).length === 0)) {
-          mergedScope.DOCS_SETUP_MEDIA = FALLBACK_DOCS_SETUP_MEDIA
         }
 
         const commonKeys = [
-          "DocsVideo",
-          "DocsImage",
           "Callout",
           "Image",
           "Video",
@@ -495,19 +382,12 @@ export function PreviewRuntime({
           "FileTree",
           "Tab",
           "Tabs",
-          "DOCS_SETUP_MEDIA",
-          "FIXIE_IPS",
-          "NAMECHEAP_URLS",
-          "CopyIpsButton",
         ]
 
         for (const key of commonKeys) {
           if (!(key in mergedScope)) {
             Object.defineProperty(mergedScope, key, {
               get: () => {
-                if (key === "DOCS_SETUP_MEDIA") return FALLBACK_DOCS_SETUP_MEDIA
-                if (key === "FIXIE_IPS") return FALLBACK_FIXIE_IPS
-                if (key === "NAMECHEAP_URLS") return FALLBACK_NAMECHEAP_URLS
                 return safeComponents[key]
               },
               enumerable: true,
@@ -557,8 +437,8 @@ export function PreviewRuntime({
             </h4>
             <ul className="text-sm space-y-2 list-disc pl-5 text-destructive/90 font-sans">
               <li>Check for syntax errors in your MDX content.</li>
-              <li>Ensure all components used are defined in your mdx-preview.tsx adapter.</li>
-              <li>Verify that all imports are allowed in your repopress.config.json.</li>
+              <li>Ensure all components used are exposed by the native MDX runtime or optional RepoPress override.</li>
+              <li>Verify that runtime and content imports are supported by RepoPress shims.</li>
             </ul>
           </div>
         </div>
