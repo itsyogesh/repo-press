@@ -1,14 +1,13 @@
 "use client"
 
 import { useMutation, useQuery } from "convex/react"
-import { AlertCircle, AlertTriangle, Trash2 } from "lucide-react"
+import { AlertCircle, AlertTriangle, Loader2, Trash2 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
 import { toast } from "sonner"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import {
   AlertDialog,
-  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -33,6 +32,7 @@ export function DeleteProjectZone({ project, projectAccessToken }: DeleteProject
   const user = useQuery(api.auth.getCurrentUser)
   const [confirmName, setConfirmName] = useState("")
   const [isDeleting, setIsDeleting] = useState(false)
+  const [dialogOpen, setDialogOpen] = useState(false)
   const removeFull = useMutation(api.projects.removeFull)
 
   const isConfigDriven = project.frameworkSource === "config"
@@ -48,6 +48,7 @@ export function DeleteProjectZone({ project, projectAccessToken }: DeleteProject
         projectAccessToken: projectAccessToken || undefined,
       })
       toast.success("Project deleted successfully")
+      setDialogOpen(false)
       router.push(`/dashboard/${project.repoOwner}/${project.repoName}`)
       router.refresh()
     } catch (error: any) {
@@ -86,7 +87,10 @@ export function DeleteProjectZone({ project, projectAccessToken }: DeleteProject
         )}
 
         <AlertDialog
+          open={dialogOpen}
           onOpenChange={(o) => {
+            if (isDeleting) return
+            setDialogOpen(o)
             if (!o) setConfirmName("")
           }}
         >
@@ -136,14 +140,23 @@ export function DeleteProjectZone({ project, projectAccessToken }: DeleteProject
             </div>
 
             <AlertDialogFooter>
-              <AlertDialogCancel onClick={() => setConfirmName("")}>Cancel</AlertDialogCancel>
-              <AlertDialogAction
+              <AlertDialogCancel disabled={isDeleting} onClick={() => setConfirmName("")}>
+                Cancel
+              </AlertDialogCancel>
+              <Button
                 variant="destructive"
                 onClick={handleDelete}
                 disabled={confirmName !== project.name || isDeleting}
               >
-                {isDeleting ? "Deleting..." : "Yes, Delete Project"}
-              </AlertDialogAction>
+                {isDeleting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Deleting…
+                  </>
+                ) : (
+                  "Yes, Delete Project"
+                )}
+              </Button>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
