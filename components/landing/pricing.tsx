@@ -1,4 +1,5 @@
 import { Check, Sparkles } from "lucide-react"
+import Link from "next/link"
 
 const features = [
   "Unlimited repositories",
@@ -38,12 +39,12 @@ export default function Pricing() {
               </li>
             ))}
           </ul>
-          <a
+          <Link
             href="/dashboard"
             className="inline-flex items-center justify-center rounded-full bg-primary px-8 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors w-full"
           >
-            Start editing for free
-          </a>
+            Try the visual editor
+          </Link>
         </div>
       </div>
     </section>

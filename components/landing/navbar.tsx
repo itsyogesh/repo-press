@@ -61,9 +61,10 @@ export default function Navbar() {
         </div>
 
         <div className="hidden items-center md:flex">
-          <Link href="/dashboard">
+          <Link href="/login">
             <Button size="sm" className="h-10 rounded-xl px-4">
-              Open studio
+              <Github className="mr-2 h-4 w-4" />
+              Sign in with GitHub
             </Button>
           </Link>
         </div>
@@ -123,10 +124,10 @@ export default function Navbar() {
                   )}
                 </div>
 
-                <Link href="/dashboard" onClick={() => setOpen(false)} className="mt-6">
+                <Link href="/login" onClick={() => setOpen(false)} className="mt-6">
                   <Button className="h-12 w-full rounded-xl">
                     <Github className="mr-2 h-4 w-4" />
-                    Open studio
+                    Sign in with GitHub
                   </Button>
                 </Link>
               </div>

@@ -3,7 +3,7 @@ import Link from "next/link"
 
 const productLinks = [
   { href: "/#features", label: "Features" },
-  { href: "/dashboard", label: "Studio" },
+  { href: "/dashboard", label: "Dashboard" },
   { href: "/docs", label: "Docs" },
   { href: "/blog", label: "Blog" },
 ]
@@ -45,8 +45,7 @@ export default function Footer() {
               </div>
             </Link>
             <p className="max-w-sm text-sm leading-6 text-muted-foreground">
-              A premium workspace for markdown and MDX teams that want visual editing, cleaner Git workflows, and zero
-              content lock-in.
+              A visual editor for anyone managing content in GitHub repositories — no terminal required.
             </p>
             <a
               href="https://github.com/itsyogesh/repo-press"
@@ -120,7 +119,7 @@ export default function Footer() {
         </div>
 
         <div className="mt-10 flex flex-col gap-4 border-t border-border/70 pt-6 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-          <p>© {new Date().getFullYear()} RepoPress. Git-native visual publishing for markdown and MDX teams.</p>
+          <p>© {new Date().getFullYear()} RepoPress. Visual editing for content in GitHub.</p>
           <div className="flex items-center gap-4">
             <a
               href="https://github.com/itsyogesh/repo-press"
