@@ -1,6 +1,6 @@
 export const studioDemoComposition = {
   id: "StudioDemo",
-  durationInFrames: 300,
+  durationInFrames: 600,
   fps: 30,
   width: 1280,
   height: 720,

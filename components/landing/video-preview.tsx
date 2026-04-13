@@ -52,8 +52,8 @@ export function VideoPreview() {
         </p>
         <h2 className="text-3xl font-semibold tracking-tight md:text-4xl">See RepoPress in action</h2>
         <p className="max-w-[48rem] text-balance text-muted-foreground sm:text-lg sm:leading-7">
-          Watch the studio workflow loop through repository setup, editing, review, and publish without loading the full
-          player until the demo enters view.
+          Watch how dropping a config file connects your repo, opens the editor, and publishes directly to Git — all in
+          under 20 seconds.
         </p>
       </div>
 
