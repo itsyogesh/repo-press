@@ -9,6 +9,7 @@ import {
   FileText,
   FolderOpen,
   History,
+  Loader2,
   Search,
   Settings,
   Sparkles,
@@ -21,7 +22,6 @@ import { syncProjectsFromConfigAction } from "@/app/dashboard/[owner]/[repo]/act
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import {
   AlertDialog,
-  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -37,6 +37,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
+import { DOCUMENT_STATUS_CONFIG, type DocumentStatus, isPublishableDocumentStatus } from "@/lib/document-status"
 import { getFrameworkAdapter } from "@/lib/framework-adapters"
 import { type FileTreeNode, findTreeNode } from "@/lib/github"
 import { usePreviewContext } from "@/lib/hooks/use-preview-context"
@@ -103,21 +104,6 @@ export interface StudioLayoutProps {
   projectAccessToken?: string
   contentRoot?: string
   role?: "owner" | "editor" | "viewer"
-}
-
-const STATUS_LABELS: Record<
-  string,
-  {
-    label: string
-    variant: "default" | "secondary" | "outline" | "destructive"
-  }
-> = {
-  draft: { label: "Draft", variant: "secondary" },
-  in_review: { label: "In Review", variant: "outline" },
-  approved: { label: "Approved", variant: "outline" },
-  published: { label: "Published", variant: "default" },
-  scheduled: { label: "Scheduled", variant: "secondary" },
-  archived: { label: "Archived", variant: "destructive" },
 }
 
 function findTreeNodeByPath(nodes: FileTreeNode[], path: string): FileTreeNode | null {
@@ -288,7 +274,7 @@ function StudioNoSelectionPreviewState() {
   return (
     <div className="flex h-full flex-col bg-studio-canvas select-none">
       <div className="flex items-center justify-between border-b border-studio-border px-4 py-3 shrink-0">
-        <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-studio-fg-muted">Preview</span>
+        <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-studio-fg-muted">Preview</span>
       </div>
       <div className="flex flex-1 items-center justify-center bg-studio-canvas-inset/30 px-6 py-8">
         <div className="w-full max-w-md rounded-[1.75rem] border border-studio-border/70 bg-studio-canvas px-6 py-7 text-center shadow-sm">
@@ -1369,9 +1355,9 @@ function StudioLayoutInner({
   const showSidebarPanel = isMobile ? sidebarState === "expanded" : !isSidebarCollapsed
   const showSidebarRail = !isMobile && isSidebarCollapsed
 
-  const currentStatus = document?.status || "draft"
-  const statusInfo = STATUS_LABELS[currentStatus] || STATUS_LABELS.draft
-  const canPublish = ["draft", "approved"].includes(currentStatus)
+  const currentStatus: DocumentStatus = (document?.status as DocumentStatus | undefined) ?? "draft"
+  const statusInfo = DOCUMENT_STATUS_CONFIG[currentStatus] || DOCUMENT_STATUS_CONFIG.draft
+  const canPublish = isPublishableDocumentStatus(currentStatus)
   const historyHref = buildHistoryHref({ owner, repo, branch, projectId })
 
   const insertComponentModalCtx = React.useMemo(
@@ -1395,7 +1381,7 @@ function StudioLayoutInner({
             contentRoot={contentRoot}
             documentId={document?._id}
             currentStatus={currentStatus}
-            statusInfo={statusInfo as any}
+            statusInfo={statusInfo}
             onSave={saveDraft}
             isSaving={isSaving || isFileLoading}
           />
@@ -1606,9 +1592,7 @@ function StudioLayoutInner({
                         statusBadge={
                           <div className="flex items-center gap-1">
                             <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
-                            {document && (
-                              <StatusActions documentId={document._id} currentStatus={currentStatus as any} />
-                            )}
+                            {document && <StatusActions documentId={document._id} currentStatus={currentStatus} />}
                           </div>
                         }
                         scrollContainerRef={editorScrollRef}
@@ -1927,7 +1911,7 @@ function StudioLayoutInner({
           onSaveDraft={saveDraft}
         />
 
-        <AlertDialog open={discardDialogOpen} onOpenChange={setDiscardDialogOpen}>
+        <AlertDialog open={discardDialogOpen} onOpenChange={(open) => { if (isDiscarding) return; setDiscardDialogOpen(open) }}>
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Discard all pending changes?</AlertDialogTitle>
@@ -1936,16 +1920,24 @@ function StudioLayoutInner({
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction
+              <AlertDialogCancel disabled={isDiscarding}>Cancel</AlertDialogCancel>
+              <Button
                 variant="destructive"
-                onClick={() => {
-                  handleDiscardAll()
+                disabled={isDiscarding}
+                onClick={async () => {
+                  await handleDiscardAll()
                   setDiscardDialogOpen(false)
                 }}
               >
-                Discard Changes
-              </AlertDialogAction>
+                {isDiscarding ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin mr-1.5" />
+                    Discarding…
+                  </>
+                ) : (
+                  "Discard Changes"
+                )}
+              </Button>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>

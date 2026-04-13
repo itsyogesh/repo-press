@@ -425,7 +425,7 @@ function GalleryThumbnail({ asset, thumbUrl, isSelected, isStaged, onClick }: Ga
 
       {/* Staged badge */}
       {isStaged && (
-        <span className="absolute top-1 right-1 bg-amber-500/90 text-white text-[9px] font-semibold leading-none px-1 py-0.5 rounded-sm">
+        <span className="absolute top-1 right-1 bg-studio-attention text-white text-[9px] font-semibold leading-none px-1 py-0.5 rounded-sm">
           Staged
         </span>
       )}
@@ -510,7 +510,7 @@ function GalleryDetailPanel({
       <div className="flex-1 overflow-y-auto p-3 space-y-3">
         {/* Staged badge */}
         {isStaged && (
-          <Badge variant="secondary" className="text-[10px] bg-amber-100 text-amber-700 border-amber-300">
+          <Badge variant="secondary" className="text-[10px] bg-studio-attention-muted text-studio-attention border-studio-attention/30">
             Staged
           </Badge>
         )}

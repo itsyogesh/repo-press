@@ -360,7 +360,7 @@ export function ComponentInsertModal({
               <div className="px-6 pt-5 pb-4 border-b border-studio-border shrink-0">
                 <div className="flex items-start justify-between mb-3">
                   <div>
-                    <DialogTitle className="text-xl font-bold tracking-tight text-studio-fg">
+                    <DialogTitle className="text-xl font-semibold tracking-tight text-studio-fg">
                       Insert Component
                     </DialogTitle>
                     <DialogDescription className="text-xs text-studio-fg-muted mt-0.5">
@@ -415,7 +415,7 @@ export function ComponentInsertModal({
               <ScrollArea className="flex-1 px-6 py-5 min-h-0">
                 {recentCatalog.length > 0 && !searchQuery && activeCategory === "All" && (
                   <div className="mb-5">
-                    <h4 className="text-[10px] font-bold uppercase tracking-widest text-studio-fg/35 mb-3 px-1 select-none">
+                    <h4 className="text-[10px] font-medium uppercase tracking-widest text-studio-fg/35 mb-3 px-1 select-none">
                       Recently used
                     </h4>
                     <CatalogGallery catalog={recentCatalog} onSelect={handleSelectComponent} />
@@ -425,7 +425,7 @@ export function ComponentInsertModal({
                 {(mainCatalog.length > 0 || recentCatalog.length === 0 || searchQuery || activeCategory !== "All") && (
                   <>
                     {recentCatalog.length > 0 && !searchQuery && activeCategory === "All" && mainCatalog.length > 0 && (
-                      <h4 className="text-[10px] font-bold uppercase tracking-widest text-studio-fg/35 mb-3 px-1 select-none">
+                      <h4 className="text-[10px] font-medium uppercase tracking-widest text-studio-fg/35 mb-3 px-1 select-none">
                         All components
                       </h4>
                     )}
@@ -459,11 +459,11 @@ export function ComponentInsertModal({
                   </button>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 min-w-0">
-                      <DialogTitle className="text-base font-bold text-studio-fg truncate">
+                      <DialogTitle className="text-base font-semibold text-studio-fg truncate">
                         {selectedDef ? getComponentLabel(selectedDef) : "Configure"}
                       </DialogTitle>
                       {selectedDef && selectedDef.props.length > 0 && (
-                        <span className="shrink-0 inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full bg-studio-accent/10 text-studio-accent border border-studio-accent/15">
+                        <span className="shrink-0 inline-flex items-center text-[10px] font-medium px-2 py-0.5 rounded-full bg-studio-accent/10 text-studio-accent border border-studio-accent/15">
                           {selectedDef.props.length} prop{selectedDef.props.length !== 1 ? "s" : ""}
                         </span>
                       )}
@@ -505,7 +505,7 @@ export function ComponentInsertModal({
                   <ScrollArea className="flex-1 min-h-0">
                     <div className="p-5 space-y-5">
                       <div className="flex items-center gap-2">
-                        <h4 className="text-[10px] font-bold uppercase tracking-widest text-studio-fg/35 select-none">
+                        <h4 className="text-[10px] font-medium uppercase tracking-widest text-studio-fg/35 select-none">
                           Properties
                         </h4>
                         <div className="flex-1 h-px bg-studio-border-muted/60" />
