@@ -1,8 +1,14 @@
-import { AbsoluteFill, interpolate, Sequence, spring, useCurrentFrame, useVideoConfig } from "remotion"
+import { linearTiming, TransitionSeries } from "@remotion/transitions"
+import { fade } from "@remotion/transitions/fade"
+import { AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion"
 import { COLORS } from "../colors"
 import { geistFamily, geistMonoFamily } from "../fonts"
 
 export { studioDemoComposition } from "./studio-demo-composition"
+
+// ── Spring configs ─────────────────────────────────────────────────────────────
+const SPRING_SMOOTH = { damping: 200 } as const
+const SPRING_SNAPPY = { damping: 20, stiffness: 200 } as const
 
 // ── Layout constants ──────────────────────────────────────────────────────────
 
@@ -37,12 +43,12 @@ const BrowserScene: React.FC<{
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()
 
-  const labelOpacity = spring({ frame, fps, config: { damping: 20 } })
+  const labelOpacity = spring({ frame, fps, config: SPRING_SMOOTH })
   const browserEnter = interpolate(frame, [0, 10], [0, 1], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
   })
-  const captionOpacity = spring({ frame, fps, config: { damping: 25 }, delay: 18 })
+  const captionOpacity = spring({ frame, fps, config: SPRING_SMOOTH, delay: 18 })
 
   return (
     <AbsoluteFill
@@ -178,9 +184,9 @@ const SetupScene: React.FC = () => {
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()
 
-  const cardEnter = spring({ frame, fps, config: { damping: 14, stiffness: 80 }, delay: 5 })
-  const badgeOpacity = spring({ frame, fps, config: { damping: 18 }, delay: 48 })
-  const btnEnter = spring({ frame, fps, config: { damping: 15 }, delay: 78 })
+  const cardEnter = spring({ frame, fps, config: SPRING_SMOOTH, delay: 5 })
+  const badgeOpacity = spring({ frame, fps, config: SPRING_SMOOTH, delay: 48 })
+  const btnEnter = spring({ frame, fps, config: SPRING_SNAPPY, delay: 78 })
   const btnActive = frame >= 92
 
   return (
@@ -289,8 +295,9 @@ const DashboardScene: React.FC = () => {
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()
 
-  const cardHighlight = spring({ frame, fps, config: { damping: 16 }, delay: 50 })
+  const cardHighlight = spring({ frame, fps, config: SPRING_SMOOTH, delay: 50 })
   const btnClicked = frame >= 75
+  const loadProgress = interpolate(frame, [75, 115], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" })
 
   return (
     <BrowserScene
@@ -299,6 +306,17 @@ const DashboardScene: React.FC = () => {
       url="repopress.app/dashboard"
       caption="Your repositories, one click from the studio"
     >
+      {/* Loading progress bar — fills after "Open Studio" click */}
+      <div
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          height: 3,
+          width: `${loadProgress * 100}%`,
+          backgroundColor: COLORS.accent,
+        }}
+      />
       <div style={{ display: "flex", height: "100%" }}>
         {/* Left sidebar */}
         <div
@@ -372,20 +390,30 @@ const DashboardScene: React.FC = () => {
   )
 }
 
-// ── Scene 3: Edit (240–420 frames = 6s) ──────────────────────────────────────
+// ── Scene 3: Edit (in TransitionSeries, 180 frames = 6s) ─────────────────────
 
-const EDITOR_LINES = [
+type EditorLine = {
+  id: string
+  text: string
+  color: string
+  snapAt?: number // frame at which line fully appears (non-typed lines)
+  slowFrom?: number // frame at which slow character-by-character typing starts
+}
+
+// Three key lines type slowly (1 char / 2 frames); all others snap in after them.
+// fm-title: [4, 52]  h1: [60, 94]  cta: [100, 164]
+const EDITOR_LINES: EditorLine[] = [
   { id: "fm1", text: "---", color: COLORS.muted },
-  { id: "fm-title", text: 'title: "Getting Started"', color: COLORS.accent },
-  { id: "fm-desc", text: 'description: "Deploy your first docs"', color: COLORS.accent },
-  { id: "fm2", text: "---", color: COLORS.muted },
-  { id: "blank1", text: "", color: COLORS.fg },
-  { id: "h1", text: "# Getting Started", color: COLORS.fg },
-  { id: "blank2", text: "", color: COLORS.fg },
-  { id: "body1", text: "Connect your repo and edit MDX files", color: COLORS.muted },
-  { id: "body2", text: "directly in the browser.", color: COLORS.muted },
-  { id: "blank3", text: "", color: COLORS.fg },
-  { id: "cta", text: "Changes are saved automatically.", color: COLORS.green },
+  { id: "fm-title", text: 'title: "Getting Started"', color: COLORS.accent, slowFrom: 4 },
+  { id: "fm-desc", text: 'description: "Deploy your first docs"', color: COLORS.accent, snapAt: 52 },
+  { id: "fm2", text: "---", color: COLORS.muted, snapAt: 52 },
+  { id: "blank1", text: "", color: COLORS.fg, snapAt: 52 },
+  { id: "h1", text: "# Getting Started", color: COLORS.fg, slowFrom: 60 },
+  { id: "blank2", text: "", color: COLORS.fg, snapAt: 94 },
+  { id: "body1", text: "Connect your repo and edit MDX files", color: COLORS.muted, snapAt: 94 },
+  { id: "body2", text: "directly in the browser.", color: COLORS.muted, snapAt: 94 },
+  { id: "blank3", text: "", color: COLORS.fg, snapAt: 94 },
+  { id: "cta", text: "Changes are saved automatically.", color: COLORS.green, slowFrom: 100 },
 ]
 
 const FILE_TREE_ITEMS = [
@@ -400,7 +428,32 @@ const EditScene: React.FC = () => {
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()
 
-  const autosaveOpacity = spring({ frame, fps, config: { damping: 20 }, delay: 110 })
+  const autosaveOpacity = spring({ frame, fps, config: SPRING_SMOOTH, delay: 160 })
+
+  // Only the currently-typing line gets a cursor — no multi-cursor glitch
+  const activeSlowId =
+    frame >= 4 && frame < 52
+      ? "fm-title"
+      : frame >= 60 && frame < 94
+        ? "h1"
+        : frame >= 100 && frame < 164
+          ? "cta"
+          : null
+
+  const getCharCount = (line: EditorLine): number => {
+    if (line.slowFrom !== undefined) {
+      return Math.floor(
+        interpolate(frame, [line.slowFrom, line.slowFrom + line.text.length * 2], [0, line.text.length], {
+          extrapolateLeft: "clamp",
+          extrapolateRight: "clamp",
+        }),
+      )
+    }
+    if (line.snapAt !== undefined) {
+      return frame >= line.snapAt ? line.text.length : 0
+    }
+    return line.text.length
+  }
 
   return (
     <BrowserScene
@@ -478,16 +531,13 @@ const EditScene: React.FC = () => {
               overflow: "hidden",
             }}
           >
-            {EDITOR_LINES.map((line, idx) => {
-              const lineStart = idx * 9 + 4
-              const charCount = interpolate(frame, [lineStart, lineStart + 10], [0, line.text.length], {
-                extrapolateLeft: "clamp",
-                extrapolateRight: "clamp",
-              })
+            {EDITOR_LINES.map((line) => {
+              const charCount = getCharCount(line)
+              const isActive = line.id === activeSlowId
               return (
                 <div key={line.id} style={{ color: line.color, minHeight: 22 }}>
-                  {line.text.slice(0, Math.floor(charCount))}
-                  {charCount > 0 && charCount < line.text.length && (
+                  {line.text.slice(0, charCount)}
+                  {isActive && charCount < line.text.length && (
                     <span style={{ opacity: frame % 16 < 8 ? 1 : 0, color: COLORS.accent }}>▎</span>
                   )}
                 </div>
@@ -541,7 +591,7 @@ const PublishScene: React.FC = () => {
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()
 
-  const modalEnter = spring({ frame, fps, config: { damping: 14, stiffness: 90 } })
+  const modalEnter = spring({ frame, fps, config: SPRING_SNAPPY })
   const btnClicked = frame >= CLICK_FRAME
   const modalExitOpacity = btnClicked
     ? interpolate(frame, [CLICK_FRAME, CLICK_FRAME + 14], [1, 0], {
@@ -549,7 +599,7 @@ const PublishScene: React.FC = () => {
         extrapolateRight: "clamp",
       })
     : 1
-  const successOpacity = spring({ frame, fps, config: { damping: 20 }, delay: CLICK_FRAME + 18 })
+  const successOpacity = spring({ frame, fps, config: SPRING_SMOOTH, delay: CLICK_FRAME + 18 })
 
   return (
     <BrowserScene
@@ -668,35 +718,33 @@ const PublishScene: React.FC = () => {
           </div>
         </div>
 
-        {/* Success card */}
-        {successOpacity > 0 && (
-          <div
-            style={{
-              position: "absolute",
-              zIndex: 20,
-              opacity: successOpacity,
-              transform: `scale(${0.92 + successOpacity * 0.08})`,
-              transformOrigin: "center",
-              backgroundColor: COLORS.surface,
-              border: "1px solid rgba(34,197,94,0.4)",
-              borderRadius: 10,
-              padding: "22px 28px",
-              width: 380,
-              boxShadow: "0 20px 56px rgba(0,0,0,0.65)",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-              <svg width="18" height="18" viewBox="0 0 16 16" fill={COLORS.green} role="img" aria-label="PR opened">
-                <path d="M7.177 3.073L9.573.677A.25.25 0 0110 .854v4.792a.25.25 0 01-.427.177L7.177 3.427a.25.25 0 010-.354zM3.75 2.5a.75.75 0 100 1.5.75.75 0 000-1.5zm-2.25.75a2.25 2.25 0 113 2.122v5.256a2.251 2.251 0 11-1.5 0V5.372A2.25 2.25 0 011.5 3.25zM11 2.5h-1V4h1a1 1 0 011 1v5.628a2.251 2.251 0 101.5 0V5A2.5 2.5 0 0011 2.5zm1 10.25a.75.75 0 111.5 0 .75.75 0 01-1.5 0zM3.75 12a.75.75 0 100 1.5.75.75 0 000-1.5z" />
-              </svg>
-              <span style={{ color: COLORS.green, fontSize: 14, fontWeight: 700 }}>Pull Request #42 opened</span>
-            </div>
-            <div style={{ color: COLORS.muted, fontSize: 13, fontFamily: geistMonoFamily, marginBottom: 4 }}>
-              repopress/update-getting-started → main
-            </div>
-            <div style={{ color: COLORS.muted, fontSize: 12, marginTop: 8 }}>Merge to publish your changes live.</div>
+        {/* Success card — always rendered; opacity drives visibility */}
+        <div
+          style={{
+            position: "absolute",
+            zIndex: 20,
+            opacity: successOpacity,
+            transform: `scale(${0.92 + successOpacity * 0.08})`,
+            transformOrigin: "center",
+            backgroundColor: COLORS.surface,
+            border: "1px solid rgba(34,197,94,0.4)",
+            borderRadius: 10,
+            padding: "22px 28px",
+            width: 380,
+            boxShadow: "0 20px 56px rgba(0,0,0,0.65)",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+            <svg width="18" height="18" viewBox="0 0 16 16" fill={COLORS.green} role="img" aria-label="PR opened">
+              <path d="M7.177 3.073L9.573.677A.25.25 0 0110 .854v4.792a.25.25 0 01-.427.177L7.177 3.427a.25.25 0 010-.354zM3.75 2.5a.75.75 0 100 1.5.75.75 0 000-1.5zm-2.25.75a2.25 2.25 0 113 2.122v5.256a2.251 2.251 0 11-1.5 0V5.372A2.25 2.25 0 011.5 3.25zM11 2.5h-1V4h1a1 1 0 011 1v5.628a2.251 2.251 0 101.5 0V5A2.5 2.5 0 0011 2.5zm1 10.25a.75.75 0 111.5 0 .75.75 0 01-1.5 0zM3.75 12a.75.75 0 100 1.5.75.75 0 000-1.5z" />
+            </svg>
+            <span style={{ color: COLORS.green, fontSize: 14, fontWeight: 700 }}>Pull Request #42 opened</span>
           </div>
-        )}
+          <div style={{ color: COLORS.muted, fontSize: 13, fontFamily: geistMonoFamily, marginBottom: 4 }}>
+            repopress/update-getting-started → main
+          </div>
+          <div style={{ color: COLORS.muted, fontSize: 12, marginTop: 8 }}>Merge to publish your changes live.</div>
+        </div>
       </div>
     </BrowserScene>
   )
@@ -704,23 +752,28 @@ const PublishScene: React.FC = () => {
 
 // ── Main composition ──────────────────────────────────────────────────────────
 // Option B: Setup(0–120) · Dashboard(120–240) · Edit(240–420) · Publish(420–600)
-// 600 frames = 20 s at 30 fps
+// 555 frames = 18.5 s at 30 fps (600 – 3 transitions × 15 frames each)
 
 export const StudioDemo: React.FC = () => {
   return (
     <AbsoluteFill style={{ backgroundColor: COLORS.desktopBg }}>
-      <Sequence from={0} durationInFrames={120} premountFor={30}>
-        <SetupScene />
-      </Sequence>
-      <Sequence from={120} durationInFrames={120} premountFor={30}>
-        <DashboardScene />
-      </Sequence>
-      <Sequence from={240} durationInFrames={180} premountFor={30}>
-        <EditScene />
-      </Sequence>
-      <Sequence from={420} durationInFrames={180} premountFor={30}>
-        <PublishScene />
-      </Sequence>
+      <TransitionSeries>
+        <TransitionSeries.Sequence durationInFrames={120}>
+          <SetupScene />
+        </TransitionSeries.Sequence>
+        <TransitionSeries.Transition presentation={fade()} timing={linearTiming({ durationInFrames: 15 })} />
+        <TransitionSeries.Sequence durationInFrames={120}>
+          <DashboardScene />
+        </TransitionSeries.Sequence>
+        <TransitionSeries.Transition presentation={fade()} timing={linearTiming({ durationInFrames: 15 })} />
+        <TransitionSeries.Sequence durationInFrames={180}>
+          <EditScene />
+        </TransitionSeries.Sequence>
+        <TransitionSeries.Transition presentation={fade()} timing={linearTiming({ durationInFrames: 15 })} />
+        <TransitionSeries.Sequence durationInFrames={180}>
+          <PublishScene />
+        </TransitionSeries.Sequence>
+      </TransitionSeries>
     </AbsoluteFill>
   )
 }
