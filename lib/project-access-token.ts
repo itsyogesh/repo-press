@@ -1,6 +1,6 @@
-const encoder = new TextEncoder()
+import type { Role } from "@/lib/roles"
 
-type Role = "owner" | "editor" | "viewer"
+const encoder = new TextEncoder()
 
 type ProjectAccessTokenPayload = {
   projectId: string

@@ -1,10 +1,9 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import { api } from "@/convex/_generated/api"
-import { fetchAuthMutation, fetchAuthQuery, getGitHubToken, getPatAuthUserId } from "@/lib/auth-server"
+import { getGitHubToken } from "@/lib/auth-server"
 import { getRepoContents } from "@/lib/github"
-import { fetchRepoConfig } from "@/lib/repopress/config"
+import { resolveActingUserId } from "@/lib/server-context"
 import { syncProjectsServerSide } from "@/lib/sync-projects"
 
 export async function syncProjectsFromConfigAction(owner: string, repo: string, branch: string) {
@@ -12,9 +11,7 @@ export async function syncProjectsFromConfigAction(owner: string, repo: string, 
   if (!token) return { success: false, error: "Not authenticated with GitHub" }
 
   // Resolve acting user (OAuth or PAT)
-  const authUser = fetchAuthQuery ? await fetchAuthQuery(api.auth.getCurrentUser, {}).catch(() => null) : null
-  const patUserId = !authUser ? await getPatAuthUserId(token) : null
-  const actingUserId = (authUser?._id as string | undefined) ?? patUserId
+  const actingUserId = await resolveActingUserId(token)
 
   if (!actingUserId) return { success: false, error: "No user found" }
 

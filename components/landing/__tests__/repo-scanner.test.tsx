@@ -21,13 +21,14 @@ describe("RepoScanner", () => {
 
     const html = renderToStaticMarkup(<RepoScanner />)
 
-    expect(html).toContain("vercel/next.js")
-    expect(html).not.toContain("vercel/nextjs.org")
+    expect(html).toContain("leerob/leerob.io")
+    expect(html).toContain("· Next.js")
+    expect(html).not.toContain("vercel/next.js")
   })
 
   it("associates the error message with the input when validation fails", async () => {
     vi.doMock("@/lib/repo-scanner-demo", () => ({
-      buildRepoScannerDemo: () => ({ error: "Enter a valid GitHub repository URL." }),
+      buildRepoScannerDemo: () => ({ error: "Only GitHub repositories are supported right now." }),
     }))
 
     const { default: RepoScanner } = await import("../repo-scanner")

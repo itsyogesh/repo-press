@@ -119,7 +119,7 @@ export default async function DashboardPage() {
 
       <ProjectList serverProjects={serverProjects} />
 
-      <section className="space-y-5">
+      <section id="repositories" className="space-y-5">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div className="space-y-2">
             <p className="font-mono text-[0.68rem] uppercase tracking-[0.22em] text-muted-foreground">

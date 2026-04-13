@@ -1,10 +1,10 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import { api } from "@/convex/_generated/api"
-import { fetchAuthQuery, getGitHubToken, getPatAuthUserId } from "@/lib/auth-server"
+import { getGitHubToken } from "@/lib/auth-server"
 import { batchCommit } from "@/lib/github"
 import { resolveRepoRole } from "@/lib/github-permissions"
+import { resolveActingUserId } from "@/lib/server-context"
 
 const DEFAULT_ADAPTER_SOURCE = `"use client"
 
@@ -42,9 +42,7 @@ export async function initRepoPressAction(
   if (!token) return { success: false, error: "Not authenticated" }
 
   // Resolve acting user for cache lookup
-  const authUser = fetchAuthQuery ? await fetchAuthQuery(api.auth.getCurrentUser).catch(() => null) : null
-  const patUserId = !authUser ? await getPatAuthUserId(token) : null
-  const actingUserId = (authUser?._id as string | undefined) ?? patUserId
+  const actingUserId = await resolveActingUserId(token)
 
   // Access check: verify the user can at least read the repo.
   // We don't pre-block "viewer" role because org editors with a cold cache

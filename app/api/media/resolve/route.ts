@@ -3,6 +3,7 @@ import { NextResponse } from "next/server"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
 import { createGitHubClient } from "@/lib/github"
+import { getContentType } from "@/lib/media/content-type"
 import { mintServerQueryToken, verifyProjectAccessToken } from "@/lib/project-access-token"
 import { RouteAuthError, resolveRouteAuth } from "@/lib/route-auth"
 import { normalizeRepoMediaPath } from "@/lib/studio/media-resolve"
@@ -286,22 +287,6 @@ function buildProxyHeaders({ contentType, etag }: { contentType: string; etag?: 
     headers.set("ETag", etag)
   }
   return headers
-}
-
-function getContentType(fileName: string): string {
-  const ext = fileName.toLowerCase().split(".").pop()
-  const types: Record<string, string> = {
-    jpg: "image/jpeg",
-    jpeg: "image/jpeg",
-    png: "image/png",
-    gif: "image/gif",
-    webp: "image/webp",
-    svg: "image/svg+xml",
-    webm: "video/webm",
-    mp4: "video/mp4",
-    pdf: "application/pdf",
-  }
-  return types[ext || ""] || "application/octet-stream"
 }
 
 function getGitHubPathCandidates(path: string): string[] {

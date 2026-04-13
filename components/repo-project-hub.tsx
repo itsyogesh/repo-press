@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   ArrowRight,
   CheckCircle2,
+  Clock,
   Files,
   Folder,
   GitBranch,
@@ -354,6 +355,12 @@ export function RepoProjectHub({
               <Link href={`/dashboard/${owner}/${repo}/files?branch=${defaultBranch}`}>
                 <Files className="h-4 w-4" />
                 Browse Files
+              </Link>
+            </Button>
+            <Button variant="outline" asChild>
+              <Link href={`/dashboard/${owner}/${repo}/history`}>
+                <Clock className="h-4 w-4" />
+                History
               </Link>
             </Button>
             <Button variant="outline" asChild>

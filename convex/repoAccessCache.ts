@@ -1,18 +1,11 @@
 import { v } from "convex/values"
 import { verifyProjectAccessToken, verifyServerQueryToken } from "../lib/project-access-token"
+import { ROLE_HIERARCHY, type Role } from "../lib/roles"
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server"
 
 const CACHE_TTL_MS = 15 * 60 * 1000 // 15 minutes
 
 const roleValidator = v.union(v.literal("owner"), v.literal("editor"), v.literal("viewer"))
-
-type Role = "owner" | "editor" | "viewer"
-
-const ROLE_HIERARCHY: Record<Role, number> = {
-  owner: 3,
-  editor: 2,
-  viewer: 1,
-}
 
 /**
  * Public upsert for repo access cache. Called from route handlers and

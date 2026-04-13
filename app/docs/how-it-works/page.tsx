@@ -13,8 +13,8 @@ export default function HowItWorksPage() {
 
       <p className="mb-4 leading-relaxed text-muted-foreground">
         RepoPress is a visual editor that works directly with your GitHub repository. Instead of copying your content
-        into a separate database, it reads your files from GitHub and commits changes back when you publish. Here&rsquo;s
-        how that works in practice.
+        into a separate database, it reads your files from GitHub and commits changes back when you publish.
+        Here&rsquo;s how that works in practice.
       </p>
 
       {/* Architecture */}
@@ -64,8 +64,8 @@ export default function HowItWorksPage() {
 
       <h3 className="mb-3 mt-8 text-lg font-semibold">4. Publish back to GitHub</h3>
       <p className="mb-4 leading-relaxed text-muted-foreground">
-        When you&rsquo;re ready, hit Publish. RepoPress commits your changes to the branch you chose when setting up
-        the project. You can customize the commit message before publishing.
+        When you&rsquo;re ready, hit Publish. RepoPress commits your changes to the branch you chose when setting up the
+        project. You can customize the commit message before publishing.
       </p>
 
       {/* Framework Detection */}
@@ -77,19 +77,17 @@ export default function HowItWorksPage() {
         <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm">hugo.toml</span>. Based on what it finds, it
         suggests the right content folder (for example,{" "}
         <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm">content/</span> or{" "}
-        <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm">src/content/</span>
-        ) so you can start editing right away.
+        <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm">src/content/</span>) so you can start editing
+        right away.
       </p>
 
       {/* Document Lifecycle */}
       <h2 className="mb-4 mt-12 text-2xl font-semibold">Content workflow</h2>
-      <p className="mb-4 leading-relaxed text-muted-foreground">
-        Every document moves through a clear workflow:
-      </p>
+      <p className="mb-4 leading-relaxed text-muted-foreground">Every document moves through a clear workflow:</p>
       <ul className="mb-4 list-inside list-disc space-y-2 text-muted-foreground">
         <li>
-          <strong className="text-foreground">Draft</strong> — You are editing. Changes are saved automatically but
-          have not been published yet.
+          <strong className="text-foreground">Draft</strong> — You are editing. Changes are saved automatically but have
+          not been published yet.
         </li>
         <li>
           <strong className="text-foreground">Review</strong> — Optionally share the document with your team for
@@ -99,12 +97,12 @@ export default function HowItWorksPage() {
           <strong className="text-foreground">Approved</strong> — Reviewed and ready to go live.
         </li>
         <li>
-          <strong className="text-foreground">Published</strong> — Committed to your GitHub repository. The changes
-          are live.
+          <strong className="text-foreground">Published</strong> — Committed to your GitHub repository. The changes are
+          live.
         </li>
         <li>
-          <strong className="text-foreground">Archived</strong> — No longer active, but still in your repository
-          history if you need it.
+          <strong className="text-foreground">Archived</strong> — No longer active, but still in your repository history
+          if you need it.
         </li>
       </ul>
 

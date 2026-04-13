@@ -79,8 +79,8 @@ export default function ConnectingARepoPage() {
         </li>
       </ul>
       <p className="mb-4 leading-relaxed text-muted-foreground">
-        You can change the content folder at any time from project settings. Only files inside this folder appear in
-        the Studio editor.
+        You can change the content folder at any time from project settings. Only files inside this folder appear in the
+        Studio editor.
       </p>
 
       {/* Framework Auto-Detection */}

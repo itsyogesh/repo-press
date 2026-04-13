@@ -5,7 +5,7 @@ const steps = [
     icon: Github,
     eyebrow: "01 / Connect",
     title: "Sign in with GitHub and pick a repo.",
-    description: "Log in with your GitHub account and select the repository where your content lives.",
+    description: "Sign in with your GitHub account and select the repository where your content lives.",
     detail: "No imports, no migration, no separate database to maintain.",
   },
   {

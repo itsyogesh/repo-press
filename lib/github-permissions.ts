@@ -1,19 +1,9 @@
-import { ConvexHttpClient } from "convex/browser"
 import { api } from "@/convex/_generated/api"
 import { createGitHubClient } from "@/lib/github"
-import { mintServerQueryToken } from "@/lib/project-access-token"
+import type { Role } from "@/lib/roles"
+import { createServerQueryContext } from "@/lib/server-context"
 
-export type Role = "owner" | "editor" | "viewer"
-
-const ROLE_HIERARCHY: Record<Role, number> = {
-  owner: 3,
-  editor: 2,
-  viewer: 1,
-}
-
-export function roleAtLeast(actual: Role, minimum: Role): boolean {
-  return ROLE_HIERARCHY[actual] >= ROLE_HIERARCHY[minimum]
-}
+export { roleAtLeast } from "@/lib/roles"
 
 export interface RepoRoleResult {
   role: Role | null
@@ -127,34 +117,30 @@ export async function resolveRepoRole(
 
   // 2. Convex access cache
   if (actingUserId) {
-    const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL
-    if (convexUrl) {
-      try {
-        const convex = new ConvexHttpClient(convexUrl)
-        const sqt = await mintServerQueryToken()
-        const cached = await convex.query(api.repoAccessCache.getForUserPublic, {
-          repoOwner: owner,
-          repoName: repo,
-          userId: actingUserId,
-          serverQueryToken: sqt,
-        })
-        if (cached) {
-          // Cache doesn't store defaultBranch — if we don't have it from step 1,
-          // we'll still need the probe to infer it below.
-          if (defaultBranch) {
-            return { role: cached.role as Role, defaultBranch, defaultBranchInferred: false }
-          }
-          // Got role from cache but no branch — probe for branch hint only
-          const probe = await probeRepoReadAccessWithBranch(token, owner, repo)
-          return {
-            role: cached.role as Role,
-            defaultBranch: probe.defaultBranch,
-            defaultBranchInferred: !!probe.defaultBranch,
-          }
+    try {
+      const { convex, serverQueryToken } = await createServerQueryContext()
+      const cached = await convex.query(api.repoAccessCache.getForUserPublic, {
+        repoOwner: owner,
+        repoName: repo,
+        userId: actingUserId,
+        serverQueryToken,
+      })
+      if (cached) {
+        // Cache doesn't store defaultBranch — if we don't have it from step 1,
+        // we'll still need the probe to infer it below.
+        if (defaultBranch) {
+          return { role: cached.role as Role, defaultBranch, defaultBranchInferred: false }
         }
-      } catch {
-        // Cache lookup failed — continue to probe
+        // Got role from cache but no branch — probe for branch hint only
+        const probe = await probeRepoReadAccessWithBranch(token, owner, repo)
+        return {
+          role: cached.role as Role,
+          defaultBranch: probe.defaultBranch,
+          defaultBranchInferred: !!probe.defaultBranch,
+        }
       }
+    } catch {
+      // Cache lookup failed — continue to probe
     }
   }
 

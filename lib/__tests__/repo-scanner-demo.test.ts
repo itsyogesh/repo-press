@@ -26,14 +26,26 @@ describe("buildRepoScannerDemo", () => {
 
     expect(result).toMatchObject({
       framework: "Fumadocs",
-      contentRoot: "apps/docs/content/docs",
+      contentRoot: "docs",
       collections: 6,
     })
   })
 
   it("returns a friendly validation error for non-GitHub input", () => {
     expect(buildRepoScannerDemo("https://example.com/not-github")).toEqual({
-      error: "Enter a valid GitHub repository URL.",
+      error: "Only GitHub repositories are supported right now.",
+    })
+  })
+
+  it("returns a hint for bare owner/repo slugs", () => {
+    expect(buildRepoScannerDemo("acme/docs")).toEqual({
+      error: "Add the full URL — try: https://github.com/owner/repo",
+    })
+  })
+
+  it("returns a hint for GitHub tree/blob URLs", () => {
+    expect(buildRepoScannerDemo("https://github.com/acme/docs/tree/main")).toEqual({
+      error: "Paste the repository root — remove everything after the repo name.",
     })
   })
 })

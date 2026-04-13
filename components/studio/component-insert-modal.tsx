@@ -399,10 +399,10 @@ export function ComponentInsertModal({
                       type="button"
                       onClick={() => setActiveCategory(cat)}
                       className={cn(
-                        "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold transition-all duration-150 whitespace-nowrap shrink-0 border",
+                        "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold transition-all duration-150 whitespace-nowrap shrink-0",
                         activeCategory === cat
-                          ? "bg-studio-accent text-white shadow-sm border-studio-accent"
-                          : "text-studio-fg hover:text-studio-accent hover:bg-studio-canvas-inset hover:border-studio-accent/30 border-studio-border/40",
+                          ? "bg-studio-accent text-white shadow-sm border border-studio-accent"
+                          : "text-studio-fg hover:text-studio-accent hover:bg-studio-canvas-inset",
                       )}
                     >
                       {CatIcon && <CatIcon className="h-3 w-3 shrink-0" />}
@@ -622,27 +622,24 @@ function ComponentCard({ def, onSelect }: { def: RepoComponentDef; onSelect: (de
       type="button"
       onClick={() => onSelect(def)}
       className={cn(
-        "group relative flex flex-col rounded-xl border border-studio-border bg-studio-canvas overflow-hidden text-left outline-none cursor-pointer",
-        "hover:border-studio-accent/50 hover:shadow-md hover:shadow-studio-accent/5 hover:-translate-y-0.5",
-        "active:translate-y-0 active:shadow-sm",
-        "transition-all duration-200",
+        "group flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left outline-none cursor-pointer",
+        "hover:bg-studio-canvas-inset",
+        "transition-colors duration-150",
         "focus-visible:ring-2 focus-visible:ring-studio-accent focus-visible:ring-offset-1",
       )}
     >
-      {/* Visual preview strip */}
-      <div className={cn("w-full h-[72px] flex items-center justify-center border-b", style.bg, style.border)}>
-        <Icon className={cn("h-7 w-7 transition-transform duration-200 group-hover:scale-110", style.iconColor)} />
+      <div className={cn("flex size-8 shrink-0 items-center justify-center rounded-md border", style.bg, style.border)}>
+        <Icon className={cn("h-4 w-4", style.iconColor)} />
       </div>
-      {/* Info */}
-      <div className="p-3 space-y-1">
-        <p className="text-[12px] font-semibold text-studio-fg leading-tight truncate">{label}</p>
-        {def.description && (
-          <p className="text-[11px] text-studio-fg-muted leading-snug line-clamp-2">{def.description}</p>
-        )}
-        <p className="text-[10px] text-studio-fg/30 font-medium pt-0.5">
-          {def.props.length} {def.props.length === 1 ? "prop" : "props"}
-        </p>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[12px] font-medium text-studio-fg leading-tight">{label}</p>
+        {def.description && <p className="truncate text-[11px] text-studio-fg-muted leading-snug">{def.description}</p>}
       </div>
+      {def.props.length > 0 && (
+        <span className="shrink-0 rounded-sm bg-studio-canvas-inset px-1.5 py-0.5 text-[10px] font-medium text-studio-fg/40">
+          {def.props.length}p
+        </span>
+      )}
     </button>
   )
 }
@@ -665,7 +662,7 @@ function CatalogGallery({
   }
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+    <div className="space-y-0.5">
       {catalog.map((def) => (
         <ComponentCard key={def.name} def={def} onSelect={onSelect} />
       ))}

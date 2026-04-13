@@ -33,9 +33,9 @@ RepoPress changes that. It connects to your GitHub repository and gives you a vi
 
 When you publish, RepoPress commits your changes directly to your repository. No proprietary database, no lock-in. Your content is always in your repo, in standard file formats.
 
-## What is next
+## What's next
 
-We are building real-time collaboration, advanced search, and custom workflow plugins. Star us on GitHub to follow along.`,
+We're building real-time collaboration, advanced search, and custom workflow plugins. Star us on GitHub to follow along.`,
   },
   {
     slug: "framework-auto-detection",
@@ -43,7 +43,7 @@ We are building real-time collaboration, advanced search, and custom workflow pl
     date: "2025-01-10",
     excerpt:
       "When you connect a repository, RepoPress figures out what framework you use and sets itself up. Here is how that works.",
-    content: `One of the things that makes RepoPress different is automatic framework detection. You connect your repository, and RepoPress configures itself — no manual setup required.
+    content: `What sets RepoPress apart is automatic framework detection. You connect your repository, and RepoPress configures itself — no manual setup required.
 
 ## What happens when you connect a repo
 
@@ -66,9 +66,9 @@ RepoPress currently supports:
 
 Each framework gets its own set of frontmatter fields. For example, Fumadocs projects get title, description, icon, and full fields. Hugo projects get weight, draft, and tags. You can always customize these.
 
-## What if your framework is not detected?
+## What if your framework isn't detected?
 
-If RepoPress does not recognize your setup, you can choose a content folder and configure file types manually during project setup. Any project with Markdown or MDX files will work — the framework detection just makes initial setup faster.`,
+If RepoPress doesn't recognize your setup, you can choose a content folder and configure file types manually during project setup. Any project with Markdown or MDX files will work — the framework detection just makes initial setup faster.`,
   },
   {
     slug: "why-git-native",
@@ -89,12 +89,12 @@ Most content management platforms store your content in their database. That cre
 
 ## How RepoPress is different
 
-RepoPress reads files directly from your GitHub repository and commits changes back when you publish. Here is what that means in practice:
+RepoPress reads files directly from your GitHub repository and commits changes back when you publish. Here's what that means in practice:
 
-- **Your content stays in your repo** — Standard Markdown and MDX files, right where they have always been.
+- **Your content stays in your repo** — Standard Markdown and MDX files, right where they've always been.
 - **Real version history** — Every publish creates a Git commit. You can see who changed what and when.
 - **One workflow for everyone** — Writers use the visual editor, developers review pull requests. Same repository, same process.
-- **Nothing to migrate** — Your content is already in the right place. There is nothing to export if you stop using RepoPress.
+- **Nothing to migrate** — Your content is already in the right place. There's nothing to export if you stop using RepoPress.
 
 ## How it works under the hood
 

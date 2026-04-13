@@ -1,10 +1,11 @@
 "use client"
 
 import { useMutation, useQuery } from "convex/react"
-import { ArrowLeft, Clock, Eye, EyeOff, FileText, GitCommit, Loader2, RotateCcw } from "lucide-react"
+import { Clock, Eye, EyeOff, FileText, GitCommit, Loader2, RotateCcw } from "lucide-react"
 import Link from "next/link"
 import { useMemo, useState } from "react"
 import { toast } from "sonner"
+import { RepoBreadcrumb } from "@/components/repo-breadcrumb"
 import { DiffViewer } from "@/components/studio/history/diff-viewer"
 import {
   AlertDialog,
@@ -110,13 +111,9 @@ export function HistoryClient({ owner, repo, branch: _branch, projectId, project
     <div className="min-h-screen bg-background">
       <div className="border-b">
         <div className="container mx-auto px-4 py-4">
-          <Link
-            href={`/dashboard/${owner}/${repo}`}
-            className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground mb-4"
-          >
-            <ArrowLeft className="h-4 w-4 mr-1" />
-            Back to {owner}/{repo}
-          </Link>
+          <div className="mb-4">
+            <RepoBreadcrumb owner={owner} repo={repo} path={["history"]} />
+          </div>
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-semibold">Document History</h1>

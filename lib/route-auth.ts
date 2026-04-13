@@ -1,9 +1,14 @@
-import { ConvexHttpClient } from "convex/browser"
 import { api } from "@/convex/_generated/api"
 import type { Doc } from "@/convex/_generated/dataModel"
-import { fetchAuthQuery, getGitHubToken, getPatAuthUserId } from "@/lib/auth-server"
-import { getRepoRole, probeRepoReadAccess, type Role, roleAtLeast } from "@/lib/github-permissions"
-import { mintProjectAccessToken, mintServerQueryToken } from "@/lib/project-access-token"
+import { getGitHubToken } from "@/lib/auth-server"
+import { getRepoRole, probeRepoReadAccess } from "@/lib/github-permissions"
+
+export { getContentType } from "@/lib/media/content-type"
+
+import { mintProjectAccessToken } from "@/lib/project-access-token"
+import type { Role } from "@/lib/roles"
+import { roleAtLeast } from "@/lib/roles"
+import { createServerQueryContext, resolveActingUserId } from "@/lib/server-context"
 
 interface RouteAuthResult {
   actingUserId: string
@@ -11,8 +16,6 @@ interface RouteAuthResult {
   projectAccessToken: string
   githubToken: string
 }
-
-const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
 
 /**
  * Shared auth resolution for route handlers.
@@ -34,9 +37,7 @@ export async function resolveRouteAuth(
   }
 
   // 1. Resolve acting user
-  const oauthUserId = await resolveActingUserId()
-  const patUserId = !oauthUserId ? await getPatAuthUserId(githubToken) : null
-  const actingUserId = oauthUserId ?? patUserId
+  const actingUserId = await resolveActingUserId(githubToken)
 
   if (!actingUserId) {
     throw new RouteAuthError("Unauthorized", 401)
@@ -51,12 +52,12 @@ export async function resolveRouteAuth(
   if (!role) {
     // 1. Check the access cache (seeded by prior studio page visits)
     try {
-      const sqt = await mintServerQueryToken()
+      const { convex, serverQueryToken } = await createServerQueryContext()
       const cached = await convex.query(api.repoAccessCache.getForUserPublic, {
         repoOwner: project.repoOwner,
         repoName: project.repoName,
         userId: actingUserId,
-        serverQueryToken: sqt,
+        serverQueryToken,
       })
       if (cached) {
         role = cached.role as Role
@@ -91,6 +92,7 @@ export async function resolveRouteAuth(
 
   // 5. Cache in Convex (best-effort, don't fail the request)
   try {
+    const { convex } = await createServerQueryContext()
     // Get the GitHub username for the cache
     const { createGitHubClient } = await import("@/lib/github")
     const octokit = createGitHubClient(githubToken)
@@ -111,41 +113,10 @@ export async function resolveRouteAuth(
   return { actingUserId, role, projectAccessToken, githubToken }
 }
 
-async function resolveActingUserId(): Promise<string | null> {
-  if (fetchAuthQuery) {
-    try {
-      const authUser = await fetchAuthQuery(api.auth.getCurrentUser)
-      if (authUser?._id) {
-        return authUser._id as string
-      }
-    } catch {
-      // Not an OAuth session
-    }
-  }
-  return null
-}
-
 export class RouteAuthError extends Error {
   status: number
   constructor(message: string, status: number) {
     super(message)
     this.status = status
   }
-}
-
-/** Shared content type resolver (duplicated in upload and resolve routes). */
-export function getContentType(fileName: string): string {
-  const ext = fileName.toLowerCase().split(".").pop()
-  const types: Record<string, string> = {
-    jpg: "image/jpeg",
-    jpeg: "image/jpeg",
-    png: "image/png",
-    gif: "image/gif",
-    webp: "image/webp",
-    svg: "image/svg+xml",
-    webm: "video/webm",
-    mp4: "video/mp4",
-    pdf: "application/pdf",
-  }
-  return types[ext || ""] || "application/octet-stream"
 }

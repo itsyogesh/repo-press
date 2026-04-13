@@ -15,8 +15,7 @@ const notes = [
   {
     name: "CloudCannon",
     tension: "Rich features, but it's a managed platform that can feel heavy and locked-in.",
-    response:
-      "RepoPress is open source and reads directly from your repository. Your content never leaves GitHub.",
+    response: "RepoPress is open source and reads directly from your repository. Your content never leaves GitHub.",
   },
 ]
 

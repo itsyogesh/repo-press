@@ -20,8 +20,7 @@ export function DashboardHeader() {
       {isMobile && (
         <Link href="/dashboard" className="flex items-center gap-2 text-lg">
           <Box className="h-5 w-5" />
-          <span className="font-bold">Repo</span>
-          <span className="font-normal -ml-1.5">press</span>
+          <span className="font-medium tracking-tight">RepoPress</span>
         </Link>
       )}
 

@@ -2,19 +2,7 @@
 
 import { useMutation } from "convex/react"
 import matter from "gray-matter"
-import {
-  AlertCircle,
-  Clock3,
-  Command,
-  FileText,
-  FolderOpen,
-  History,
-  Loader2,
-  Search,
-  Settings,
-  Sparkles,
-  X,
-} from "lucide-react"
+import { AlertCircle, Command, FileText, FolderOpen, History, Loader2, Search, Settings, X } from "lucide-react"
 import Link from "next/link"
 import * as React from "react"
 import { toast } from "sonner"
@@ -152,13 +140,7 @@ function StudioPanelShell({
   ...props
 }: React.ComponentProps<"div"> & { children: React.ReactNode }) {
   return (
-    <div
-      className={cn(
-        "surface-card h-full overflow-hidden rounded-[1.25rem] border border-studio-border/80 bg-studio-canvas",
-        className,
-      )}
-      {...props}
-    >
+    <div className={cn("h-full overflow-hidden rounded-lg bg-studio-canvas", className)} {...props}>
       {children}
     </div>
   )
@@ -274,58 +256,18 @@ function StudioNoSelectionPreviewState() {
   return (
     <div className="flex h-full flex-col bg-studio-canvas select-none">
       <div className="flex items-center justify-between border-b border-studio-border px-4 py-3 shrink-0">
-        <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-studio-fg-muted">Preview</span>
+        <span className="text-[10px] font-medium tracking-[0.18em] text-studio-fg-muted">Preview</span>
       </div>
       <div className="flex flex-1 items-center justify-center bg-studio-canvas-inset/30 px-6 py-8">
-        <div className="w-full max-w-md rounded-[1.75rem] border border-studio-border/70 bg-studio-canvas px-6 py-7 text-center shadow-sm">
-          <div className="space-y-6">
-            <div className="relative inline-flex items-center justify-center">
-              <div className="absolute inset-0 scale-150 rounded-full bg-studio-accent/10 blur-2xl" />
-              <div className="relative flex size-16 items-center justify-center rounded-2xl border border-studio-accent/20 bg-studio-accent-muted shadow-inner">
-                <FileText className="size-8 text-studio-accent/70" />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <h3 className="text-base font-semibold tracking-tight text-studio-fg">Preview a story before it ships</h3>
-              <p className="text-sm leading-6 text-studio-fg-muted">
-                Open any Markdown or MDX file from the explorer to see the polished reading experience here.
-              </p>
-            </div>
-
-            <div className="grid gap-2 pt-2">
-              <div className="flex items-center gap-3 rounded-xl border border-studio-border/70 bg-studio-canvas-inset/35 p-3 text-left">
-                <div className="flex size-8 items-center justify-center rounded-lg border border-studio-border/70 bg-studio-canvas">
-                  <Search className="size-4 text-studio-fg-muted" />
-                </div>
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-studio-fg-muted">
-                    Quick search
-                  </p>
-                  <p className="text-xs text-studio-fg-muted">
-                    Press{" "}
-                    <kbd className="rounded border border-studio-border bg-studio-canvas px-1.5 py-0.5 font-sans text-[10px]">
-                      ⌘K
-                    </kbd>{" "}
-                    to jump to a file instantly.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3 rounded-xl border border-studio-border/70 bg-studio-canvas-inset/35 p-3 text-left">
-                <div className="flex size-8 items-center justify-center rounded-lg border border-studio-border/70 bg-studio-canvas">
-                  <Sparkles className="size-4 text-studio-accent" />
-                </div>
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-studio-fg-muted">
-                    Signature moment
-                  </p>
-                  <p className="text-xs text-studio-fg-muted">
-                    Switch between desktop, tablet, and mobile framing once a file is open.
-                  </p>
-                </div>
-              </div>
-            </div>
+        <div className="flex flex-col items-center gap-4 text-center max-w-xs">
+          <div className="flex size-12 items-center justify-center rounded-lg bg-studio-canvas-inset/60">
+            <FileText className="size-6 text-studio-fg-muted" />
+          </div>
+          <div className="space-y-1.5">
+            <h3 className="text-sm font-medium text-studio-fg">No file selected</h3>
+            <p className="text-xs leading-5 text-studio-fg-muted">
+              Open a Markdown or MDX file from the explorer to preview it here.
+            </p>
           </div>
         </div>
       </div>
@@ -406,7 +348,7 @@ function StudioSidebarRail({
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-10 w-10 rounded-xl border border-studio-border bg-studio-canvas text-studio-fg shadow-sm transition-colors hover:bg-studio-canvas-inset"
+                className="h-10 w-10 rounded-xl text-studio-fg transition-colors hover:bg-studio-canvas-inset"
                 title="Expand sidebar"
                 aria-label="Expand sidebar"
                 onClick={onExpand}
@@ -429,7 +371,7 @@ function StudioSidebarRail({
                 asChild
                 variant="ghost"
                 size="icon"
-                className="relative h-9 w-9 rounded-lg border border-studio-border bg-studio-canvas hover:bg-studio-canvas-inset"
+                className="relative h-9 w-9 rounded-lg hover:bg-studio-canvas-inset"
                 title="History"
                 aria-label="Project history"
               >
@@ -454,7 +396,7 @@ function StudioSidebarRail({
                 asChild
                 variant="ghost"
                 size="icon"
-                className="h-9 w-9 rounded-lg border border-studio-border bg-studio-canvas hover:bg-studio-canvas-inset"
+                className="h-9 w-9 rounded-lg hover:bg-studio-canvas-inset"
                 title="Settings"
                 aria-label="Project settings"
               >
@@ -1507,7 +1449,7 @@ function StudioLayoutInner({
                   </StudioPanelShell>
                 </ResizablePanel>
                 {!isSidebarCollapsed && !isMobile && (
-                  <ResizableHandle className="group relative mx-1 flex w-4 items-center justify-center bg-transparent after:h-20 after:w-px after:rounded-full after:bg-studio-border/70 after:transition-colors hover:after:bg-studio-accent" />
+                  <ResizableHandle className="relative mx-1 flex w-4 cursor-col-resize items-center justify-center bg-transparent after:absolute after:inset-y-0 after:left-1/2 after:w-[3px] after:-translate-x-1/2 after:rounded-sm after:bg-studio-border/60 after:transition-colors hover:after:bg-studio-accent" />
                 )}
               </>
             )}
@@ -1611,137 +1553,105 @@ function StudioLayoutInner({
                     <StudioNoSelectionLoading />
                   ) : (
                     <div className="flex h-full items-center justify-center bg-studio-canvas-inset/20 px-6 py-8">
-                      <div className="w-full max-w-3xl rounded-[1.75rem] border border-studio-border/70 bg-studio-canvas p-5 shadow-sm">
-                        <div className="grid gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
-                          <div className="space-y-5">
-                            <div className="space-y-3 text-left">
-                              <div className="inline-flex items-center gap-2 rounded-full border border-studio-accent/15 bg-studio-accent-muted/70 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-studio-accent">
-                                <Sparkles className="h-3 w-3" />
-                                Writing space
-                              </div>
-                              <div className="space-y-2">
-                                <h2 className="text-2xl font-semibold tracking-tight text-studio-fg">
-                                  Open a file and keep the whole studio in flow
-                                </h2>
-                                <p className="max-w-xl text-sm leading-6 text-studio-fg-muted">
-                                  Search the repository, jump back into a recent draft, or use the explorer to start
-                                  editing.
-                                </p>
-                              </div>
+                      <div className="w-full max-w-xl rounded-xl bg-studio-canvas p-6 shadow-sm">
+                        <div className="space-y-5">
+                          <div className="space-y-3 text-left">
+                            <div className="space-y-2">
+                              <h2 className="text-2xl font-semibold tracking-tight text-studio-fg">
+                                Open a file and keep the whole studio in flow
+                              </h2>
+                              <p className="max-w-xl text-sm leading-6 text-studio-fg-muted">
+                                Search the repository, jump back into a recent draft, or use the explorer to start
+                                editing.
+                              </p>
                             </div>
+                          </div>
 
-                            <div className="grid gap-3 sm:grid-cols-2">
-                              <button
-                                type="button"
-                                className="rounded-2xl border border-studio-border/70 bg-studio-canvas-inset/35 p-4 text-left transition-colors hover:bg-studio-canvas-inset/60"
-                                onClick={() => setCommandPaletteOpen(true)}
-                              >
-                                <div className="mb-3 flex size-10 items-center justify-center rounded-xl border border-studio-border/70 bg-studio-canvas">
-                                  <Command className="h-4 w-4 text-studio-fg-muted" />
-                                </div>
-                                <p className="text-sm font-medium text-studio-fg">Command palette</p>
-                                <p className="mt-1 text-xs leading-5 text-studio-fg-muted">
-                                  Press{" "}
-                                  <kbd className="rounded border border-studio-border bg-studio-canvas px-1.5 py-0.5 font-sans text-[10px]">
-                                    ⌘K
-                                  </kbd>{" "}
-                                  to search files and actions.
-                                </p>
-                              </button>
-
-                              <button
-                                type="button"
-                                className="rounded-2xl border border-studio-border/70 bg-studio-canvas-inset/35 p-4 text-left transition-colors hover:bg-studio-canvas-inset/60"
-                                onClick={() => searchInputRef.current?.focus()}
-                              >
-                                <div className="mb-3 flex size-10 items-center justify-center rounded-xl border border-studio-border/70 bg-studio-canvas">
-                                  <Search className="h-4 w-4 text-studio-fg-muted" />
-                                </div>
-                                <p className="text-sm font-medium text-studio-fg">Jump to a document</p>
-                                <p className="mt-1 text-xs leading-5 text-studio-fg-muted">
-                                  Search by path, filename, or frontmatter title below.
-                                </p>
-                              </button>
-                            </div>
-
-                            <div className="mx-auto max-w-xl space-y-3 lg:mx-0">
-                              <div className="group relative">
-                                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-studio-fg-muted" />
-                                <Input
-                                  ref={searchInputRef}
-                                  id="studio-empty-search"
-                                  name="studio-empty-search"
-                                  value={emptySearch}
-                                  onChange={(e) => setEmptySearch(e.target.value)}
-                                  onKeyDown={(e) => {
-                                    if (e.key !== "Enter") return
-                                    const firstResult = hasEmptySearchQuery
-                                      ? emptySearchResults[0]
-                                      : recentFileResults[0]
-                                    if (firstResult) {
-                                      navigateToFile(firstResult.path)
-                                    }
-                                  }}
-                                  className="h-11 rounded-xl border-studio-border bg-studio-canvas pl-10 pr-10 shadow-sm"
-                                  placeholder="Search docs..."
-                                />
-                                <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
-                                  {hasEmptySearchQuery ? (
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setEmptySearch("")
-                                        searchInputRef.current?.focus()
-                                      }}
-                                      className="rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none"
-                                      aria-label="Clear search"
-                                    >
-                                      <X className="h-4 w-4 text-studio-fg-muted" />
-                                    </button>
-                                  ) : (
-                                    <kbd className="pointer-events-none hidden h-5 select-none items-center gap-1 rounded border border-studio-border bg-studio-canvas-inset px-1.5 font-mono text-[10px] font-medium text-studio-fg-muted opacity-60 sm:flex">
-                                      <span className="text-xs">/</span>
-                                    </kbd>
-                                  )}
-                                </div>
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <button
+                              type="button"
+                              className="rounded-lg border border-studio-border/70 bg-studio-canvas-inset/35 p-4 text-left transition-colors hover:bg-studio-canvas-inset/60"
+                              onClick={() => setCommandPaletteOpen(true)}
+                            >
+                              <div className="mb-3 flex size-10 items-center justify-center rounded-md border border-studio-border/70 bg-studio-canvas">
+                                <Command className="h-4 w-4 text-studio-fg-muted" />
                               </div>
-                              <div className="rounded-[1.25rem] border border-studio-border bg-studio-canvas-inset/30 p-2 text-left">
-                                {!hasEmptySearchQuery && recentFileResults.length === 0 ? (
-                                  <p className="px-2 py-4 text-xs text-studio-fg-muted">
-                                    Start typing to search files in this repository.
-                                  </p>
-                                ) : !hasEmptySearchQuery ? (
-                                  <div className="px-2 pb-1 pt-1">
-                                    <p className="pb-2 text-[11px] font-medium uppercase tracking-[0.16em] text-studio-fg-muted">
-                                      Recent files
-                                    </p>
-                                    <ul className="space-y-1">
-                                      {recentFileResults.map((file) => (
-                                        <li key={file.path}>
-                                          <button
-                                            type="button"
-                                            className="flex w-full items-start gap-2 rounded-xl px-2 py-2 text-left transition-colors hover:bg-studio-canvas-inset"
-                                            onClick={() => navigateToFile(file.path)}
-                                          >
-                                            <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-studio-fg-muted" />
-                                            <span className="min-w-0">
-                                              <span className="block truncate text-sm text-studio-fg">
-                                                {file.title || file.name}
-                                              </span>
-                                              <span className="block truncate text-xs text-studio-fg-muted">
-                                                {file.path}
-                                              </span>
-                                            </span>
-                                          </button>
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  </div>
-                                ) : emptySearchResults.length === 0 ? (
-                                  <p className="px-2 py-4 text-xs text-studio-fg-muted">No files match your search.</p>
+                              <p className="text-sm font-medium text-studio-fg">Command palette</p>
+                              <p className="mt-1 text-xs leading-5 text-studio-fg-muted">
+                                Press{" "}
+                                <kbd className="rounded border border-studio-border bg-studio-canvas px-1.5 py-0.5 font-sans text-[10px]">
+                                  ⌘K
+                                </kbd>{" "}
+                                to search files and actions.
+                              </p>
+                            </button>
+
+                            <button
+                              type="button"
+                              className="rounded-lg border border-studio-border/70 bg-studio-canvas-inset/35 p-4 text-left transition-colors hover:bg-studio-canvas-inset/60"
+                              onClick={() => searchInputRef.current?.focus()}
+                            >
+                              <div className="mb-3 flex size-10 items-center justify-center rounded-md border border-studio-border/70 bg-studio-canvas">
+                                <Search className="h-4 w-4 text-studio-fg-muted" />
+                              </div>
+                              <p className="text-sm font-medium text-studio-fg">Jump to a document</p>
+                              <p className="mt-1 text-xs leading-5 text-studio-fg-muted">
+                                Search by path, filename, or frontmatter title below.
+                              </p>
+                            </button>
+                          </div>
+
+                          <div className="mx-auto max-w-xl space-y-3 lg:mx-0">
+                            <div className="group relative">
+                              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-studio-fg-muted" />
+                              <Input
+                                ref={searchInputRef}
+                                id="studio-empty-search"
+                                name="studio-empty-search"
+                                value={emptySearch}
+                                onChange={(e) => setEmptySearch(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key !== "Enter") return
+                                  const firstResult = hasEmptySearchQuery ? emptySearchResults[0] : recentFileResults[0]
+                                  if (firstResult) {
+                                    navigateToFile(firstResult.path)
+                                  }
+                                }}
+                                className="h-11 rounded-xl border-studio-border bg-studio-canvas pl-10 pr-10 shadow-sm"
+                                placeholder="Search docs..."
+                              />
+                              <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+                                {hasEmptySearchQuery ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEmptySearch("")
+                                      searchInputRef.current?.focus()
+                                    }}
+                                    className="rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none"
+                                    aria-label="Clear search"
+                                  >
+                                    <X className="h-4 w-4 text-studio-fg-muted" />
+                                  </button>
                                 ) : (
+                                  <kbd className="pointer-events-none hidden h-5 select-none items-center gap-1 rounded border border-studio-border bg-studio-canvas-inset px-1.5 font-mono text-[10px] font-medium text-studio-fg-muted opacity-60 sm:flex">
+                                    <span className="text-xs">/</span>
+                                  </kbd>
+                                )}
+                              </div>
+                            </div>
+                            <div className="rounded-lg border border-studio-border bg-studio-canvas-inset/30 p-2 text-left">
+                              {!hasEmptySearchQuery && recentFileResults.length === 0 ? (
+                                <p className="px-2 py-4 text-xs text-studio-fg-muted">
+                                  Start typing to search files in this repository.
+                                </p>
+                              ) : !hasEmptySearchQuery ? (
+                                <div className="px-2 pb-1 pt-1">
+                                  <p className="pb-2 text-[11px] font-medium uppercase tracking-[0.16em] text-studio-fg-muted">
+                                    Recent files
+                                  </p>
                                   <ul className="space-y-1">
-                                    {emptySearchResults.map((file) => (
+                                    {recentFileResults.map((file) => (
                                       <li key={file.path}>
                                         <button
                                           type="button"
@@ -1761,42 +1671,32 @@ function StudioLayoutInner({
                                       </li>
                                     ))}
                                   </ul>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="space-y-3">
-                            <div className="rounded-2xl border border-studio-border/70 bg-studio-canvas-inset/35 p-4 text-left">
-                              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-studio-fg-muted">
-                                Studio cues
-                              </p>
-                              <div className="mt-3 space-y-3">
-                                <div className="flex items-start gap-3">
-                                  <div className="mt-0.5 flex size-8 items-center justify-center rounded-lg border border-studio-border/70 bg-studio-canvas">
-                                    <Clock3 className="h-4 w-4 text-studio-fg-muted" />
-                                  </div>
-                                  <div>
-                                    <p className="text-sm font-medium text-studio-fg">Recent work follows you</p>
-                                    <p className="text-xs leading-5 text-studio-fg-muted">
-                                      Your recent files stay close so you can jump back into the right draft faster.
-                                    </p>
-                                  </div>
                                 </div>
-                                <div className="flex items-start gap-3">
-                                  <div className="mt-0.5 flex size-8 items-center justify-center rounded-lg border border-studio-border/70 bg-studio-canvas">
-                                    <Sparkles className="h-4 w-4 text-studio-accent" />
-                                  </div>
-                                  <div>
-                                    <p className="text-sm font-medium text-studio-fg">
-                                      Preview stays production-minded
-                                    </p>
-                                    <p className="text-xs leading-5 text-studio-fg-muted">
-                                      Switch to split view once a file is open to review layout and content together.
-                                    </p>
-                                  </div>
-                                </div>
-                              </div>
+                              ) : emptySearchResults.length === 0 ? (
+                                <p className="px-2 py-4 text-xs text-studio-fg-muted">No files match your search.</p>
+                              ) : (
+                                <ul className="space-y-1">
+                                  {emptySearchResults.map((file) => (
+                                    <li key={file.path}>
+                                      <button
+                                        type="button"
+                                        className="flex w-full items-start gap-2 rounded-xl px-2 py-2 text-left transition-colors hover:bg-studio-canvas-inset"
+                                        onClick={() => navigateToFile(file.path)}
+                                      >
+                                        <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-studio-fg-muted" />
+                                        <span className="min-w-0">
+                                          <span className="block truncate text-sm text-studio-fg">
+                                            {file.title || file.name}
+                                          </span>
+                                          <span className="block truncate text-xs text-studio-fg-muted">
+                                            {file.path}
+                                          </span>
+                                        </span>
+                                      </button>
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -1809,7 +1709,7 @@ function StudioLayoutInner({
 
             {showPreview && (
               <>
-                <ResizableHandle className="group relative mx-1 flex w-4 items-center justify-center bg-transparent after:h-20 after:w-px after:rounded-full after:bg-studio-border/70 after:transition-colors hover:after:bg-studio-accent" />
+                <ResizableHandle className="relative mx-1 flex w-4 cursor-col-resize items-center justify-center bg-transparent after:absolute after:inset-y-0 after:left-1/2 after:w-[3px] after:-translate-x-1/2 after:rounded-sm after:bg-studio-border/60 after:transition-colors hover:after:bg-studio-accent" />
                 <ResizablePanel
                   id="preview"
                   defaultSize={`${Math.max(20, Math.min(60, previewPanelSize))}%`}
@@ -1911,7 +1811,13 @@ function StudioLayoutInner({
           onSaveDraft={saveDraft}
         />
 
-        <AlertDialog open={discardDialogOpen} onOpenChange={(open) => { if (isDiscarding) return; setDiscardDialogOpen(open) }}>
+        <AlertDialog
+          open={discardDialogOpen}
+          onOpenChange={(open) => {
+            if (isDiscarding) return
+            setDiscardDialogOpen(open)
+          }}
+        >
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Discard all pending changes?</AlertDialogTitle>

@@ -1,5 +1,6 @@
 import { v } from "convex/values"
-import { api, internal } from "./_generated/api"
+import { DOCUMENT_ALLOWED_TRANSITIONS, isPublishableDocumentStatus } from "../lib/document-status"
+import { internal } from "./_generated/api"
 import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server"
 import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
 
@@ -382,8 +383,7 @@ export const publish = mutation({
     if (!doc) throw new Error("Document not found")
 
     // Enforce state machine: only draft/approved can be published
-    const publishableStatuses = ["draft", "approved"]
-    if (!publishableStatuses.includes(doc.status)) {
+    if (!isPublishableDocumentStatus(doc.status)) {
       throw new Error(`Cannot publish from "${doc.status}" status. Document must be in draft or approved state.`)
     }
 
@@ -410,15 +410,6 @@ export const publish = mutation({
 // Status transition state machine.
 // "published" is NOT a valid target here — publishing requires a GitHub commit
 // and must go through the `publish` mutation instead.
-const ALLOWED_TRANSITIONS: Record<string, string[]> = {
-  draft: ["in_review", "scheduled", "archived"],
-  in_review: ["approved", "draft", "archived"],
-  approved: ["draft", "archived"],
-  published: ["draft", "archived"],
-  scheduled: ["draft", "archived"],
-  archived: ["draft"],
-}
-
 export const transitionStatus = mutation({
   args: {
     id: v.id("documents"),
@@ -449,7 +440,7 @@ export const transitionStatus = mutation({
       "editor",
     )
 
-    const allowed = ALLOWED_TRANSITIONS[doc.status] || []
+    const allowed = DOCUMENT_ALLOWED_TRANSITIONS[doc.status as keyof typeof DOCUMENT_ALLOWED_TRANSITIONS] || []
     if (!allowed.includes(args.newStatus)) {
       throw new Error(`Cannot transition from "${doc.status}" to "${args.newStatus}". Allowed: ${allowed.join(", ")}`)
     }
@@ -502,8 +493,7 @@ export const publishFromWebhook = internalMutation({
     }
 
     // Handle non-publishable states by transitioning to draft first (edge case #2)
-    const publishableStatuses = ["draft", "approved"]
-    if (!publishableStatuses.includes(doc.status)) {
+    if (!isPublishableDocumentStatus(doc.status)) {
       // Transition to draft first (all statuses can go to draft per ALLOWED_TRANSITIONS)
       await ctx.db.patch(args.documentId, {
         status: "draft",

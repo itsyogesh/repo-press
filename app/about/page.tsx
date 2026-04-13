@@ -5,7 +5,8 @@ import Navbar from "@/components/landing/navbar"
 
 export const metadata: Metadata = {
   title: "About — RepoPress",
-  description: "RepoPress is a visual editor for content that lives in GitHub. Edit docs and blog posts without touching code.",
+  description:
+    "RepoPress is a visual editor for content that lives in GitHub. Edit docs and blog posts without touching code.",
 }
 
 const techStack = [
@@ -66,7 +67,8 @@ export default function AboutPage() {
               A visual editor for content that lives in GitHub
             </h1>
             <p className="text-lg md:text-xl text-muted-foreground leading-relaxed max-w-2xl mx-auto">
-              RepoPress exists because updating a blog post or documentation page shouldn&apos;t require a terminal. Your content stays in your repository. We just make it easier to edit.
+              RepoPress exists because updating a blog post or documentation page shouldn&apos;t require a terminal.
+              Your content stays in your repository. We just make it easier to edit.
             </p>
           </div>
         </section>
@@ -77,13 +79,19 @@ export default function AboutPage() {
             <div className="max-w-3xl mx-auto">
               <h2 className="text-xl font-semibold text-foreground mb-4">Why we built this</h2>
               <p className="text-muted-foreground leading-relaxed mb-6">
-                If your website runs on GitHub — whether it is a documentation site, a blog, or a marketing page — updating content means opening a code editor, writing Markdown, and pushing a commit. That works for developers, but it shuts out everyone else on the team.
+                If your website runs on GitHub — whether it is a documentation site, a blog, or a marketing page —
+                updating content means opening a code editor, writing Markdown, and pushing a commit. That works for
+                developers, but it shuts out everyone else on the team.
               </p>
               <p className="text-muted-foreground leading-relaxed mb-6">
-                RepoPress is a visual editor that connects directly to your GitHub repository. You see your files, edit them in a clean interface with a live preview, and publish changes as a pull request. No terminal, no Markdown syntax, no merge conflicts. Your content stays as standard files in your repo — we never move it to a separate database.
+                RepoPress is a visual editor that connects directly to your GitHub repository. You see your files, edit
+                them in a clean interface with a live preview, and publish changes as a pull request. No terminal, no
+                Markdown syntax, no merge conflicts. Your content stays as standard files in your repo — we never move
+                it to a separate database.
               </p>
               <p className="text-muted-foreground leading-relaxed">
-                The result: writers and content teams can update the site themselves, while developers keep full control over the repository and review process.
+                The result: writers and content teams can update the site themselves, while developers keep full control
+                over the repository and review process.
               </p>
             </div>
           </div>
@@ -129,7 +137,7 @@ export default function AboutPage() {
               <div className="flex-1">
                 <h3 className="font-semibold text-card-foreground text-lg mb-1">@itsyogesh</h3>
                 <p className="text-sm text-muted-foreground leading-relaxed">
-                  Building tools that make content workflows simpler — open source, community-driven, and designed for teams of all sizes.
+                  Building open-source tools that help teams publish content without learning Git.
                 </p>
               </div>
               <div className="flex items-center gap-3 shrink-0">
@@ -162,7 +170,8 @@ export default function AboutPage() {
             <div className="max-w-3xl mx-auto text-center">
               <h2 className="text-xl font-semibold text-foreground mb-4">Free and open source</h2>
               <p className="text-muted-foreground leading-relaxed mb-6 max-w-xl mx-auto">
-                RepoPress is MIT licensed. Browse the code, report issues, or contribute. The project grows because people like you use it and share feedback.
+                RepoPress is MIT licensed. Browse the code, report issues, or contribute. RepoPress improves with every
+                contribution and bug report.
               </p>
               <a
                 href="https://github.com/itsyogesh/repo-press"

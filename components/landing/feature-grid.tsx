@@ -5,7 +5,7 @@ const frameworks = ["Next.js", "Astro", "Fumadocs", "Nextra", "Docusaurus", "Hug
 const studioSignals = [
   "Side-by-side editing with live preview",
   "Title, metadata, and images managed in one place",
-  "Search and navigate your content with keyboard shortcuts",
+  "Find any file fast with keyboard shortcuts",
 ]
 
 const historyMoments = [
@@ -120,8 +120,8 @@ export default function FeatureGrid() {
                 </div>
               </div>
               <p className="mt-4 text-sm leading-6 text-muted-foreground">
-                RepoPress scans your repository and figures out how your content is organized. No configuration files
-                to write, no setup wizard to click through.
+                RepoPress scans your repository and figures out how your content is organized. No configuration files to
+                write, no setup wizard to click through.
               </p>
               <div className="mt-5 flex flex-wrap gap-2">
                 {frameworks.map((framework) => (
@@ -141,13 +141,15 @@ export default function FeatureGrid() {
                   <Layers3 className="h-5 w-5" />
                 </span>
                 <div>
-                  <p className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-background/60">Your content</p>
+                  <p className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-background/60">
+                    Your content
+                  </p>
                   <h3 className="text-xl font-semibold tracking-[-0.03em]">Content stays in GitHub</h3>
                 </div>
               </div>
               <p className="mt-4 text-sm leading-6 text-background/72">
-                No separate database, no vendor lock-in. RepoPress reads from and writes to your repository. If you
-                stop using it, your content is exactly where you left it.
+                No separate database, no vendor lock-in. RepoPress reads from and writes to your repository. If you stop
+                using it, your content is exactly where you left it.
               </p>
               <div className="mt-6 inline-flex items-center gap-2 font-mono text-[0.68rem] uppercase tracking-[0.2em] text-background/68">
                 Open source and self-hostable
@@ -164,8 +166,8 @@ export default function FeatureGrid() {
               <h3 className="text-lg font-semibold tracking-[-0.03em] text-foreground">See your actual page</h3>
             </div>
             <p className="mt-3 text-sm leading-6 text-muted-foreground">
-              Preview how your content will look on your site. Images, formatting, and components render in real time
-              as you type.
+              Preview how your content will look on your site. Images, formatting, and components render in real time as
+              you type.
             </p>
           </div>
 
@@ -201,10 +203,10 @@ export default function FeatureGrid() {
               <h3 className="text-lg font-semibold tracking-[-0.03em] text-foreground">Built-in review workflow</h3>
             </div>
             <div className="mt-5 space-y-3 font-mono text-[0.68rem] uppercase tracking-[0.18em] text-muted-foreground">
-              <div className="rounded-2xl border border-border/70 bg-background px-4 py-3">draft → ready for review</div>
               <div className="rounded-2xl border border-border/70 bg-background px-4 py-3">
-                review → approved
+                draft → ready for review
               </div>
+              <div className="rounded-2xl border border-border/70 bg-background px-4 py-3">review → approved</div>
               <div className="rounded-2xl border border-primary/15 bg-primary/10 px-4 py-3 text-primary">
                 approved → published via pull request
               </div>

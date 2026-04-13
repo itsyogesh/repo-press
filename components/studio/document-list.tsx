@@ -11,22 +11,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
+import { DOCUMENT_STATUS_CONFIG, type DocumentStatus } from "@/lib/document-status"
 import { cn } from "@/lib/utils"
 import { useStudio } from "./studio-context"
-
-type DocumentStatus = "draft" | "in_review" | "approved" | "published" | "scheduled" | "archived"
-
-const STATUS_CONFIG: Record<
-  DocumentStatus,
-  { label: string; variant: "default" | "secondary" | "outline" | "destructive" }
-> = {
-  draft: { label: "Draft", variant: "secondary" },
-  in_review: { label: "In Review", variant: "outline" },
-  approved: { label: "Approved", variant: "outline" },
-  published: { label: "Published", variant: "default" },
-  scheduled: { label: "Scheduled", variant: "secondary" },
-  archived: { label: "Archived", variant: "destructive" },
-}
 
 interface DocumentListProps {
   projectId: string
@@ -83,13 +70,16 @@ export function DocumentList({ projectId, selectedFilePath, onSelectDocument }: 
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All statuses</SelectItem>
-            {(Object.entries(STATUS_CONFIG) as [DocumentStatus, (typeof STATUS_CONFIG)[DocumentStatus]][]).map(
-              ([key, config]) => (
-                <SelectItem key={key} value={key}>
-                  {config.label}
-                </SelectItem>
-              ),
-            )}
+            {(
+              Object.entries(DOCUMENT_STATUS_CONFIG) as [
+                DocumentStatus,
+                (typeof DOCUMENT_STATUS_CONFIG)[DocumentStatus],
+              ][]
+            ).map(([key, config]) => (
+              <SelectItem key={key} value={key}>
+                {config.label}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </div>
@@ -117,7 +107,7 @@ export function DocumentList({ projectId, selectedFilePath, onSelectDocument }: 
             </div>
           ) : (
             displayedDocs.map((doc) => {
-              const statusInfo = STATUS_CONFIG[doc.status as DocumentStatus] || STATUS_CONFIG.draft
+              const statusInfo = DOCUMENT_STATUS_CONFIG[doc.status as DocumentStatus] || DOCUMENT_STATUS_CONFIG.draft
               return (
                 <Button
                   key={doc._id}

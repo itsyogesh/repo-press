@@ -1,12 +1,9 @@
 "use server"
 
-import { ConvexHttpClient } from "convex/browser"
 import { api } from "@/convex/_generated/api"
-import { fetchAuthQuery, getGitHubToken, getPatAuthUserId } from "@/lib/auth-server"
-import { mintServerQueryToken } from "@/lib/project-access-token"
+import { getGitHubToken } from "@/lib/auth-server"
 import { fetchRepoConfig } from "@/lib/repopress/config"
-
-const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL
+import { createServerQueryContext, resolveActingUserId } from "@/lib/server-context"
 
 /**
  * Server-side project sync from repopress.config.json.
@@ -24,8 +21,6 @@ export async function syncProjectsServerSide(
     restoredConfigProjectIds,
   }: { runOrphanDetection?: boolean; restoredConfigProjectIds?: string[] } = {},
 ): Promise<{ synced: string[]; created: string[]; unchanged: string[]; orphaned?: string[] } | null> {
-  if (!convexUrl) return null
-
   const { config } = await fetchRepoConfig(token, owner, repo, branch)
   if (!config) return null
 
@@ -41,8 +36,7 @@ export async function syncProjectsServerSide(
     components: p.components,
   }))
 
-  const convex = new ConvexHttpClient(convexUrl)
-  const serverQueryToken = await mintServerQueryToken()
+  const { convex, serverQueryToken } = await createServerQueryContext()
 
   const result = await convex.mutation(api.projects.syncProjectsFromConfig, {
     actingUserId,
@@ -78,10 +72,7 @@ export async function retrySyncAction(owner: string, repo: string, branch: strin
   const token = await getGitHubToken()
   if (!token) throw new Error("Unauthorized")
 
-  const authUser = fetchAuthQuery ? await fetchAuthQuery(api.auth.getCurrentUser).catch(() => null) : null
-  const patUserId = !authUser ? await getPatAuthUserId(token) : null
-  const actingUserId = (authUser?._id as string | undefined) ?? patUserId
-
+  const actingUserId = await resolveActingUserId(token)
   if (!actingUserId) throw new Error("Unauthorized")
 
   return syncProjectsServerSide(token, owner, repo, branch, actingUserId)

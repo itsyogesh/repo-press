@@ -45,7 +45,12 @@ export function VideoPreview() {
   }, [shouldRenderPlayer])
 
   return (
-    <section ref={sectionRef} id="demo" data-slot="landing-video-preview" className="container mx-auto px-4 py-24">
+    <section
+      ref={sectionRef}
+      id="product-video"
+      data-slot="landing-video-preview"
+      className="container mx-auto px-4 py-24"
+    >
       <div className="mx-auto flex max-w-[58rem] flex-col items-center space-y-4 text-center">
         <p className="font-mono text-[11px] font-medium uppercase tracking-[0.04em] text-muted-foreground">
           Product demo

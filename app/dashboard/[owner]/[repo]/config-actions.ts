@@ -1,12 +1,11 @@
 "use server"
 
-import { ConvexHttpClient } from "convex/browser"
 import { revalidatePath } from "next/cache"
 import { api } from "@/convex/_generated/api"
-import { fetchAuthQuery, getGitHubToken, getPatAuthUserId } from "@/lib/auth-server"
+import { getGitHubToken } from "@/lib/auth-server"
 import type { ProjectConfig } from "@/lib/config-schema"
 import { resolveRepoRole, roleAtLeast } from "@/lib/github-permissions"
-import { mintProjectAccessToken, mintServerQueryToken } from "@/lib/project-access-token"
+import { mintProjectAccessToken } from "@/lib/project-access-token"
 import {
   addProject,
   commitConfig,
@@ -15,9 +14,8 @@ import {
   removeProject,
   updateProject,
 } from "@/lib/repopress/config-writer"
+import { createServerQueryContext, resolveActingUserId } from "@/lib/server-context"
 import { syncProjectsServerSide } from "@/lib/sync-projects"
-
-const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
 
 // ── Shared helpers ────────────────────────────────────────────────
 
@@ -25,10 +23,7 @@ async function resolveAuthContext() {
   const token = await getGitHubToken()
   if (!token) throw new Error("Not authenticated with GitHub")
 
-  const authUser = fetchAuthQuery ? await fetchAuthQuery(api.auth.getCurrentUser, {}).catch(() => null) : null
-  const patUserId = !authUser ? await getPatAuthUserId(token) : null
-  const actingUserId = (authUser?._id as string | undefined) ?? patUserId
-
+  const actingUserId = await resolveActingUserId(token)
   if (!actingUserId) throw new Error("No authenticated user found")
 
   return { token, actingUserId }
@@ -73,6 +68,7 @@ type ConfigActionResult =
   | { success: false; error: string }
 
 type ProjectResolutionResult = {
+  convex: Awaited<ReturnType<typeof createServerQueryContext>>["convex"]
   project: {
     _id: string
     repoOwner: string
@@ -86,7 +82,7 @@ type ProjectResolutionResult = {
 
 async function resolveProjectOwnerActionContext(projectId: string): Promise<ProjectResolutionResult> {
   const { token, actingUserId } = await resolveAuthContext()
-  const serverQueryToken = await mintServerQueryToken()
+  const { convex, serverQueryToken } = await createServerQueryContext()
   const project = await convex.query(api.projects.get, {
     id: projectId as never,
     serverQueryToken,
@@ -117,7 +113,7 @@ async function resolveProjectOwnerActionContext(projectId: string): Promise<Proj
     role: "owner",
   })
 
-  return { token, actingUserId, project, projectAccessToken }
+  return { convex, token, actingUserId, project, projectAccessToken }
 }
 
 // ── Server actions ────────────────────────────────────────────────
@@ -372,7 +368,7 @@ export async function keepProjectAsManualAction(
   projectId: string,
 ): Promise<{ success: true } | { success: false; error: string }> {
   try {
-    const { project, actingUserId, projectAccessToken } = await resolveProjectOwnerActionContext(projectId)
+    const { convex, project, actingUserId, projectAccessToken } = await resolveProjectOwnerActionContext(projectId)
 
     await convex.mutation(api.projects.keepAsManual, {
       projectId: projectId as never,
@@ -391,7 +387,7 @@ export async function deleteProjectPermanentlyAction(
   projectId: string,
 ): Promise<{ success: true } | { success: false; error: string }> {
   try {
-    const { project, actingUserId, projectAccessToken } = await resolveProjectOwnerActionContext(projectId)
+    const { convex, project, actingUserId, projectAccessToken } = await resolveProjectOwnerActionContext(projectId)
 
     await convex.mutation(api.projects.removeFull, {
       projectId: projectId as never,
@@ -423,7 +419,7 @@ export async function cleanUpAllOrphansAction(
       throw new Error("Unauthorized: owner access required to remove all orphans")
     }
 
-    const serverQueryToken = await mintServerQueryToken()
+    const { convex, serverQueryToken } = await createServerQueryContext()
     const result = await convex.mutation(api.projects.removeAllOrphans, {
       actingUserId,
       serverQueryToken,

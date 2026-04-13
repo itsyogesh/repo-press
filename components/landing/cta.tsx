@@ -8,9 +8,7 @@ export default function CTA() {
       <div className="mx-auto max-w-6xl rounded-[2rem] border border-foreground/10 bg-foreground px-6 py-10 text-background sm:px-8 sm:py-12">
         <div className="grid gap-10 lg:grid-cols-[1fr_auto] lg:items-center">
           <div>
-            <p className="font-mono text-[0.68rem] uppercase tracking-[0.2em] text-background/60">
-              Get started
-            </p>
+            <p className="font-mono text-[0.68rem] uppercase tracking-[0.2em] text-background/60">Get started</p>
             <h2 className="mt-4 max-w-[18ch] text-4xl font-semibold tracking-[-0.05em] text-balance sm:text-5xl">
               Your content is in GitHub. Start editing it visually.
             </h2>

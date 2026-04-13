@@ -510,7 +510,10 @@ function GalleryDetailPanel({
       <div className="flex-1 overflow-y-auto p-3 space-y-3">
         {/* Staged badge */}
         {isStaged && (
-          <Badge variant="secondary" className="text-[10px] bg-studio-attention-muted text-studio-attention border-studio-attention/30">
+          <Badge
+            variant="secondary"
+            className="text-[10px] bg-studio-attention-muted text-studio-attention border-studio-attention/30"
+          >
             Staged
           </Badge>
         )}

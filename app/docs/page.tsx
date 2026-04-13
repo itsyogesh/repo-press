@@ -4,7 +4,7 @@ import Link from "next/link"
 
 export const metadata: Metadata = {
   title: "Documentation — RepoPress",
-  description: "Everything you need to get started with RepoPress, the Git-native headless CMS.",
+  description: "Everything you need to get started with RepoPress, the visual editor for GitHub content.",
 }
 
 const guides = [

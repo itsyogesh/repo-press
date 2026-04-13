@@ -1,30 +1,38 @@
 "use client"
 
-import { ArrowRight, FileImage, FileText, FolderTree, Github, ScanSearch } from "lucide-react"
+import { ArrowRight, FileImage, FileText, FolderTree, Github, Loader2, ScanSearch } from "lucide-react"
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { buildRepoScannerDemo } from "@/lib/repo-scanner-demo"
+import { cn } from "@/lib/utils"
 
 const sampleRepos = [
-  "https://github.com/fuma-nama/fumadocs",
-  "https://github.com/withastro/blog-tutorial-demo",
-  "https://github.com/vercel/next.js",
+  { url: "https://github.com/fuma-nama/fumadocs", label: "Fumadocs" },
+  { url: "https://github.com/withastro/blog-tutorial-demo", label: "Astro" },
+  { url: "https://github.com/leerob/leerob.io", label: "Next.js" },
 ]
 
-const defaultRepo = sampleRepos[0]
+const defaultRepo = sampleRepos[0].url
 
 export default function RepoScanner() {
   const [input, setInput] = useState(defaultRepo)
   const [result, setResult] = useState(() => buildRepoScannerDemo(defaultRepo))
+  const [isScanning, setIsScanning] = useState(false)
 
-  const handleScan = () => {
-    setResult(buildRepoScannerDemo(input))
+  const runScan = (value: string) => {
+    setIsScanning(true)
+    setTimeout(() => {
+      setResult(buildRepoScannerDemo(value))
+      setIsScanning(false)
+    }, 400)
   }
 
-  const handleSampleSelect = (value: string) => {
-    setInput(value)
-    setResult(buildRepoScannerDemo(value))
+  const handleScan = () => runScan(input)
+
+  const handleSampleSelect = (url: string) => {
+    setInput(url)
+    runScan(url)
   }
 
   const isError = "error" in result
@@ -51,16 +59,27 @@ export default function RepoScanner() {
               Try a sample repo
             </p>
             <div className="flex flex-wrap gap-2">
-              {sampleRepos.map((repo) => (
-                <button
-                  key={repo}
-                  type="button"
-                  onClick={() => handleSampleSelect(repo)}
-                  className="rounded-full border border-border/70 bg-background px-3 py-2 text-xs font-medium tracking-[-0.01em] text-muted-foreground transition-colors hover:border-border hover:text-foreground"
-                >
-                  {repo.replace("https://github.com/", "")}
-                </button>
-              ))}
+              {sampleRepos.map(({ url, label }) => {
+                const isActive = input === url
+                return (
+                  <button
+                    key={url}
+                    type="button"
+                    onClick={() => handleSampleSelect(url)}
+                    className={cn(
+                      "rounded-full border px-3 py-2 text-xs font-medium tracking-[-0.01em] transition-colors",
+                      isActive
+                        ? "border-primary/40 bg-primary/8 text-foreground"
+                        : "border-border/70 bg-background text-muted-foreground hover:border-border hover:text-foreground",
+                    )}
+                  >
+                    {url.replace("https://github.com/", "")}
+                    <span className={cn("ml-1.5 font-normal", isActive ? "text-primary" : "text-muted-foreground/60")}>
+                      · {label}
+                    </span>
+                  </button>
+                )
+              })}
             </div>
           </div>
 
@@ -81,8 +100,11 @@ export default function RepoScanner() {
         </div>
 
         <div className="surface-card rounded-[1.75rem] border p-6 sm:p-7">
-          <div className="mb-6 flex flex-col gap-2">
-            <p className="font-mono text-[0.68rem] uppercase tracking-[0.2em] text-muted-foreground">Repo scanner</p>
+          <div className="mb-6 flex flex-col gap-1.5">
+            <div className="flex items-center justify-between">
+              <p className="font-mono text-[0.68rem] uppercase tracking-[0.2em] text-muted-foreground">Repo scanner</p>
+              <p className="font-mono text-[0.62rem] text-muted-foreground/50">demo · no network requests</p>
+            </div>
             <h3 className="text-2xl font-semibold tracking-[-0.04em] text-foreground">Framework-aware setup preview</h3>
           </div>
 
@@ -106,13 +128,17 @@ export default function RepoScanner() {
                 aria-describedby={isError ? "repo-scanner-error" : undefined}
                 className="h-12 rounded-xl px-4"
               />
-              <Button type="submit" className="h-12 rounded-xl px-5">
-                Scan repo
+              <Button type="submit" disabled={isScanning} className="h-12 rounded-xl px-5">
+                {isScanning ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Scanning…
+                  </>
+                ) : (
+                  "Scan repo"
+                )}
               </Button>
             </div>
-            <p className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-muted-foreground">
-              Demo only — no network requests leave the page.
-            </p>
           </form>
 
           {isError ? (
@@ -124,7 +150,13 @@ export default function RepoScanner() {
               {result.error}
             </div>
           ) : (
-            <div className="mt-6 space-y-4" aria-live="polite">
+            <div
+              className={cn(
+                "mt-6 space-y-4 transition-opacity duration-200",
+                isScanning && "pointer-events-none opacity-40",
+              )}
+              aria-live="polite"
+            >
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border/70 bg-muted/35 px-4 py-3">
                 <div>
                   <p className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-muted-foreground">
@@ -171,8 +203,8 @@ export default function RepoScanner() {
                       </p>
                     </div>
                     <div>
-                      <p className="text-sm font-medium tracking-[-0.01em] text-foreground">Signal</p>
-                      <p className="mt-1 text-sm leading-6 text-muted-foreground">{result.signal}</p>
+                      <p className="text-sm font-medium tracking-[-0.01em] text-foreground">Why we detected this</p>
+                      <p className="mt-1 text-sm leading-6 text-muted-foreground">{result.detectionBasis}</p>
                     </div>
                     <div>
                       <p className="text-sm font-medium tracking-[-0.01em] text-foreground">Recommended action</p>
@@ -200,7 +232,7 @@ export default function RepoScanner() {
                     </div>
                     <div className="flex items-center gap-3 pl-5">
                       <FileText className="h-4 w-4 text-primary" />
-                      <span>{result.documents} documents ready for studio import</span>
+                      <span>{result.documents} documents ready to open in the studio</span>
                     </div>
                     <div className="flex items-center gap-3 pl-5">
                       <FileImage className="h-4 w-4 text-primary" />

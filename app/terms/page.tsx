@@ -31,9 +31,9 @@ export default function TermsPage() {
             {/* Description of Service */}
             <h2 className="text-xl font-semibold text-foreground mt-8 mb-4">Description of Service</h2>
             <p className="text-muted-foreground leading-relaxed">
-              RepoPress is a visual editor for content stored in your GitHub
-              repositories. The service lets you create and edit Markdown and MDX
-              files in a Studio interface, with all changes committed directly to your repository via the GitHub API.
+              RepoPress is a visual editor for content stored in your GitHub repositories. The service lets you create
+              and edit Markdown and MDX files in a Studio interface, with all changes committed directly to your
+              repository via the GitHub API.
             </p>
 
             {/* GitHub Integration */}

@@ -1,16 +1,15 @@
-import { ConvexHttpClient } from "convex/browser"
 import { redirect } from "next/navigation"
 import { StudioLayout } from "@/components/studio/studio-layout"
 import { StudioPageThemeToggle } from "@/components/studio/studio-page-theme-toggle"
 import { api } from "@/convex/_generated/api"
 import type { Doc, Id } from "@/convex/_generated/dataModel"
-import { fetchAuthQuery, getGitHubToken, getPatAuthUserId } from "@/lib/auth-server"
+import { getGitHubToken } from "@/lib/auth-server"
 import { createGitHubClient, getFile } from "@/lib/github"
 import { resolveRepoRole } from "@/lib/github-permissions"
-import { mintProjectAccessToken, mintServerQueryToken } from "@/lib/project-access-token"
+import { resolveProjectAccessRole } from "@/lib/project-access-role"
+import { mintProjectAccessToken } from "@/lib/project-access-token"
+import { createServerQueryContext, resolveActingUserId } from "@/lib/server-context"
 import { projectMatchesRoute, selectStudioFallbackProject } from "@/lib/studio/project-route"
-
-type Role = "owner" | "editor" | "viewer"
 
 interface StudioPageProps {
   params: Promise<{
@@ -29,11 +28,8 @@ export default async function StudioPage({
   params: paramsPromise,
   searchParams: searchParamsPromise,
 }: StudioPageProps) {
-  // Batch 1: all independent setup calls run in parallel
-  const [token, authUser, serverQueryToken, resolvedParams, resolvedSearchParams] = await Promise.all([
+  const [token, resolvedParams, resolvedSearchParams] = await Promise.all([
     getGitHubToken(),
-    fetchAuthQuery ? fetchAuthQuery(api.auth.getCurrentUser).catch(() => null) : Promise.resolve(null),
-    mintServerQueryToken(),
     paramsPromise,
     searchParamsPromise,
   ])
@@ -44,10 +40,8 @@ export default async function StudioPage({
   const { branch, projectId: projectIdParam, file } = resolvedSearchParams
   const currentPath = file || (path ? path.join("/") : "")
 
-  const patUserId = !authUser ? await getPatAuthUserId(token) : null
-  const actingUserId = (authUser?._id as string | undefined) ?? patUserId
-
-  const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
+  const actingUserId = await resolveActingUserId(token)
+  const { convex, serverQueryToken } = await createServerQueryContext()
 
   // Batch 2: project lookups + role resolution run in parallel.
   // listProjectsForRepo always runs (eliminates the sequential fallback on the common path).
@@ -78,8 +72,11 @@ export default async function StudioPage({
 
   // Ownership check happens AFTER final project is selected so the upgrade applies
   // regardless of whether the project came from the specific lookup or the fallback.
-  const isProjectOwner = !!(project && actingUserId && project.userId === actingUserId)
-  const repoRole: Role | null = isProjectOwner ? "owner" : resolvedRole
+  const repoRole = resolveProjectAccessRole({
+    actingUserId,
+    projectOwnerId: project?.userId ?? null,
+    resolvedRepoRole: resolvedRole,
+  })
 
   if (!repoRole) {
     redirect("/dashboard")

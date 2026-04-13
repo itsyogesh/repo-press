@@ -1,11 +1,11 @@
 import { redirect } from "next/navigation"
 import { RepoSetupForm } from "@/components/repo-setup-form"
-import { api } from "@/convex/_generated/api"
-import { fetchAuthQuery, getGitHubToken, getPatAuthUserId } from "@/lib/auth-server"
+import { getGitHubToken } from "@/lib/auth-server"
 import { detectFramework } from "@/lib/framework-detector"
 import { getRepoBranches } from "@/lib/github"
 import { resolveRepoRole } from "@/lib/github-permissions"
 import { fetchRepoConfig } from "@/lib/repopress/config"
+import { resolveActingUserId } from "@/lib/server-context"
 import { syncProjectsServerSide } from "@/lib/sync-projects"
 
 interface SetupPageProps {
@@ -25,9 +25,7 @@ export default async function SetupPage({ params }: SetupPageProps) {
   const { owner, repo } = await params
 
   // Resolve acting user
-  const authUser = fetchAuthQuery ? await fetchAuthQuery(api.auth.getCurrentUser).catch(() => null) : null
-  const patUserId = !authUser ? await getPatAuthUserId(token) : null
-  const actingUserId = (authUser?._id as string | undefined) ?? patUserId
+  const actingUserId = await resolveActingUserId(token)
 
   // Resolve role + default branch via full 4-tier fallback (including repoAccessCache)
   const {

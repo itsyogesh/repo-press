@@ -2,21 +2,6 @@ import { ArrowRight, FolderTree, GitBranch, Github, Sparkles } from "lucide-reac
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 
-const signalCards = [
-  {
-    title: "Works with your existing repo",
-    description: "No migration or setup. RepoPress reads your GitHub repository and detects your content structure automatically.",
-  },
-  {
-    title: "Preview before you publish",
-    description: "Edit in split view with a live preview. See formatted text, images, and components exactly as they'll appear on your site.",
-  },
-  {
-    title: "Publishes through pull requests",
-    description: "Every change goes through GitHub's review process. Your team stays in the loop without extra tools.",
-  },
-]
-
 const timeline = [
   {
     label: "Scan",
@@ -38,8 +23,6 @@ const timeline = [
 export default function Hero() {
   return (
     <section className="relative overflow-hidden px-4 pb-20 pt-10 sm:pb-24 lg:pb-28">
-      <div className="bg-grid-small-black dark:bg-grid-small-white absolute inset-x-0 top-0 -z-20 h-[34rem] opacity-50" />
-      <div className="absolute inset-x-0 top-0 -z-10 h-[28rem] bg-gradient-to-b from-accent/40 via-background/80 to-background" />
 
       <div className="mx-auto grid max-w-6xl gap-12 lg:grid-cols-[1.02fr_0.98fr] lg:items-center">
         <div className="flex flex-col gap-8">
@@ -54,7 +37,7 @@ export default function Hero() {
             </h1>
 
             <p className="max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg sm:leading-8">
-              RepoPress gives you a visual editor for the markdown and MDX files already in your repository. Edit,
+              RepoPress gives you a visual editor for the Markdown and MDX files already in your repository. Edit,
               preview, and publish — changes go back to GitHub as pull requests.
             </p>
           </div>
@@ -79,14 +62,21 @@ export default function Hero() {
             </a>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-3">
-            {signalCards.map((card) => (
-              <div key={card.title} className="surface-card rounded-2xl border p-4">
-                <p className="font-mono text-[0.68rem] uppercase tracking-[0.2em] text-muted-foreground">Signal</p>
-                <h2 className="mt-3 text-sm font-semibold tracking-[-0.02em] text-foreground">{card.title}</h2>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">{card.description}</p>
-              </div>
-            ))}
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+            <span className="flex items-center gap-1.5 text-sm font-medium text-primary">
+              <GitBranch className="h-3.5 w-3.5" />
+              Publishes via pull request
+            </span>
+            <span className="text-muted-foreground/40">·</span>
+            <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+              <Github className="h-3.5 w-3.5" />
+              Works with any GitHub repo
+            </span>
+            <span className="text-muted-foreground/40">·</span>
+            <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+              <Sparkles className="h-3.5 w-3.5" />
+              Live preview as you edit
+            </span>
           </div>
         </div>
 
@@ -124,9 +114,6 @@ export default function Hero() {
                 <div className="mb-5 flex items-center justify-between">
                   <span className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-background/55">
                     MDX editor
-                  </span>
-                  <span className="rounded-full border border-background/10 px-2.5 py-1 font-mono text-[0.62rem] uppercase tracking-[0.18em] text-background/70">
-                    live
                   </span>
                 </div>
 
@@ -177,9 +164,7 @@ export default function Hero() {
                         <FolderTree className="h-4 w-4 text-primary" />
                         Auto-detected content folder
                       </div>
-                      <p className="mt-2 font-mono text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                        blog/
-                      </p>
+                      <p className="mt-2 font-mono text-xs uppercase tracking-[0.18em] text-muted-foreground">blog/</p>
                     </div>
 
                     <div className="rounded-2xl border border-border/70 bg-muted/40 p-4">
@@ -203,13 +188,8 @@ export default function Hero() {
                 <p className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-muted-foreground">
                   Content workflow
                 </p>
-                <h2 className="text-base font-semibold tracking-[-0.02em] text-foreground">
-                  From connection to published content
-                </h2>
+                <h2 className="text-base font-semibold tracking-[-0.02em] text-foreground">Connect. Edit. Publish.</h2>
               </div>
-              <span className="rounded-full border border-border/70 bg-background/80 px-3 py-1 font-mono text-[0.62rem] uppercase tracking-[0.18em] text-muted-foreground">
-                live
-              </span>
             </div>
 
             <div className="space-y-4">
