@@ -2,13 +2,13 @@ import { Check, Sparkles } from "lucide-react"
 
 const features = [
   "Unlimited repositories",
-  "Framework auto-detection",
-  "Visual MDX Studio editor",
-  "Document workflows",
-  "Version history & revert",
+  "Automatic framework detection",
+  "Visual editor with live preview",
+  "Draft, review, and publish workflow",
+  "Full version history",
   "Webhook integrations",
-  "Multi-project dashboard",
-  "GitHub OAuth authentication",
+  "Multi-project workspace",
+  "GitHub login — no extra accounts",
 ]
 
 export default function Pricing() {
@@ -19,15 +19,16 @@ export default function Pricing() {
           <Sparkles className="h-4 w-4 text-primary" />
           Early Access
         </div>
-        <h2 className="text-3xl font-bold tracking-tight md:text-4xl">Free. Open Source. Always.</h2>
+        <h2 className="text-3xl font-semibold tracking-tight md:text-4xl">Free to use. Open source forever.</h2>
         <p className="max-w-[85%] text-muted-foreground sm:text-lg text-balance">
-          RepoPress is free during early access and will always remain open source under the MIT license.
+          RepoPress is free during early access and will remain open source under the MIT license. No credit card, no
+          trial expiration.
         </p>
       </div>
 
       <div className="mx-auto max-w-md">
         <div className="rounded-2xl border border-border bg-card p-8 text-center">
-          <div className="text-5xl font-bold tracking-tight mb-2">$0</div>
+          <div className="text-5xl font-semibold tracking-tight mb-2">$0</div>
           <p className="text-muted-foreground mb-8">Free forever for open source</p>
           <ul className="space-y-3 text-left mb-8">
             {features.map((feature) => (
@@ -41,7 +42,7 @@ export default function Pricing() {
             href="/dashboard"
             className="inline-flex items-center justify-center rounded-full bg-primary px-8 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors w-full"
           >
-            Get started for free
+            Start editing for free
           </a>
         </div>
       </div>

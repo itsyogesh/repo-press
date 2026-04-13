@@ -3,28 +3,28 @@ import { Check } from "lucide-react"
 const notes = [
   {
     name: "Decap CMS",
-    tension: "Functional, but the admin surface can feel dated and utilitarian.",
+    tension: "Functional but dated. The editing experience hasn't kept up with modern tools.",
     response:
-      "RepoPress answers with stronger hierarchy, calmer spacing, and a workflow that feels authored instead of inherited.",
+      "RepoPress gives you a clean, visual editor with live preview — designed for how people write today, not ten years ago.",
   },
   {
     name: "TinaCMS",
-    tension: "Powerful for developers, but easy to tip into a tool-heavy editing experience.",
-    response: "RepoPress keeps the developer trust while dialing the shell closer to a Notion + VS Code hybrid.",
+    tension: "Powerful, but requires developer setup before content teams can use it.",
+    response: "RepoPress works out of the box. Connect your repo and start editing — no build step or config needed.",
   },
   {
     name: "CloudCannon",
-    tension: "Rich visual editing, but the SaaS shell can feel heavy for Git-native teams.",
+    tension: "Rich features, but it's a managed platform that can feel heavy and locked-in.",
     response:
-      "RepoPress keeps the workflow light, sharp, and rooted in the repository rather than an enterprise console.",
+      "RepoPress is open source and reads directly from your repository. Your content never leaves GitHub.",
   },
 ]
 
 const commitments = [
-  "Keep Git as the source of truth instead of hiding content behind a separate admin model.",
-  "Put rendered preview, repo context, and publishing decisions in the same authored surface.",
-  "Use typography, spacing, and calmer hierarchy to avoid the default dashboard feel.",
-  "Stay credible for self-hosted teams that want open workflows without SaaS heaviness.",
+  "Your content stays in GitHub — no separate database, no vendor lock-in.",
+  "Edit, preview, and publish from a single workspace.",
+  "Works with your existing repository structure. No migration required.",
+  "Open source and free to use. Self-host if you prefer.",
 ]
 
 export default function Comparison() {
@@ -32,13 +32,13 @@ export default function Comparison() {
     <section id="comparison" className="px-4 py-24">
       <div className="mx-auto grid max-w-6xl gap-10 lg:grid-cols-[0.9fr_1.1fr]">
         <div>
-          <p className="font-mono text-[0.72rem] uppercase tracking-[0.24em] text-muted-foreground">Competitive bar</p>
+          <p className="font-mono text-[0.72rem] uppercase tracking-[0.24em] text-muted-foreground">Alternatives</p>
           <h2 className="mt-4 text-4xl font-semibold tracking-[-0.05em] text-balance text-foreground sm:text-5xl">
-            Built for teams that have outgrown dated, tool-heavy, or SaaS-heavy CMS workflows.
+            A better way to manage content in your GitHub repository.
           </h2>
           <p className="mt-4 text-base leading-7 text-muted-foreground sm:text-lg sm:leading-8">
-            RepoPress sits in a deliberate middle lane: calmer than a dev-tool console, sharper than a default CMS
-            admin, and lighter than a heavy managed content platform.
+            Other tools make you choose between a developer experience and an editing experience. RepoPress gives you
+            both.
           </p>
 
           <div className="mt-8 space-y-4">
@@ -57,10 +57,10 @@ export default function Comparison() {
         <div className="surface-card overflow-hidden rounded-[1.75rem] border">
           <div className="border-b border-border/70 px-6 py-5">
             <p className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-muted-foreground">
-              Design commitments
+              What we believe
             </p>
             <h3 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-foreground">
-              What the landing should make clear
+              Principles behind RepoPress
             </h3>
           </div>
 

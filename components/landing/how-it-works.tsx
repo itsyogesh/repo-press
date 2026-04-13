@@ -4,33 +4,33 @@ const steps = [
   {
     icon: Github,
     eyebrow: "01 / Connect",
-    title: "Point RepoPress at the repository you already trust.",
-    description: "Sign in with GitHub and choose the repo that already stores your docs, blog, or product content.",
-    detail: "No export step, no content migration, no separate editorial database.",
+    title: "Sign in with GitHub and pick a repo.",
+    description: "Log in with your GitHub account and select the repository where your content lives.",
+    detail: "No imports, no migration, no separate database to maintain.",
   },
   {
     icon: FolderGit2,
     eyebrow: "02 / Detect",
-    title: "Map the content system automatically.",
+    title: "RepoPress finds your content automatically.",
     description:
-      "We scan the repo structure, infer the framework, and surface likely content roots and collection shapes.",
-    detail: "Works especially well for MDX-first docs and content-heavy repos.",
+      "We scan your repository, detect the framework, and locate your docs and blog posts — no configuration needed.",
+    detail: "Supports Fumadocs, Nextra, Astro, Hugo, Docusaurus, Jekyll, and more.",
   },
   {
     icon: FileEdit,
     eyebrow: "03 / Edit",
-    title: "Move through content in a visual studio shell.",
+    title: "Write and preview in a visual editor.",
     description:
-      "Write in split view, preview real components, manage frontmatter, and keep media and history close by.",
-    detail: "Feels closer to a workspace than a generic CMS dashboard.",
+      "Edit your content with a side-by-side preview. Update titles, images, and metadata without touching code.",
+    detail: "Feels like a writing app, not a developer tool.",
   },
   {
     icon: Sparkles,
-    eyebrow: "04 / Ship",
-    title: "Publish through Git instead of around it.",
+    eyebrow: "04 / Publish",
+    title: "Publish your changes as a pull request.",
     description:
-      "Draft, review, approve, and open publish lanes that keep the repo history legible for the rest of the team.",
-    detail: "RepoPress augments the workflow your codebase already depends on.",
+      "When you're ready, create a pull request with your changes. Your team can review before anything goes live.",
+    detail: "Every change is tracked in your repository's history.",
   },
 ]
 
@@ -39,13 +39,12 @@ export default function HowItWorks() {
     <section id="how-it-works" className="px-4 py-24">
       <div className="mx-auto max-w-6xl">
         <div className="mx-auto flex max-w-3xl flex-col items-center gap-4 text-center">
-          <p className="font-mono text-[0.72rem] uppercase tracking-[0.24em] text-muted-foreground">Workflow</p>
+          <p className="font-mono text-[0.72rem] uppercase tracking-[0.24em] text-muted-foreground">How it works</p>
           <h2 className="text-4xl font-semibold tracking-[-0.05em] text-balance text-foreground sm:text-5xl">
-            A content workflow that respects Git at every step.
+            From GitHub login to published content in four steps.
           </h2>
           <p className="text-base leading-7 text-muted-foreground sm:text-lg sm:leading-8">
-            RepoPress is opinionated about one thing: the repo remains the operating model. The UI exists to make that
-            model faster, clearer, and calmer to work inside.
+            No setup wizard, no config files. Connect your repo and start editing in under a minute.
           </p>
         </div>
 
@@ -78,9 +77,9 @@ export default function HowItWorks() {
           <ArrowRight className="h-4 w-4" />
           <span className="font-mono text-[0.68rem] uppercase tracking-[0.2em] text-foreground">Edit</span>
           <ArrowRight className="h-4 w-4" />
-          <span className="font-mono text-[0.68rem] uppercase tracking-[0.2em] text-foreground">Ship</span>
+          <span className="font-mono text-[0.68rem] uppercase tracking-[0.2em] text-foreground">Publish</span>
           <span className="ml-auto hidden font-mono text-[0.68rem] uppercase tracking-[0.2em] text-muted-foreground lg:inline">
-            Repository remains source of truth
+            Your content stays in your repo
           </span>
         </div>
       </div>

@@ -4,34 +4,34 @@ import { Button } from "@/components/ui/button"
 
 const signalCards = [
   {
-    title: "Framework-aware from minute one",
-    description: "Detects docs, blogs, MDX routes, and content roots without a setup maze.",
+    title: "Works with your existing repo",
+    description: "No migration or setup. RepoPress reads your GitHub repository and detects your content structure automatically.",
   },
   {
-    title: "Preview what actually ships",
-    description: "Work in split view with rendered components, frontmatter, and media in context.",
+    title: "Preview before you publish",
+    description: "Edit in split view with a live preview. See formatted text, images, and components exactly as they'll appear on your site.",
   },
   {
-    title: "Keep Git in the driver seat",
-    description: "Draft, review, and publish through repo-native flows instead of a detached admin UI.",
+    title: "Publishes through pull requests",
+    description: "Every change goes through GitHub's review process. Your team stays in the loop without extra tools.",
   },
 ]
 
 const timeline = [
   {
     label: "Scan",
-    detail: "Detected docs root, MDX routes, and image-heavy collections.",
+    detail: "Connected to your repository. Found docs folder and blog posts.",
     state: "Ready",
   },
   {
     label: "Preview",
-    detail: "Rendered interactive components before opening a publish lane.",
+    detail: "Live preview with formatting, images, and components applied.",
     state: "Live",
   },
   {
     label: "Publish",
-    detail: "Prepared a clean PR lane with the updated document and assets.",
-    state: "Prepared",
+    detail: "Pull request created with your content changes. Ready for review.",
+    state: "Ready",
   },
 ]
 
@@ -46,29 +46,29 @@ export default function Hero() {
           <div className="flex flex-col gap-5">
             <div className="flex items-center gap-3 font-mono text-[0.72rem] uppercase tracking-[0.24em] text-muted-foreground">
               <span className="inline-flex h-2.5 w-2.5 rounded-full bg-primary" />
-              Product-grade Git-native publishing
+              Visual content editing for GitHub repositories
             </div>
 
-            <h1 className="max-w-[12ch] text-5xl font-semibold tracking-[-0.06em] text-balance text-foreground sm:text-6xl lg:text-7xl">
-              Your repository already knows how content should ship.
+            <h1 className="max-w-[18ch] text-5xl font-semibold tracking-[-0.06em] text-balance text-foreground sm:text-6xl lg:text-7xl">
+              Edit your docs and blog without touching code.
             </h1>
 
             <p className="max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg sm:leading-8">
-              RepoPress turns markdown, MDX, docs, and blogs into a calm visual studio with live preview, publish lanes,
-              and framework-aware setup—without moving the source of truth out of Git.
+              RepoPress gives you a visual editor for the markdown and MDX files already in your repository. Edit,
+              preview, and publish — changes go back to GitHub as pull requests.
             </p>
           </div>
 
           <div className="flex flex-col gap-3 sm:flex-row">
             <Link href="/dashboard">
               <Button size="lg" className="h-12 rounded-xl px-6">
-                Open studio
+                Try the visual editor
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
             </Link>
-            <Link href="/docs">
+            <Link href="#how-it-works">
               <Button size="lg" variant="outline" className="h-12 rounded-xl px-6">
-                Read docs
+                See how it works
               </Button>
             </Link>
             <a href="https://github.com/itsyogesh/repo-press" target="_blank" rel="noopener noreferrer">
@@ -105,7 +105,7 @@ export default function Hero() {
                   <p className="font-mono text-[0.65rem] uppercase tracking-[0.2em] text-muted-foreground">
                     Active document
                   </p>
-                  <p className="text-sm font-medium tracking-[-0.02em] text-foreground">content/docs/intro.mdx</p>
+                  <p className="text-sm font-medium tracking-[-0.02em] text-foreground">blog/getting-started.mdx</p>
                 </div>
               </div>
 
@@ -114,7 +114,7 @@ export default function Hero() {
                   Draft
                 </span>
                 <span className="rounded-full border border-primary/15 bg-primary/10 px-3 py-1 font-mono text-[0.65rem] uppercase tracking-[0.18em] text-primary">
-                  Lane / docs-main
+                  Branch / docs-update
                 </span>
               </div>
             </div>
@@ -134,21 +134,18 @@ export default function Hero() {
                   <p className="text-background/45">---</p>
                   <p>
                     <span className="text-primary">title:</span>{" "}
-                    <span className="text-background">"Ship docs like product"</span>
+                    <span className="text-background">"Getting started with your blog"</span>
                   </p>
                   <p>
                     <span className="text-primary">status:</span> <span className="text-background">"draft"</span>
                   </p>
-                  <p>
-                    <span className="text-primary">lane:</span> <span className="text-background">"docs-main"</span>
-                  </p>
                   <p className="text-background/45">---</p>
-                  <p className="pt-3 text-background"># Visual editing without losing the repo</p>
+                  <p className="pt-3 text-background"># Getting started with your blog</p>
                   <p className="text-background/72">
-                    Preview components, manage frontmatter, and keep content changes attached to Git history.
+                    A step-by-step guide to publishing your first post using the visual editor.
                   </p>
                   <div className="mt-4 rounded-2xl border border-background/10 bg-background/5 p-4 text-background/78">
-                    &lt;Callout variant="note"&gt;Ready for preview and publish&lt;/Callout&gt;
+                    &lt;Callout variant="note"&gt;Ready to preview and publish&lt;/Callout&gt;
                   </div>
                 </div>
               </div>
@@ -167,11 +164,10 @@ export default function Hero() {
                 <div className="space-y-6">
                   <div className="space-y-3">
                     <h2 className="max-w-[16ch] text-3xl font-semibold tracking-[-0.04em] text-foreground">
-                      Visual editing without losing the repo
+                      Getting started with your blog
                     </h2>
                     <p className="max-w-xl text-sm leading-6 text-muted-foreground">
-                      Draft in split view, validate components before merge, and keep editorial flow attached to the
-                      same repository your team already ships from.
+                      A step-by-step guide to publishing your first post using the visual editor.
                     </p>
                   </div>
 
@@ -179,20 +175,20 @@ export default function Hero() {
                     <div className="rounded-2xl border border-border/70 bg-muted/40 p-4">
                       <div className="flex items-center gap-2 text-sm font-medium text-foreground">
                         <FolderTree className="h-4 w-4 text-primary" />
-                        Auto-detected content root
+                        Auto-detected content folder
                       </div>
                       <p className="mt-2 font-mono text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                        apps/docs/content/docs
+                        blog/
                       </p>
                     </div>
 
                     <div className="rounded-2xl border border-border/70 bg-muted/40 p-4">
                       <div className="flex items-center gap-2 text-sm font-medium text-foreground">
                         <GitBranch className="h-4 w-4 text-primary" />
-                        Publish lane ready
+                        Pull request ready
                       </div>
                       <p className="mt-2 text-sm text-muted-foreground">
-                        Create or update a PR without leaving the studio.
+                        Create or update a pull request when you're ready to publish.
                       </p>
                     </div>
                   </div>
@@ -205,10 +201,10 @@ export default function Hero() {
             <div className="mb-4 flex items-center justify-between">
               <div>
                 <p className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-muted-foreground">
-                  Ops timeline
+                  Content workflow
                 </p>
                 <h2 className="text-base font-semibold tracking-[-0.02em] text-foreground">
-                  From repo scan to publish lane
+                  From connection to published content
                 </h2>
               </div>
               <span className="rounded-full border border-border/70 bg-background/80 px-3 py-1 font-mono text-[0.62rem] uppercase tracking-[0.18em] text-muted-foreground">
