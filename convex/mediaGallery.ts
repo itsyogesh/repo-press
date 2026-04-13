@@ -74,7 +74,7 @@ export const upsertScannedImage = mutation({
 
 /**
  * Scans the GitHub repo's full Git tree for image files and upserts them into
- * mediaAssets. Safe to call repeatedly — existing entries are updated, not duplicated.
+ * mediaAssets. Safe to call repeatedly - existing entries are updated, not duplicated.
  * Returns counts of images found, inserted, and updated.
  */
 export const scanImagesFromGitHub = action({

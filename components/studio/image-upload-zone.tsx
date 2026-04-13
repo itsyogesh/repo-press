@@ -146,7 +146,7 @@ export function ImageUploadZone({
     if (file) handleUpload(file)
   }
 
-  // Handle paste from clipboard — only when the component is active (e.g. dialog open)
+  // Handle paste from clipboard - only when the component is active (e.g. dialog open)
   React.useEffect(() => {
     if (!active) return
 

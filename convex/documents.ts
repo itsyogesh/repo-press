@@ -1,5 +1,6 @@
 import { v } from "convex/values"
-import { api, internal } from "./_generated/api"
+import { DOCUMENT_ALLOWED_TRANSITIONS, isPublishableDocumentStatus } from "../lib/document-status"
+import { internal } from "./_generated/api"
 import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server"
 import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
 
@@ -38,7 +39,7 @@ export const listByProject = query({
   },
 })
 
-/** Internal version of listByProject — no auth, for use by actions like syncTreeTitles. */
+/** Internal version of listByProject - no auth, for use by actions like syncTreeTitles. */
 export const listByProjectInternal = internalQuery({
   args: { projectId: v.id("projects") },
   handler: async (ctx, args) => {
@@ -89,7 +90,7 @@ export const get = query({
   },
 })
 
-// Internal only — not callable from the client. Use getOrCreate for client-facing usage.
+// Internal only - not callable from the client. Use getOrCreate for client-facing usage.
 export const create = internalMutation({
   args: {
     projectId: v.id("projects"),
@@ -197,7 +198,7 @@ export const getOrCreateInternal = internalMutation({
   },
 })
 
-// Generic update for document metadata. Status changes are NOT allowed here —
+// Generic update for document metadata. Status changes are NOT allowed here -
 // use `publish` or `transitionStatus` instead.
 export const update = mutation({
   args: {
@@ -246,7 +247,11 @@ export const remove = mutation({
 
     await resolveProjectAccess(
       ctx,
-      { projectId: doc.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken },
+      {
+        projectId: doc.projectId,
+        userId: args.userId,
+        projectAccessToken: args.projectAccessToken,
+      },
       "editor",
     )
 
@@ -272,6 +277,38 @@ export const search = query({
   },
 })
 
+export const hasContentForProject = query({
+  args: {
+    projectId: v.id("projects"),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const access = await resolveProjectReader(ctx, args)
+    if (!access) return true // fail closed - assume content exists if unauthorized
+
+    const firstDoc = await ctx.db
+      .query("documents")
+      .withIndex("by_projectId", (q) => q.eq("projectId", args.projectId))
+      .first()
+    if (firstDoc) return true
+
+    const firstFolder = await ctx.db
+      .query("folderMeta")
+      .withIndex("by_projectId", (q) => q.eq("projectId", args.projectId))
+      .first()
+    if (firstFolder) return true
+
+    const firstCollection = await ctx.db
+      .query("collections")
+      .withIndex("by_projectId", (q) => q.eq("projectId", args.projectId))
+      .first()
+    if (firstCollection) return true
+
+    return false
+  },
+})
+
 // Save draft - creates a history entry and updates the document
 export const saveDraft = mutation({
   args: {
@@ -289,7 +326,11 @@ export const saveDraft = mutation({
 
     const { userId } = await resolveProjectAccess(
       ctx,
-      { projectId: doc.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken },
+      {
+        projectId: doc.projectId,
+        userId: args.userId,
+        projectAccessToken: args.projectAccessToken,
+      },
       "editor",
     )
 
@@ -342,14 +383,17 @@ export const publish = mutation({
     if (!doc) throw new Error("Document not found")
 
     // Enforce state machine: only draft/approved can be published
-    const publishableStatuses = ["draft", "approved"]
-    if (!publishableStatuses.includes(doc.status)) {
+    if (!isPublishableDocumentStatus(doc.status)) {
       throw new Error(`Cannot publish from "${doc.status}" status. Document must be in draft or approved state.`)
     }
 
     await resolveProjectAccess(
       ctx,
-      { projectId: doc.projectId, userId: args.editedBy, projectAccessToken: args.projectAccessToken },
+      {
+        projectId: doc.projectId,
+        userId: args.editedBy,
+        projectAccessToken: args.projectAccessToken,
+      },
       "editor",
     )
 
@@ -364,17 +408,8 @@ export const publish = mutation({
 })
 
 // Status transition state machine.
-// "published" is NOT a valid target here — publishing requires a GitHub commit
+// "published" is NOT a valid target here - publishing requires a GitHub commit
 // and must go through the `publish` mutation instead.
-const ALLOWED_TRANSITIONS: Record<string, string[]> = {
-  draft: ["in_review", "scheduled", "archived"],
-  in_review: ["approved", "draft", "archived"],
-  approved: ["draft", "archived"],
-  published: ["draft", "archived"],
-  scheduled: ["draft", "archived"],
-  archived: ["draft"],
-}
-
 export const transitionStatus = mutation({
   args: {
     id: v.id("documents"),
@@ -397,11 +432,15 @@ export const transitionStatus = mutation({
 
     await resolveProjectAccess(
       ctx,
-      { projectId: doc.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken },
+      {
+        projectId: doc.projectId,
+        userId: args.userId,
+        projectAccessToken: args.projectAccessToken,
+      },
       "editor",
     )
 
-    const allowed = ALLOWED_TRANSITIONS[doc.status] || []
+    const allowed = DOCUMENT_ALLOWED_TRANSITIONS[doc.status as keyof typeof DOCUMENT_ALLOWED_TRANSITIONS] || []
     if (!allowed.includes(args.newStatus)) {
       throw new Error(`Cannot transition from "${doc.status}" to "${args.newStatus}". Allowed: ${allowed.join(", ")}`)
     }
@@ -454,8 +493,7 @@ export const publishFromWebhook = internalMutation({
     }
 
     // Handle non-publishable states by transitioning to draft first (edge case #2)
-    const publishableStatuses = ["draft", "approved"]
-    if (!publishableStatuses.includes(doc.status)) {
+    if (!isPublishableDocumentStatus(doc.status)) {
       // Transition to draft first (all statuses can go to draft per ALLOWED_TRANSITIONS)
       await ctx.db.patch(args.documentId, {
         status: "draft",
@@ -563,7 +601,7 @@ export const syncTreeTitles = action({
 
             const content = await response.text()
 
-            // Extract title from frontmatter (simple regex — no gray-matter in Convex)
+            // Extract title from frontmatter (simple regex - no gray-matter in Convex)
             let title =
               file.path
                 .split("/")

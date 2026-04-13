@@ -1,10 +1,11 @@
 "use client"
 
-import { Code, FileText, History, Home, Moon, PanelLeft, Plus, Save, Split, Sun } from "lucide-react"
+import { Code, FileText, History, Home, Moon, PanelLeft, Plus, Save, Search, Split, Sun } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useTheme } from "next-themes"
 import * as React from "react"
 
+import { Badge } from "@/components/ui/badge"
 import {
   CommandDialog,
   CommandEmpty,
@@ -17,6 +18,7 @@ import {
 } from "@/components/ui/command"
 import type { FileTreeNode } from "@/lib/github"
 import { buildHistoryHref } from "@/lib/studio/history-link"
+import { cn } from "@/lib/utils"
 
 import { useStudio } from "./studio-context"
 import { useInsertComponentModal } from "./studio-layout"
@@ -33,6 +35,21 @@ interface CommandPaletteProps {
 }
 
 type FlatFile = { path: string; name: string; title?: string }
+
+function PaletteIconShell({ children, tone = "default" }: { children: React.ReactNode; tone?: "default" | "accent" }) {
+  return (
+    <div
+      className={cn(
+        "flex size-7 shrink-0 items-center justify-center rounded-md",
+        tone === "accent"
+          ? "border border-studio-accent/20 bg-studio-accent-muted/60 text-studio-accent"
+          : "text-studio-fg-muted",
+      )}
+    >
+      {children}
+    </div>
+  )
+}
 
 function getFileScore(file: FlatFile, query: string): number {
   const normalizedQuery = query.trim().toLowerCase()
@@ -192,8 +209,20 @@ export function CommandPalette({
       description="Search files, actions, and navigation"
     >
       <CommandInput value={query} onValueChange={setQuery} placeholder="Search files, actions, and pages..." />
-      <CommandList>
-        <CommandEmpty>{query.trim() ? "No results found." : "Type to search..."}</CommandEmpty>
+      <CommandList className="max-h-[30rem] px-3 pb-3">
+        <CommandEmpty>
+          <div className="space-y-2 py-4">
+            <div className="mx-auto flex size-12 items-center justify-center rounded-lg border border-studio-border/70 bg-studio-canvas-inset/40">
+              <Search className="h-5 w-5 text-studio-fg-muted" />
+            </div>
+            <div className="space-y-1">
+              <p className="font-medium text-studio-fg">
+                {query.trim() ? "No results found" : "Start typing to search"}
+              </p>
+              <p>{query.trim() ? "Try a file path, title, or command." : "Search files, commands, and navigation."}</p>
+            </div>
+          </div>
+        </CommandEmpty>
 
         {recentFileResults.length > 0 && (
           <CommandGroup heading="Recent">
@@ -208,10 +237,17 @@ export function CommandPalette({
                 }}
                 onClick={() => handleSelect(`file:${file.path}`)}
               >
-                <History className="h-4 w-4 text-studio-fg-muted" />
-                <div className="flex min-w-0 flex-col">
-                  <span className="text-sm">{file.title || file.name}</span>
-                  <span className="text-xs text-studio-fg-muted">{file.path}</span>
+                <PaletteIconShell>
+                  <History className="h-4 w-4" />
+                </PaletteIconShell>
+                <div className="flex min-w-0 flex-1 flex-col">
+                  <div className="flex items-center gap-2">
+                    <span className="truncate text-sm font-medium text-studio-fg">{file.title || file.name}</span>
+                    <Badge variant="secondary" className="h-5 rounded-full px-1.5 text-[10px]">
+                      recent
+                    </Badge>
+                  </div>
+                  <span className="truncate text-xs text-studio-fg-muted">{file.path}</span>
                 </div>
               </CommandItem>
             ))}
@@ -231,10 +267,14 @@ export function CommandPalette({
                 }}
                 onClick={() => handleSelect(`file:${file.path}`)}
               >
-                <FileText className="h-4 w-4 text-studio-fg-muted" />
-                <div className="flex min-w-0 flex-col">
-                  <span className="text-sm">{file.title || file.name}</span>
-                  {file.title && <span className="text-xs text-studio-fg-muted">{file.path}</span>}
+                <PaletteIconShell>
+                  <FileText className="h-4 w-4" />
+                </PaletteIconShell>
+                <div className="flex min-w-0 flex-1 flex-col">
+                  <div className="flex items-center gap-2">
+                    <span className="truncate text-sm font-medium text-studio-fg">{file.title || file.name}</span>
+                  </div>
+                  <span className="truncate text-xs text-studio-fg-muted">{file.path}</span>
                 </div>
               </CommandItem>
             ))}
@@ -251,33 +291,63 @@ export function CommandPalette({
                 onOpenChange(false)
               }}
             >
-              <Plus className="h-4 w-4" />
-              Insert component
+              <PaletteIconShell tone="accent">
+                <Plus className="h-4 w-4" />
+              </PaletteIconShell>
+              <div className="flex min-w-0 flex-1 flex-col">
+                <span className="font-medium text-studio-fg">Insert component</span>
+                <span className="text-xs text-studio-fg-muted">Open the JSX component browser.</span>
+              </div>
               <CommandShortcut>⌘J</CommandShortcut>
             </CommandItem>
           )}
           <CommandItem onSelect={() => handleSelect("save")}>
-            <Save className="h-4 w-4" />
-            Save draft
+            <PaletteIconShell tone="accent">
+              <Save className="h-4 w-4" />
+            </PaletteIconShell>
+            <div className="flex min-w-0 flex-1 flex-col">
+              <span className="font-medium text-studio-fg">Save draft</span>
+              <span className="text-xs text-studio-fg-muted">Persist your current changes.</span>
+            </div>
             <CommandShortcut>⌘S</CommandShortcut>
           </CommandItem>
           <CommandItem onSelect={() => handleSelect("show-split")}>
-            <Split className="h-4 w-4" />
-            Toggle split preview
+            <PaletteIconShell>
+              <Split className="h-4 w-4" />
+            </PaletteIconShell>
+            <div className="flex min-w-0 flex-1 flex-col">
+              <span className="font-medium text-studio-fg">Toggle split preview</span>
+              <span className="text-xs text-studio-fg-muted">Show or hide the live preview pane.</span>
+            </div>
             <CommandShortcut>⌘⇧P</CommandShortcut>
           </CommandItem>
           <CommandItem onSelect={() => handleSelect("show-editor")}>
-            <Code className="h-4 w-4" />
-            Switch to editor only
+            <PaletteIconShell>
+              <Code className="h-4 w-4" />
+            </PaletteIconShell>
+            <div className="flex min-w-0 flex-1 flex-col">
+              <span className="font-medium text-studio-fg">Switch to editor only</span>
+              <span className="text-xs text-studio-fg-muted">Focus on writing without the preview pane.</span>
+            </div>
             <CommandShortcut>⌘⇧S</CommandShortcut>
           </CommandItem>
           <CommandItem onSelect={() => handleSelect("toggle-theme")}>
-            {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-            Toggle theme
+            <PaletteIconShell>
+              {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            </PaletteIconShell>
+            <div className="flex min-w-0 flex-1 flex-col">
+              <span className="font-medium text-studio-fg">Toggle theme</span>
+              <span className="text-xs text-studio-fg-muted">Switch between dark and light studio chrome.</span>
+            </div>
           </CommandItem>
           <CommandItem onSelect={() => handleSelect("toggle-sidebar")}>
-            <PanelLeft className="h-4 w-4" />
-            Toggle sidebar
+            <PaletteIconShell>
+              <PanelLeft className="h-4 w-4" />
+            </PaletteIconShell>
+            <div className="flex min-w-0 flex-1 flex-col">
+              <span className="font-medium text-studio-fg">Toggle sidebar</span>
+              <span className="text-xs text-studio-fg-muted">Collapse to the rail or reopen the explorer.</span>
+            </div>
             <CommandShortcut>⌘B</CommandShortcut>
           </CommandItem>
         </CommandGroup>
@@ -286,15 +356,36 @@ export function CommandPalette({
 
         <CommandGroup heading="Navigate">
           <CommandItem onSelect={() => handleSelect("dashboard")}>
-            <Home className="h-4 w-4" />
-            Go to Dashboard
+            <PaletteIconShell>
+              <Home className="h-4 w-4" />
+            </PaletteIconShell>
+            <div className="flex min-w-0 flex-1 flex-col">
+              <span className="font-medium text-studio-fg">Go to Dashboard</span>
+              <span className="text-xs text-studio-fg-muted">Return to the main workspace overview.</span>
+            </div>
           </CommandItem>
           <CommandItem onSelect={() => handleSelect("history")}>
-            <History className="h-4 w-4" />
-            Project History
+            <PaletteIconShell>
+              <History className="h-4 w-4" />
+            </PaletteIconShell>
+            <div className="flex min-w-0 flex-1 flex-col">
+              <span className="font-medium text-studio-fg">Project history</span>
+              <span className="text-xs text-studio-fg-muted">Review recent publish lanes and activity.</span>
+            </div>
           </CommandItem>
         </CommandGroup>
       </CommandList>
+      <div className="flex items-center gap-4 border-t border-border/60 px-4 py-2">
+        <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+          <span className="font-mono">↑↓</span> navigate
+        </span>
+        <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+          <span className="font-mono">↵</span> open
+        </span>
+        <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+          <span className="font-mono">esc</span> close
+        </span>
+      </div>
     </CommandDialog>
   )
 }

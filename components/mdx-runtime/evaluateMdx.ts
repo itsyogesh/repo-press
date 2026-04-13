@@ -96,7 +96,7 @@ export function evaluateMdx(code: string, scope: Record<string, unknown>, onMiss
 
   // Create a new function where the first argument is the config expected by MDX,
   // followed by any scope variables we want to inject.
-  // SECURITY: `new Function()` still executes arbitrary JS — the blocked-globals
+  // SECURITY: `new Function()` still executes arbitrary JS - the blocked-globals
   // shadow above is defence-in-depth only. Task 4 will replace this with a proper
   // allowlist evaluator.
   const result = withEvalGuard(() =>

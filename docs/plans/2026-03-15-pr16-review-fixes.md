@@ -39,7 +39,7 @@ Create `lib/framework-adapters/field-groups.ts` with this content:
 
 ```typescript
 // Shared field grouping constants and helpers used by both the Smart Create dialog
-// and the Frontmatter panel. Single source of truth — update here, not in consumers.
+// and the Frontmatter panel. Single source of truth - update here, not in consumers.
 
 import type { FieldGroup, FrontmatterFieldDef, GroupedField } from "./types";
 import type { MergedFieldDef } from "./resolve";
@@ -230,7 +230,7 @@ When `adapter` is `null`, `context` is `null`. `handleSubmit` silently returns, 
 
 **Approach:** Instead of returning `null` from the `context` memo when `adapter` is null, fall back to sensible defaults. This is simpler than disabling the button (which would leave the user with no way to create files).
 
-**Background:** `getFolderContext` in `lib/framework-adapters/folder-context.ts` already accepts `FrameworkAdapter | null` and handles null gracefully — it just uses `"slug"` naming and `".mdx"` extension defaults. So the fix is simply to stop short-circuiting on `!adapter`.
+**Background:** `getFolderContext` in `lib/framework-adapters/folder-context.ts` already accepts `FrameworkAdapter | null` and handles null gracefully - it just uses `"slug"` naming and `".mdx"` extension defaults. So the fix is simply to stop short-circuiting on `!adapter`.
 
 **Step 1: Edit the `context` useMemo**
 
@@ -246,7 +246,7 @@ const context = React.useMemo(() => {
 Replace with:
 
 ```typescript
-// getFolderContext handles null adapter — returns sensible slug/.mdx defaults
+// getFolderContext handles null adapter - returns sensible slug/.mdx defaults
 const context = React.useMemo(() => {
   return getFolderContext(parentPath, adapter);
 }, [parentPath, adapter]);
@@ -438,7 +438,7 @@ npm run test
 
 ---
 
-## Task 7: Final verification — lint, test, build
+## Task 7: Final verification - lint, test, build
 
 Run all three checks and confirm they are green before committing.
 

@@ -2,8 +2,8 @@ import { put } from "@vercel/blob"
 import sharp from "sharp"
 import type { Doc, Id } from "@/convex/_generated/dataModel"
 import { createGitHubClient } from "@/lib/github"
+import { getContentType as sharedGetContentType } from "@/lib/media/content-type"
 import { mintServerQueryToken } from "@/lib/project-access-token"
-import { getContentType as sharedGetContentType } from "@/lib/route-auth"
 import { normalizeRepoMediaPath } from "@/lib/studio/media-resolve"
 
 export type BlobUploadResult = {

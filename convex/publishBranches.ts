@@ -63,11 +63,37 @@ export const listOpenForProject = query({
   },
 })
 
+/** Lists branch names from open (active + inactive) publish branches for allocation. */
+export const listBranchNamesForProject = query({
+  args: {
+    projectId: v.id("projects"),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const access = await resolveProjectReader(ctx, args)
+    if (!access) return []
+
+    const [activeBranches, inactiveBranches] = await Promise.all([
+      ctx.db
+        .query("publishBranches")
+        .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", "active"))
+        .collect(),
+      ctx.db
+        .query("publishBranches")
+        .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", "inactive"))
+        .collect(),
+    ])
+
+    return [...activeBranches, ...inactiveBranches].map((branch) => branch.branchName)
+  },
+})
+
 /** Finds a publish branch by its PR number. Used by webhook handlers. */
 export const getByPRNumber = query({
   args: { prNumber: v.number() },
   handler: async (ctx, args) => {
-    // No index on prNumber — PR numbers are unique and this is only called by webhooks
+    // No index on prNumber - PR numbers are unique and this is only called by webhooks
     const all = await ctx.db.query("publishBranches").collect()
     return all.find((pb) => pb.prNumber === args.prNumber) ?? null
   },

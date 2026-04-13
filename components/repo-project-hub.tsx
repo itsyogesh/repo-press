@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   ArrowRight,
   CheckCircle2,
+  Clock,
   Files,
   Folder,
   GitBranch,
@@ -22,7 +23,9 @@ import { useRouter } from "next/navigation"
 import { useMemo, useState, useTransition } from "react"
 import { toast } from "sonner"
 import { cleanUpAllOrphansAction } from "@/app/dashboard/[owner]/[repo]/config-actions"
+import { formatUtcDate } from "@/lib/format-date"
 import { retrySyncAction } from "@/lib/sync-projects"
+import { cn } from "@/lib/utils"
 import { AddProjectDialog } from "./add-project-dialog"
 import { DeleteProjectDialog } from "./delete-project-dialog"
 import { type EditableProject, EditProjectDialog } from "./edit-project-dialog"
@@ -32,7 +35,6 @@ import { RemoveProjectDialog } from "./remove-project-dialog"
 import { Alert, AlertDescription, AlertTitle } from "./ui/alert"
 import { Badge } from "./ui/badge"
 import { Button } from "./ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu"
 
 export interface HubProject {
@@ -55,7 +57,6 @@ interface RepoProjectHubProps {
   owner: string
   repo: string
   defaultBranch: string
-  /** True when the default branch was inferred heuristically, not from GitHub API */
   defaultBranchInferred?: boolean
   projects: HubProject[]
   hasConfig: boolean
@@ -66,6 +67,143 @@ interface RepoProjectHubProps {
   configJson: string | null
   configSha: string | null
   actingUserId?: string | null
+}
+
+function HubProjectCard({
+  owner,
+  repo,
+  defaultBranch,
+  project,
+  isWriter,
+  canRemove,
+  onEdit,
+  onRemove,
+  onDelete,
+}: {
+  owner: string
+  repo: string
+  defaultBranch: string
+  project: HubProject
+  isWriter: boolean
+  canRemove: boolean
+  onEdit: (project: EditableProject) => void
+  onRemove: (project: HubProject) => void
+  onDelete: (project: HubProject) => void
+}) {
+  const canManage = isWriter && (project.frameworkSource === "config" || canRemove)
+  const updatedOn = formatUtcDate(project.updatedAt)
+
+  return (
+    <article className="surface-card flex h-full flex-col rounded-[1.5rem] border p-5 sm:p-6">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="font-mono text-[0.65rem] uppercase tracking-[0.2em] text-muted-foreground">
+            {project.contentRoot || "Repository root"}
+          </p>
+          <h3 className="mt-3 truncate text-xl font-semibold tracking-[-0.03em] text-foreground">{project.name}</h3>
+        </div>
+
+        {canManage ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon-sm" className="-mr-2 -mt-2">
+                <MoreHorizontal className="h-4 w-4" />
+                <span className="sr-only">Project actions</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {project.frameworkSource === "config" ? (
+                <DropdownMenuItem
+                  onSelect={() =>
+                    setTimeout(
+                      () =>
+                        onEdit({
+                          _id: project._id,
+                          name: project.name,
+                          contentRoot: project.contentRoot,
+                          detectedFramework: project.detectedFramework,
+                          contentType: project.contentType,
+                          branch: project.branch,
+                          configProjectId: project.configProjectId,
+                        }),
+                      0,
+                    )
+                  }
+                >
+                  <Pencil className="h-4 w-4 mr-2" />
+                  Edit
+                </DropdownMenuItem>
+              ) : null}
+
+              {project.frameworkSource === "config" && canRemove ? (
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onSelect={() => setTimeout(() => onRemove(project), 0)}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Remove
+                </DropdownMenuItem>
+              ) : null}
+
+              {project.frameworkSource !== "config" && canRemove ? (
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onSelect={() => setTimeout(() => onDelete(project), 0)}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete
+                </DropdownMenuItem>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : null}
+      </div>
+
+      <div className="mt-5 flex flex-wrap gap-2">
+        {project.detectedFramework && project.detectedFramework !== "custom" ? (
+          <Badge variant="secondary" className="rounded-full px-2.5 py-1 text-[0.65rem] uppercase tracking-[0.16em]">
+            {project.detectedFramework}
+          </Badge>
+        ) : null}
+        <span className="rounded-full bg-muted px-2.5 py-1 font-mono text-[0.65rem] uppercase tracking-[0.16em] text-muted-foreground">
+          {project.contentType}
+        </span>
+        <span className="rounded-full bg-muted px-2.5 py-1 font-mono text-[0.65rem] uppercase tracking-[0.16em] text-muted-foreground">
+          {project.frameworkSource === "config" ? "Config-synced" : "Manual"}
+        </span>
+        {project.branch !== defaultBranch ? (
+          <span className="rounded-full bg-muted px-2.5 py-1 font-mono text-[0.65rem] uppercase tracking-[0.16em] text-muted-foreground">
+            Branch {project.branch}
+          </span>
+        ) : null}
+      </div>
+
+      <div className="mt-5 space-y-3 text-sm text-muted-foreground">
+        <p className="inline-flex items-center gap-1.5">
+          <Folder className="h-3.5 w-3.5" />
+          <span className="truncate">{project.contentRoot || "Repository root"}</span>
+        </p>
+        <p className="inline-flex items-center gap-1.5">
+          <GitBranch className="h-3.5 w-3.5" />
+          <span>{project.branch}</span>
+        </p>
+      </div>
+
+      <div className="mt-auto flex items-center justify-between gap-4 pt-6">
+        <p className="text-xs text-muted-foreground">
+          Updated{" "}
+          {project.updatedAt ? <time dateTime={new Date(project.updatedAt).toISOString()}>{updatedOn}</time> : "N/A"}
+        </p>
+
+        <Button asChild variant="ghost" size="sm" className="-mr-2 px-2 text-foreground hover:bg-muted/70">
+          <Link href={`/dashboard/${owner}/${repo}/studio?branch=${project.branch}&projectId=${project._id}`}>
+            Open Studio
+            <ArrowRight className="h-4 w-4" />
+          </Link>
+        </Button>
+      </div>
+    </article>
+  )
 }
 
 export function RepoProjectHub({
@@ -85,8 +223,6 @@ export function RepoProjectHub({
 }: RepoProjectHubProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
-
-  // Dialog state
   const [addOpen, setAddOpen] = useState(false)
   const [editProject, setEditProject] = useState<EditableProject | null>(null)
   const [removeProject, setRemoveProject] = useState<HubProject | null>(null)
@@ -95,12 +231,18 @@ export function RepoProjectHub({
   const { activeProjects, orphanedProjects } = useMemo(() => {
     const active: HubProject[] = []
     const orphaned: HubProject[] = []
-    for (const p of projects) {
-      if (p.configRemoved) orphaned.push(p)
-      else active.push(p)
+
+    for (const project of projects) {
+      if (project.configRemoved) {
+        orphaned.push(project)
+      } else {
+        active.push(project)
+      }
     }
+
     active.sort((a, b) => b.updatedAt - a.updatedAt)
     orphaned.sort((a, b) => (b.configRemovedAt ?? b.updatedAt) - (a.configRemovedAt ?? a.updatedAt))
+
     return { activeProjects: active, orphanedProjects: orphaned }
   }, [projects])
 
@@ -121,11 +263,11 @@ export function RepoProjectHub({
       try {
         const result = await cleanUpAllOrphansAction(owner, repo)
         if (result.success) {
-          const msg =
+          const message =
             result.remaining > 0
               ? `Queued cleanup for ${result.removed} orphaned project${result.removed !== 1 ? "s" : ""} (${result.remaining} remaining)`
               : `Queued cleanup for ${result.removed} orphaned project${result.removed !== 1 ? "s" : ""}`
-          toast.success(msg)
+          toast.success(message)
           router.refresh()
         } else {
           toast.error(result.error)
@@ -140,81 +282,126 @@ export function RepoProjectHub({
     router.refresh()
   }
 
+  const configStatus = hasConfig
+    ? configSynced
+      ? "Config-synced"
+      : "Config found"
+    : activeProjects.length > 0
+      ? "Manual"
+      : "Not set up"
+  const configDescription = hasConfig
+    ? configSynced
+      ? "Projects sync from repopress.config.json and stay grouped around this repository."
+      : "A config file was found, but the last sync needs attention before the hub is fully current."
+    : activeProjects.length > 0
+      ? "This repository is being managed manually. You can keep working without a config file."
+      : "Start with setup to connect content roots, sync config, and create the first project."
+
   return (
-    <div className="flex flex-col gap-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" asChild className="h-8 w-8">
-            <Link href="/dashboard">
-              <ArrowLeft className="h-4 w-4" />
-              <span className="sr-only">Back to Dashboard</span>
-            </Link>
-          </Button>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold tracking-tight">
-                {owner}/{repo}
-              </h1>
-              <div
-                className="flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full bg-muted text-muted-foreground"
-                title={defaultBranchInferred ? "Branch detected heuristically — verify this is correct" : undefined}
+    <div className="flex flex-col gap-8">
+      <section className="surface-card rounded-[2rem] border p-6 sm:p-8">
+        <div className="flex flex-col gap-8 xl:flex-row xl:items-start xl:justify-between">
+          <div className="max-w-3xl">
+            <Button
+              asChild
+              variant="ghost"
+              size="sm"
+              className="-ml-2 w-fit px-2 text-muted-foreground hover:bg-muted/70"
+            >
+              <Link href="/dashboard">
+                <ArrowLeft className="h-4 w-4" />
+                Back to dashboard
+              </Link>
+            </Button>
+
+            <p className="mt-5 font-mono text-[0.72rem] uppercase tracking-[0.24em] text-muted-foreground">
+              Repository hub
+            </p>
+            <p className="mt-4 font-mono text-[0.7rem] uppercase tracking-[0.2em] text-muted-foreground">{owner}</p>
+            <h1 className="mt-2 text-3xl font-semibold tracking-[-0.05em] text-foreground sm:text-4xl">{repo}</h1>
+            <p className="mt-4 text-sm leading-7 text-muted-foreground sm:text-base">{configDescription}</p>
+
+            <div className="mt-5 flex flex-wrap gap-2">
+              <Badge variant="outline" className="rounded-full px-2.5 py-1 text-[0.65rem] uppercase tracking-[0.16em]">
+                {role}
+              </Badge>
+              <Badge
+                variant="outline"
+                className="rounded-full px-2.5 py-1 text-[0.65rem] uppercase tracking-[0.16em]"
+                title={defaultBranchInferred ? "Branch detected heuristically - verify this is correct" : undefined}
               >
-                <GitBranch className="h-3 w-3" />
+                <GitBranch className="h-3.5 w-3.5" />
                 {defaultBranch}
-                {defaultBranchInferred && <AlertCircle className="h-3 w-3 text-studio-attention" />}
-              </div>
-              {hasConfig && (
-                <Badge
-                  variant="outline"
-                  className={
-                    configSynced
-                      ? "border-studio-success/20 bg-studio-success-muted text-studio-success"
-                      : "border-studio-attention/20 bg-studio-attention-muted text-studio-attention"
-                  }
-                >
-                  <CheckCircle2 className="h-3 w-3 mr-1" />
-                  {configSynced ? "Config-synced" : "Config found"}
-                </Badge>
-              )}
-              {!hasConfig && projects.length > 0 && (
-                <Badge variant="outline" className="border-muted-foreground/30">
-                  <Wrench className="h-3 w-3 mr-1" />
-                  Manual
-                </Badge>
-              )}
+                {defaultBranchInferred ? <AlertCircle className="h-3.5 w-3.5 text-studio-attention" /> : null}
+              </Badge>
+              <Badge
+                variant="outline"
+                className={cn(
+                  "rounded-full px-2.5 py-1 text-[0.65rem] uppercase tracking-[0.16em]",
+                  hasConfig && configSynced && "border-studio-success/20 bg-studio-success-muted text-studio-success",
+                  hasConfig &&
+                    !configSynced &&
+                    "border-studio-attention/20 bg-studio-attention-muted text-studio-attention",
+                )}
+              >
+                {hasConfig ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Wrench className="h-3.5 w-3.5" />}
+                {configStatus}
+              </Badge>
             </div>
-            <p className="text-sm text-muted-foreground mt-0.5">
-              {activeProjects.length} project{activeProjects.length !== 1 ? "s" : ""}
-              {orphanedProjects.length > 0 && (
-                <span className="text-studio-attention ml-1">· {orphanedProjects.length} removed from config</span>
-              )}
+          </div>
+
+          <div className="flex flex-col gap-3 sm:flex-row xl:flex-col">
+            <Button variant="outline" asChild>
+              <Link href={`/dashboard/${owner}/${repo}/files?branch=${defaultBranch}`}>
+                <Files className="h-4 w-4" />
+                Browse Files
+              </Link>
+            </Button>
+            <Button variant="outline" asChild>
+              <Link href={`/dashboard/${owner}/${repo}/history`}>
+                <Clock className="h-4 w-4" />
+                History
+              </Link>
+            </Button>
+            <Button variant="outline" asChild>
+              <Link href={`/dashboard/${owner}/${repo}/settings`}>
+                <Settings className="h-4 w-4" />
+                Settings
+              </Link>
+            </Button>
+          </div>
+        </div>
+
+        <div className="mt-8 grid gap-3 sm:grid-cols-3">
+          <div className="rounded-[1.5rem] border border-border/70 bg-background/80 p-4">
+            <p className="font-mono text-[0.62rem] uppercase tracking-[0.18em] text-muted-foreground">Projects</p>
+            <p className="mt-3 text-2xl font-semibold tracking-[-0.03em] text-foreground">{activeProjects.length}</p>
+            <p className="mt-1 text-sm leading-6 text-muted-foreground">
+              Active editing surfaces connected to this repository.
+            </p>
+          </div>
+          <div className="rounded-[1.5rem] border border-border/70 bg-background/80 p-4">
+            <p className="font-mono text-[0.62rem] uppercase tracking-[0.18em] text-muted-foreground">
+              Needs attention
+            </p>
+            <p className="mt-3 text-2xl font-semibold tracking-[-0.03em] text-foreground">{orphanedProjects.length}</p>
+            <p className="mt-1 text-sm leading-6 text-muted-foreground">
+              Projects removed from config but still present until cleaned up.
+            </p>
+          </div>
+          <div className="rounded-[1.5rem] border border-border/70 bg-background/80 p-4">
+            <p className="font-mono text-[0.62rem] uppercase tracking-[0.18em] text-muted-foreground">Access</p>
+            <p className="mt-3 text-2xl font-semibold tracking-[-0.03em] text-foreground capitalize">{role}</p>
+            <p className="mt-1 text-sm leading-6 text-muted-foreground">
+              {isWriter
+                ? "You can add or modify projects in this repository."
+                : "You can view the repository hub and open Studio."}
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          {isWriter && hasConfig && (
-            <Button variant="default" size="sm" onClick={() => setAddOpen(true)}>
-              <Plus className="h-4 w-4 mr-1.5" />
-              Add Project
-            </Button>
-          )}
-          <Button variant="outline" size="sm" asChild>
-            <Link href={`/dashboard/${owner}/${repo}/files?branch=${defaultBranch}`}>
-              <Files className="h-4 w-4 mr-1.5" />
-              Browse Files
-            </Link>
-          </Button>
-          <Button variant="outline" size="icon" asChild className="h-8 w-8" title="Settings">
-            <Link href={`/dashboard/${owner}/${repo}/settings`}>
-              <Settings className="h-4 w-4" />
-            </Link>
-          </Button>
-        </div>
-      </div>
+      </section>
 
-      {/* Inferred branch warning — shown when no projects found and branch is a guess */}
-      {defaultBranchInferred && projects.length === 0 && !syncError && (
+      {defaultBranchInferred && projects.length === 0 && !syncError ? (
         <Alert className="border-studio-attention/20 bg-studio-attention-muted/60">
           <AlertCircle className="h-4 w-4 text-studio-attention" />
           <AlertTitle className="text-studio-attention text-sm">Branch may be incorrect</AlertTitle>
@@ -224,31 +411,35 @@ export function RepoProjectHub({
             config file may not have been found. Try the setup page to select the correct branch.
           </AlertDescription>
         </Alert>
-      )}
+      ) : null}
 
-      {/* Sync error */}
-      {syncError && (
+      {syncError ? (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>Sync Error</AlertTitle>
-          <AlertDescription className="flex items-center justify-between">
+          <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <span>{syncError}</span>
             <Button variant="outline" size="sm" onClick={handleRetrySync} disabled={isPending}>
-              {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-1" />}
+              {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
               {isPending ? "Syncing..." : "Retry Sync"}
             </Button>
           </AlertDescription>
         </Alert>
-      )}
+      ) : null}
 
-      {/* Orphan warnings */}
-      {orphanedProjects.length > 0 && (
-        <div className="flex flex-col gap-3">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-studio-attention">
-              {orphanedProjects.length} project{orphanedProjects.length !== 1 ? "s" : ""} removed from config
-            </p>
-            {role === "owner" && (
+      {orphanedProjects.length > 0 ? (
+        <section className="space-y-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="font-mono text-[0.68rem] uppercase tracking-[0.22em] text-muted-foreground">
+                Needs attention
+              </p>
+              <h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-foreground">Removed from config</h2>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                These projects were removed from the repository config but still exist in RepoPress until cleaned up.
+              </p>
+            </div>
+            {role === "owner" ? (
               <Button
                 variant="outline"
                 size="sm"
@@ -256,15 +447,12 @@ export function RepoProjectHub({
                 disabled={isPending}
                 className="text-destructive hover:text-destructive"
               >
-                {isPending ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
-                ) : (
-                  <Trash2 className="h-3.5 w-3.5 mr-1" />
-                )}
+                {isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
                 Remove All
               </Button>
-            )}
+            ) : null}
           </div>
+
           {orphanedProjects.map((project) => (
             <OrphanWarningCard
               key={project._id}
@@ -273,161 +461,82 @@ export function RepoProjectHub({
               onResolved={handleDialogSuccess}
             />
           ))}
-        </div>
-      )}
+        </section>
+      ) : null}
 
-      {/* Project cards */}
-      {activeProjects.length > 0 ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {activeProjects.map((project) => {
-            const canRemove = role === "owner" || project.userId === actingUserId
-            return (
-              <Card key={project._id} className="flex flex-col h-full">
-                <CardHeader className="pb-3 relative">
-                  {/* Three-dot menu anchored to top-right — absolute so badges get the full row width */}
-                  {isWriter && (project.frameworkSource === "config" || canRemove) && (
-                    <div className="absolute top-3 right-3">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-7 w-7">
-                            <MoreHorizontal className="h-4 w-4" />
-                            <span className="sr-only">Project actions</span>
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          {project.frameworkSource === "config" && (
-                            <DropdownMenuItem
-                              onSelect={() =>
-                                // Defer past the DropdownMenu close/focus-return cycle to avoid
-                                // the Radix aria-hidden race: the dropdown returns focus to its
-                                // trigger *before* it finishes cleanup, so opening a Dialog in
-                                // the same tick leaves aria-hidden stuck on the page container.
-                                setTimeout(
-                                  () =>
-                                    setEditProject({
-                                      _id: project._id,
-                                      name: project.name,
-                                      contentRoot: project.contentRoot,
-                                      detectedFramework: project.detectedFramework,
-                                      contentType: project.contentType,
-                                      branch: project.branch,
-                                      configProjectId: project.configProjectId,
-                                    }),
-                                  0,
-                                )
-                              }
-                            >
-                              <Pencil className="h-4 w-4 mr-2" />
-                              Edit
-                            </DropdownMenuItem>
-                          )}
-                          {project.frameworkSource === "config" && canRemove && (
-                            <DropdownMenuItem
-                              className="text-destructive focus:text-destructive"
-                              onSelect={() => setTimeout(() => setRemoveProject(project), 0)}
-                            >
-                              <Trash2 className="h-4 w-4 mr-2" />
-                              Remove
-                            </DropdownMenuItem>
-                          )}
-                          {project.frameworkSource !== "config" && canRemove && (
-                            <DropdownMenuItem
-                              className="text-destructive focus:text-destructive"
-                              onSelect={() => setTimeout(() => setDeleteProject(project), 0)}
-                            >
-                              <Trash2 className="h-4 w-4 mr-2" />
-                              Delete
-                            </DropdownMenuItem>
-                          )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  )}
+      <section className="space-y-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="font-mono text-[0.68rem] uppercase tracking-[0.22em] text-muted-foreground">Projects</p>
+            <h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-foreground">
+              {activeProjects.length > 0 ? "Content surfaces for this repository" : "No projects connected yet"}
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              {activeProjects.length > 0
+                ? "Open Studio for active work, or use setup and config tools when the repository needs structural changes."
+                : hasConfig && syncError
+                  ? "A config file exists, but sync needs to succeed before projects can appear here."
+                  : "Use setup to connect the repository, then projects will appear here as your working surfaces."}
+            </p>
+          </div>
 
-                  <div className="space-y-2 pr-8">
-                    <CardTitle className="text-lg leading-tight truncate">{project.name}</CardTitle>
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      {project.detectedFramework && project.detectedFramework !== "custom" && (
-                        <Badge variant="secondary" className="text-[10px]">
-                          {project.detectedFramework}
-                        </Badge>
-                      )}
-                      <Badge variant="outline" className="text-[10px] capitalize">
-                        {project.contentType}
-                      </Badge>
-                    </div>
-                    <CardDescription className="flex items-center gap-2 text-xs flex-wrap">
-                      {project.contentRoot && (
-                        <span className="flex items-center gap-1">
-                          <Folder className="h-3 w-3" />
-                          {project.contentRoot}
-                        </span>
-                      )}
-                      {project.branch !== defaultBranch && (
-                        <span className="flex items-center gap-1">
-                          <GitBranch className="h-3 w-3" />
-                          {project.branch}
-                        </span>
-                      )}
-                    </CardDescription>
-                  </div>
-                </CardHeader>
-                <CardContent className="flex-1 flex flex-col gap-3 pt-0">
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground mt-auto">
-                    {project.frameworkSource === "config" && (
-                      <span className="text-studio-success font-medium">Config</span>
-                    )}
-                    {project.frameworkSource !== "config" && (
-                      <span className="text-muted-foreground font-medium">Manual</span>
-                    )}
-                    <span>&middot;</span>
-                    <span>Updated {new Date(project.updatedAt).toLocaleDateString()}</span>
-                  </div>
-                  <Link
-                    href={`/dashboard/${owner}/${repo}/studio?branch=${project.branch}&projectId=${project._id}`}
-                    className="w-full"
-                  >
-                    <Button className="w-full" variant="default" size="sm">
-                      Open Studio
-                      <ArrowRight className="h-4 w-4 ml-1.5" />
-                    </Button>
-                  </Link>
-                </CardContent>
-              </Card>
-            )
-          })}
+          {isWriter && hasConfig ? (
+            <Button onClick={() => setAddOpen(true)}>
+              <Plus className="h-4 w-4" />
+              Add Project
+            </Button>
+          ) : null}
         </div>
-      ) : !orphanedProjects.length ? (
-        /* Empty state — only when no active AND no orphaned projects */
-        <div className="flex flex-col items-center justify-center py-16 border rounded-lg bg-muted/10">
-          <div className="flex flex-col items-center gap-3 text-center max-w-md">
-            <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center">
-              <Folder className="h-6 w-6 text-muted-foreground" />
+
+        {activeProjects.length > 0 ? (
+          <div className="grid gap-4 xl:grid-cols-2">
+            {activeProjects.map((project) => {
+              const canRemove = role === "owner" || project.userId === actingUserId
+
+              return (
+                <HubProjectCard
+                  key={project._id}
+                  owner={owner}
+                  repo={repo}
+                  defaultBranch={defaultBranch}
+                  project={project}
+                  isWriter={isWriter}
+                  canRemove={canRemove}
+                  onEdit={setEditProject}
+                  onRemove={setRemoveProject}
+                  onDelete={setDeleteProject}
+                />
+              )
+            })}
+          </div>
+        ) : !orphanedProjects.length ? (
+          <div className="flex flex-col items-center justify-center rounded-[1.75rem] border border-dashed border-border/70 bg-muted/20 px-6 py-14 text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-background text-muted-foreground">
+              <Folder className="h-5 w-5" />
             </div>
-            <h3 className="text-lg font-semibold">No projects found</h3>
+            <h3 className="mt-5 text-lg font-semibold tracking-[-0.03em] text-foreground">No projects found</h3>
             {hasConfig && syncError ? (
-              <p className="text-sm text-muted-foreground">
-                A config file was found but sync failed. Try syncing again.
+              <p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">
+                A config file was found but sync failed. Retry sync, then come back here to open the generated projects.
               </p>
             ) : (
               <>
-                <p className="text-sm text-muted-foreground">
+                <p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">
                   Set up this repository to start managing content with RepoPress.
                 </p>
-                <Button asChild>
+                <Button asChild className="mt-6">
                   <Link href={`/dashboard/${owner}/${repo}/setup`}>
                     Set up this repository
-                    <ArrowRight className="h-4 w-4 ml-1.5" />
+                    <ArrowRight className="h-4 w-4" />
                   </Link>
                 </Button>
               </>
             )}
           </div>
-        </div>
-      ) : null}
+        ) : null}
+      </section>
 
-      {/* Raw Config Editor (advanced) */}
-      {hasConfig && configJson && configSha && (
+      {hasConfig && configJson && configSha ? (
         <RawConfigEditor
           owner={owner}
           repo={repo}
@@ -437,9 +546,8 @@ export function RepoProjectHub({
           isWriter={isWriter}
           onCommitted={handleDialogSuccess}
         />
-      )}
+      ) : null}
 
-      {/* Dialogs */}
       <AddProjectDialog
         owner={owner}
         repo={repo}
@@ -455,7 +563,9 @@ export function RepoProjectHub({
         project={editProject}
         open={!!editProject}
         onOpenChange={(open) => {
-          if (!open) setEditProject(null)
+          if (!open) {
+            setEditProject(null)
+          }
         }}
         onSuccess={handleDialogSuccess}
       />
@@ -466,7 +576,9 @@ export function RepoProjectHub({
         project={removeProject}
         open={!!removeProject}
         onOpenChange={(open) => {
-          if (!open) setRemoveProject(null)
+          if (!open) {
+            setRemoveProject(null)
+          }
         }}
         onSuccess={handleDialogSuccess}
       />
@@ -474,7 +586,9 @@ export function RepoProjectHub({
         project={deleteProject}
         open={!!deleteProject}
         onOpenChange={(open) => {
-          if (!open) setDeleteProject(null)
+          if (!open) {
+            setDeleteProject(null)
+          }
         }}
         onSuccess={handleDialogSuccess}
       />

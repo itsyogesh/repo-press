@@ -190,35 +190,38 @@ export function PublishDialog({
           </div>
         )}
 
-        {/* PR Form (new PR only) */}
-        {isCreateNewMode && (
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="prTitle" className="text-sm font-medium">
-                PR Title
-              </Label>
-              <Input
-                id="prTitle"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder={`Content update: ${summaryParts.join(", ")}`}
-                className="mt-1.5 border-studio-border"
-              />
-            </div>
-            <div>
-              <Label htmlFor="prDescription" className="text-sm font-medium">
-                Description (optional)
-              </Label>
-              <Textarea
-                id="prDescription"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Describe your changes..."
-                className="mt-1.5 h-20 border-studio-border resize-none"
-              />
-            </div>
+        <div className="space-y-4">
+          <div>
+            <Label htmlFor="prTitle" className="text-sm font-medium">
+              PR Title
+            </Label>
+            <Input
+              id="prTitle"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder={
+                isCreateNewMode
+                  ? `Content update: ${summaryParts.join(", ")}`
+                  : currentLane?.prNumber
+                    ? `Optional update for PR #${currentLane.prNumber}`
+                    : "Optional PR title update"
+              }
+              className="mt-1.5 border-studio-border"
+            />
           </div>
-        )}
+          <div>
+            <Label htmlFor="prDescription" className="text-sm font-medium">
+              Description (optional)
+            </Label>
+            <Textarea
+              id="prDescription"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder={isCreateNewMode ? "Describe your changes..." : "Optional update for the current PR body..."}
+              className="mt-1.5 h-20 border-studio-border resize-none"
+            />
+          </div>
+        </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isPublishing}>

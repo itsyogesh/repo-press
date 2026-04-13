@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// Integration test — full insert pipeline round-trip
+// Integration test - full insert pipeline round-trip
 // ---------------------------------------------------------------------------
 //
 // Covers: registry → catalog → node → serializer
@@ -149,7 +149,7 @@ describe("Integration: full insert pipeline", () => {
     const def = registry.Callout
 
     const formState = {
-      // type not provided — should fall back to default "info"
+      // type not provided - should fall back to default "info"
       children: "This is an important note!",
     }
 

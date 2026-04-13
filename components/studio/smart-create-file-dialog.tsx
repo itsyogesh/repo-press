@@ -38,7 +38,7 @@ interface SmartCreateFileDialogProps {
   onOpenChange: (open: boolean) => void
   /** Full path of the target folder (e.g. "content/blog") */
   parentPath: string
-  /** Project content root — used to compute relative display path */
+  /** Project content root - used to compute relative display path */
   contentRoot?: string
   /** Detected framework adapter for this project */
   adapter: FrameworkAdapter | null
@@ -333,7 +333,7 @@ export function SmartCreateFileDialog({
           </SheetHeader>
 
           {!ready ? (
-            /* Skeleton phase — shown until sibling fetch + timer both resolve */
+            /* Skeleton phase - shown until sibling fetch + timer both resolve */
             <div className="px-6 py-4 space-y-4">
               <div className="grid gap-1.5">
                 <Skeleton className="h-4 w-28" />
@@ -350,7 +350,7 @@ export function SmartCreateFileDialog({
           ) : (
             <ScrollArea className="flex-1 px-6">
               <div className="py-4 space-y-6">
-                {/* Title — always first */}
+                {/* Title - always first */}
                 <div className="grid gap-2">
                   <Label htmlFor="smart-create-title" className="font-semibold text-sm">
                     {primaryFieldLabel}
@@ -366,7 +366,7 @@ export function SmartCreateFileDialog({
                   />
                 </div>
 
-                {/* Inferred + required fields — grouped with section headers */}
+                {/* Inferred + required fields - grouped with section headers */}
                 {groupFields(siblingFields).map((grouped) => (
                   <div key={grouped.group}>
                     {/* Section header */}

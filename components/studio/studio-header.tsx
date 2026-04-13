@@ -2,14 +2,17 @@
 
 import {
   Files,
+  GitBranch,
   HelpCircle,
   History,
   Home,
   Keyboard,
+  Loader2,
   MoreVertical,
   PanelLeftClose,
   PanelLeftOpen,
   RefreshCw,
+  Save,
 } from "lucide-react"
 import Link from "next/link"
 import * as React from "react"
@@ -87,66 +90,72 @@ export function StudioHeader({
   const filename = pathSegments.pop()
 
   return (
-    <header className="flex h-full w-full min-w-0 items-center gap-2">
-      {/* Left: Navigation & Breadcrumbs */}
-      <div className="flex min-w-0 items-center gap-2 overflow-hidden flex-1">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 shrink-0"
-          onClick={() => {
-            setSidebarState(sidebarState === "expanded" ? "collapsed" : "expanded")
-          }}
-          title={sidebarState === "expanded" ? "Collapse sidebar to rail" : "Expand sidebar"}
-          aria-label={sidebarState === "expanded" ? "Collapse sidebar to rail" : "Expand sidebar"}
-        >
-          {sidebarState === "expanded" ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
-        </Button>
+    <header className="flex h-full w-full min-w-0 items-center gap-3">
+      <div className="flex min-w-0 flex-1 items-center gap-3 overflow-hidden">
+        <div className="flex shrink-0 items-center gap-1 rounded-xl border border-studio-border/70 bg-studio-canvas-inset/70 p-1 shadow-sm">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 rounded-lg"
+            onClick={() => {
+              setSidebarState(sidebarState === "expanded" ? "collapsed" : "expanded")
+            }}
+            title={sidebarState === "expanded" ? "Collapse sidebar to rail" : "Expand sidebar"}
+            aria-label={sidebarState === "expanded" ? "Collapse sidebar to rail" : "Expand sidebar"}
+          >
+            {sidebarState === "expanded" ? (
+              <PanelLeftClose className="h-4 w-4" />
+            ) : (
+              <PanelLeftOpen className="h-4 w-4" />
+            )}
+          </Button>
 
-        <Button variant="ghost" size="icon" asChild className="h-8 w-8 shrink-0">
-          <Link href={`/dashboard/${owner}/${repo}`}>
-            <Home className="h-4 w-4" />
-            <span className="sr-only">Back to project hub</span>
-          </Link>
-        </Button>
+          <Button variant="ghost" size="icon" asChild className="h-8 w-8 rounded-lg">
+            <Link href={`/dashboard/${owner}/${repo}`}>
+              <Home className="h-4 w-4" />
+              <span className="sr-only">Back to project hub</span>
+            </Link>
+          </Button>
+        </div>
 
-        <div className="min-w-0 flex-1 overflow-x-auto">
-          <Breadcrumb className="text-sm min-w-max">
-            <BreadcrumbList className="flex-nowrap whitespace-nowrap">
-              {pathSegments.map((seg) => (
-                <React.Fragment key={`breadcrumb-${seg}`}>
-                  <BreadcrumbItem>
-                    <span className="text-muted-foreground">{seg}</span>
-                  </BreadcrumbItem>
-                  <BreadcrumbSeparator />
-                </React.Fragment>
-              ))}
+        <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden rounded-xl border border-studio-border/70 bg-studio-canvas-inset/45 px-3 py-2 shadow-sm">
+          <div className="hidden shrink-0 items-center gap-2 rounded-full border border-studio-border/60 bg-studio-canvas px-2.5 py-1 text-[11px] font-medium text-studio-fg-muted xl:flex">
+            <span className="truncate text-studio-fg">
+              {owner}/{repo}
+            </span>
+            <span className="h-1 w-1 rounded-full bg-studio-border" />
+            <span className="inline-flex items-center gap-1">
+              <GitBranch className="h-3 w-3" />
+              {branch}
+            </span>
+          </div>
 
-              <BreadcrumbItem>
-                <BreadcrumbPage className="font-medium text-foreground">
-                  {filename || "No file selected"}
-                </BreadcrumbPage>
-              </BreadcrumbItem>
-            </BreadcrumbList>
-          </Breadcrumb>
+          <div className="min-w-0 flex-1 overflow-x-auto">
+            <Breadcrumb className="min-w-max text-sm">
+              <BreadcrumbList className="flex-nowrap whitespace-nowrap">
+                {pathSegments.map((seg) => (
+                  <React.Fragment key={`breadcrumb-${seg}`}>
+                    <BreadcrumbItem>
+                      <span className="text-studio-fg-muted">{seg}</span>
+                    </BreadcrumbItem>
+                    <BreadcrumbSeparator />
+                  </React.Fragment>
+                ))}
+
+                <BreadcrumbItem>
+                  <BreadcrumbPage className="font-medium text-studio-fg">
+                    {filename || "No file selected"}
+                  </BreadcrumbPage>
+                </BreadcrumbItem>
+              </BreadcrumbList>
+            </Breadcrumb>
+          </div>
         </div>
       </div>
 
-      {/* Right: Actions */}
       <div className="ml-auto flex shrink-0 items-center gap-2">
-        <Button
-          variant="secondary"
-          size="sm"
-          className="h-8 gap-1.5"
-          onClick={onSave}
-          disabled={!selectedFile || isSaving}
-        >
-          <span className="hidden lg:inline">{isSaving ? "Saving..." : "Save"}</span>
-          <span className="lg:hidden">{isSaving ? "Saving..." : "Save"}</span>
-        </Button>
-
         {selectedFile && (
-          <div className="flex items-center gap-1">
+          <div className="hidden items-center gap-1 rounded-xl border border-studio-border/70 bg-studio-canvas-inset/50 px-2.5 py-1.5 lg:flex">
             <Badge variant={statusInfo.variant} className="capitalize">
               {statusInfo.label}
             </Badge>
@@ -162,25 +171,40 @@ export function StudioHeader({
           onValueChange={(val) => {
             if (val) setViewMode(val as any)
           }}
-          className="hidden bg-muted/50 p-0.5 rounded-md border border-border/50 sm:flex"
+          className="hidden rounded-xl border border-studio-border/70 bg-studio-canvas-inset/50 p-1 shadow-sm md:flex"
         >
           <ToggleGroupItem
             value="editor"
-            className="h-7 px-2.5 text-xs data-[state=on]:bg-background data-[state=on]:shadow-sm"
+            className="h-7 rounded-lg px-2.5 text-xs data-[state=on]:bg-studio-canvas data-[state=on]:shadow-sm"
           >
             Editor
           </ToggleGroupItem>
           <ToggleGroupItem
             value="split"
-            className="h-7 px-2.5 text-xs data-[state=on]:bg-background data-[state=on]:shadow-sm"
+            className="h-7 rounded-lg px-2.5 text-xs data-[state=on]:bg-studio-canvas data-[state=on]:shadow-sm"
           >
             Split
           </ToggleGroupItem>
         </ToggleGroup>
 
+        <Button
+          variant="default"
+          size="sm"
+          className="h-9 gap-2 rounded-xl bg-studio-accent px-3 text-studio-accent-fg shadow-sm hover:bg-studio-accent/90"
+          onClick={onSave}
+          disabled={!selectedFile || isSaving}
+        >
+          {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+          <span>{isSaving ? "Saving…" : "Save draft"}</span>
+        </Button>
+
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-8 w-8">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 rounded-xl border border-studio-border/70 bg-studio-canvas-inset/45 shadow-sm hover:bg-studio-canvas-inset"
+            >
               <MoreVertical className="h-4 w-4" />
               <span className="sr-only">More options</span>
             </Button>
@@ -229,46 +253,58 @@ export function StudioHeader({
 
         <Dialog open={showShortcuts} onOpenChange={setShowShortcuts}>
           <DialogContent
-            className="max-w-md"
-            // Same Radix aria-hidden race fix — opened from DropdownMenuItem, see edit-project-dialog.tsx for details.
+            className="max-w-lg"
+            // Same Radix aria-hidden race fix - opened from DropdownMenuItem, see edit-project-dialog.tsx for details.
             onCloseAutoFocus={(e) => e.preventDefault()}
           >
             <DialogHeader>
               <DialogTitle>Keyboard Shortcuts</DialogTitle>
               <DialogDescription>Use shortcuts to navigate and edit without leaving the keyboard.</DialogDescription>
             </DialogHeader>
-            <div className="grid grid-cols-2 gap-4 py-4">
-              <div>
-                <h4 className="text-sm font-medium mb-2">General</h4>
-                <ul className="space-y-2 text-sm text-muted-foreground">
+            <div className="grid gap-4 py-4 md:grid-cols-2">
+              <div className="rounded-2xl border border-studio-border/70 bg-studio-canvas-inset/35 p-4">
+                <h4 className="mb-3 text-sm font-medium text-studio-fg">General</h4>
+                <ul className="space-y-2 text-sm text-studio-fg-muted">
                   <li className="flex justify-between">
                     <span>Save draft</span>
-                    <kbd className="px-2 py-0.5 bg-muted rounded text-xs">⌘S</kbd>
+                    <kbd className="rounded-md border border-studio-border bg-studio-canvas px-2 py-0.5 text-xs text-studio-fg">
+                      ⌘S
+                    </kbd>
                   </li>
                   <li className="flex justify-between">
                     <span>Toggle sidebar</span>
-                    <kbd className="px-2 py-0.5 bg-muted rounded text-xs">⌘B</kbd>
+                    <kbd className="rounded-md border border-studio-border bg-studio-canvas px-2 py-0.5 text-xs text-studio-fg">
+                      ⌘B
+                    </kbd>
                   </li>
                   <li className="flex justify-between">
                     <span>Command palette</span>
-                    <kbd className="px-2 py-0.5 bg-muted rounded text-xs">⌘K</kbd>
+                    <kbd className="rounded-md border border-studio-border bg-studio-canvas px-2 py-0.5 text-xs text-studio-fg">
+                      ⌘K
+                    </kbd>
                   </li>
                   <li className="flex justify-between">
                     <span>Insert component</span>
-                    <kbd className="px-2 py-0.5 bg-muted rounded text-xs">⌘J</kbd>
+                    <kbd className="rounded-md border border-studio-border bg-studio-canvas px-2 py-0.5 text-xs text-studio-fg">
+                      ⌘J
+                    </kbd>
                   </li>
                 </ul>
               </div>
-              <div>
-                <h4 className="text-sm font-medium mb-2">View</h4>
-                <ul className="space-y-2 text-sm text-muted-foreground">
+              <div className="rounded-2xl border border-studio-border/70 bg-studio-canvas-inset/35 p-4">
+                <h4 className="mb-3 text-sm font-medium text-studio-fg">View</h4>
+                <ul className="space-y-2 text-sm text-studio-fg-muted">
                   <li className="flex justify-between">
                     <span>Toggle split</span>
-                    <kbd className="px-2 py-0.5 bg-muted rounded text-xs">⌘⇧P</kbd>
+                    <kbd className="rounded-md border border-studio-border bg-studio-canvas px-2 py-0.5 text-xs text-studio-fg">
+                      ⌘⇧P
+                    </kbd>
                   </li>
                   <li className="flex justify-between">
                     <span>Editor only</span>
-                    <kbd className="px-2 py-0.5 bg-muted rounded text-xs">⌘⇧S</kbd>
+                    <kbd className="rounded-md border border-studio-border bg-studio-canvas px-2 py-0.5 text-xs text-studio-fg">
+                      ⌘⇧S
+                    </kbd>
                   </li>
                 </ul>
               </div>

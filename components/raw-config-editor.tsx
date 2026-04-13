@@ -205,7 +205,7 @@ export function RawConfigEditor({
 
           {!isWriter && (
             <p className="text-xs text-muted-foreground text-center">
-              Read-only — you need editor or owner access to modify the config.
+              Read-only - you need editor or owner access to modify the config.
             </p>
           )}
         </div>

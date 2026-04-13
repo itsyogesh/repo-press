@@ -157,6 +157,6 @@ describe("GET /api/github/pr-status", () => {
     const body = await res.json()
 
     expect(res.status).toBe(500)
-    expect(body.error).toBe("rate limit exceeded")
+    expect(body.error).toBe("Failed to fetch PR status")
   })
 })

@@ -81,7 +81,7 @@ function ImageSelectorDialog({
     if (!normalized || !isSafeImageSrc(normalized)) return
 
     if (!projectId || !owner || !repo) {
-      // Missing project context — fall back to using the raw URL directly in frontmatter.
+      // Missing project context - fall back to using the raw URL directly in frontmatter.
       onSelect(normalized)
       return
     }

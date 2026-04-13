@@ -190,7 +190,7 @@ export const undoByRepoPath = mutation({
 
     if (!pending) return null
 
-    // Delete from Convex storage before marking undone — no orphans.
+    // Delete from Convex storage before marking undone - no orphans.
     if (pending.convexStorageId) {
       try {
         await ctx.storage.delete(pending.convexStorageId)
@@ -271,7 +271,7 @@ export const cleanupStaleUploads = internalMutation({
   handler: async (ctx) => {
     const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000 // 7 days ago
 
-    // Collect stale pending ops — no branch, old createdAt, has Convex storage.
+    // Collect stale pending ops - no branch, old createdAt, has Convex storage.
     // We must scan by status since we don't have a createdAt index.
     const staleBatchSize = 100
     let processed = 0

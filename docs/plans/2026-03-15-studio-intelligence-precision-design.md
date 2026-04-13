@@ -5,7 +5,7 @@
 
 ## 1. Intelligence: Properties Panel
 - **Behavior**: Auto-expand `FrontmatterPanel` if critical fields (title, date) are empty.
-- **Guard**: Respect user intent—if user manually collapses, disable auto-expand for the session.
+- **Guard**: Respect user intent-if user manually collapses, disable auto-expand for the session.
 - **Technical**: Add `userInteracted` Ref and a `useEffect` monitoring `frontmatter`.
 
 ## 2. Discovery: Component Motion

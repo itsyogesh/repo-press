@@ -76,7 +76,7 @@ const IMAGE_EXTENSIONS = /\.(jpg|jpeg|png|gif|webp|avif|svg|bmp|ico|tiff?)$/i
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}/
 
 /**
- * Known SEO field configurations — maps field name to type, semantic role, char limit, and enum options.
+ * Known SEO field configurations - maps field name to type, semantic role, char limit, and enum options.
  */
 const SEO_FIELD_CONFIG: Record<
   string,

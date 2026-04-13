@@ -44,10 +44,10 @@ describe("deriveCapabilities", () => {
 })
 
 // ---------------------------------------------------------------------------
-// buildComponentRegistry — config-only
+// buildComponentRegistry - config-only
 // ---------------------------------------------------------------------------
 
-describe("buildComponentRegistry — config-only", () => {
+describe("buildComponentRegistry - config-only", () => {
   it("creates registry entries from config components", () => {
     const config: Record<string, ConfigComponentEntry> = {
       DocsImage: {
@@ -151,10 +151,10 @@ describe("buildComponentRegistry — config-only", () => {
 })
 
 // ---------------------------------------------------------------------------
-// buildComponentRegistry — adapter-only
+// buildComponentRegistry - adapter-only
 // ---------------------------------------------------------------------------
 
-describe("buildComponentRegistry — adapter-only", () => {
+describe("buildComponentRegistry - adapter-only", () => {
   it("creates registry entries from adapter components", () => {
     const adapter: Record<string, AdapterComponentEntry> = {
       Callout: {
@@ -205,10 +205,10 @@ describe("buildComponentRegistry — adapter-only", () => {
 })
 
 // ---------------------------------------------------------------------------
-// buildComponentRegistry — merge (collision) behavior
+// buildComponentRegistry - merge (collision) behavior
 // ---------------------------------------------------------------------------
 
-describe("buildComponentRegistry — merge collisions", () => {
+describe("buildComponentRegistry - merge collisions", () => {
   it("marks source as merged when both config and adapter define the same component", () => {
     const adapter: Record<string, AdapterComponentEntry> = {
       Callout: {
@@ -250,7 +250,7 @@ describe("buildComponentRegistry — merge collisions", () => {
 
     const registry = buildComponentRegistry(adapter, config)
 
-    // Config has 3 props, adapter has 1 — config wins
+    // Config has 3 props, adapter has 1 - config wins
     expect(registry.Callout.props).toHaveLength(3)
     expect(registry.Callout.props.map((p) => p.name)).toEqual(["type", "title", "icon"])
   })
@@ -278,7 +278,7 @@ describe("buildComponentRegistry — merge collisions", () => {
 // Edge cases
 // ---------------------------------------------------------------------------
 
-describe("buildComponentRegistry — edge cases", () => {
+describe("buildComponentRegistry - edge cases", () => {
   it("returns empty registry for null/undefined inputs", () => {
     expect(buildComponentRegistry(null, null)).toEqual({})
     expect(buildComponentRegistry(undefined, undefined)).toEqual({})
@@ -297,7 +297,7 @@ describe("buildComponentRegistry — edge cases", () => {
     expect(registry.Spacer.props).toEqual([])
   })
 
-  it("is deterministic — same inputs produce identical output", () => {
+  it("is deterministic - same inputs produce identical output", () => {
     const adapter: Record<string, AdapterComponentEntry> = {
       B: { props: [] },
       A: { props: [{ name: "x", type: "number" }] },
@@ -314,10 +314,10 @@ describe("buildComponentRegistry — edge cases", () => {
 })
 
 // ---------------------------------------------------------------------------
-// buildComponentRegistry — React component functions (Bug 2 regression)
+// buildComponentRegistry - React component functions (Bug 2 regression)
 // ---------------------------------------------------------------------------
 
-describe("buildComponentRegistry — React function components", () => {
+describe("buildComponentRegistry - React function components", () => {
   it("treats bare functions as existence-only adapter entries", () => {
     // Simulates adapter.components = Record<string, React.ComponentType>
     const adapterWithFunctions: Record<string, unknown> = {
@@ -337,7 +337,7 @@ describe("buildComponentRegistry — React function components", () => {
     expect(registry.Callout.source).toBe("adapter")
   })
 
-  it("merges function adapter with config — config provides props", () => {
+  it("merges function adapter with config - config provides props", () => {
     const adapterWithFunctions: Record<string, unknown> = {
       DocsImage: () => null,
     }
@@ -388,7 +388,7 @@ describe("buildComponentRegistry — React function components", () => {
       NullComp: null, // not a schema object
     }
 
-    // Should not crash — non-schema entries become existence-only
+    // Should not crash - non-schema entries become existence-only
     const registry = buildComponentRegistry(adapterWeird as any, null)
 
     // ArrayComp treated as non-schema (isSchemaObject returns false for arrays)

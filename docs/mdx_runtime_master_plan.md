@@ -1,4 +1,4 @@
-# RepoPress MDX Runtime — Comprehensive Implementation Plan (Source of Truth)
+# RepoPress MDX Runtime - Comprehensive Implementation Plan (Source of Truth)
 
 > This document is the **single source of truth** for building the
 > RepoPress Multi‑Project MDX Runtime. It consolidates architecture
@@ -190,7 +190,7 @@ Prototype complete when:
 
 # 6. Implementation Phases
 
-## Phase -1 — Minimal Prototype [COMPLETE]
+## Phase -1 - Minimal Prototype [COMPLETE]
 
 Goal: Prove MDX runtime viability.
 
@@ -201,7 +201,7 @@ boundary - hardcoded adapter
 
 ---
 
-## Phase 0 — Config Foundations [COMPLETE]
+## Phase 0 - Config Foundations [COMPLETE]
 
 - schema validator
 - precedence resolver
@@ -209,7 +209,7 @@ boundary - hardcoded adapter
 
 ---
 
-## Phase 1 — Runtime Integration [COMPLETE]
+## Phase 1 - Runtime Integration [COMPLETE]
 
 - replace markdown preview
 - integrate MDX compiler
@@ -219,7 +219,7 @@ boundary - hardcoded adapter
 
 ---
 
-## Phase 2 — Plugin System [COMPLETE]
+## Phase 2 - Plugin System [COMPLETE]
 
 - plugin manifest loader
 - context merging
@@ -227,14 +227,14 @@ boundary - hardcoded adapter
 
 ---
 
-## Phase 3 — Init Flows [COMPLETE]
+## Phase 3 - Init Flows [COMPLETE]
 
 - CLI init
 - web setup wizard
 
 ---
 
-## Phase 4 — Hardening [COMPLETE]
+## Phase 4 - Hardening [COMPLETE]
 
 - performance optimization
 - auto sync
@@ -244,7 +244,7 @@ boundary - hardcoded adapter
 
 ---
 
-## Phase 5 — Plugin UX Preparation [COMPLETE]
+## Phase 5 - Plugin UX Preparation [COMPLETE]
 
 - metadata definitions
 - extension points
@@ -252,7 +252,7 @@ boundary - hardcoded adapter
 
 ---
 
-# 7. Minimal Prototype — File Structure
+# 7. Minimal Prototype - File Structure
 
     prototype/
      ├── PreviewRuntime.tsx
@@ -424,18 +424,18 @@ This document is now finalized following full implementation and UI polish.
 
 ---
 
-# Phase 6 — Runtime Hardening [IN PROGRESS]
+# Phase 6 - Runtime Hardening [IN PROGRESS]
 
 Detailed implementation plan: `docs/plans/2026-03-02-mdx-runtime-hardening-plan.md`
 
 ## Tasks
 
-1. **Persistent Adapter Cache** — IndexedDB cache for transpiled adapters
-2. **Rate Limiting & Debounce** — Protect GitHub API quota, prevent thundering herd
-3. **Private Asset URL Signing** — Signed URLs for private repository assets
-4. **Expression Sandbox** — Safe evaluation replacing `new Function()`
-5. **Compile Cache** — Memoize MDX compilation by source + adapter hash
-6. **Plugin Merge Determinism** — Defined precedence order for context merging
+1. **Persistent Adapter Cache** - IndexedDB cache for transpiled adapters
+2. **Rate Limiting & Debounce** - Protect GitHub API quota, prevent thundering herd
+3. **Private Asset URL Signing** - Signed URLs for private repository assets
+4. **Expression Sandbox** - Safe evaluation replacing `new Function()`
+5. **Compile Cache** - Memoize MDX compilation by source + adapter hash
+6. **Plugin Merge Determinism** - Defined precedence order for context merging
 
 ## Status
 

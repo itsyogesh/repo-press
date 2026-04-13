@@ -2,7 +2,7 @@
 
 import { useMutation } from "convex/react"
 import matter from "gray-matter"
-import { AlertCircle, FileText, FolderOpen, History, Search, Settings, X } from "lucide-react"
+import { AlertCircle, Command, FileText, FolderOpen, History, Loader2, Search, Settings, X } from "lucide-react"
 import Link from "next/link"
 import * as React from "react"
 import { toast } from "sonner"
@@ -10,7 +10,6 @@ import { syncProjectsFromConfigAction } from "@/app/dashboard/[owner]/[repo]/act
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import {
   AlertDialog,
-  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -26,12 +25,14 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
+import { DOCUMENT_STATUS_CONFIG, type DocumentStatus, isPublishableDocumentStatus } from "@/lib/document-status"
 import { getFrameworkAdapter } from "@/lib/framework-adapters"
 import { type FileTreeNode, findTreeNode } from "@/lib/github"
 import { usePreviewContext } from "@/lib/hooks/use-preview-context"
 import { standardComponents } from "@/lib/repopress/standard-library"
 import { buildHistoryHref } from "@/lib/studio/history-link"
 import { getPublishLaneViewModel } from "@/lib/studio/publish-lane-view-model"
+import { cn } from "@/lib/utils"
 import { CommandPalette } from "./command-palette"
 import { getDiscardPlan } from "./discard-pending-changes"
 import { Editor } from "./editor"
@@ -93,21 +94,6 @@ export interface StudioLayoutProps {
   role?: "owner" | "editor" | "viewer"
 }
 
-const STATUS_LABELS: Record<
-  string,
-  {
-    label: string
-    variant: "default" | "secondary" | "outline" | "destructive"
-  }
-> = {
-  draft: { label: "Draft", variant: "secondary" },
-  in_review: { label: "In Review", variant: "outline" },
-  approved: { label: "Approved", variant: "outline" },
-  published: { label: "Published", variant: "default" },
-  scheduled: { label: "Scheduled", variant: "secondary" },
-  archived: { label: "Archived", variant: "destructive" },
-}
-
 function findTreeNodeByPath(nodes: FileTreeNode[], path: string): FileTreeNode | null {
   for (const node of nodes) {
     if (node.path === path) return node
@@ -148,14 +134,26 @@ function flattenFiles(nodes: FileTreeNode[], titleMap?: Record<string, string>) 
   return result
 }
 
+function StudioPanelShell({
+  children,
+  className,
+  ...props
+}: React.ComponentProps<"div"> & { children: React.ReactNode }) {
+  return (
+    <div className={cn("h-full overflow-hidden rounded-lg bg-studio-canvas", className)} {...props}>
+      {children}
+    </div>
+  )
+}
+
 function StudioSidebarLoading() {
   return (
-    <div className="flex h-full flex-col bg-studio-canvas-inset">
-      <div className="shrink-0 border-b border-studio-border px-2 py-2">
+    <div className="flex h-full flex-col bg-studio-canvas-inset/35">
+      <div className="shrink-0 border-b border-studio-border px-3 py-3">
         <Skeleton className="h-3.5 w-20" />
       </div>
 
-      <div className="shrink-0 border-b border-studio-border px-2 py-2">
+      <div className="shrink-0 border-b border-studio-border px-3 py-3">
         <div className="mb-2 flex items-center justify-between">
           <Skeleton className="h-3.5 w-24" />
           <div className="flex items-center gap-1">
@@ -166,7 +164,7 @@ function StudioSidebarLoading() {
         <Skeleton className="h-7 w-full rounded-md" />
       </div>
 
-      <div className="flex-1 overflow-hidden px-2 py-2">
+      <div className="flex-1 overflow-hidden px-3 py-3">
         <div className="space-y-1.5">
           {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((i) => (
             <div key={`sidebar-skeleton-${i}`} className="flex items-center gap-2 px-1 py-1">
@@ -177,7 +175,7 @@ function StudioSidebarLoading() {
         </div>
       </div>
 
-      <div className="shrink-0 border-t border-studio-border p-2">
+      <div className="shrink-0 border-t border-studio-border p-3">
         <Skeleton className="h-8 w-full rounded-md" />
         <div className="mt-2 flex items-center justify-between">
           <Skeleton className="h-7 w-24 rounded-md" />
@@ -191,24 +189,26 @@ function StudioSidebarLoading() {
 
 function StudioNoSelectionLoading() {
   return (
-    <div className="h-full flex items-center justify-center px-6">
-      <div className="w-full max-w-2xl space-y-5 text-center">
+    <div className="flex h-full items-center justify-center px-6 py-8">
+      <div className="w-full max-w-3xl space-y-6 text-center">
         <div className="space-y-2">
           <Skeleton className="h-8 w-52 mx-auto" />
           <Skeleton className="h-4 w-96 mx-auto max-w-full" />
         </div>
-        <div className="mx-auto max-w-xl space-y-3">
-          <Skeleton className="h-11 w-full rounded-md" />
-          <div className="space-y-1 rounded-lg border border-studio-border bg-studio-canvas-inset/30 p-2">
-            {[1, 2].map((i) => (
-              <div key={`empty-search-skeleton-${i}`} className="flex items-start gap-2 rounded-md px-2 py-2">
-                <Skeleton className="h-3.5 w-3.5 mt-0.5 rounded" />
-                <div className="min-w-0 flex-1 space-y-1">
-                  <Skeleton className="h-4 w-2/3" />
-                  <Skeleton className="h-3 w-full" />
+        <div className="mx-auto max-w-2xl rounded-[1.75rem] border border-studio-border/70 bg-studio-canvas-inset/30 p-4 shadow-sm">
+          <div className="mx-auto max-w-xl space-y-3">
+            <Skeleton className="h-11 w-full rounded-md" />
+            <div className="space-y-1 rounded-lg border border-studio-border bg-studio-canvas-inset/30 p-2">
+              {[1, 2].map((i) => (
+                <div key={`empty-search-skeleton-${i}`} className="flex items-start gap-2 rounded-md px-2 py-2">
+                  <Skeleton className="h-3.5 w-3.5 mt-0.5 rounded" />
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <Skeleton className="h-4 w-2/3" />
+                    <Skeleton className="h-3 w-full" />
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         </div>
       </div>
@@ -219,7 +219,7 @@ function StudioNoSelectionLoading() {
 function StudioPreviewLoading() {
   return (
     <div className="h-full flex flex-col bg-studio-canvas">
-      <div className="shrink-0 border-b border-studio-border px-3 py-1.5">
+      <div className="shrink-0 border-b border-studio-border px-4 py-3">
         <div className="flex items-center justify-between">
           <Skeleton className="h-3.5 w-14" />
           <div className="flex items-center gap-2">
@@ -229,18 +229,23 @@ function StudioPreviewLoading() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-[920px] space-y-4 p-8">
-          <Skeleton className="h-9 w-2/3" />
-          <Skeleton className="h-4 w-1/4" />
-          <Skeleton className="h-52 w-full rounded-lg" />
-          <Skeleton className="h-4 w-full" />
-          <Skeleton className="h-4 w-11/12" />
-          <Skeleton className="h-4 w-10/12" />
-          <Skeleton className="h-8 w-1/3 mt-6" />
-          <Skeleton className="h-4 w-full" />
-          <Skeleton className="h-4 w-5/6" />
-          <Skeleton className="h-4 w-4/6" />
+      <div className="flex-1 overflow-y-auto bg-studio-canvas-inset/30">
+        <div className="mx-auto max-w-[920px] p-5">
+          <div className="rounded-[1.5rem] border border-studio-border/70 bg-studio-canvas p-7 shadow-sm">
+            <div className="space-y-4">
+              <Skeleton className="h-4 w-24 rounded-full" />
+              <Skeleton className="h-10 w-2/3" />
+              <Skeleton className="h-5 w-1/2" />
+              <Skeleton className="h-52 w-full rounded-[1.25rem]" />
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-11/12" />
+              <Skeleton className="h-4 w-10/12" />
+              <Skeleton className="mt-6 h-8 w-1/3" />
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-5/6" />
+              <Skeleton className="h-4 w-4/6" />
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -249,39 +254,20 @@ function StudioPreviewLoading() {
 
 function StudioNoSelectionPreviewState() {
   return (
-    <div className="h-full flex flex-col bg-studio-canvas select-none">
-      <div className="flex items-center justify-between px-3 py-1.5 border-b border-studio-border shrink-0">
-        <span className="text-[10px] font-bold text-studio-fg uppercase tracking-widest opacity-50">Preview</span>
+    <div className="flex h-full flex-col bg-studio-canvas select-none">
+      <div className="flex items-center justify-between border-b border-studio-border px-4 py-3 shrink-0">
+        <span className="text-[10px] font-medium tracking-[0.18em] text-studio-fg-muted">Preview</span>
       </div>
-      <div className="flex-1 flex items-center justify-center px-6">
-        <div className="max-w-[280px] text-center space-y-6">
-          <div className="relative inline-flex items-center justify-center">
-            <div className="absolute inset-0 rounded-full bg-studio-accent/10 blur-2xl scale-150 animate-pulse" />
-            <div className="relative flex size-16 items-center justify-center rounded-2xl border border-studio-accent/20 bg-studio-accent-muted shadow-inner">
-              <FileText className="size-8 text-studio-accent/70" />
-            </div>
+      <div className="flex flex-1 items-center justify-center bg-studio-canvas-inset/30 px-6 py-8">
+        <div className="flex flex-col items-center gap-4 text-center max-w-xs">
+          <div className="flex size-12 items-center justify-center rounded-lg bg-studio-canvas-inset/60">
+            <FileText className="size-6 text-studio-fg-muted" />
           </div>
-
-          <div className="space-y-2">
-            <h3 className="text-sm font-bold text-studio-fg tracking-tight">Ready to Render</h3>
-            <p className="text-xs leading-relaxed text-studio-fg-muted/80 text-balance">
-              Select any MDX or Markdown file from the explorer to see your content come to life.
+          <div className="space-y-1.5">
+            <h3 className="text-sm font-medium text-studio-fg">No file selected</h3>
+            <p className="text-xs leading-5 text-studio-fg-muted">
+              Open a Markdown or MDX file from the explorer to preview it here.
             </p>
-          </div>
-
-          <div className="pt-4 grid gap-2">
-            <div className="flex items-center gap-3 p-2 rounded-lg border border-transparent hover:border-studio-border hover:bg-studio-canvas-alt transition-colors group">
-              <div className="size-6 rounded bg-muted flex items-center justify-center group-hover:bg-studio-accent-muted transition-colors">
-                <Search className="size-3.5 text-muted-foreground group-hover:text-studio-accent" />
-              </div>
-              <div className="text-left">
-                <p className="text-[10px] font-bold text-studio-fg uppercase tracking-tight">Quick Search</p>
-                <p className="text-[10px] text-studio-fg-muted">
-                  Press <kbd className="font-sans text-[9px] bg-muted px-1 rounded border shadow-sm">⌘ K</kbd> to find
-                  files
-                </p>
-              </div>
-            </div>
           </div>
         </div>
       </div>
@@ -355,14 +341,14 @@ function StudioSidebarRail({
 
   return (
     <TooltipProvider delayDuration={120}>
-      <div className="h-full flex flex-col bg-studio-canvas-inset/95">
-        <div className="border-b border-studio-border px-2 py-2 flex flex-col items-center gap-1">
+      <div className="flex h-full flex-col bg-studio-canvas-inset/60">
+        <div className="flex flex-col items-center gap-1 border-b border-studio-border px-2 py-3">
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-9 w-9 rounded-lg border border-studio-border bg-studio-canvas text-studio-fg shadow-sm transition-colors hover:bg-studio-canvas-inset"
+                className="h-10 w-10 rounded-xl text-studio-fg transition-colors hover:bg-studio-canvas-inset"
                 title="Expand sidebar"
                 aria-label="Expand sidebar"
                 onClick={onExpand}
@@ -378,14 +364,14 @@ function StudioSidebarRail({
 
         <div className="flex-1" />
 
-        <div className="border-t border-studio-border px-2 py-2 flex flex-col items-center gap-2">
+        <div className="flex flex-col items-center gap-2 border-t border-studio-border px-2 py-3">
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
                 asChild
                 variant="ghost"
                 size="icon"
-                className="relative h-9 w-9 rounded-lg border border-studio-border bg-studio-canvas hover:bg-studio-canvas-inset"
+                className="relative h-9 w-9 rounded-lg hover:bg-studio-canvas-inset"
                 title="History"
                 aria-label="Project history"
               >
@@ -410,7 +396,7 @@ function StudioSidebarRail({
                 asChild
                 variant="ghost"
                 size="icon"
-                className="h-9 w-9 rounded-lg border border-studio-border bg-studio-canvas hover:bg-studio-canvas-inset"
+                className="h-9 w-9 rounded-lg hover:bg-studio-canvas-inset"
                 title="Settings"
                 aria-label="Project settings"
               >
@@ -469,7 +455,7 @@ function StudioLayoutInner({
     adapterDiagnostics,
   } = useStudio()
 
-  // Framework adapter for file naming / frontmatter — uses the project's detectedFramework string
+  // Framework adapter for file naming / frontmatter - uses the project's detectedFramework string
   const frameworkAdapter = React.useMemo(() => {
     const fw = studioQueries.project?.detectedFramework as string | undefined
     return fw ? getFrameworkAdapter(fw) : null
@@ -640,7 +626,7 @@ function StudioLayoutInner({
         filePath = parentPath ? `${parentPath}/${fileName}` : fileName
       }
       // For index-if-empty: the actual file is at filePath (e.g. slug/index.mdx)
-      // but it may include a newly created subfolder — keep filePath as-is.
+      // but it may include a newly created subfolder - keep filePath as-is.
       try {
         const fm = initialFrontmatter ?? {}
         const title =
@@ -1017,7 +1003,7 @@ function StudioLayoutInner({
   const lastScrollSource = React.useRef<"editor" | "preview">("editor")
   const scrollSyncSettleTimer = React.useRef<number | null>(null)
 
-  // Scroll anchor cache — keyed by container, invalidated when scrollHeight or width changes
+  // Scroll anchor cache - keyed by container, invalidated when scrollHeight or width changes
   const headingsCache = React.useRef<
     Map<HTMLDivElement, { scrollHeight: number; clientWidth: number; anchors: ScrollSyncAnchor[] }>
   >(new Map())
@@ -1076,7 +1062,7 @@ function StudioLayoutInner({
       // root.scrollHeight slightly underestimates due to padding/margin.
       const end = Math.min(maxScroll, Math.max(start, start + root.scrollHeight - container.clientHeight))
 
-      // Collect scroll anchors — cached by scrollHeight + clientWidth so we
+      // Collect scroll anchors - cached by scrollHeight + clientWidth so we
       // re-measure on content changes and panel resizes.
       let anchors: ScrollSyncAnchor[]
       const cached = headingsCache.current.get(container)
@@ -1098,7 +1084,7 @@ function StudioLayoutInner({
         anchors,
       }
     },
-    // headingsCache is a ref — stable reference, no dep needed
+    // headingsCache is a ref - stable reference, no dep needed
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   )
@@ -1311,9 +1297,9 @@ function StudioLayoutInner({
   const showSidebarPanel = isMobile ? sidebarState === "expanded" : !isSidebarCollapsed
   const showSidebarRail = !isMobile && isSidebarCollapsed
 
-  const currentStatus = document?.status || "draft"
-  const statusInfo = STATUS_LABELS[currentStatus] || STATUS_LABELS.draft
-  const canPublish = ["draft", "approved"].includes(currentStatus)
+  const currentStatus: DocumentStatus = (document?.status as DocumentStatus | undefined) ?? "draft"
+  const statusInfo = DOCUMENT_STATUS_CONFIG[currentStatus] || DOCUMENT_STATUS_CONFIG.draft
+  const canPublish = isPublishableDocumentStatus(currentStatus)
   const historyHref = buildHistoryHref({ owner, repo, branch, projectId })
 
   const insertComponentModalCtx = React.useMemo(
@@ -1331,27 +1317,29 @@ function StudioLayoutInner({
         <div aria-live="polite" aria-atomic="true" className="sr-only">
           {document ? `Editing ${selectedFile?.name || "file"}, status: ${currentStatus}` : "No file selected"}
         </div>
-        <div className="h-[--spacing-studio-header-h] shrink-0 border-b border-studio-border flex items-center px-2 sm:px-3 z-10 bg-studio-canvas">
+        <div className="h-[--spacing-studio-header-h] shrink-0 border-b border-studio-border flex items-center px-3 sm:px-4 z-10 bg-studio-canvas">
           <StudioHeader
             selectedFile={selectedFile}
             contentRoot={contentRoot}
             documentId={document?._id}
             currentStatus={currentStatus}
-            statusInfo={statusInfo as any}
+            statusInfo={statusInfo}
             onSave={saveDraft}
             isSaving={isSaving || isFileLoading}
           />
         </div>
 
-        <div className="flex-1 min-h-0 flex border-t border-studio-border">
+        <div className="flex flex-1 min-h-0 gap-3 px-3 py-3">
           {showSidebarRail && (
-            <div className="w-14 shrink-0 border-r border-studio-border bg-studio-canvas-inset">
-              <StudioSidebarRail
-                pendingCount={totalPendingCount}
-                onExpand={() => setSidebarState("expanded")}
-                historyHref={historyHref}
-                settingsHref={`/dashboard/${owner}/${repo}/settings`}
-              />
+            <div className="w-16 shrink-0">
+              <StudioPanelShell className="bg-studio-canvas-inset/70">
+                <StudioSidebarRail
+                  pendingCount={totalPendingCount}
+                  onExpand={() => setSidebarState("expanded")}
+                  historyHref={historyHref}
+                  settingsHref={`/dashboard/${owner}/${repo}/settings`}
+                />
+              </StudioPanelShell>
             </div>
           )}
 
@@ -1371,90 +1359,97 @@ function StudioLayoutInner({
                     if (isSidebarCollapsed || isMobile) return
                     setSidebarPanelSize(Math.round(size.asPercentage))
                   }}
-                  className="bg-studio-canvas-inset border-r border-studio-border flex flex-col h-full overflow-hidden"
+                  className="min-w-0"
                 >
-                  {projectId && shouldShowProjectDataSkeleton ? (
-                    <StudioSidebarLoading />
-                  ) : (
-                    <>
-                      <div className="flex-1 min-h-0 overflow-hidden">
-                        <FileTree
-                          tree={overlayTree}
-                          onSelect={(node) => {
-                            if (node.type === "file") navigateToFile(node.path)
-                          }}
-                          selectedPath={selectedFile?.path}
-                          titleMap={titleMap}
-                          onCreateFile={projectId ? handleCreateFile : undefined}
-                          onDeleteFile={projectId ? handleDeleteFile : undefined}
-                          onUndoDelete={projectId ? handleUndoDelete : undefined}
-                          onRenameFile={projectId ? handleRenameFile : undefined}
-                          onMoveFile={projectId ? handleMoveFile : undefined}
-                          owner={owner}
-                          repo={repo}
-                          adapter={frameworkAdapter}
-                          dirtyPaths={dirtyPaths}
-                        />
-                      </div>
-                      <div className="shrink-0 border-t border-studio-border bg-studio-canvas/95 backdrop-blur supports-[backdrop-filter]:bg-studio-canvas/80">
-                        <div className="px-2 py-1.5 flex flex-col gap-1.5">
-                          <Button
-                            asChild
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 w-full justify-between rounded-md border border-studio-border bg-studio-canvas px-2 text-xs hover:bg-studio-canvas-inset"
-                          >
-                            <Link href={historyHref}>
-                              <span className="inline-flex items-center gap-2">
-                                <History className="h-3.5 w-3.5" />
-                                History
-                              </span>
-                              <Badge variant="secondary" className="h-5 min-w-5 justify-center px-1 text-[10px]">
-                                {totalPendingCount}
-                              </Badge>
-                            </Link>
-                          </Button>
-
-                          <Button
-                            asChild
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 w-full justify-start rounded-md border border-studio-border bg-studio-canvas px-2 text-xs hover:bg-studio-canvas-inset"
-                          >
-                            <Link href={`/dashboard/${owner}/${repo}/settings`}>
-                              <span className="inline-flex items-center gap-2">
-                                <Settings className="h-3.5 w-3.5" />
-                                Settings
-                              </span>
-                            </Link>
-                          </Button>
-                        </div>
-                        {projectId && (
-                          <PublishOpsBar
-                            creates={pendingSummary.creates}
-                            deletes={pendingSummary.deletes}
-                            edits={pendingSummary.edits}
-                            media={pendingSummary.media}
-                            pendingOps={pendingOps}
-                            dirtyDocs={dirtyDocs}
-                            pendingMediaOps={pendingMediaOps}
-                            hasCurrentLane={Boolean(currentPublishLane)}
-                            currentPrNumber={publishLaneViewModel.currentLane?.prNumber ?? currentPublishLane?.prNumber}
-                            currentPrUrl={publishLaneViewModel.currentLane?.prUrl ?? currentPublishLane?.prUrl}
-                            isDiscarding={isDiscarding}
-                            onPublish={() => {
-                              openPublishDialog()
+                  <StudioPanelShell className="bg-studio-canvas-inset/70">
+                    {projectId && shouldShowProjectDataSkeleton ? (
+                      <StudioSidebarLoading />
+                    ) : (
+                      <>
+                        <div className="flex-1 min-h-0 overflow-hidden">
+                          <FileTree
+                            tree={overlayTree}
+                            onSelect={(node) => {
+                              if (node.type === "file") navigateToFile(node.path)
                             }}
-                            onDiscard={() => setDiscardDialogOpen(true)}
-                            onSelectFile={(path: string) => navigateToFile(path)}
+                            selectedPath={selectedFile?.path}
+                            titleMap={titleMap}
+                            onCreateFile={projectId ? handleCreateFile : undefined}
+                            onDeleteFile={projectId ? handleDeleteFile : undefined}
+                            onUndoDelete={projectId ? handleUndoDelete : undefined}
+                            onRenameFile={projectId ? handleRenameFile : undefined}
+                            onMoveFile={projectId ? handleMoveFile : undefined}
+                            owner={owner}
+                            repo={repo}
+                            adapter={frameworkAdapter}
+                            dirtyPaths={dirtyPaths}
                           />
-                        )}
-                      </div>
-                    </>
-                  )}
+                        </div>
+                        <div className="shrink-0 border-t border-studio-border bg-studio-canvas/95 backdrop-blur supports-[backdrop-filter]:bg-studio-canvas/80">
+                          <div className="flex flex-col gap-1.5 px-3 py-3">
+                            <Button
+                              asChild
+                              variant="ghost"
+                              size="sm"
+                              className="h-9 w-full justify-between rounded-xl border border-studio-border bg-studio-canvas px-3 text-xs hover:bg-studio-canvas-inset"
+                            >
+                              <Link href={historyHref}>
+                                <span className="inline-flex items-center gap-2">
+                                  <History className="h-3.5 w-3.5" />
+                                  History
+                                </span>
+                                <Badge
+                                  variant="secondary"
+                                  className="h-5 min-w-5 justify-center rounded-full px-1 text-[10px]"
+                                >
+                                  {totalPendingCount}
+                                </Badge>
+                              </Link>
+                            </Button>
+
+                            <Button
+                              asChild
+                              variant="ghost"
+                              size="sm"
+                              className="h-9 w-full justify-start rounded-xl border border-studio-border bg-studio-canvas px-3 text-xs hover:bg-studio-canvas-inset"
+                            >
+                              <Link href={`/dashboard/${owner}/${repo}/settings`}>
+                                <span className="inline-flex items-center gap-2">
+                                  <Settings className="h-3.5 w-3.5" />
+                                  Settings
+                                </span>
+                              </Link>
+                            </Button>
+                          </div>
+                          {projectId && (
+                            <PublishOpsBar
+                              creates={pendingSummary.creates}
+                              deletes={pendingSummary.deletes}
+                              edits={pendingSummary.edits}
+                              media={pendingSummary.media}
+                              pendingOps={pendingOps}
+                              dirtyDocs={dirtyDocs}
+                              pendingMediaOps={pendingMediaOps}
+                              hasCurrentLane={Boolean(currentPublishLane)}
+                              currentPrNumber={
+                                publishLaneViewModel.currentLane?.prNumber ?? currentPublishLane?.prNumber
+                              }
+                              currentPrUrl={publishLaneViewModel.currentLane?.prUrl ?? currentPublishLane?.prUrl}
+                              isDiscarding={isDiscarding}
+                              onPublish={() => {
+                                openPublishDialog()
+                              }}
+                              onDiscard={() => setDiscardDialogOpen(true)}
+                              onSelectFile={(path: string) => navigateToFile(path)}
+                            />
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </StudioPanelShell>
                 </ResizablePanel>
                 {!isSidebarCollapsed && !isMobile && (
-                  <ResizableHandle className="w-1.5 bg-studio-border/50 hover:bg-studio-accent transition-colors" />
+                  <ResizableHandle className="relative mx-1 flex w-4 cursor-col-resize items-center justify-center bg-transparent after:absolute after:inset-y-0 after:left-1/2 after:w-[3px] after:-translate-x-1/2 after:rounded-sm after:bg-studio-border/60 after:transition-colors hover:after:bg-studio-accent" />
                 )}
               </>
             )}
@@ -1466,22 +1461,32 @@ function StudioLayoutInner({
               minSize="30%"
               className="min-w-0"
             >
-              <div id="studio-editor" className="h-full flex flex-col overflow-hidden" tabIndex={-1}>
+              <StudioPanelShell id="studio-editor" className="flex h-full flex-col overflow-hidden" tabIndex={-1}>
                 {openFiles.length > 0 && (
                   <div className="shrink-0 border-b border-studio-border bg-studio-canvas">
-                    <div className="flex items-center gap-1 overflow-x-auto px-2 py-1.5">
+                    <div className="flex items-center gap-2 overflow-x-auto px-3 py-2">
+                      <span className="hidden shrink-0 text-[10px] font-semibold uppercase tracking-[0.16em] text-studio-fg-muted md:inline">
+                        Open
+                      </span>
                       {openFiles.map((path: string) => {
                         const label = titleMap?.[path] || path.split("/").pop() || path
                         const isActive = selectedFile?.path === path
                         return (
                           <div
                             key={path}
-                            className={
+                            className={cn(
+                              "group flex h-9 items-center gap-2 rounded-xl border px-2.5 text-xs shadow-sm transition-colors",
                               isActive
-                                ? "flex h-8 items-center gap-1 rounded-md border border-studio-accent/40 bg-studio-accent-muted px-2 text-xs"
-                                : "flex h-8 items-center gap-1 rounded-md border border-studio-border bg-studio-canvas-inset/40 px-2 text-xs"
-                            }
+                                ? "border-studio-accent/30 bg-studio-accent-muted text-studio-fg"
+                                : "border-studio-border/70 bg-studio-canvas-inset/40 text-studio-fg-muted hover:bg-studio-canvas-inset/70",
+                            )}
                           >
+                            <span
+                              className={cn(
+                                "h-1.5 w-1.5 shrink-0 rounded-full",
+                                dirtyPaths.has(path) ? "bg-studio-accent" : "bg-studio-border",
+                              )}
+                            />
                             <button
                               type="button"
                               className="max-w-[220px] truncate text-left"
@@ -1492,7 +1497,7 @@ function StudioLayoutInner({
                             </button>
                             <button
                               type="button"
-                              className="rounded p-0.5 text-studio-fg-muted hover:bg-studio-canvas-inset hover:text-studio-fg"
+                              className="rounded-md p-1 text-studio-fg-muted transition-colors hover:bg-studio-canvas hover:text-studio-fg"
                               onClick={() => closeFile(path)}
                               title={`Close ${label}`}
                               aria-label={`Close ${label}`}
@@ -1529,9 +1534,7 @@ function StudioLayoutInner({
                         statusBadge={
                           <div className="flex items-center gap-1">
                             <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
-                            {document && (
-                              <StatusActions documentId={document._id} currentStatus={currentStatus as any} />
-                            )}
+                            {document && <StatusActions documentId={document._id} currentStatus={currentStatus} />}
                           </div>
                         }
                         scrollContainerRef={editorScrollRef}
@@ -1549,67 +1552,135 @@ function StudioLayoutInner({
                   ) : shouldShowProjectDataSkeleton ? (
                     <StudioNoSelectionLoading />
                   ) : (
-                    <div className="h-full flex items-center justify-center px-6">
-                      <div className="w-full max-w-2xl space-y-5 text-center">
-                        <div className="space-y-2">
-                          <h2 className="text-2xl font-semibold tracking-tight text-studio-fg">No file selected</h2>
-                          <p className="text-sm text-studio-fg-muted">
-                            Pick a file to continue, or search the repository to jump directly.
-                          </p>
-                        </div>
-                        <div className="mx-auto max-w-xl space-y-3">
-                          <div className="relative group">
-                            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-studio-fg-muted" />
-                            <Input
-                              ref={searchInputRef}
-                              value={emptySearch}
-                              onChange={(e) => setEmptySearch(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key !== "Enter") return
-                                const firstResult = hasEmptySearchQuery ? emptySearchResults[0] : recentFileResults[0]
-                                if (firstResult) {
-                                  navigateToFile(firstResult.path)
-                                }
-                              }}
-                              className="h-11 pl-10 pr-10"
-                              placeholder="Search docs..."
-                            />
-                            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
-                              {hasEmptySearchQuery ? (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setEmptySearch("")
-                                    searchInputRef.current?.focus()
-                                  }}
-                                  className="rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none"
-                                  aria-label="Clear search"
-                                >
-                                  <X className="h-4 w-4 text-studio-fg-muted" />
-                                </button>
-                              ) : (
-                                <kbd className="pointer-events-none hidden h-5 select-none items-center gap-1 rounded border border-studio-border bg-studio-canvas-inset px-1.5 font-mono text-[10px] font-medium text-studio-fg-muted opacity-60 sm:flex">
-                                  <span className="text-xs">/</span>
-                                </kbd>
-                              )}
+                    <div className="flex h-full items-center justify-center bg-studio-canvas-inset/20 px-6 py-8">
+                      <div className="w-full max-w-xl rounded-xl bg-studio-canvas p-6 shadow-sm">
+                        <div className="space-y-5">
+                          <div className="space-y-3 text-left">
+                            <div className="space-y-2">
+                              <h2 className="text-2xl font-semibold tracking-tight text-studio-fg">
+                                Open a file and keep the whole studio in flow
+                              </h2>
+                              <p className="max-w-xl text-sm leading-6 text-studio-fg-muted">
+                                Search the repository, jump back into a recent draft, or use the explorer to start
+                                editing.
+                              </p>
                             </div>
                           </div>
-                          <div className="rounded-lg border border-studio-border bg-studio-canvas-inset/30 p-2 text-left">
-                            {!hasEmptySearchQuery && recentFileResults.length === 0 ? (
-                              <p className="px-2 py-4 text-xs text-studio-fg-muted">
-                                Start typing to search files in this repository.
+
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <button
+                              type="button"
+                              className="rounded-lg border border-studio-border/70 bg-studio-canvas-inset/35 p-4 text-left transition-colors hover:bg-studio-canvas-inset/60"
+                              onClick={() => setCommandPaletteOpen(true)}
+                            >
+                              <div className="mb-3 flex size-10 items-center justify-center rounded-md border border-studio-border/70 bg-studio-canvas">
+                                <Command className="h-4 w-4 text-studio-fg-muted" />
+                              </div>
+                              <p className="text-sm font-medium text-studio-fg">Command palette</p>
+                              <p className="mt-1 text-xs leading-5 text-studio-fg-muted">
+                                Press{" "}
+                                <kbd className="rounded border border-studio-border bg-studio-canvas px-1.5 py-0.5 font-sans text-[10px]">
+                                  ⌘K
+                                </kbd>{" "}
+                                to search files and actions.
                               </p>
-                            ) : !hasEmptySearchQuery ? (
-                              <div className="px-2 pb-1 pt-1">
-                                <p className="pb-2 text-[11px] font-medium uppercase tracking-wide text-studio-fg-muted">
-                                  Recent files
+                            </button>
+
+                            <button
+                              type="button"
+                              className="rounded-lg border border-studio-border/70 bg-studio-canvas-inset/35 p-4 text-left transition-colors hover:bg-studio-canvas-inset/60"
+                              onClick={() => searchInputRef.current?.focus()}
+                            >
+                              <div className="mb-3 flex size-10 items-center justify-center rounded-md border border-studio-border/70 bg-studio-canvas">
+                                <Search className="h-4 w-4 text-studio-fg-muted" />
+                              </div>
+                              <p className="text-sm font-medium text-studio-fg">Jump to a document</p>
+                              <p className="mt-1 text-xs leading-5 text-studio-fg-muted">
+                                Search by path, filename, or frontmatter title below.
+                              </p>
+                            </button>
+                          </div>
+
+                          <div className="mx-auto max-w-xl space-y-3 lg:mx-0">
+                            <div className="group relative">
+                              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-studio-fg-muted" />
+                              <Input
+                                ref={searchInputRef}
+                                id="studio-empty-search"
+                                name="studio-empty-search"
+                                value={emptySearch}
+                                onChange={(e) => setEmptySearch(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key !== "Enter") return
+                                  const firstResult = hasEmptySearchQuery ? emptySearchResults[0] : recentFileResults[0]
+                                  if (firstResult) {
+                                    navigateToFile(firstResult.path)
+                                  }
+                                }}
+                                className="h-11 rounded-xl border-studio-border bg-studio-canvas pl-10 pr-10 shadow-sm"
+                                placeholder="Search docs..."
+                              />
+                              <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+                                {hasEmptySearchQuery ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEmptySearch("")
+                                      searchInputRef.current?.focus()
+                                    }}
+                                    className="rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none"
+                                    aria-label="Clear search"
+                                  >
+                                    <X className="h-4 w-4 text-studio-fg-muted" />
+                                  </button>
+                                ) : (
+                                  <kbd className="pointer-events-none hidden h-5 select-none items-center gap-1 rounded border border-studio-border bg-studio-canvas-inset px-1.5 font-mono text-[10px] font-medium text-studio-fg-muted opacity-60 sm:flex">
+                                    <span className="text-xs">/</span>
+                                  </kbd>
+                                )}
+                              </div>
+                            </div>
+                            <div className="rounded-lg border border-studio-border bg-studio-canvas-inset/30 p-2 text-left">
+                              {!hasEmptySearchQuery && recentFileResults.length === 0 ? (
+                                <p className="px-2 py-4 text-xs text-studio-fg-muted">
+                                  Start typing to search files in this repository.
                                 </p>
+                              ) : !hasEmptySearchQuery ? (
+                                <div className="px-2 pb-1 pt-1">
+                                  <p className="pb-2 text-[11px] font-medium uppercase tracking-[0.16em] text-studio-fg-muted">
+                                    Recent files
+                                  </p>
+                                  <ul className="space-y-1">
+                                    {recentFileResults.map((file) => (
+                                      <li key={file.path}>
+                                        <button
+                                          type="button"
+                                          className="flex w-full items-start gap-2 rounded-xl px-2 py-2 text-left transition-colors hover:bg-studio-canvas-inset"
+                                          onClick={() => navigateToFile(file.path)}
+                                        >
+                                          <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-studio-fg-muted" />
+                                          <span className="min-w-0">
+                                            <span className="block truncate text-sm text-studio-fg">
+                                              {file.title || file.name}
+                                            </span>
+                                            <span className="block truncate text-xs text-studio-fg-muted">
+                                              {file.path}
+                                            </span>
+                                          </span>
+                                        </button>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              ) : emptySearchResults.length === 0 ? (
+                                <p className="px-2 py-4 text-xs text-studio-fg-muted">No files match your search.</p>
+                              ) : (
                                 <ul className="space-y-1">
-                                  {recentFileResults.map((file) => (
+                                  {emptySearchResults.map((file) => (
                                     <li key={file.path}>
                                       <button
                                         type="button"
-                                        className="flex w-full items-start gap-2 rounded-md px-2 py-2 text-left hover:bg-studio-canvas-inset"
+                                        className="flex w-full items-start gap-2 rounded-xl px-2 py-2 text-left transition-colors hover:bg-studio-canvas-inset"
                                         onClick={() => navigateToFile(file.path)}
                                       >
                                         <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-studio-fg-muted" />
@@ -1625,51 +1696,29 @@ function StudioLayoutInner({
                                     </li>
                                   ))}
                                 </ul>
-                              </div>
-                            ) : emptySearchResults.length === 0 ? (
-                              <p className="px-2 py-4 text-xs text-studio-fg-muted">No files match your search.</p>
-                            ) : (
-                              <ul className="space-y-1">
-                                {emptySearchResults.map((file) => (
-                                  <li key={file.path}>
-                                    <button
-                                      type="button"
-                                      className="flex w-full items-start gap-2 rounded-md px-2 py-2 text-left hover:bg-studio-canvas-inset"
-                                      onClick={() => navigateToFile(file.path)}
-                                    >
-                                      <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-studio-fg-muted" />
-                                      <span className="min-w-0">
-                                        <span className="block truncate text-sm text-studio-fg">
-                                          {file.title || file.name}
-                                        </span>
-                                        <span className="block truncate text-xs text-studio-fg-muted">{file.path}</span>
-                                      </span>
-                                    </button>
-                                  </li>
-                                ))}
-                              </ul>
-                            )}
+                              )}
+                            </div>
                           </div>
                         </div>
                       </div>
                     </div>
                   )}
                 </div>
-              </div>
+              </StudioPanelShell>
             </ResizablePanel>
 
             {showPreview && (
               <>
-                <ResizableHandle className="w-1.5 bg-studio-border/50 hover:bg-studio-accent transition-colors" />
+                <ResizableHandle className="relative mx-1 flex w-4 cursor-col-resize items-center justify-center bg-transparent after:absolute after:inset-y-0 after:left-1/2 after:w-[3px] after:-translate-x-1/2 after:rounded-sm after:bg-studio-border/60 after:transition-colors hover:after:bg-studio-accent" />
                 <ResizablePanel
                   id="preview"
                   defaultSize={`${Math.max(20, Math.min(60, previewPanelSize))}%`}
                   onResize={(size) => setPreviewPanelSize(Math.round(size.asPercentage))}
                   minSize="20%"
                   maxSize="60%"
-                  className="min-w-0 bg-studio-canvas"
+                  className="min-w-0"
                 >
-                  <div className="h-full overflow-hidden">
+                  <StudioPanelShell className="bg-studio-canvas">
                     {isSelectedDocumentLoading || (!selectedFile && shouldShowProjectDataSkeleton) ? (
                       <StudioPreviewLoading />
                     ) : adapterLoading && !adapter ? (
@@ -1702,20 +1751,22 @@ function StudioLayoutInner({
                         adapterDiagnostics={adapterDiagnostics}
                       />
                     )}
-                  </div>
+                  </StudioPanelShell>
                 </ResizablePanel>
               </>
             )}
           </ResizablePanelGroup>
         </div>
 
-        <div className="h-[--spacing-studio-footer-h] shrink-0 border-t border-studio-border flex items-center bg-studio-canvas">
+        <div className="h-[--spacing-studio-footer-h] shrink-0 border-t border-studio-border flex items-center bg-studio-canvas px-2">
           <StudioFooter
             isSaving={isSaving}
             lastSavedAt={document?.updatedAt}
             fileType={
               selectedFile?.path.endsWith(".mdx") ? "MDX" : selectedFile?.path.endsWith(".md") ? "Markdown" : "Text"
             }
+            filePath={selectedFile?.path}
+            pendingChanges={totalPendingCount}
           />
         </div>
 
@@ -1760,7 +1811,13 @@ function StudioLayoutInner({
           onSaveDraft={saveDraft}
         />
 
-        <AlertDialog open={discardDialogOpen} onOpenChange={setDiscardDialogOpen}>
+        <AlertDialog
+          open={discardDialogOpen}
+          onOpenChange={(open) => {
+            if (isDiscarding) return
+            setDiscardDialogOpen(open)
+          }}
+        >
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Discard all pending changes?</AlertDialogTitle>
@@ -1769,16 +1826,24 @@ function StudioLayoutInner({
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction
+              <AlertDialogCancel disabled={isDiscarding}>Cancel</AlertDialogCancel>
+              <Button
                 variant="destructive"
-                onClick={() => {
-                  handleDiscardAll()
+                disabled={isDiscarding}
+                onClick={async () => {
+                  await handleDiscardAll()
                   setDiscardDialogOpen(false)
                 }}
               >
-                Discard Changes
-              </AlertDialogAction>
+                {isDiscarding ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin mr-1.5" />
+                    Discarding…
+                  </>
+                ) : (
+                  "Discard Changes"
+                )}
+              </Button>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
@@ -1795,18 +1860,32 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
     projectId,
     projectAccessToken,
     contentRoot = "",
-    tree,
+    tree: initialTree,
     initialFile,
     currentPath,
     role = "owner",
   } = props
 
+  // Tree starts from the server-provided value ([] when server deferred loading).
+  // A client-side fetch runs immediately when the initial tree is empty, unblocking
+  // the server render from the expensive GitHub recursive-tree API call.
+  const [tree, setTree] = React.useState<FileTreeNode[]>(initialTree)
+  React.useEffect(() => {
+    if (initialTree.length > 0) return
+    const qp = new URLSearchParams({ owner, repo, branch: branch ?? "main", contentRoot })
+    fetch(`/api/github/tree?${qp}`)
+      .then((res) => (res.ok ? res.json() : Promise.reject(res)))
+      .then((data: FileTreeNode[]) => setTree(data))
+      .catch(() => {}) // non-critical: empty tree is an acceptable fallback
+  }, [owner, repo, branch, contentRoot, initialTree.length])
+
   // 1. File state hook
   const studioFile = useStudioFile(initialFile, currentPath)
   const { selectedFile } = studioFile
 
-  // 2. Queries hook
-  const studioQueries = useStudioQueries(selectedFile?.path)
+  // 2. Queries hook - pass the local tree state so overlayTree uses the async-fetched
+  // tree rather than the outer StudioProvider's empty initialTree.
+  const studioQueries = useStudioQueries(selectedFile?.path, { tree })
   const {
     previewEntry,
     enabledPlugins,
@@ -1866,7 +1945,7 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
       components: componentSchema,
       // Resolve insert-picker components by contentRoot:
       //  1. If the adapter declares componentsByContext for this root, use that (fully context-aware).
-      //  2. Otherwise fall back to standardComponents — the universal safe set that never includes
+      //  2. Otherwise fall back to standardComponents - the universal safe set that never includes
       //     docs-only components like DocsImage/DocsVideo that come from the adapter layer.
       //     The full previewContext.context.components (adapter-augmented) is still used for
       //     *rendering* existing MDX; we deliberately exclude adapter additions from the insert picker

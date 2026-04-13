@@ -1,4 +1,3 @@
-import { ConvexHttpClient } from "convex/browser"
 import { ChevronLeft, Settings } from "lucide-react"
 import Link from "next/link"
 import { redirect } from "next/navigation"
@@ -10,9 +9,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Separator } from "@/components/ui/separator"
 import { api } from "@/convex/_generated/api"
 import type { Doc } from "@/convex/_generated/dataModel"
-import { fetchAuthQuery, getGitHubToken, getPatAuthUserId } from "@/lib/auth-server"
-import { getRepoRole, probeRepoReadAccess } from "@/lib/github-permissions"
-import { mintProjectAccessToken, mintServerQueryToken } from "@/lib/project-access-token"
+import { getGitHubToken } from "@/lib/auth-server"
+import { resolveRepoRole } from "@/lib/github-permissions"
+import { resolveProjectAccessRole } from "@/lib/project-access-role"
+import { mintProjectAccessToken } from "@/lib/project-access-token"
+import type { Role } from "@/lib/roles"
+import { createServerQueryContext, resolveActingUserId } from "@/lib/server-context"
 
 interface SettingsPageProps {
   params: Promise<{
@@ -30,44 +32,24 @@ export default async function SettingsPage({ params }: SettingsPageProps) {
 
   const { owner, repo } = await params
 
-  const authUser = fetchAuthQuery ? await fetchAuthQuery(api.auth.getCurrentUser).catch(() => null) : null
-  const patUserId = !authUser ? await getPatAuthUserId(token) : null
-  const actingUserId = (authUser?._id as string | undefined) ?? patUserId
+  const actingUserId = await resolveActingUserId(token)
 
   let projects: Doc<"projects">[] = []
   let settingsLoadError: string | null = null
   const projectTokens: Record<string, string> = {}
-  let repoRole: "owner" | "editor" | "viewer" | null = null
+  let repoRole: Role | null = null
 
   try {
-    const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
-    const serverQueryToken = await mintServerQueryToken()
+    const { convex, serverQueryToken } = await createServerQueryContext()
     projects = await convex.query(api.projects.listProjectsForRepo, {
       repoOwner: owner,
       repoName: repo,
       serverQueryToken,
     })
 
-    // Resolve role: GitHub API → ownership → cache → content probe
-    const { role: githubRole } = await getRepoRole(token, owner, repo)
     const isProjectOwner = actingUserId && projects.some((p) => p.userId === actingUserId)
-    repoRole = githubRole ?? (isProjectOwner ? "owner" : null)
-    if (!repoRole && actingUserId) {
-      try {
-        const cached = await convex.query(api.repoAccessCache.getForUserPublic, {
-          repoOwner: owner,
-          repoName: repo,
-          userId: actingUserId,
-          serverQueryToken,
-        })
-        if (cached) repoRole = cached.role as "owner" | "editor" | "viewer"
-      } catch {
-        // Cache lookup failed
-      }
-      if (!repoRole) {
-        repoRole = await probeRepoReadAccess(token, owner, repo)
-      }
-    }
+    const { role: resolvedRole } = await resolveRepoRole(token, owner, repo, actingUserId)
+    repoRole = isProjectOwner ? "owner" : resolvedRole
     if (!repoRole) {
       redirect("/dashboard")
     }
@@ -75,13 +57,21 @@ export default async function SettingsPage({ params }: SettingsPageProps) {
     // Mint projectAccessToken for each project (needed for deletion)
     if (actingUserId) {
       for (const p of projects) {
+        const projectRole = resolveProjectAccessRole({
+          actingUserId,
+          projectOwnerId: p.userId,
+          resolvedRepoRole: resolvedRole,
+        })
+        if (!projectRole) {
+          continue
+        }
         projectTokens[p._id] = await mintProjectAccessToken({
           projectId: p._id,
           userId: actingUserId,
           repoOwner: p.repoOwner,
           repoName: p.repoName,
           branch: p.branch,
-          role: repoRole,
+          role: projectRole,
         })
       }
     }
@@ -93,26 +83,19 @@ export default async function SettingsPage({ params }: SettingsPageProps) {
   return (
     <div className="container mx-auto py-8 px-4 max-w-5xl">
       <div className="flex flex-col gap-8">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" asChild className="h-8 w-8">
-              <Link href={`/dashboard/${owner}/${repo}`}>
-                <ChevronLeft className="h-4 w-4" />
-              </Link>
-            </Button>
-            <RepoBreadcrumb owner={owner} repo={repo} path={["settings"]} />
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" asChild>
-              <Link href={`/dashboard/${owner}/${repo}`}>Back to Repo</Link>
-            </Button>
-          </div>
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="icon" asChild className="h-8 w-8">
+            <Link href={`/dashboard/${owner}/${repo}`}>
+              <ChevronLeft className="h-4 w-4" />
+            </Link>
+          </Button>
+          <RepoBreadcrumb owner={owner} repo={repo} path={["settings"]} />
         </div>
 
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-2">
             <Settings className="h-6 w-6 text-muted-foreground" />
-            <h1 className="text-3xl font-bold tracking-tight text-foreground">Project Settings</h1>
+            <h1 className="text-3xl font-semibold tracking-tight text-foreground">Project Settings</h1>
           </div>
           <p className="text-muted-foreground">
             Manage your projects for {owner}/{repo}
@@ -121,7 +104,7 @@ export default async function SettingsPage({ params }: SettingsPageProps) {
 
         <div className="grid gap-6">
           {settingsLoadError ? (
-            <Card className="overflow-hidden border-amber-300 bg-amber-50/30 shadow-sm">
+            <Card className="overflow-hidden border-destructive/30 bg-destructive/5 shadow-sm">
               <CardHeader className="pb-3">
                 <CardTitle className="text-lg">Settings unavailable</CardTitle>
                 <CardDescription>{settingsLoadError}</CardDescription>

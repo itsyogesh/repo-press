@@ -1,17 +1,27 @@
-import { SettingsLayout } from "@/components/settings/settings-layout"
 import { Card } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 
 export default function SettingsLoading() {
   return (
-    <SettingsLayout>
-      <div className="space-y-6">
-        <div className="flex flex-col gap-1.5">
-          <Skeleton className="h-8 w-64" />
-          <Skeleton className="h-4 w-48" />
+    <div className="container mx-auto py-8 px-4 max-w-5xl">
+      <div className="flex flex-col gap-8">
+        {/* Back button + breadcrumb */}
+        <div className="flex items-center gap-4">
+          <Skeleton className="h-8 w-8 rounded-md" />
+          <Skeleton className="h-5 w-48" />
         </div>
 
-        <div className="pt-2 grid gap-6">
+        {/* Page title */}
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-2">
+            <Skeleton className="h-6 w-6 rounded" />
+            <Skeleton className="h-8 w-56" />
+          </div>
+          <Skeleton className="h-4 w-44" />
+        </div>
+
+        {/* Project cards */}
+        <div className="grid gap-6">
           {[1, 2].map((i) => (
             <Card key={i} className="overflow-hidden border-border bg-card shadow-sm">
               <div className="p-6 space-y-6">
@@ -47,6 +57,6 @@ export default function SettingsLoading() {
           ))}
         </div>
       </div>
-    </SettingsLayout>
+    </div>
   )
 }

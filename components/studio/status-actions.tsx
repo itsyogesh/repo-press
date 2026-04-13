@@ -24,25 +24,12 @@ import {
 import { Textarea } from "@/components/ui/textarea"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
+import { DOCUMENT_STATUS_LABELS, type DocumentStatus, type TransitionableDocumentStatus } from "@/lib/document-status"
 import { useStudio } from "./studio-context"
-
-type DocumentStatus = "draft" | "in_review" | "approved" | "published" | "scheduled" | "archived"
-
-// Statuses reachable via transitionStatus (excludes "published" which requires GitHub commit)
-type TransitionableStatus = "draft" | "in_review" | "approved" | "scheduled" | "archived"
-
-const STATUS_LABELS: Record<DocumentStatus, string> = {
-  draft: "Draft",
-  in_review: "In Review",
-  approved: "Approved",
-  published: "Published",
-  scheduled: "Scheduled",
-  archived: "Archived",
-}
 
 const STATUS_ACTIONS: Record<
   DocumentStatus,
-  { label: string; icon: React.ElementType; targetStatus: TransitionableStatus }[]
+  { label: string; icon: React.ElementType; targetStatus: TransitionableDocumentStatus }[]
 > = {
   draft: [
     { label: "Submit for Review", icon: Send, targetStatus: "in_review" },
@@ -80,14 +67,14 @@ export function StatusActions({ documentId, currentStatus }: StatusActionsProps)
   const [isLoading, setIsLoading] = React.useState(false)
   const [reviewDialogOpen, setReviewDialogOpen] = React.useState(false)
   const [reviewNote, setReviewNote] = React.useState("")
-  const [pendingAction, setPendingAction] = React.useState<TransitionableStatus | null>(null)
+  const [pendingAction, setPendingAction] = React.useState<TransitionableDocumentStatus | null>(null)
 
   const actions = STATUS_ACTIONS[currentStatus] || []
   const effectiveUserId = (user?._id as string | undefined) ?? undefined
 
   if (actions.length === 0) return null
 
-  const handleAction = async (targetStatus: TransitionableStatus) => {
+  const handleAction = async (targetStatus: TransitionableDocumentStatus) => {
     // For review-related actions, show the note dialog
     if (targetStatus === "in_review" || (currentStatus === "in_review" && targetStatus === "draft")) {
       setPendingAction(targetStatus)
@@ -98,7 +85,7 @@ export function StatusActions({ documentId, currentStatus }: StatusActionsProps)
     await executeTransition(targetStatus)
   }
 
-  const executeTransition = async (targetStatus: TransitionableStatus, note?: string) => {
+  const executeTransition = async (targetStatus: TransitionableDocumentStatus, note?: string) => {
     // Need at least one auth path: OAuth session or projectAccessToken
     if (!effectiveUserId && !projectAccessToken) return
     setIsLoading(true)
@@ -141,7 +128,7 @@ export function StatusActions({ documentId, currentStatus }: StatusActionsProps)
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-56">
           <DropdownMenuLabel className="text-xs text-studio-fg-muted">
-            Current: {STATUS_LABELS[currentStatus]}
+            Current: {DOCUMENT_STATUS_LABELS[currentStatus]}
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
           {actions.map((action, i) => (

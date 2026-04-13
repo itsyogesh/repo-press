@@ -1,4 +1,4 @@
-# RepoPress Studio Redesign — Status + Execution Plan
+# RepoPress Studio Redesign - Status + Execution Plan
 
 **Last updated**: 2026-02-27  
 **Current mode**: `Editor` + `Split` (WYSIWYG/Zen removed)  
@@ -114,7 +114,7 @@ MDXEditor is the **only editor purpose-built for MDX**. It provides bidirectiona
 | No built-in slash commands | Phase 2+ enhancement. Can be added via Lexical integration or a custom floating menu. Not critical for v1. |
 | frontmatterPlugin renders basic key-value editor | We build our own Frontmatter Panel (Phase 6) with schema-driven rich fields. Strip frontmatter before passing markdown to MDXEditor. |
 | JSX components show editor boxes, not actual rendering | Acceptable for editing. Actual rendering visible in Preview Panel (Phase 7). |
-| No SSR | Fine — the editor is inherently a client-side interactive widget. |
+| No SSR | Fine - the editor is inherently a client-side interactive widget. |
 
 ### CMS UI Patterns Applied
 
@@ -153,13 +153,13 @@ From **GitHub Primer**: Semantic color tokens, TreeView with indentation guides,
 
 These systems work and should be preserved/enhanced, not replaced:
 
-- `convex/documents.ts` — saveDraft, getOrCreate, transitionStatus, publish
-- `convex/explorerOps.ts` — stageCreate, stageDelete, undoOp
-- `convex/publishBranches.ts` — PR branch lifecycle
-- `lib/framework-adapters/` — 9 adapters + buildMergedFieldList() + resolveFieldValue() + buildGitHubRawUrl()
-- `lib/explorer-tree-overlay.ts` — virtual ops overlay on GitHub tree
-- `lib/github.ts` — all GitHub API functions including batchCommit()
-- `convex/schema.ts` — full schema (stable)
+- `convex/documents.ts` - saveDraft, getOrCreate, transitionStatus, publish
+- `convex/explorerOps.ts` - stageCreate, stageDelete, undoOp
+- `convex/publishBranches.ts` - PR branch lifecycle
+- `lib/framework-adapters/` - 9 adapters + buildMergedFieldList() + resolveFieldValue() + buildGitHubRawUrl()
+- `lib/explorer-tree-overlay.ts` - virtual ops overlay on GitHub tree
+- `lib/github.ts` - all GitHub API functions including batchCommit()
+- `convex/schema.ts` - full schema (stable)
 - Auth system (Better Auth via Convex)
 - Document state machine (draft → in_review → approved → published)
 
@@ -200,9 +200,9 @@ components/studio/
 
 ### Migration Rules
 
-1. **No visual changes** — this phase produces identical UI
-2. **No new features** — pure refactor
-3. **Test**: Open studio, edit a file, save draft, publish — all must work identically
+1. **No visual changes** - this phase produces identical UI
+2. **No new features** - pure refactor
+3. **Test**: Open studio, edit a file, save draft, publish - all must work identically
 4. **Each hook extracted as a separate commit** for safe rollback
 
 ### Detailed Hook Interfaces
@@ -248,11 +248,11 @@ interface UseStudioPublish {
 
 ### 1.1 Extend OKLCH Token System
 
-Add studio-specific semantic tokens to `app/globals.css`. These MAP to existing base tokens — they don't replace them.
+Add studio-specific semantic tokens to `app/globals.css`. These MAP to existing base tokens - they don't replace them.
 
 ```css
 @theme inline {
-  /* Studio semantic tokens — extend existing OKLCH system */
+  /* Studio semantic tokens - extend existing OKLCH system */
   --studio-canvas: var(--background);
   --studio-canvas-inset: var(--sidebar);
   --studio-canvas-overlay: var(--popover);
@@ -329,12 +329,12 @@ Only two options: Light and Dark. Sun/Moon icon toggle in header (Phase 3).
 
 ### Files Modified
 
-- `app/globals.css` — add studio semantic tokens
-- `components/providers.tsx` — set `enableSystem={false}`
+- `app/globals.css` - add studio semantic tokens
+- `components/providers.tsx` - set `enableSystem={false}`
 
 ### New Files
 
-- `components/studio/mdxeditor-theme.css` — MDXEditor ↔ shadcn/ui theme bridge
+- `components/studio/mdxeditor-theme.css` - MDXEditor ↔ shadcn/ui theme bridge
 
 ---
 
@@ -348,7 +348,7 @@ Using already-installed `react-resizable-panels`:
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│ Header (52px) — Breadcrumbs, Status, Actions, Theme Toggle   │
+│ Header (52px) - Breadcrumbs, Status, Actions, Theme Toggle   │
 ├────────┬─────────────────────────┬───────────────────────────┤
 │Sidebar │  Editor Zone            │  Preview Zone (optional)  │
 │(280px  │  (flex-1, min 400px)    │  (flex-1, min 350px)     │
@@ -360,7 +360,7 @@ Using already-installed `react-resizable-panels`:
 │        │  │ (WYSIWYG)       │    │  (react-markdown)         │
 │        │  └─────────────────┘    │                           │
 ├────────┴─────────────────────────┴───────────────────────────┤
-│ Footer (28px) — Save status, view mode, file type            │
+│ Footer (28px) - Save status, view mode, file type            │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -370,10 +370,10 @@ Using already-installed `react-resizable-panels`:
 type ViewMode = "wysiwyg" | "source" | "split" | "zen";
 type SidebarState = "expanded" | "collapsed" | "hidden";
 
-// 'wysiwyg' — MDXEditor WYSIWYG only (default). Preview hidden. Full-width editor.
-// 'source' — Raw markdown source (via diffSourcePlugin). Preview panel visible.
-// 'split' — MDXEditor WYSIWYG + Preview panel side-by-side.
-// 'zen' — Full-screen WYSIWYG. Header, sidebar, footer all hidden.
+// 'wysiwyg' - MDXEditor WYSIWYG only (default). Preview hidden. Full-width editor.
+// 'source' - Raw markdown source (via diffSourcePlugin). Preview panel visible.
+// 'split' - MDXEditor WYSIWYG + Preview panel side-by-side.
+// 'zen' - Full-screen WYSIWYG. Header, sidebar, footer all hidden.
 ```
 
 **Default behavior**: WYSIWYG mode (no preview). Users can toggle to split mode to see the preview panel, or source mode for raw markdown editing.
@@ -398,18 +398,18 @@ Register via `useEffect` with `keydown` listener. Check `event.target` to avoid 
 
 Save to localStorage:
 
-- `studio:viewMode` — current view mode
-- `studio:sidebarState` — expanded/collapsed
-- `studio:editorPanelSize` — percentage (for resizable panels)
-- `studio:previewPanelSize` — percentage
+- `studio:viewMode` - current view mode
+- `studio:sidebarState` - expanded/collapsed
+- `studio:editorPanelSize` - percentage (for resizable panels)
+- `studio:previewPanelSize` - percentage
 
 ### Files Modified
 
-- `components/studio/studio-layout.tsx` — resizable panel container with view modes
+- `components/studio/studio-layout.tsx` - resizable panel container with view modes
 
 ### New Files
 
-- `components/studio/view-mode-context.tsx` — ViewMode + SidebarState context + provider
+- `components/studio/view-mode-context.tsx` - ViewMode + SidebarState context + provider
 
 ---
 
@@ -449,7 +449,7 @@ Save to localStorage:
 
 **Right section:**
 
-- View mode toggle buttons (WYSIWYG / Source / Split) — segmented control
+- View mode toggle buttons (WYSIWYG / Source / Split) - segmented control
 - Theme toggle (sun/moon icon)
 - Save button (secondary, shows "Saved" with timestamp after save, `Cmd+S`)
 - Overflow menu (⋯): History, Keyboard shortcuts, Help
@@ -484,7 +484,7 @@ Save to localStorage:
 - **Indentation guides**: Subtle vertical lines via CSS `border-left: 1px solid var(--studio-border-muted)` at each depth level
 - **Hover state**: `bg-studio-canvas-inset` with rounded corners (6px)
 - **Selected state**: Left 2px blue border (`--studio-accent`) + light blue background (`--studio-accent-muted`)
-- **File icons**: Lucide icons — `FileText` for .mdx/.md, `Folder`/`FolderOpen` for directories
+- **File icons**: Lucide icons - `FileText` for .mdx/.md, `Folder`/`FolderOpen` for directories
 - **Title display**: Show Convex document title if available, fallback to filename. Title in regular weight, filename in muted below it.
 
 ### 4.2 Staged Changes Indicators
@@ -546,7 +546,7 @@ Using `@dnd-kit/core` + `@dnd-kit/sortable`:
 - Drag a file → drop on a folder → moves file into that folder
 - Drag a file → drop between items → reorders (updates `folderMeta.pageOrder`)
 - Visual feedback: drop target folder highlights, insertion line shows between items
-- **Cannot drag folders** (per simplicity — folder moves are complex)
+- **Cannot drag folders** (per simplicity - folder moves are complex)
 - **Cannot drag to root** from nested (prevents accidental moves)
 
 **Implementation:**
@@ -590,13 +590,13 @@ Using `@dnd-kit/core` + `@dnd-kit/sortable`:
 
 ### Files Modified
 
-- `components/studio/file-tree.tsx` — full visual redesign + context menu + drag-drop + keyboard nav
+- `components/studio/file-tree.tsx` - full visual redesign + context menu + drag-drop + keyboard nav
 
 ### New Files
 
-- `components/studio/file-context-menu.tsx` — context menu component
-- `components/studio/file-tree-item.tsx` — individual tree item (extracted for drag-drop)
-- `components/studio/file-rename-input.tsx` — inline rename input
+- `components/studio/file-context-menu.tsx` - context menu component
+- `components/studio/file-tree-item.tsx` - individual tree item (extracted for drag-drop)
+- `components/studio/file-rename-input.tsx` - inline rename input
 
 ---
 
@@ -690,7 +690,7 @@ const plugins = [
     },
   }),
 
-  // Images (with upload handler — see Phase 10)
+  // Images (with upload handler - see Phase 10)
   imagePlugin({
     imageUploadHandler: handleImageUpload,
     imageAutocompleteSuggestions: [] // populated from repo image paths
@@ -721,7 +721,7 @@ const plugins = [
 
 ### 5.4 Custom Toolbar
 
-Don't use `KitchenSinkToolbar` — build a focused toolbar:
+Don't use `KitchenSinkToolbar` - build a focused toolbar:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -839,15 +839,15 @@ diffSourcePlugin({
 
 ### Files Modified
 
-- `components/studio/editor.tsx` — replace textarea with MDXEditor, extract frontmatter handling
+- `components/studio/editor.tsx` - replace textarea with MDXEditor, extract frontmatter handling
 
 ### New Files
 
-- `components/studio/mdx-editor-wrapper.tsx` — MDXEditor client component
-- `components/studio/forward-ref-editor.tsx` — dynamic import wrapper
-- `components/studio/studio-toolbar.tsx` — custom toolbar layout
-- `components/studio/jsx-component-descriptors.ts` — JSX component definitions
-- `components/studio/mdxeditor-theme.css` — theme bridge (from Phase 1)
+- `components/studio/mdx-editor-wrapper.tsx` - MDXEditor client component
+- `components/studio/forward-ref-editor.tsx` - dynamic import wrapper
+- `components/studio/studio-toolbar.tsx` - custom toolbar layout
+- `components/studio/jsx-component-descriptors.ts` - JSX component definitions
+- `components/studio/mdxeditor-theme.css` - theme bridge (from Phase 1)
 
 ---
 
@@ -915,9 +915,9 @@ MDXEditor's built-in `frontmatterPlugin` renders a basic key-value text editor. 
 
 The existing `buildMergedFieldList(frontmatter, schema, fieldVariants)` from `lib/framework-adapters/resolve.ts` already produces:
 
-1. **Phase 1 fields** (isInFile: true, matched to schema) — Show first, with schema descriptions
-2. **Phase 2 fields** (isInFile: true, unmatched) — Show next, with inferred types
-3. **Phase 3 fields** (isInFile: false, schema-only) — Collapsed "Show N more fields"
+1. **Phase 1 fields** (isInFile: true, matched to schema) - Show first, with schema descriptions
+2. **Phase 2 fields** (isInFile: true, unmatched) - Show next, with inferred types
+3. **Phase 3 fields** (isInFile: false, schema-only) - Collapsed "Show N more fields"
 
 The panel renders these three groups in order.
 
@@ -929,10 +929,10 @@ The panel renders these three groups in order.
 
 ### New Files
 
-- `components/studio/frontmatter-panel.tsx` — main panel component
-- `components/studio/frontmatter-field.tsx` — field type dispatcher
-- `components/studio/tag-input.tsx` — tag/chip input for array fields
-- `components/studio/image-field.tsx` — image picker field with preview
+- `components/studio/frontmatter-panel.tsx` - main panel component
+- `components/studio/frontmatter-field.tsx` - field type dispatcher
+- `components/studio/tag-input.tsx` - tag/chip input for array fields
+- `components/studio/image-field.tsx` - image picker field with preview
 
 ---
 
@@ -998,12 +998,12 @@ This helps users see how frontmatter maps to the final page.
 
 ### Files Modified
 
-- `components/studio/preview.tsx` — add device viewport toggle, full-screen mode
+- `components/studio/preview.tsx` - add device viewport toggle, full-screen mode
 
 ### New Files
 
-- `components/studio/device-frame.tsx` — CSS device frames
-- `components/studio/viewport-toggle.tsx` — device selector buttons
+- `components/studio/device-frame.tsx` - CSS device frames
+- `components/studio/viewport-toggle.tsx` - device selector buttons
 
 ---
 
@@ -1117,13 +1117,13 @@ When a reviewer opens a document "In Review", they can switch to diff mode (via 
 
 ### Files Modified
 
-- `components/studio/status-actions.tsx` — visual refresh
-- `components/studio/publish-dialog.tsx` — enhanced layout
-- `components/studio/publish-ops-bar.tsx` — visual refresh
+- `components/studio/status-actions.tsx` - visual refresh
+- `components/studio/publish-dialog.tsx` - enhanced layout
+- `components/studio/publish-ops-bar.tsx` - visual refresh
 
 ### New Files
 
-- (none — all modifications to existing files)
+- (none - all modifications to existing files)
 
 ---
 
@@ -1218,9 +1218,9 @@ The `image` field type in the Frontmatter Panel (Phase 6):
 
 ### New Files
 
-- `app/api/github/upload-image/route.ts` — image upload endpoint
-- `components/studio/media-embed-dialog.tsx` — video/embed URL input dialog
-- `components/studio/image-browser-dialog.tsx` — browse repo images modal
+- `app/api/github/upload-image/route.ts` - image upload endpoint
+- `components/studio/media-embed-dialog.tsx` - video/embed URL input dialog
+- `components/studio/image-browser-dialog.tsx` - browse repo images modal
 
 ---
 
@@ -1319,7 +1319,7 @@ Ship: New header/footer + file explorer + MDXEditor + frontmatter panel
 
 ### Milestone 3: Enhancement (Phases 7-10)
 
-Ship incrementally — each phase is independent.
+Ship incrementally - each phase is independent.
 
 **Phase 7**: Preview panel + device viewports
 **Phase 8**: Command palette
@@ -1337,7 +1337,7 @@ Ship: Animations, loading states, error boundaries, accessibility, performance.
 ### New Dependencies (to install)
 
 ```bash
-# MDXEditor — the core editor
+# MDXEditor - the core editor
 npm install @mdxeditor/editor
 
 # Drag-and-drop for file tree
@@ -1346,20 +1346,20 @@ npm install @dnd-kit/core @dnd-kit/sortable @dnd-kit/utilities
 
 ### Already Installed (DO NOT add again)
 
-- `react-resizable-panels` — resizable layout
-- `cmdk` — command palette
-- `@radix-ui/react-context-menu` — context menus
-- `@radix-ui/react-dropdown-menu` — dropdowns
-- `@radix-ui/react-select` — select inputs
-- `react-day-picker` — date picker
-- `date-fns` — date formatting
-- `next-themes` — theme toggle
-- `sonner` — toast notifications
-- `gray-matter` — frontmatter parsing
-- `react-markdown` — preview rendering
-- `remark-gfm` — GitHub Flavored Markdown
-- `rehype-raw` — HTML passthrough in preview
-- `lucide-react` — icons
+- `react-resizable-panels` - resizable layout
+- `cmdk` - command palette
+- `@radix-ui/react-context-menu` - context menus
+- `@radix-ui/react-dropdown-menu` - dropdowns
+- `@radix-ui/react-select` - select inputs
+- `react-day-picker` - date picker
+- `date-fns` - date formatting
+- `next-themes` - theme toggle
+- `sonner` - toast notifications
+- `gray-matter` - frontmatter parsing
+- `react-markdown` - preview rendering
+- `remark-gfm` - GitHub Flavored Markdown
+- `rehype-raw` - HTML passthrough in preview
+- `lucide-react` - icons
 - All shadcn/ui components (badge, breadcrumb, calendar, collapsible, command, context-menu, dialog, dropdown-menu, input, select, switch, tabs, textarea, etc.)
 
 ---
@@ -1414,14 +1414,14 @@ npm install @dnd-kit/core @dnd-kit/sortable @dnd-kit/utilities
 
 ### Untouched Files (Preserved As-Is)
 
-- `convex/documents.ts` — all mutations/queries
-- `convex/explorerOps.ts` — staging system
-- `convex/publishBranches.ts` — PR lifecycle
-- `convex/schema.ts` — database schema
-- `lib/framework-adapters/*` — all adapters + resolve.ts
-- `lib/explorer-tree-overlay.ts` — tree overlay logic
-- `lib/github.ts` — GitHub API (except new upload-image route)
-- `lib/auth-client.ts` / `lib/auth-server.ts` — auth
+- `convex/documents.ts` - all mutations/queries
+- `convex/explorerOps.ts` - staging system
+- `convex/publishBranches.ts` - PR lifecycle
+- `convex/schema.ts` - database schema
+- `lib/framework-adapters/*` - all adapters + resolve.ts
+- `lib/explorer-tree-overlay.ts` - tree overlay logic
+- `lib/github.ts` - GitHub API (except new upload-image route)
+- `lib/auth-client.ts` / `lib/auth-server.ts` - auth
 - All other non-studio components
 
 ---

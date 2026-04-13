@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// Media Upload — client-side helper
+// Media Upload - client-side helper
 // ---------------------------------------------------------------------------
 //
 // Provides uploadMedia() function that calls /api/media/upload.

@@ -209,11 +209,11 @@ export const create = mutation({
 For projects and documents, always use `getOrCreate` mutations from client code, not raw `create`. This prevents duplicates from race conditions and re-renders:
 
 ```typescript
-// GOOD — idempotent, returns existing ID if duplicate
+// GOOD - idempotent, returns existing ID if duplicate
 const projectId = await getOrCreateProject({ userId, repoOwner, repoName, branch, contentRoot, ... })
 const docId = await getOrCreateDocument({ projectId, filePath, title, body, ... })
 
-// BAD — can create duplicates on retry/re-render
+// BAD - can create duplicates on retry/re-render
 const projectId = await createProject({ ... })
 ```
 
@@ -246,7 +246,7 @@ archived <----- (any state) ----+
 - `saveDraft` -- Saves body + frontmatter to Convex, creates a history entry with previous content. Requires ownership.
 - `publish` -- The ONLY path to "published" status. Requires a GitHub `commitSha`. Enforces source state is "draft" or "approved".
 - `transitionStatus` -- Handles all other transitions (submit for review, approve, archive, restore). Does NOT accept "published" as a target.
-- `documents.update` -- Generic metadata update. Does NOT accept `status` field — status changes must go through `publish` or `transitionStatus`.
+- `documents.update` -- Generic metadata update. Does NOT accept `status` field - status changes must go through `publish` or `transitionStatus`.
 - History is append-only -- every save creates a snapshot before overwriting
 
 ## Auth Patterns

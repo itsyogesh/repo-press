@@ -20,18 +20,7 @@ async function verifyCallerIdentity(ctx: Parameters<typeof authComponent.safeGet
   throw new Error("Unauthorized: Not authenticated")
 }
 
-export const list = query({
-  args: { userId: v.string() },
-  handler: async (ctx, args) => {
-    return await ctx.db
-      .query("projects")
-      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
-      .order("desc")
-      .collect()
-  },
-})
-
-// Authenticated version — gets projects for the current logged-in user.
+// Authenticated version - gets projects for the current logged-in user.
 // Uses the auth component's user ID (which lives in a different table namespace
 // than the app's "users" table), so we query by matching IDs as strings.
 export const listMyProjects = query({
@@ -113,28 +102,6 @@ export const get = query({
   },
 })
 
-export const getByRepo = query({
-  args: {
-    userId: v.string(),
-    repoOwner: v.string(),
-    repoName: v.string(),
-  },
-  handler: async (ctx, args) => {
-    // Verify caller identity when OAuth session exists
-    const authUser = await authComponent.safeGetAuthUser(ctx)
-    if (authUser && (authUser._id as string) !== args.userId) {
-      return []
-    }
-
-    return await ctx.db
-      .query("projects")
-      .withIndex("by_userId_repo", (q) =>
-        q.eq("userId", args.userId).eq("repoOwner", args.repoOwner).eq("repoName", args.repoName),
-      )
-      .collect()
-  },
-})
-
 // Server-side lookup by repo owner/name. Uses the by_repo index (no userId required).
 // Optionally filters by branch. Returns the first matching project.
 export const findByRepo = query({
@@ -202,12 +169,12 @@ export const listProjectsForRepo = query({
 
     if (allProjects.length === 0) return []
 
-    // 1. Server query token (server-side bootstrap — caller already verified GitHub access)
+    // 1. Server query token (server-side bootstrap - caller already verified GitHub access)
     if (await verifyServerQueryToken(args.serverQueryToken)) {
       return allProjects
     }
 
-    // 2. Project access token (PAT users — token proves they passed the studio page gate)
+    // 2. Project access token (PAT users - token proves they passed the studio page gate)
     if (args.projectAccessToken) {
       const payload = await verifyProjectAccessToken(args.projectAccessToken)
       if (payload && payload.repoOwner === args.repoOwner && payload.repoName === args.repoName) {
@@ -244,7 +211,7 @@ export const listProjectsForRepo = query({
  *
  * Note: Shared projects only appear after the user has visited a Studio page
  * for that repo (which seeds the repoAccessCache). This is an accepted
- * limitation — we can't check GitHub permissions for all repos at dashboard
+ * limitation - we can't check GitHub permissions for all repos at dashboard
  * load time. Collaborators typically arrive via direct URL, which seeds the
  * cache, and subsequent dashboard visits will show the shared projects.
  */
@@ -420,7 +387,7 @@ export const getOrCreate = mutation({
     const existing = matches.find((project) => !project.name.startsWith("[DELETING]")) ?? matches[0]
 
     if (existing) {
-      // Skip projects that are being deleted — treat as if they don't exist
+      // Skip projects that are being deleted - treat as if they don't exist
       if (existing.name.startsWith("[DELETING]")) {
         const now = Date.now()
         return await ctx.db.insert("projects", {
@@ -448,7 +415,7 @@ export const getOrCreate = mutation({
       if (args.components && JSON.stringify(args.components) !== JSON.stringify((existing as any).components)) {
         updates.components = args.components
       }
-      // Note: do NOT clear configRemoved here — orphan cleanup should happen
+      // Note: do NOT clear configRemoved here - orphan cleanup should happen
       // through explicit user actions (Remove All, Keep as Manual, Delete Permanently).
       // Clearing it silently would leave config-related fields (frameworkSource,
       // configProjectId) intact, creating inconsistent state.
@@ -514,7 +481,7 @@ export const syncProjectsFromConfig = mutation({
         throw new Error("Unauthorized: caller identity does not match userId")
       }
     } else if (await verifyServerQueryToken(args.serverQueryToken)) {
-      // Server-side call — trust actingUserId or userId
+      // Server-side call - trust actingUserId or userId
       callerUserId = args.actingUserId ?? args.userId ?? null
     } else if (args.userId) {
       // Legacy path: try to verify caller identity
@@ -659,7 +626,7 @@ export const syncProjectsFromConfig = mutation({
         // orphaned regardless of which content branch it targets.
 
         if (!configIds.has(project.configProjectId)) {
-          // Project is no longer in config — flag it as orphaned
+          // Project is no longer in config - flag it as orphaned
           if (!project.configRemoved) {
             await ctx.db.patch(project._id, {
               configRemoved: true,
@@ -811,7 +778,7 @@ export const removeFull = mutation({
 
     // Tombstone: record config-driven project deletion for downstream sync
     if (project.frameworkSource === "config" && project.configProjectId) {
-      // Use the resolved caller from auth (OAuth or token) — args.userId may not be set
+      // Use the resolved caller from auth (OAuth or token) - args.userId may not be set
       const callerUserId = args.userId || ((await authComponent.safeGetAuthUser(ctx))?._id as string | undefined)
       if (callerUserId) {
         await ctx.db.insert("deletedConfigProjects", {
@@ -951,7 +918,7 @@ export const _removeFullBatch = internalMutation({
         }
       }
 
-      // All associated records deleted — delete the project itself
+      // All associated records deleted - delete the project itself
       await ctx.db.delete(args.projectId)
       return
     }
@@ -963,7 +930,7 @@ export const _removeFullBatch = internalMutation({
 /**
  * Batch-removes all orphaned (configRemoved) projects for a repository.
  * Inserts tombstones and schedules two-phase deletion for each orphan.
- * Auth: server query token ONLY — called from server action that verifies
+ * Auth: server query token ONLY - called from server action that verifies
  * GitHub owner-level permissions. No direct OAuth fallback (destructive op).
  * Processes at most MAX_ORPHANS_PER_BATCH to stay within Convex limits.
  */
@@ -975,7 +942,7 @@ export const removeAllOrphans = mutation({
     repoName: v.string(),
   },
   handler: async (ctx, args) => {
-    // Auth: server query token only — no OAuth fallback for this destructive op
+    // Auth: server query token only - no OAuth fallback for this destructive op
     if (!(await verifyServerQueryToken(args.serverQueryToken))) {
       throw new Error("Unauthorized: invalid server query token")
     }

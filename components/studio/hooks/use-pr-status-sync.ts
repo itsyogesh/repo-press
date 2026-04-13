@@ -47,7 +47,7 @@ export function usePrStatusSync({
       .then((res) => (res.ok ? res.json() : null))
       .then((data: { state: string; merged: boolean } | null) => {
         if (!data || data.state === "open") return
-        // PR is closed on GitHub but local record still says "active" — sync it.
+        // PR is closed on GitHub but local record still says "active" - sync it.
         if (data.merged) {
           void markMerged({ id: laneId, userId, projectAccessToken })
         } else {

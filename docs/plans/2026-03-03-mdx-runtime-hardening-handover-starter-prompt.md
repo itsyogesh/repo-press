@@ -1,4 +1,4 @@
-# MDX Runtime Hardening — Handover Starter Prompt (2026-03-03)
+# MDX Runtime Hardening - Handover Starter Prompt (2026-03-03)
 
 Use this handover prompt to continue the **in-progress** hardening stream from:
 `docs/plans/2026-03-02-mdx-runtime-hardening-plan.md`

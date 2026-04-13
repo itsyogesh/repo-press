@@ -34,7 +34,7 @@ Run `next build` (will need stub env vars for Convex). Fix any TypeScript or bui
 
 ## Phase 1: Connect Studio to Convex (Foundation)
 
-This is the **most critical phase** — without it, nothing else works.
+This is the **most critical phase** - without it, nothing else works.
 
 ### 1.1 Wire up project creation in Setup page
 - `app/dashboard/[owner]/[repo]/setup/page.tsx` currently just navigates away
@@ -91,7 +91,7 @@ any → archived
 - Add a `scheduledAt` date picker in the publish dialog
 - Add a Convex cron job (`convex/crons.ts`) that runs every minute
 - The cron checks for `status === "scheduled" AND scheduledAt <= now()` and publishes them
-- Trigger GitHub commit on scheduled publish (needs stored token — use the `accounts` table)
+- Trigger GitHub commit on scheduled publish (needs stored token - use the `accounts` table)
 
 ### 2.4 Status-filtered document list
 - Add a document list sidebar/panel in Studio showing all project documents

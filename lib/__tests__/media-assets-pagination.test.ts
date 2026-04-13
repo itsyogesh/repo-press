@@ -104,4 +104,54 @@ describe("media asset pagination", () => {
     expect(paginate.mock.calls[0]?.[0]).toEqual({ cursor: null, numItems: 24 })
     expect(paginate.mock.calls[1]?.[0]).toEqual({ cursor: "cursor_20", numItems: 4 })
   })
+
+  it("rebuilds the Convex query for each section-scoped page fetch", async () => {
+    const pages = [
+      {
+        page: [{ _id: "asset_other", filePath: "public/images/docs/guide.png" }],
+        isDone: false,
+        continueCursor: "cursor_2",
+      },
+      {
+        page: [{ _id: "asset_blog", filePath: "public/images/blog/post-1.png" }],
+        isDone: true,
+        continueCursor: "",
+      },
+    ]
+
+    let queryBuilds = 0
+    const ctx = {
+      db: {
+        query: vi.fn(() => {
+          const response = pages[queryBuilds]
+          queryBuilds += 1
+          let used = false
+
+          return {
+            withIndex: vi.fn(() => ({
+              order: vi.fn(() => ({
+                paginate: vi.fn(async () => {
+                  if (used) {
+                    throw new Error("A query can only be chained once and can't be chained after iteration begins.")
+                  }
+                  used = true
+                  return response
+                }),
+              })),
+            })),
+          }
+        }),
+      },
+    } as any
+
+    const result = await (listByProjectPaginated as any).handler(ctx, {
+      projectId: "project_1",
+      userId: "user_1",
+      sectionSlug: "blog",
+      limit: 24,
+    })
+
+    expect(result.page).toEqual([{ _id: "asset_blog", filePath: "public/images/blog/post-1.png" }])
+    expect(ctx.db.query).toHaveBeenCalledTimes(2)
+  })
 })

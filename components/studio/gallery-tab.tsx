@@ -57,13 +57,13 @@ function deriveSectionSlug(filePath: string | undefined, contentRoot: string | u
     // Strip the known contentRoot prefix, then take the first folder segment
     relative = filePath.slice(root.length)
   } else if (!root) {
-    // No contentRoot configured — skip the first segment (assumed to be the top-level
+    // No contentRoot configured - skip the first segment (assumed to be the top-level
     // content container, e.g. "content/" or "docs/") and look one level deeper
     const firstSlash = filePath.indexOf("/")
     if (firstSlash === -1) return undefined
     relative = filePath.slice(firstSlash + 1)
   } else {
-    // contentRoot doesn't match this path — cannot determine section reliably
+    // contentRoot doesn't match this path - cannot determine section reliably
     return undefined
   }
 
@@ -237,9 +237,9 @@ export function GalleryTab({
 
       const { found, inserted } = data as { found: number; inserted: number; updated: number }
       if (inserted > 0) {
-        toast.success(`Found ${found} images — ${inserted} newly added to gallery`)
+        toast.success(`Found ${found} images - ${inserted} newly added to gallery`)
       } else {
-        toast.success(`Scanned ${found} images — gallery is up to date`)
+        toast.success(`Scanned ${found} images - gallery is up to date`)
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to scan repository")
@@ -425,7 +425,7 @@ function GalleryThumbnail({ asset, thumbUrl, isSelected, isStaged, onClick }: Ga
 
       {/* Staged badge */}
       {isStaged && (
-        <span className="absolute top-1 right-1 bg-amber-500/90 text-white text-[9px] font-semibold leading-none px-1 py-0.5 rounded-sm">
+        <span className="absolute top-1 right-1 bg-studio-attention text-white text-[9px] font-semibold leading-none px-1 py-0.5 rounded-sm">
           Staged
         </span>
       )}
@@ -510,7 +510,10 @@ function GalleryDetailPanel({
       <div className="flex-1 overflow-y-auto p-3 space-y-3">
         {/* Staged badge */}
         {isStaged && (
-          <Badge variant="secondary" className="text-[10px] bg-amber-100 text-amber-700 border-amber-300">
+          <Badge
+            variant="secondary"
+            className="text-[10px] bg-studio-attention-muted text-studio-attention border-studio-attention/30"
+          >
             Staged
           </Badge>
         )}

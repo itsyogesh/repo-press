@@ -27,24 +27,28 @@ export function RepoBreadcrumb({ owner, repo, path = [], branch = "main" }: Repo
         <BreadcrumbSeparator />
         <BreadcrumbItem>
           <BreadcrumbLink asChild>
-            <Link href={`/dashboard/${owner}/${repo}?branch=${branch}`}>
+            <Link href={`/dashboard/${owner}/${repo}?branch=${branch}`} className="font-mono">
               {owner}/{repo}
             </Link>
           </BreadcrumbLink>
         </BreadcrumbItem>
         {path.map((segment, index) => {
           const isLast = index === path.length - 1
-          const href = `/dashboard/${owner}/${repo}?path=${path.slice(0, index + 1).join("/")}&branch=${branch}`
+          const segmentPath = path.slice(0, index + 1).join("/")
+          const params = new URLSearchParams({ path: segmentPath, branch })
+          const href = `/dashboard/${owner}/${repo}/files?${params.toString()}`
 
           return (
-            <div key={segment} className="flex items-center gap-1.5">
+            <div key={path.slice(0, index + 1).join("/")} className="flex items-center gap-1.5">
               <BreadcrumbSeparator />
               <BreadcrumbItem>
                 {isLast ? (
-                  <BreadcrumbPage>{segment}</BreadcrumbPage>
+                  <BreadcrumbPage className="font-mono">{segment}</BreadcrumbPage>
                 ) : (
                   <BreadcrumbLink asChild>
-                    <Link href={href}>{segment}</Link>
+                    <Link href={href} className="font-mono">
+                      {segment}
+                    </Link>
                   </BreadcrumbLink>
                 )}
               </BreadcrumbItem>

@@ -1,9 +1,9 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import { api } from "@/convex/_generated/api"
-import { fetchAuthMutation, fetchAuthQuery, getGitHubToken, getPatAuthUserId } from "@/lib/auth-server"
-import { fetchRepoConfig } from "@/lib/repopress/config"
+import { getGitHubToken } from "@/lib/auth-server"
+import { getRepoContents } from "@/lib/github"
+import { resolveActingUserId } from "@/lib/server-context"
 import { syncProjectsServerSide } from "@/lib/sync-projects"
 
 export async function syncProjectsFromConfigAction(owner: string, repo: string, branch: string) {
@@ -11,9 +11,7 @@ export async function syncProjectsFromConfigAction(owner: string, repo: string, 
   if (!token) return { success: false, error: "Not authenticated with GitHub" }
 
   // Resolve acting user (OAuth or PAT)
-  const authUser = fetchAuthQuery ? await fetchAuthQuery(api.auth.getCurrentUser, {}).catch(() => null) : null
-  const patUserId = !authUser ? await getPatAuthUserId(token) : null
-  const actingUserId = (authUser?._id as string | undefined) ?? patUserId
+  const actingUserId = await resolveActingUserId(token)
 
   if (!actingUserId) return { success: false, error: "No user found" }
 
@@ -28,7 +26,31 @@ export async function syncProjectsFromConfigAction(owner: string, repo: string, 
     }
 
     revalidatePath(`/dashboard/${owner}/${repo}`)
-    return { success: true, count: result.synced.length + result.created.length + result.unchanged.length }
+    return {
+      success: true,
+      count: result.synced.length + result.created.length + result.unchanged.length,
+    }
+  } catch (error: any) {
+    return { success: false, error: error.message }
+  }
+}
+
+export async function fetchRepoDirsAction(
+  owner: string,
+  repo: string,
+  path: string,
+  branch: string,
+): Promise<{ success: true; dirs: { name: string; path: string }[] } | { success: false; error: string }> {
+  const token = await getGitHubToken()
+  if (!token) return { success: false, error: "Not authenticated with GitHub" }
+
+  try {
+    const contents = await getRepoContents(token, owner, repo, path, branch)
+    const dirs = contents
+      .filter((entry) => entry.type === "dir")
+      .map((entry) => ({ name: entry.name, path: entry.path }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+    return { success: true, dirs }
   } catch (error: any) {
     return { success: false, error: error.message }
   }

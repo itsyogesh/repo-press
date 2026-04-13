@@ -3,7 +3,7 @@ import type { MDXEditorMethods, MDXEditorProps } from "@mdxeditor/editor"
 import dynamic from "next/dynamic"
 import { forwardRef } from "react"
 
-// Dynamic import to prevent SSR — MDXEditor relies on browser APIs
+// Dynamic import to prevent SSR - MDXEditor relies on browser APIs
 const Editor = dynamic(() => import("./mdx-editor-wrapper"), {
   ssr: false,
   loading: () => (

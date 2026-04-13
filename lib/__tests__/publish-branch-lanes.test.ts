@@ -20,7 +20,13 @@ vi.mock("@/convex/auth", () => ({
 
 import { markCommitted as markExplorerOpsCommitted } from "@/convex/explorerOps"
 import { markCommitted as markMediaOpsCommitted } from "@/convex/mediaOps"
-import { create, deactivateCurrentForProject, getCurrentForProject, listOpenForProject } from "@/convex/publishBranches"
+import {
+  create,
+  deactivateCurrentForProject,
+  getCurrentForProject,
+  listBranchNamesForProject,
+  listOpenForProject,
+} from "@/convex/publishBranches"
 
 function createProject() {
   return {
@@ -198,6 +204,50 @@ describe("Publish branch lanes", () => {
       "publish_branch_current",
       "publish_branch_inactive",
     ])
+  })
+
+  it("lists only open (active + inactive) publish branch names for allocation", async () => {
+    let callIndex = 0
+    const ctx = createCtx({
+      get: vi.fn().mockResolvedValue(createProject()),
+      query: vi.fn().mockReturnValue({
+        withIndex: () => ({
+          collect: vi.fn().mockImplementation(() => {
+            callIndex++
+            if (callIndex === 1) {
+              return Promise.resolve([{ _id: "pb_active", projectId: "project_1", branchName: "repopress/hello" }])
+            }
+            return Promise.resolve([{ _id: "pb_inactive", projectId: "project_1", branchName: "repopress/hello-2" }])
+          }),
+        }),
+      }),
+    })
+
+    const result = await (listBranchNamesForProject as any).handler(ctx, {
+      projectId: "project_1",
+      userId: "user_owner",
+    })
+
+    expect(result).toEqual(["repopress/hello", "repopress/hello-2"])
+  })
+
+  it("excludes merged/closed branch names from allocation list", async () => {
+    const ctx = createCtx({
+      get: vi.fn().mockResolvedValue(createProject()),
+      query: vi.fn().mockReturnValue({
+        withIndex: () => ({
+          collect: vi.fn().mockResolvedValue([]),
+        }),
+      }),
+    })
+
+    const result = await (listBranchNamesForProject as any).handler(ctx, {
+      projectId: "project_1",
+      userId: "user_owner",
+    })
+
+    // Merged/closed branches are excluded — only active+inactive are queried
+    expect(result).toEqual([])
   })
 
   it("stores publishBranchId on committed explorer ops", async () => {

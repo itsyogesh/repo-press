@@ -1,17 +1,22 @@
-import { getSessionCookie } from "better-auth/cookies"
 import { type NextRequest, NextResponse } from "next/server"
 
 const DASHBOARD_PATH = "/dashboard"
+const CONVEX_JWT_COOKIE_NAMES = ["better-auth.convex_jwt", "convex_jwt"] as const
 
-function hasAuthSession(request: NextRequest) {
-  const sessionCookie = getSessionCookie(request)
-  const patCookie = request.cookies.get("github_pat")?.value
-  return Boolean(sessionCookie || patCookie)
+function getAuthSignals(request: NextRequest) {
+  const hasConvexJwt = CONVEX_JWT_COOKIE_NAMES.some((cookieName) => Boolean(request.cookies.get(cookieName)?.value))
+  const hasPatAuth = Boolean(request.cookies.get("github_pat")?.value)
+
+  return {
+    hasConvexJwt,
+    hasPatAuth,
+    isAuthenticated: hasConvexJwt || hasPatAuth,
+  }
 }
 
 export function proxy(request: NextRequest) {
   const { pathname, searchParams } = request.nextUrl
-  const isAuthenticated = hasAuthSession(request)
+  const { hasPatAuth, isAuthenticated } = getAuthSignals(request)
   const isDashboardRoute = pathname === DASHBOARD_PATH || pathname.startsWith(`${DASHBOARD_PATH}/`)
   const isLoginRoute = pathname === "/login" || pathname.startsWith("/login/")
   const isMarketingRoot = pathname === "/"
@@ -24,7 +29,8 @@ export function proxy(request: NextRequest) {
 
   // Allow explicit relogin/error states to avoid redirect loops with stale cookies.
   const hasLoginError = searchParams.has("error")
-  if (isAuthenticated && (isMarketingRoot || (isLoginRoute && !hasLoginError))) {
+  const shouldRedirectFromLogin = hasPatAuth && !hasLoginError
+  if (isAuthenticated && (isMarketingRoot || (isLoginRoute && shouldRedirectFromLogin))) {
     const url = request.nextUrl.clone()
     url.pathname = DASHBOARD_PATH
     url.search = ""

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
 import { createGitHubClient } from "@/lib/github"
+import { getContentType } from "@/lib/media/content-type"
 import { mintServerQueryToken, verifyProjectAccessToken } from "@/lib/project-access-token"
 import { RouteAuthError, resolveRouteAuth } from "@/lib/route-auth"
 import { normalizeRepoMediaPath } from "@/lib/studio/media-resolve"
@@ -43,7 +44,7 @@ export async function GET(request: Request) {
         if (payload?.userId && payload?.projectId === projectId) {
           actingUserId = payload.userId
           projectAccessToken = queryAccessToken
-          // githubToken is not available via projectAccessToken — resolved via cookies below
+          // githubToken is not available via projectAccessToken - resolved via cookies below
         }
       } catch {
         // Token verification failed, fall back to cookie-based auth
@@ -60,7 +61,7 @@ export async function GET(request: Request) {
         githubToken = auth.githubToken
       } catch (e) {
         if (!actingUserId) {
-          // No auth at all — reject the request
+          // No auth at all - reject the request
           if (e instanceof RouteAuthError) {
             return NextResponse.json({ error: e.message }, { status: e.status })
           }
@@ -81,7 +82,7 @@ export async function GET(request: Request) {
     const githubPath = repoPath.replace(/^\/+/, "")
     const githubPathCandidates = getGitHubPathCandidates(githubPath)
 
-    // Look up pending op — try both /images/... and /public/images/... since
+    // Look up pending op - try both /images/... and /public/images/... since
     // images are staged with the full repo path (public/) but authored/referenced
     // as the web URL path (/images/...). e.g. staged key = /public/images/blog/photo.jpg,
     // authored value = /images/blog/photo.jpg (after toPublicAssetPath strips the prefix).
@@ -133,7 +134,7 @@ export async function GET(request: Request) {
       if (!storageUrl) {
         return NextResponse.json({ error: "Media not found" }, { status: 404 })
       }
-      // Redirect to the Convex CDN URL — no need to proxy bytes through Next.js.
+      // Redirect to the Convex CDN URL - no need to proxy bytes through Next.js.
       return NextResponse.redirect(storageUrl, { status: 302 })
     }
 
@@ -286,22 +287,6 @@ function buildProxyHeaders({ contentType, etag }: { contentType: string; etag?: 
     headers.set("ETag", etag)
   }
   return headers
-}
-
-function getContentType(fileName: string): string {
-  const ext = fileName.toLowerCase().split(".").pop()
-  const types: Record<string, string> = {
-    jpg: "image/jpeg",
-    jpeg: "image/jpeg",
-    png: "image/png",
-    gif: "image/gif",
-    webp: "image/webp",
-    svg: "image/svg+xml",
-    webm: "video/webm",
-    mp4: "video/mp4",
-    pdf: "application/pdf",
-  }
-  return types[ext || ""] || "application/octet-stream"
 }
 
 function getGitHubPathCandidates(path: string): string[] {

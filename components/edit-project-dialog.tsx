@@ -1,9 +1,13 @@
 "use client"
 
-import { Loader2, Save } from "lucide-react"
+import { useQuery } from "convex/react"
+import { Folder, FolderOpen, Loader2, Save } from "lucide-react"
 import { useEffect, useState, useTransition } from "react"
 import { toast } from "sonner"
 import { updateProjectInConfigAction } from "@/app/dashboard/[owner]/[repo]/config-actions"
+import { api } from "@/convex/_generated/api"
+import type { Id } from "@/convex/_generated/dataModel"
+import { FolderPickerDialog } from "./folder-picker-dialog"
 import { Button } from "./ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog"
 import { Input } from "./ui/input"
@@ -66,6 +70,8 @@ export function EditProjectDialog({
   const [contentType, setContentType] = useState("custom")
   const [branch, setBranch] = useState("")
   const [error, setError] = useState<string | null>(null)
+  const [contentRoot, setContentRoot] = useState("")
+  const [folderPickerOpen, setFolderPickerOpen] = useState(false)
 
   // Sync form state when project changes
   const resetToProject = (p: EditableProject) => {
@@ -73,6 +79,8 @@ export function EditProjectDialog({
     setFramework(p.detectedFramework || "auto")
     setContentType(p.contentType)
     setBranch(p.branch === defaultBranch ? "" : p.branch)
+    setContentRoot(p.contentRoot)
+    setFolderPickerOpen(false)
     setError(null)
   }
 
@@ -88,6 +96,11 @@ export function EditProjectDialog({
     if (!o) setError(null)
     onOpenChange(o)
   }
+
+  const hasContent = useQuery(
+    api.documents.hasContentForProject,
+    project ? { projectId: project._id as Id<"projects"> } : "skip",
+  )
 
   if (!project) return null
 
@@ -106,12 +119,13 @@ export function EditProjectDialog({
 
     setError(null)
     startTransition(async () => {
-      // Config file always lives on the default branch — not the project's content branch
+      // Config file always lives on the default branch - not the project's content branch
       const result = await updateProjectInConfigAction(owner, repo, defaultBranch, configProjectId, {
         name: name.trim(),
         framework,
         contentType: contentType as "blog" | "docs" | "pages" | "changelog" | "custom",
         ...(branch.trim() ? { branch: branch.trim() } : {}),
+        ...(contentRoot !== project.contentRoot ? { contentRoot } : {}),
       })
 
       if (result.success) {
@@ -131,7 +145,7 @@ export function EditProjectDialog({
         className="sm:max-w-lg"
         // Prevent Radix from restoring focus to the dropdown trigger after close.
         // When this dialog is opened via a DropdownMenuItem, the trigger no longer
-        // holds meaningful focus context — auto-focus return causes aria-hidden to
+        // holds meaningful focus context - auto-focus return causes aria-hidden to
         // persist on the page container, freezing the UI.
         onCloseAutoFocus={(e) => e.preventDefault()}
       >
@@ -157,11 +171,52 @@ export function EditProjectDialog({
 
           <div className="grid gap-2">
             <Label>Content Root</Label>
-            <Input value={project.contentRoot || "(repo root)"} disabled className="bg-muted" />
-            <p className="text-xs text-muted-foreground">
-              Content root cannot be changed after creation. To use a different path, remove this project and add a new
-              one.
-            </p>
+            {hasContent === false ? (
+              <>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Folder className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      readOnly
+                      value={contentRoot || "(repo root)"}
+                      onClick={() => !isPending && setFolderPickerOpen(true)}
+                      className="pl-9 cursor-pointer"
+                      disabled={isPending || !isConfigManaged}
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => setFolderPickerOpen(true)}
+                    disabled={isPending || !isConfigManaged}
+                    title="Browse directories"
+                  >
+                    <FolderOpen className="h-4 w-4" />
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  No content exists yet - you can change the content root.
+                </p>
+                <FolderPickerDialog
+                  open={folderPickerOpen}
+                  onOpenChange={setFolderPickerOpen}
+                  onSelect={(path) => setContentRoot(path)}
+                  owner={owner}
+                  repo={repo}
+                  branch={project.branch || defaultBranch}
+                  initialPath={contentRoot}
+                />
+              </>
+            ) : (
+              <>
+                <Input value={project.contentRoot || "(repo root)"} disabled className="bg-muted" />
+                <p className="text-xs text-muted-foreground">
+                  Content root cannot be changed because this project has existing documents. Delete all content first,
+                  or create a new project with a different root.
+                </p>
+              </>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4">

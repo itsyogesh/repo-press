@@ -1,4 +1,4 @@
-# Smart File Creation Dialog — Implementation Plan
+# Smart File Creation Dialog - Implementation Plan
 
 **Date:** 2026-03-13  
 **Branch:** feat/smart-file-creation  
@@ -10,13 +10,13 @@ Replace the generic filename input dialog in the Studio file tree with a framewo
 
 1. Shows friendly folder labels in the `+` dropdown (derived from live tree, zero hardcoding)
 2. Opens a dialog that asks for a human-readable title and shows only required frontmatter fields
-3. Derives filenames/slugs silently from the title — the user never sees "slug", "filename", "index.mdx", or "draft"
+3. Derives filenames/slugs silently from the title - the user never sees "slug", "filename", "index.mdx", or "draft"
 
 ## Design Decisions
 
 - ✅ Skeleton-first: dialog opens immediately with 120ms skeleton
 - ✅ No "Save as draft" toggle
-- ✅ No "Is this a section landing page?" toggle — handled via `index-if-empty` naming strategy
+- ✅ No "Is this a section landing page?" toggle - handled via `index-if-empty` naming strategy
 - ✅ Approach A + C: slug-first UI + adapter-driven fields
 - ✅ Filename conflict resolution is silent (auto-suffix -2, -3)
 - ✅ Date fields pre-seeded with today's date
@@ -33,12 +33,12 @@ Replace the generic filename input dialog in the Studio file tree with a framewo
 
 ## Files to Modify
 
-- `lib/framework-adapters/types.ts` — add `namingStrategy?` and `fileExtension?` to `FrameworkAdapter`
-- `lib/framework-adapters/adapters/fumadocs.ts` — add `namingStrategy: "index-if-empty"`, `fileExtension: ".mdx"`
-- `lib/framework-adapters/adapters/hugo.ts` — add `namingStrategy: "index-if-empty"`, `fileExtension: ".md"`
-- `lib/framework-adapters/adapters/jekyll.ts` — add `namingStrategy: "date-slug"`, `fileExtension: ".md"`
-- `components/studio/file-tree.tsx` — smart dropdown with labels + icons
-- `components/studio/studio-layout.tsx` — wire new dialog, adapter prop, folderChildren memo
+- `lib/framework-adapters/types.ts` - add `namingStrategy?` and `fileExtension?` to `FrameworkAdapter`
+- `lib/framework-adapters/adapters/fumadocs.ts` - add `namingStrategy: "index-if-empty"`, `fileExtension: ".mdx"`
+- `lib/framework-adapters/adapters/hugo.ts` - add `namingStrategy: "index-if-empty"`, `fileExtension: ".md"`
+- `lib/framework-adapters/adapters/jekyll.ts` - add `namingStrategy: "date-slug"`, `fileExtension: ".md"`
+- `components/studio/file-tree.tsx` - smart dropdown with labels + icons
+- `components/studio/studio-layout.tsx` - wire new dialog, adapter prop, folderChildren memo
 
 ## Files to Delete
 

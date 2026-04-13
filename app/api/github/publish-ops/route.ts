@@ -5,8 +5,17 @@ import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
 import { prefixContentRoot } from "@/lib/explorer-tree-overlay"
 import type { BatchOperation } from "@/lib/github"
-import { batchCommit, createBranch, createGitHubClient, createPullRequest, getFile } from "@/lib/github"
+import {
+  batchCommit,
+  branchExists,
+  createBranch,
+  createGitHubClient,
+  createPullRequest,
+  getFile,
+  updatePullRequest,
+} from "@/lib/github"
 import { mintServerQueryToken } from "@/lib/project-access-token"
+import { buildPublishBranchName, derivePublishBranchScope } from "@/lib/publish-branch-name"
 import { RouteAuthError, resolveRouteAuth } from "@/lib/route-auth"
 import { isStudioMediaResolveUrl } from "@/lib/studio/media-resolve"
 
@@ -218,7 +227,7 @@ export async function POST(request: Request) {
       })
       const operationPaths = new Set(operations.map((op) => op.path))
       const overlaps = openPublishBranches.flatMap((branch) =>
-        branch._id === publishBranch?._id || branch.status === "inactive"
+        branch._id === currentPublishBranchId
           ? []
           : (branch.committedFilePaths ?? [])
               .filter((path) => operationPaths.has(path))
@@ -238,12 +247,25 @@ export async function POST(request: Request) {
       publishBranch = null
     }
 
-    // If no active branch exists, create a new publish branch with timestamp-based name.
-    // Branch naming: repopress/${baseBranch}/${timestamp} e.g., repopress/main/1710681600000
-    const branchName = publishBranch?.branchName || `repopress/${baseBranch}/${Date.now()}`
+    let branchName = publishBranch?.branchName
 
     if (!publishBranch) {
-      await createBranch(token, owner, repo, baseBranch, branchName)
+      const existingBranchNames = await convex.query(api.publishBranches.listBranchNamesForProject, {
+        projectId: project._id,
+        ...queryAuth,
+      })
+      const scope = derivePublishBranchScope(
+        operations.map((operation) => operation.path),
+        contentRoot,
+      )
+      branchName = await createAvailablePublishBranch({
+        token,
+        owner,
+        repo,
+        baseBranch,
+        scope,
+        existingBranchNames,
+      })
       try {
         await convex.mutation(api.publishBranches.create, {
           projectId: project._id,
@@ -280,6 +302,10 @@ export async function POST(request: Request) {
       }
     }
 
+    if (!branchName) {
+      return NextResponse.json({ error: "Failed to resolve publish branch" }, { status: 500 })
+    }
+
     const mediaCreateCount = mediaBatchOps.filter((o) => o.action === "create").length
     const mediaUpdateCount = mediaBatchOps.filter((o) => o.action === "update").length
 
@@ -298,14 +324,25 @@ export async function POST(request: Request) {
     // This is intentional - additional publishes will update the same PR with new commits.
     let prUrl = publishBranch.prUrl
     let prNumber = publishBranch.prNumber
+    let warning: string | undefined
 
     if (!prNumber) {
-      const prTitle = title || `Content update via RepoPress (${parts.join(", ")})`
+      const prTitle = title || `Content update via RepoPress (${parts.join(", ")}) (PR from RepoPress)`
       const prBody =
         description || `Automated content update from RepoPress.\n\n${parts.map((p) => `- ${p}`).join("\n")}`
       const pr = await createPullRequest(token, owner, repo, branchName, baseBranch, prTitle, prBody)
       prNumber = pr.number
       prUrl = pr.htmlUrl
+    } else if (title || description) {
+      try {
+        await updatePullRequest(token, owner, repo, prNumber, {
+          title: title || undefined,
+          body: description || undefined,
+        })
+      } catch (error) {
+        warning = "Commit pushed, but updating the existing PR title/description failed."
+        console.error("Failed to update existing PR metadata:", error)
+      }
     }
 
     await convex.mutation(api.publishBranches.updateAfterCommit, {
@@ -372,6 +409,7 @@ export async function POST(request: Request) {
       publishModeUsed,
       commitSha,
       summary: parts.join(", "),
+      warning,
       media: {
         created: mediaCreateCount,
         updated: mediaUpdateCount,
@@ -386,6 +424,65 @@ export async function POST(request: Request) {
 
 function isActivePublishBranchConflict(error: unknown) {
   return error instanceof Error && error.message.includes(ACTIVE_PUBLISH_BRANCH_CONFLICT_MESSAGE)
+}
+
+async function createAvailablePublishBranch({
+  token,
+  owner,
+  repo,
+  baseBranch,
+  scope,
+  existingBranchNames,
+}: {
+  token: string
+  owner: string
+  repo: string
+  baseBranch: string
+  scope: string
+  existingBranchNames: string[]
+}) {
+  const takenBranchNames = new Set(existingBranchNames)
+
+  // Try pretty ordinal names first (repopress/scope, repopress/scope-2, ...)
+  for (let ordinal = 1; ordinal <= 50; ordinal += 1) {
+    const candidate = buildPublishBranchName(scope, ordinal)
+    if (takenBranchNames.has(candidate)) continue
+
+    const alreadyExists = await branchExists(token, owner, repo, candidate)
+    if (alreadyExists) {
+      takenBranchNames.add(candidate)
+      continue
+    }
+
+    try {
+      await createBranch(token, owner, repo, baseBranch, candidate)
+      return candidate
+    } catch (error) {
+      if (isGitHubBranchExistsError(error)) {
+        takenBranchNames.add(candidate)
+        continue
+      }
+      throw error
+    }
+  }
+
+  // Fallback: use a timestamp suffix to guarantee a unique name
+  const timestamp = Date.now()
+  const fallback = `repopress/${scope}-t${timestamp}`
+  try {
+    await createBranch(token, owner, repo, baseBranch, fallback)
+    return fallback
+  } catch (error) {
+    if (isGitHubBranchExistsError(error)) {
+      throw new Error(`Failed to allocate a publish branch name for scope "${scope}" (timestamp collision)`)
+    }
+    throw error
+  }
+}
+
+function isGitHubBranchExistsError(error: unknown) {
+  if (error instanceof Error && /already exists/i.test(error.message)) return true
+  return typeof error === "object" && error !== null && "status" in error && error.status === 422
 }
 
 async function cleanupOrphanedPublishBranch({
@@ -627,7 +724,7 @@ async function fetchConvexStorageBytes({
 /**
  * Rewrite any /api/media/resolve proxy URLs in frontmatter values to root-relative paths.
  * Extracts the `path` query param and strips the `/public` prefix (since frameworks serve `public/` at root).
- * Only string values matching isStudioMediaResolveUrl() are modified — all other values pass through unchanged.
+ * Only string values matching isStudioMediaResolveUrl() are modified - all other values pass through unchanged.
  */
 function rewriteProxyUrls(frontmatter: Record<string, unknown>): Record<string, unknown> {
   const rewritten: Record<string, unknown> = {}
@@ -651,7 +748,7 @@ function rewriteProxyUrls(frontmatter: Record<string, unknown>): Record<string, 
 
 function proxyUrlToRootRelative(proxyUrl: string): string {
   try {
-    // Parse the proxy URL — it may be relative so we use a dummy base.
+    // Parse the proxy URL - it may be relative so we use a dummy base.
     const parsed = new URL(proxyUrl, "http://localhost")
     const rawPath = parsed.searchParams.get("path")
     if (!rawPath) return proxyUrl

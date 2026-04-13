@@ -96,19 +96,19 @@ A safe implementation must go deeper than the dialog copy. Today, publish-branch
 
 ## Proposed Approach
 
-### Phase A — Make publish-branch state safe
+### Phase A - Make publish-branch state safe
 
 Teach RepoPress the difference between the current publish lane and an older still-open PR that should no longer receive new publishes. Track which committed explorer/media ops belong to which publish branch so merge cleanup becomes branch-scoped instead of project-scoped.
 
-### Phase B — Add explicit publish choice
+### Phase B - Add explicit publish choice
 
 Extend the publish route so the request can say “reuse current PR” or “create new PR”. Reuse remains the default. “Create new PR” demotes the current branch to inactive, creates a new current publish branch, and blocks overlaps with files already tracked by other still-open PRs.
 
-### Phase C — Surface the behavior in Studio
+### Phase C - Surface the behavior in Studio
 
 Make the UI explain the current PR clearly, show the choice explicitly, and list older open PRs as references so the user understands what will happen before publishing.
 
-### Phase D — Verify and document
+### Phase D - Verify and document
 
 Update the PR workflow docs, run targeted tests plus repo-wide lint/build, and manually verify the end-to-end flow with disjoint-file publishes.
 

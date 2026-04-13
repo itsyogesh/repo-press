@@ -213,7 +213,7 @@ export function Editor({
     [projectId, userId, filePath, contentRoot],
   )
 
-  // Build MDXEditor plugins — memoized to avoid re-creating on every render
+  // Build MDXEditor plugins - memoized to avoid re-creating on every render
   const plugins = React.useMemo(
     () => [
       headingsPlugin(),

@@ -1,7 +1,7 @@
 "use client"
 
 import { AlertTriangle, Loader2, Trash2 } from "lucide-react"
-import { useState, useTransition } from "react"
+import { useEffect, useState, useTransition } from "react"
 import { toast } from "sonner"
 import { removeProjectFromConfigAction } from "@/app/dashboard/[owner]/[repo]/config-actions"
 import { Button } from "./ui/button"
@@ -40,6 +40,15 @@ export function RemoveProjectDialog({
   const [confirmText, setConfirmText] = useState("")
   const [error, setError] = useState<string | null>(null)
 
+  // Reset form state whenever the dialog closes, regardless of how it was closed
+  // (Cancel button, Escape key, overlay click, or programmatic close after success).
+  useEffect(() => {
+    if (!open) {
+      setConfirmText("")
+      setError(null)
+    }
+  }, [open])
+
   if (!project) return null
 
   const isConfigManaged = project.frameworkSource === "config" && !!project.configProjectId
@@ -62,7 +71,6 @@ export function RemoveProjectDialog({
 
       if (result.success) {
         toast.success(`Project "${project.name}" removed from config`)
-        setConfirmText("")
         onOpenChange(false)
         onSuccess?.()
       } else {
@@ -73,19 +81,10 @@ export function RemoveProjectDialog({
   }
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(o) => {
-        if (!o) {
-          setConfirmText("")
-          setError(null)
-        }
-        onOpenChange(o)
-      }}
-    >
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className="sm:max-w-md"
-        // Same Radix aria-hidden race fix as EditProjectDialog — see that file for details.
+        // Same Radix aria-hidden race fix as EditProjectDialog - see that file for details.
         onCloseAutoFocus={(e) => e.preventDefault()}
       >
         <DialogHeader>
@@ -97,7 +96,7 @@ export function RemoveProjectDialog({
             {isConfigManaged ? (
               <>
                 This will remove <strong>{project.name}</strong> from the config file on GitHub. The project data in
-                RepoPress will be flagged for review — you can choose to delete it permanently or keep it as a manual
+                RepoPress will be flagged for review - you can choose to delete it permanently or keep it as a manual
                 project.
               </>
             ) : (
@@ -122,7 +121,16 @@ export function RemoveProjectDialog({
 
             <div className="grid gap-2">
               <Label htmlFor="confirm-remove">
-                Type <strong>{project.name}</strong> to confirm
+                Type{" "}
+                <button
+                  type="button"
+                  className="inline font-bold cursor-pointer hover:underline bg-transparent border-0 p-0 text-inherit"
+                  title="Click to fill"
+                  onClick={() => setConfirmText(project.name)}
+                >
+                  {project.name}
+                </button>{" "}
+                to confirm
               </Label>
               <Input
                 id="confirm-remove"

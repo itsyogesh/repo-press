@@ -1,19 +1,9 @@
-import { ConvexHttpClient } from "convex/browser"
 import { api } from "@/convex/_generated/api"
 import { createGitHubClient } from "@/lib/github"
-import { mintServerQueryToken } from "@/lib/project-access-token"
+import type { Role } from "@/lib/roles"
+import { createServerQueryContext } from "@/lib/server-context"
 
-export type Role = "owner" | "editor" | "viewer"
-
-const ROLE_HIERARCHY: Record<Role, number> = {
-  owner: 3,
-  editor: 2,
-  viewer: 1,
-}
-
-export function roleAtLeast(actual: Role, minimum: Role): boolean {
-  return ROLE_HIERARCHY[actual] >= ROLE_HIERARCHY[minimum]
-}
+export { roleAtLeast } from "@/lib/roles"
 
 export interface RepoRoleResult {
   role: Role | null
@@ -35,7 +25,7 @@ export interface RepoRoleResult {
  * Get the calling user's role on a GitHub repo by reading the `permissions`
  * object from `GET /repos/{owner}/{repo}`.
  *
- * Also extracts `default_branch` from the same API call — callers that need
+ * Also extracts `default_branch` from the same API call - callers that need
  * the real default branch can destructure it without an extra request.
  *
  * - admin → "owner"
@@ -95,7 +85,7 @@ async function probeRepoReadAccessWithBranch(token: string, owner: string, repo:
  * granted org access, but the token may still work for content reads (e.g.
  * public repos, or fine-grained PATs with contents:read scope).
  *
- * If the probe succeeds we return "viewer" as a safe lower bound — we can
+ * If the probe succeeds we return "viewer" as a safe lower bound - we can
  * confirm read access but not push access from a content read alone.
  */
 export async function probeRepoReadAccess(token: string, owner: string, repo: string): Promise<Role | null> {
@@ -107,13 +97,13 @@ export async function probeRepoReadAccess(token: string, owner: string, repo: st
  * Full 4-tier role resolution for a repo.
  *
  * 1. GitHub API permissions (getRepoRole)
- * 2. Convex repoAccessCache (seeded by prior studio visits — preserves real role for org editors)
+ * 2. Convex repoAccessCache (seeded by prior studio visits - preserves real role for org editors)
  * 3. Content read probe (safe lower bound: "viewer")
  *
  * Callers that also need ownership checks should do so before calling this
  * (ownership is project-specific, not repo-level).
  *
- * Returns { role, defaultBranch } — `defaultBranch` comes from step 1 when available.
+ * Returns { role, defaultBranch } - `defaultBranch` comes from step 1 when available.
  */
 export async function resolveRepoRole(
   token: string,
@@ -127,38 +117,34 @@ export async function resolveRepoRole(
 
   // 2. Convex access cache
   if (actingUserId) {
-    const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL
-    if (convexUrl) {
-      try {
-        const convex = new ConvexHttpClient(convexUrl)
-        const sqt = await mintServerQueryToken()
-        const cached = await convex.query(api.repoAccessCache.getForUserPublic, {
-          repoOwner: owner,
-          repoName: repo,
-          userId: actingUserId,
-          serverQueryToken: sqt,
-        })
-        if (cached) {
-          // Cache doesn't store defaultBranch — if we don't have it from step 1,
-          // we'll still need the probe to infer it below.
-          if (defaultBranch) {
-            return { role: cached.role as Role, defaultBranch, defaultBranchInferred: false }
-          }
-          // Got role from cache but no branch — probe for branch hint only
-          const probe = await probeRepoReadAccessWithBranch(token, owner, repo)
-          return {
-            role: cached.role as Role,
-            defaultBranch: probe.defaultBranch,
-            defaultBranchInferred: !!probe.defaultBranch,
-          }
+    try {
+      const { convex, serverQueryToken } = await createServerQueryContext()
+      const cached = await convex.query(api.repoAccessCache.getForUserPublic, {
+        repoOwner: owner,
+        repoName: repo,
+        userId: actingUserId,
+        serverQueryToken,
+      })
+      if (cached) {
+        // Cache doesn't store defaultBranch - if we don't have it from step 1,
+        // we'll still need the probe to infer it below.
+        if (defaultBranch) {
+          return { role: cached.role as Role, defaultBranch, defaultBranchInferred: false }
         }
-      } catch {
-        // Cache lookup failed — continue to probe
+        // Got role from cache but no branch - probe for branch hint only
+        const probe = await probeRepoReadAccessWithBranch(token, owner, repo)
+        return {
+          role: cached.role as Role,
+          defaultBranch: probe.defaultBranch,
+          defaultBranchInferred: !!probe.defaultBranch,
+        }
       }
+    } catch {
+      // Cache lookup failed - continue to probe
     }
   }
 
-  // 3. Content probe (lower bound: "viewer") — also extracts default branch hint
+  // 3. Content probe (lower bound: "viewer") - also extracts default branch hint
   const probe = await probeRepoReadAccessWithBranch(token, owner, repo)
   const branchFromProbe = defaultBranch ?? probe.defaultBranch
   return {

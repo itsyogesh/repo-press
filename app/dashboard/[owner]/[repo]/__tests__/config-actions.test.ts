@@ -331,7 +331,7 @@ describe("removeProjectFromConfigAction", () => {
     })
   })
 
-  it("removes the project and syncs — does NOT immediately delete from Convex", async () => {
+  it("removes the project and syncs - does NOT immediately delete from Convex", async () => {
     const result = await removeProjectFromConfigAction(OWNER, REPO, BRANCH, "docs")
 
     expect(result.success).toBe(true)
@@ -392,7 +392,7 @@ describe("removeProjectFromConfigAction", () => {
     expect(result.success).toBe(true)
     // removeProject IS called; we catch its "not found" error
     expect(removeProjectMock).toHaveBeenCalledWith(BASE_CONFIG, "docs")
-    // No commit — nothing to change in the config
+    // No commit - nothing to change in the config
     expect(commitConfigMock).not.toHaveBeenCalled()
     // Sync MUST run so orphan detection in Convex flags the stale project
     expect(syncProjectsServerSideMock).toHaveBeenCalledWith(TOKEN, OWNER, REPO, BRANCH, USER_ID)
@@ -400,7 +400,7 @@ describe("removeProjectFromConfigAction", () => {
 
   it("succeeds without committing when configProjectId is absent from a non-empty config", async () => {
     // Edge case: config still has OTHER projects but not the one being removed.
-    // This is idempotent — the desired end state (project not in config) is already true.
+    // This is idempotent - the desired end state (project not in config) is already true.
     removeProjectMock.mockImplementation(() => {
       throw new Error('Project "blog" not found in config')
     })
@@ -498,7 +498,7 @@ describe("commitRawConfigAction", () => {
       "explicit_sha_xyz",
       expect.anything(),
     )
-    // readConfig should NOT have been called — raw action uses caller-supplied SHA
+    // readConfig should NOT have been called - raw action uses caller-supplied SHA
     expect(readConfigMock).not.toHaveBeenCalled()
   })
 })

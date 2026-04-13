@@ -1,19 +1,9 @@
 import { verifyProjectAccessToken } from "../../lib/project-access-token"
+import type { Role } from "../../lib/roles"
+import { roleAtLeast } from "../../lib/roles"
 import type { Doc, Id } from "../_generated/dataModel"
 import type { MutationCtx, QueryCtx } from "../_generated/server"
 import { authComponent } from "../auth"
-
-export type Role = "owner" | "editor" | "viewer"
-
-const ROLE_HIERARCHY: Record<Role, number> = {
-  owner: 3,
-  editor: 2,
-  viewer: 1,
-}
-
-export function roleAtLeast(actual: Role, minimum: Role): boolean {
-  return ROLE_HIERARCHY[actual] >= ROLE_HIERARCHY[minimum]
-}
 
 export function requireRole(actual: Role, minimum: Role): void {
   if (!roleAtLeast(actual, minimum)) {
@@ -67,7 +57,7 @@ export async function resolveProjectAccess(
       requireRole(role, minimumRole)
       return { userId: authUserId, role, project }
     } catch {
-      // Cache expired or not owner — fall through to projectAccessToken
+      // Cache expired or not owner - fall through to projectAccessToken
     }
   }
 

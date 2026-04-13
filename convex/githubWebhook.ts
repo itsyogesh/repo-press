@@ -132,7 +132,7 @@ export const handlePRMerged = mutation({
       try {
         if (doc.status === "published") continue
 
-        // Do NOT set githubSha here — mergeCommitSha is a git commit SHA,
+        // Do NOT set githubSha here - mergeCommitSha is a git commit SHA,
         // not a blob SHA. The correct blob SHAs were already stored by the
         // publish-ops route before the PR was created. Storing a commit SHA
         // would break conflict detection (which compares blob SHAs).

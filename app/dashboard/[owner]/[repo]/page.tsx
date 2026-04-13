@@ -1,11 +1,11 @@
-import { ConvexHttpClient } from "convex/browser"
 import { redirect } from "next/navigation"
+import { RepoBreadcrumb } from "@/components/repo-breadcrumb"
 import { RepoProjectHub } from "@/components/repo-project-hub"
 import { api } from "@/convex/_generated/api"
-import { fetchAuthQuery, getGitHubToken, getPatAuthUserId } from "@/lib/auth-server"
+import { getGitHubToken } from "@/lib/auth-server"
 import { resolveRepoRole } from "@/lib/github-permissions"
-import { mintServerQueryToken } from "@/lib/project-access-token"
 import { fetchRepoConfig } from "@/lib/repopress/config"
+import { createServerQueryContext, resolveActingUserId } from "@/lib/server-context"
 import { syncProjectsServerSide } from "@/lib/sync-projects"
 
 interface RepoPageProps {
@@ -25,9 +25,7 @@ export default async function RepoPage({ params }: RepoPageProps) {
   const { owner, repo } = await params
 
   // Resolve acting user (OAuth or PAT)
-  const authUser = fetchAuthQuery ? await fetchAuthQuery(api.auth.getCurrentUser).catch(() => null) : null
-  const patUserId = !authUser ? await getPatAuthUserId(token) : null
-  const actingUserId = (authUser?._id as string | undefined) ?? patUserId
+  const actingUserId = await resolveActingUserId(token)
 
   // Resolve role + default branch via full 4-tier fallback (including repoAccessCache)
   const {
@@ -59,8 +57,7 @@ export default async function RepoPage({ params }: RepoPageProps) {
   }
 
   // Fetch all projects for this repo (repo-scoped, not user-scoped)
-  const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
-  const serverQueryToken = await mintServerQueryToken()
+  const { convex, serverQueryToken } = await createServerQueryContext()
   const projects = await convex.query(api.projects.listProjectsForRepo, {
     repoOwner: owner,
     repoName: repo,
@@ -71,7 +68,10 @@ export default async function RepoPage({ params }: RepoPageProps) {
   const configSynced = hasConfig && !syncError
 
   return (
-    <div className="container mx-auto py-8 px-4">
+    <div className="mx-auto w-full max-w-7xl px-4 py-10 sm:px-6">
+      <div className="mb-6">
+        <RepoBreadcrumb owner={owner} repo={repo} />
+      </div>
       <RepoProjectHub
         owner={owner}
         repo={repo}

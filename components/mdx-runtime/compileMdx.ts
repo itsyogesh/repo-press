@@ -40,7 +40,7 @@ function makeTopLevelDeclarationsMutable(code: string): string {
 
 /**
  * Fix #5: Replace MDX missing-component throw checks with fallback assignments.
- * These regexes are intentionally narrow — they match only the specific pattern
+ * These regexes are intentionally narrow - they match only the specific pattern
  * emitted by @mdx-js/mdx for missing references, not arbitrary code.
  */
 function rewriteMissingRefChecks(code: string): string {

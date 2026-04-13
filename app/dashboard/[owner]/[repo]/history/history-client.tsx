@@ -1,13 +1,24 @@
 "use client"
 
 import { useMutation, useQuery } from "convex/react"
-import { ArrowLeft, Clock, Eye, EyeOff, FileText, GitCommit, RotateCcw } from "lucide-react"
+import { Clock, Eye, EyeOff, FileText, GitCommit, Loader2, RotateCcw } from "lucide-react"
 import Link from "next/link"
 import { useMemo, useState } from "react"
 import { toast } from "sonner"
+import { RepoBreadcrumb } from "@/components/repo-breadcrumb"
 import { DiffViewer } from "@/components/studio/history/diff-viewer"
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Skeleton } from "@/components/ui/skeleton"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
 import { cn } from "@/lib/utils"
@@ -27,6 +38,7 @@ export function HistoryClient({ owner, repo, branch: _branch, projectId, project
   const [viewMode, setViewMode] = useState<ViewMode>("list")
   const [compareVersions, setCompareVersions] = useState<[string | null, string | null]>([null, null])
   const [isRestoring, setIsRestoring] = useState(false)
+  const [restoreTarget, setRestoreTarget] = useState<string | null>(null)
 
   const user = useQuery(api.auth.getCurrentUser)
   const userId = user?._id as string | undefined
@@ -48,14 +60,6 @@ export function HistoryClient({ owner, repo, branch: _branch, projectId, project
   const restoreMutation = useMutation(api.documentHistory.restoreVersion)
 
   const handleRestore = async (historyId: string) => {
-    if (
-      !confirm(
-        "Are you sure you want to restore this version? This will create a new version with the restored content.",
-      )
-    ) {
-      return
-    }
-
     setIsRestoring(true)
     try {
       await restoreMutation({
@@ -64,6 +68,7 @@ export function HistoryClient({ owner, repo, branch: _branch, projectId, project
         projectAccessToken: projectAccessToken ?? undefined,
       })
       toast.success("Version restored successfully")
+      setRestoreTarget(null)
     } catch (error) {
       console.error("Error restoring version:", error)
       toast.error("Failed to restore version")
@@ -73,17 +78,25 @@ export function HistoryClient({ owner, repo, branch: _branch, projectId, project
   }
 
   const toggleCompareVersion = (versionId: string) => {
-    if (compareVersions[0] === versionId) {
-      setCompareVersions([null, compareVersions[1]])
-    } else if (compareVersions[1] === versionId) {
-      setCompareVersions([compareVersions[0], null])
-    } else if (compareVersions[0] === null) {
-      setCompareVersions([versionId, compareVersions[1]])
-    } else if (compareVersions[1] === null) {
-      setCompareVersions([compareVersions[0], versionId])
-    } else {
-      setCompareVersions([versionId, compareVersions[1]])
-    }
+    setCompareVersions((prev) => {
+      let next: [string | null, string | null]
+      if (prev[0] === versionId) {
+        next = [null, prev[1]]
+      } else if (prev[1] === versionId) {
+        next = [prev[0], null]
+      } else if (prev[0] === null) {
+        next = [versionId, prev[1]]
+      } else if (prev[1] === null) {
+        next = [prev[0], versionId]
+      } else {
+        next = [versionId, prev[1]]
+      }
+      // Auto-switch to compare mode when 2 versions selected
+      if (next[0] && next[1]) {
+        setViewMode("compare")
+      }
+      return next
+    })
   }
 
   const compareEntries = useMemo(() => {
@@ -98,13 +111,9 @@ export function HistoryClient({ owner, repo, branch: _branch, projectId, project
     <div className="min-h-screen bg-background">
       <div className="border-b">
         <div className="container mx-auto px-4 py-4">
-          <Link
-            href={`/dashboard/${owner}/${repo}`}
-            className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground mb-4"
-          >
-            <ArrowLeft className="h-4 w-4 mr-1" />
-            Back to {owner}/{repo}
-          </Link>
+          <div className="mb-4">
+            <RepoBreadcrumb owner={owner} repo={repo} path={["history"]} />
+          </div>
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-semibold">Document History</h1>
@@ -143,13 +152,30 @@ export function HistoryClient({ owner, repo, branch: _branch, projectId, project
               Documents
             </h2>
             {!projectId ? (
-              <p className="text-muted-foreground">
-                Open history from Studio so RepoPress can target the active project.
-              </p>
+              <div className="text-center py-8 space-y-3">
+                <p className="text-muted-foreground text-sm">
+                  History needs a project context. Open a file in Studio first, then navigate to History.
+                </p>
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={`/dashboard/${owner}/${repo}/studio`}>
+                    <FileText className="h-4 w-4 mr-2" />
+                    Open Studio
+                  </Link>
+                </Button>
+              </div>
             ) : !project ? (
-              <p className="text-muted-foreground">Loading project...</p>
+              <div className="space-y-3">
+                <Skeleton className="h-12 w-full" />
+                <Skeleton className="h-12 w-full" />
+                <Skeleton className="h-12 w-3/4" />
+              </div>
             ) : !documents ? (
-              <p className="text-muted-foreground">Loading documents...</p>
+              <div className="space-y-3">
+                <Skeleton className="h-12 w-full" />
+                <Skeleton className="h-12 w-full" />
+                <Skeleton className="h-12 w-5/6" />
+                <Skeleton className="h-12 w-2/3" />
+              </div>
             ) : documents.length === 0 ? (
               <p className="text-muted-foreground">No documents found</p>
             ) : (
@@ -193,7 +219,21 @@ export function HistoryClient({ owner, repo, branch: _branch, projectId, project
                 {!selectedDoc ? (
                   <p className="text-muted-foreground">Select a document to view its history</p>
                 ) : !documentHistory ? (
-                  <p className="text-muted-foreground">Loading history...</p>
+                  <div className="space-y-4">
+                    {[1, 2, 3].map((i) => (
+                      <div key={i} className="border rounded-lg p-4 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <Skeleton className="h-5 w-20" />
+                          <div className="flex gap-2">
+                            <Skeleton className="h-8 w-24" />
+                            <Skeleton className="h-8 w-20" />
+                          </div>
+                        </div>
+                        <Skeleton className="h-4 w-40" />
+                        <Skeleton className="h-4 w-60" />
+                      </div>
+                    ))}
+                  </div>
                 ) : documentHistory.length === 0 ? (
                   <p className="text-muted-foreground">No version history yet</p>
                 ) : (
@@ -245,7 +285,7 @@ export function HistoryClient({ owner, repo, branch: _branch, projectId, project
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => handleRestore(entry._id)}
+                              onClick={() => setRestoreTarget(entry._id)}
                               disabled={isRestoring}
                             >
                               <RotateCcw className="h-3 w-3 mr-1" />
@@ -273,10 +313,15 @@ export function HistoryClient({ owner, repo, branch: _branch, projectId, project
                 </h2>
                 {!compareEntries ? (
                   <div className="text-center py-12">
-                    <p className="text-muted-foreground mb-4">Select two versions to compare from the list</p>
+                    <p className="text-muted-foreground mb-2">Select two versions to compare</p>
                     <p className="text-sm text-muted-foreground">
-                      Click &quot;Compare&quot; on any two versions to see the differences
+                      Switch to &quot;List&quot; view and click &quot;Compare&quot; on any two versions. The diff view
+                      opens automatically once both are selected.
                     </p>
+                    <Button variant="outline" size="sm" className="mt-4" onClick={() => setViewMode("list")}>
+                      <Clock className="h-4 w-4 mr-2" />
+                      Back to list
+                    </Button>
                   </div>
                 ) : (
                   <DiffViewer
@@ -291,6 +336,43 @@ export function HistoryClient({ owner, repo, branch: _branch, projectId, project
           </div>
         </div>
       </div>
+
+      {/* Restore confirmation dialog */}
+      <AlertDialog
+        open={restoreTarget !== null}
+        onOpenChange={(open) => !open && !isRestoring && setRestoreTarget(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Restore this version?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2">
+                <p>This will overwrite the current document content with the selected version.</p>
+                <ul className="list-disc pl-5 text-sm space-y-1">
+                  <li>A new history entry will be created with the current content before restoring.</li>
+                  <li>If the document is published, its status will revert to draft.</li>
+                </ul>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isRestoring}>Cancel</AlertDialogCancel>
+            <Button onClick={() => restoreTarget && handleRestore(restoreTarget)} disabled={isRestoring}>
+              {isRestoring ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Restoring…
+                </>
+              ) : (
+                <>
+                  <RotateCcw className="h-4 w-4 mr-2" />
+                  Restore version
+                </>
+              )}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

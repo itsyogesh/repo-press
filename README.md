@@ -4,8 +4,6 @@
 
 Transform any GitHub repository into a powerful content management system. Visual MDX editing, draft/publish workflows, framework auto-detection, and your content stays in Git where it belongs.
 
-[![Deployed on Vercel](https://img.shields.io/badge/Deployed%20on-Vercel-black?style=for-the-badge&logo=vercel)](https://vercel.com/itsyogeshs-projects/v0-repo-press-cms)
-[![Built with v0](https://img.shields.io/badge/Built%20with-v0.app-black?style=for-the-badge)](https://v0.app/chat/kall8NFEwor)
 [![Open Source](https://img.shields.io/badge/Open%20Source-MIT-green?style=for-the-badge)](https://github.com/itsyogesh/repo-press)
 
 ---
@@ -16,16 +14,17 @@ RepoPress connects to your GitHub repositories and gives you a Notion-like editi
 
 ### Key Features
 
-- **Visual MDX Editor** -- Rich text editing with live preview and frontmatter management
-- **Git-native Workflow** -- Drafts saved to Convex, published content committed directly to GitHub
-- **Multi-project Support** -- Create multiple projects from the same repo (e.g., blog + docs + legal pages, each in different folders)
-- **Framework Auto-detection** -- Scans your repo to detect Fumadocs, Nextra, Astro, Hugo, Docusaurus, Jekyll, Contentlayer, or generic Next.js MDX setups
+- **Visual MDX Studio Editor** -- Rich text editing with live preview, frontmatter management, and split-pane layout
+- **Content Stays in Git** -- No vendor lock-in. Drafts are saved to Convex; published content is committed directly to your GitHub repo
+- **Framework Auto-detection** -- Automatically detects Fumadocs, Nextra, Astro, Hugo, Docusaurus, Jekyll, Contentlayer, and Next.js MDX setups from your repo and configures frontmatter fields accordingly
+- **Document Workflows** -- Full state machine: draft → in review → approved → published → archived, with publish requiring a GitHub commit
+- **Version History** -- Append-only snapshots of every edit with the ability to view and revert to any previous version
+- **Multi-project Dashboard** -- Create multiple projects from the same repo (e.g., blog + docs + legal pages, each scoped to a different content root)
+- **Webhook Integrations** -- Notify external services on publish, update, and delete events
+- **GitHub OAuth Authentication** -- Secure sign-in via GitHub OAuth (powered by Better Auth running inside Convex) or Personal Access Tokens
 - **Content Collections** -- Define custom content types with different frontmatter schemas per collection
-- **Authors, Tags, Categories** -- Full taxonomy management per project
-- **Document History** -- Version snapshots of every edit with the ability to revert
-- **Review Workflows** -- Draft, in review, approved, published, scheduled, archived states
+- **Taxonomy Management** -- Authors, tags, and nested categories per project
 - **Media Asset Library** -- Track images and files referenced in your content
-- **Webhooks** -- Notify external services on publish, update, delete events
 - **Folder Meta** -- Sidebar ordering via meta.json / _meta.json patterns (Fumadocs, Nextra compatible)
 
 ---
@@ -37,8 +36,8 @@ RepoPress connects to your GitHub repositories and gives you a Notion-like editi
 | **Framework** | Next.js 16 (App Router, Turbopack) |
 | **UI** | React 19.2, Tailwind CSS v4, shadcn/ui |
 | **Database** | Convex (real-time, serverless) |
-| **Auth** | Better Auth + Convex integration (GitHub OAuth) |
-| **GitHub API** | Octokit (file read/write/commit) |
+| **Auth** | Better Auth + @convex-dev/better-auth (GitHub OAuth) |
+| **GitHub API** | Octokit (@octokit/rest) for file read/write/commit |
 | **Content Parsing** | gray-matter (frontmatter), react-markdown, remark-gfm |
 | **Deployment** | Vercel |
 
@@ -60,8 +59,7 @@ RepoPress connects to your GitHub repositories and gives you a Notion-like editi
 │   ├── login/                    # Login page (OAuth + PAT)
 │   └── page.tsx                  # Landing page
 ├── components/
-│   ├── editor/                   # Editor layout, frontmatter form, markdown editor, preview
-│   ├── landing/                  # Landing page sections (hero, features, CTA, footer, navbar)
+│   ├── landing/                  # Landing page sections (hero, features, FAQ, CTA, navbar)
 │   ├── studio/                   # Studio layout, file tree, editor, preview
 │   ├── providers.tsx             # Convex + Better Auth provider wrapper
 │   └── ui/                       # shadcn/ui components
@@ -74,9 +72,7 @@ RepoPress connects to your GitHub repositories and gives you a Notion-like editi
 │   ├── projects.ts               # Project CRUD queries/mutations
 │   ├── documents.ts              # Document CRUD + status management
 │   ├── documentHistory.ts        # Version history queries
-│   ├── authors.ts                # Author management
-│   ├── tags.ts                   # Tag management
-│   ├── categories.ts             # Category management (nested)
+│   ├── authors.ts, tags.ts, categories.ts  # Taxonomy management
 │   ├── collections.ts            # Content collection definitions
 │   ├── mediaAssets.ts            # Media/asset tracking
 │   ├── webhooks.ts               # Webhook management + triggering
@@ -87,7 +83,7 @@ RepoPress connects to your GitHub repositories and gives you a Notion-like editi
 │   ├── framework-detector.ts     # Auto-detect framework from repo contents
 │   ├── github.ts                 # GitHub API utilities (Octokit)
 │   └── utils.ts                  # General utilities (cn, etc.)
-└── middleware.ts                  # Auth guard for /dashboard routes
+└── proxy.ts                      # Auth guard for /dashboard routes
 ```
 
 ---
@@ -134,7 +130,7 @@ RepoPress auto-detects these frameworks from your repo and adapts frontmatter fi
 
 ## Environment Variables
 
-### Required
+### Required (Convex)
 
 | Variable | Description |
 |---|---|
@@ -142,13 +138,19 @@ RepoPress auto-detects these frameworks from your repo and adapts frontmatter fi
 | `CONVEX_DEPLOYMENT` | Convex deployment ID (e.g. `dev:your-project\|...`) |
 | `NEXT_PUBLIC_CONVEX_SITE_URL` | Convex site URL (e.g. `https://your-project.convex.site`) |
 
-### Auth (Better Auth + GitHub OAuth)
+### Auth (set in Convex dashboard)
 
 | Variable | Description |
 |---|---|
 | `GITHUB_CLIENT_ID` | From your [GitHub OAuth App](https://github.com/settings/developers) |
 | `GITHUB_CLIENT_SECRET` | From your GitHub OAuth App |
 | `BETTER_AUTH_SECRET` | Random secret string for session encryption |
+| `SITE_URL` | Your Convex site URL (same as `NEXT_PUBLIC_CONVEX_SITE_URL`) |
+
+### Optional
+
+| Variable | Description |
+|---|---|
 | `NEXT_PUBLIC_APP_URL` | Your app's public URL (e.g. `https://repopress.app`) |
 
 ### Setting up GitHub OAuth
@@ -182,32 +184,48 @@ npm install
 npx convex dev
 ```
 
-This will prompt you to create a Convex project and populate your `.env.local` with the required URLs.
+This will prompt you to create a Convex project and populate your `.env.local` with the required Convex URLs.
 
 ### 4. Set up environment variables
 
-Copy the env vars from the table above into your `.env.local` file.
-
-### 5. Run the dev server
+Add the GitHub OAuth variables to your `.env.local`:
 
 ```bash
-npm run dev
+GITHUB_CLIENT_ID=<your-id>
+GITHUB_CLIENT_SECRET=<your-secret>
+BETTER_AUTH_SECRET=<random-string>
+SITE_URL=https://your-project.convex.site
 ```
 
-Open [http://localhost:3000](http://localhost:3000) to see the app.
+### 5. Run the dev servers
+
+You need to run both the Next.js and Convex dev servers concurrently in separate terminals:
+
+**Terminal 1 - Convex:**
+```bash
+npx convex dev
+```
+
+**Terminal 2 - Next.js:**
+```bash
+npx next dev --port 3001
+```
+
+Open [http://localhost:3001](http://localhost:3001) to see the app.
 
 ---
 
 ## How It Works
 
 1. **Sign in** with GitHub OAuth or a Personal Access Token
-2. **Browse your repos** on the dashboard
+2. **Browse your repos** on the multi-project dashboard
 3. **Create a project** by selecting a repo, branch, and content folder
 4. **RepoPress auto-detects** your framework and configures frontmatter fields
 5. **Open the Studio** to visually edit MDX files with live preview
 6. **Save drafts** to Convex (no Git commit until you publish)
-7. **Publish** commits the content directly to your GitHub branch
-8. **Track history** of every edit with the ability to revert
+7. **Move through workflows** - draft → in review → approved → published
+8. **Publish** commits the content directly to your GitHub branch
+9. **Track history** of every edit with version snapshots and the ability to revert
 
 ---
 

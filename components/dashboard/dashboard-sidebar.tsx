@@ -1,9 +1,10 @@
 "use client"
 
 import { useQuery } from "convex/react"
-import { Box, Folder, Home, LayoutDashboard } from "lucide-react"
+import { Box, Clock, Folder, Home, LayoutDashboard, Pencil, Settings } from "lucide-react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useSearchParams } from "next/navigation"
+import { DashboardSidebarFooter } from "@/components/dashboard/sidebar-footer"
 import {
   Sidebar,
   SidebarContent,
@@ -25,11 +26,60 @@ const NAV_ITEMS = [
   { title: "Repositories", href: "/dashboard#repositories", icon: LayoutDashboard },
 ] as const
 
+/** Parse /dashboard/:owner/:repo from pathname, returning null if not a repo route */
+function parseRepoFromPath(pathname: string): { owner: string; repo: string } | null {
+  const match = pathname.match(/^\/dashboard\/([^/]+)\/([^/]+)/)
+  if (!match) return null
+  return { owner: match[1], repo: match[2] }
+}
+
 export function DashboardSidebar() {
   const pathname = usePathname()
+  const searchParams = useSearchParams()
   const projects = useQuery(api.projects.listAccessibleProjects)
 
   const recentProjects = projects ? [...projects].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 5) : undefined
+
+  const repoContext = parseRepoFromPath(pathname)
+  const isStudio = /\/studio(\/|$)/.test(pathname)
+
+  // Projects belonging to the currently viewed repo (undefined while loading)
+  const repoProjects =
+    projects && repoContext
+      ? projects.filter((p) => p.repoOwner === repoContext.owner && p.repoName === repoContext.repo)
+      : undefined
+
+  // Context carry-through: read projectId+branch from the current URL so that
+  // navigating History↔Studio within a multi-project repo keeps the same project.
+  const urlProjectId = searchParams.get("projectId")
+  const urlBranch = searchParams.get("branch")
+
+  // Resolution priority:
+  // 1. URL has a projectId that matches a project in this repo → carry it forward
+  // 2. Exactly 1 project in this repo → link directly into it
+  // 3. Multi-project with no URL context → send to hub for disambiguation
+  const urlProject =
+    urlProjectId && repoProjects?.length ? (repoProjects.find((p) => p._id === urlProjectId) ?? null) : null
+  const singleProject = !urlProject && repoProjects?.length === 1 ? repoProjects[0] : null
+  const navProject = urlProject ?? singleProject
+
+  // Build nav links. While projects are still loading, if the URL already carries
+  // projectId+branch, use them directly so links don't flicker from hub → direct.
+  function buildProjectLink(page: "studio" | "history"): string {
+    if (!repoContext) return "/dashboard"
+    const hub = `/dashboard/${repoContext.owner}/${repoContext.repo}`
+    if (navProject) {
+      return `${hub}/${page}?branch=${navProject.branch}&projectId=${navProject._id}`
+    }
+    if (repoProjects === undefined && urlProjectId && urlBranch) {
+      return `${hub}/${page}?branch=${urlBranch}&projectId=${urlProjectId}`
+    }
+    return hub
+  }
+
+  const studioLink = buildProjectLink("studio")
+  const historyLink = buildProjectLink("history")
+  const hasProjectContext = Boolean(navProject) || (repoProjects === undefined && Boolean(urlProjectId))
 
   return (
     <Sidebar collapsible="icon" variant="sidebar">
@@ -78,6 +128,55 @@ export function DashboardSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
+        {/* Contextual repo sub-nav (visible when inside a repo route, except studio) */}
+        {repoContext && !isStudio && (
+          <SidebarGroup>
+            <SidebarGroupLabel className="truncate">
+              {repoContext.owner}/{repoContext.repo}
+            </SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={pathname.endsWith("/studio") || pathname.includes("/studio/")}
+                    tooltip={hasProjectContext ? "Studio" : "Studio - select project"}
+                  >
+                    <Link href={studioLink}>
+                      <Pencil className="size-4" />
+                      <span>Studio</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={pathname.includes("/history")}
+                    tooltip={hasProjectContext ? "History" : "History - select project"}
+                  >
+                    <Link href={historyLink}>
+                      <Clock className="size-4" />
+                      <span>History</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={pathname.endsWith("/settings") && pathname.includes(`/${repoContext.repo}/`)}
+                    tooltip="Settings"
+                  >
+                    <Link href={`/dashboard/${repoContext.owner}/${repoContext.repo}/settings`}>
+                      <Settings className="size-4" />
+                      <span>Settings</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
+
         <SidebarGroup>
           <SidebarGroupLabel>Recent Projects</SidebarGroupLabel>
           <SidebarGroupContent>
@@ -118,6 +217,7 @@ export function DashboardSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
+      <DashboardSidebarFooter />
       <SidebarRail />
     </Sidebar>
   )

@@ -21,7 +21,7 @@ function makeDef(overrides: Partial<RepoComponentDef> & { name: string }): RepoC
 // Basic node building
 // ---------------------------------------------------------------------------
 
-describe("buildComponentNode — basic", () => {
+describe("buildComponentNode - basic", () => {
   it("produces a node with name, kind, hasChildren from def", () => {
     const def = makeDef({
       name: "Callout",
@@ -91,7 +91,7 @@ describe("buildComponentNode — basic", () => {
 // Default values
 // ---------------------------------------------------------------------------
 
-describe("buildComponentNode — defaults", () => {
+describe("buildComponentNode - defaults", () => {
   it("fills in default when form value is absent", () => {
     const def = makeDef({
       name: "Callout",
@@ -119,7 +119,7 @@ describe("buildComponentNode — defaults", () => {
 // Type coercion
 // ---------------------------------------------------------------------------
 
-describe("buildComponentNode — type coercion", () => {
+describe("buildComponentNode - type coercion", () => {
   it("coerces string number values to numbers", () => {
     const def = makeDef({
       name: "Grid",
@@ -167,7 +167,7 @@ describe("buildComponentNode — type coercion", () => {
 // Children handling
 // ---------------------------------------------------------------------------
 
-describe("buildComponentNode — children", () => {
+describe("buildComponentNode - children", () => {
   it("includes children when hasChildren is true and value is non-empty", () => {
     const def = makeDef({
       name: "Callout",
@@ -205,7 +205,7 @@ describe("buildComponentNode — children", () => {
 })
 
 // ---------------------------------------------------------------------------
-// toJsxProperties — converts ComponentNode props to MDXEditor JsxProperties
+// toJsxProperties - converts ComponentNode props to MDXEditor JsxProperties
 // ---------------------------------------------------------------------------
 
 describe("toJsxProperties", () => {

@@ -356,6 +356,24 @@ export async function createBranch(
   return data
 }
 
+export async function branchExists(accessToken: string, owner: string, repo: string, branchName: string) {
+  const octokit = createGitHubClient(accessToken)
+
+  try {
+    await octokit.git.getRef({
+      owner,
+      repo,
+      ref: `heads/${branchName}`,
+    })
+    return true
+  } catch (error: any) {
+    if (error?.status === 404) {
+      return false
+    }
+    throw error
+  }
+}
+
 export type BatchOperation = {
   path: string
   content?: string
@@ -483,6 +501,22 @@ export async function createPullRequest(
     body,
   })
   return { number: data.number, url: data.url, htmlUrl: data.html_url }
+}
+
+export async function updatePullRequest(
+  accessToken: string,
+  owner: string,
+  repo: string,
+  pullNumber: number,
+  updates: { title?: string; body?: string },
+): Promise<void> {
+  const octokit = createGitHubClient(accessToken)
+  await octokit.pulls.update({
+    owner,
+    repo,
+    pull_number: pullNumber,
+    ...updates,
+  })
 }
 
 export async function getPullRequest(

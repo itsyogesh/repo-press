@@ -265,7 +265,7 @@ export async function POST(request: Request) {
     const imageMetadata = await getImageMetadata(contentBuffer)
     const baseShaAtStage = await getExistingFileShaSafe(token, owner, repo, githubPath, project.branch)
 
-    // Upload to Convex file storage — no branch or Blob token required.
+    // Upload to Convex file storage - no branch or Blob token required.
     const { storageId } = await uploadToConvexStorage({
       convex,
       api,

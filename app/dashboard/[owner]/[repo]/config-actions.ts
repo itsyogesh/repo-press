@@ -1,12 +1,11 @@
 "use server"
 
-import { ConvexHttpClient } from "convex/browser"
 import { revalidatePath } from "next/cache"
 import { api } from "@/convex/_generated/api"
-import { fetchAuthQuery, getGitHubToken, getPatAuthUserId } from "@/lib/auth-server"
+import { getGitHubToken } from "@/lib/auth-server"
 import type { ProjectConfig } from "@/lib/config-schema"
 import { resolveRepoRole, roleAtLeast } from "@/lib/github-permissions"
-import { mintProjectAccessToken, mintServerQueryToken } from "@/lib/project-access-token"
+import { mintProjectAccessToken } from "@/lib/project-access-token"
 import {
   addProject,
   commitConfig,
@@ -15,9 +14,8 @@ import {
   removeProject,
   updateProject,
 } from "@/lib/repopress/config-writer"
+import { createServerQueryContext, resolveActingUserId } from "@/lib/server-context"
 import { syncProjectsServerSide } from "@/lib/sync-projects"
-
-const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
 
 // ── Shared helpers ────────────────────────────────────────────────
 
@@ -25,10 +23,7 @@ async function resolveAuthContext() {
   const token = await getGitHubToken()
   if (!token) throw new Error("Not authenticated with GitHub")
 
-  const authUser = fetchAuthQuery ? await fetchAuthQuery(api.auth.getCurrentUser, {}).catch(() => null) : null
-  const patUserId = !authUser ? await getPatAuthUserId(token) : null
-  const actingUserId = (authUser?._id as string | undefined) ?? patUserId
-
+  const actingUserId = await resolveActingUserId(token)
   if (!actingUserId) throw new Error("No authenticated user found")
 
   return { token, actingUserId }
@@ -66,10 +61,14 @@ function getConfigProjectIdsFromJson(rawJson: string) {
 }
 
 type ConfigActionResult =
-  | { success: true; syncResult?: { synced: string[]; created: string[]; unchanged: string[] } }
+  | {
+      success: true
+      syncResult?: { synced: string[]; created: string[]; unchanged: string[] }
+    }
   | { success: false; error: string }
 
 type ProjectResolutionResult = {
+  convex: Awaited<ReturnType<typeof createServerQueryContext>>["convex"]
   project: {
     _id: string
     repoOwner: string
@@ -83,7 +82,7 @@ type ProjectResolutionResult = {
 
 async function resolveProjectOwnerActionContext(projectId: string): Promise<ProjectResolutionResult> {
   const { token, actingUserId } = await resolveAuthContext()
-  const serverQueryToken = await mintServerQueryToken()
+  const { convex, serverQueryToken } = await createServerQueryContext()
   const project = await convex.query(api.projects.get, {
     id: projectId as never,
     serverQueryToken,
@@ -93,9 +92,16 @@ async function resolveProjectOwnerActionContext(projectId: string): Promise<Proj
     throw new Error("Project not found")
   }
 
-  const { role } = await resolveRepoRole(token, project.repoOwner, project.repoName, actingUserId)
-  if (role !== "owner") {
-    throw new Error("Unauthorized: owner access required")
+  // Primary check: Convex project ownership. This is the authoritative record and
+  // works regardless of OAuth scope limitations that can prevent GitHub's permissions
+  // field from being returned by repos.get().
+  const isConvexOwner = (project as any).userId === actingUserId
+  if (!isConvexOwner) {
+    // Fallback: GitHub admin access (e.g. org admins who didn't create the project).
+    const { role } = await resolveRepoRole(token, project.repoOwner, project.repoName, actingUserId)
+    if (role !== "owner") {
+      throw new Error("Unauthorized: owner access required")
+    }
   }
 
   const projectAccessToken = await mintProjectAccessToken({
@@ -107,7 +113,7 @@ async function resolveProjectOwnerActionContext(projectId: string): Promise<Proj
     role: "owner",
   })
 
-  return { token, actingUserId, project, projectAccessToken }
+  return { convex, token, actingUserId, project, projectAccessToken }
 }
 
 // ── Server actions ────────────────────────────────────────────────
@@ -126,7 +132,7 @@ export async function addProjectToConfigAction(
     await requireWriteAccess(token, owner, repo, actingUserId)
 
     // Validate that contentRoot exists as a directory in the repo before committing.
-    // Empty contentRoot means repo root — always valid, skip the check.
+    // Empty contentRoot means repo root - always valid, skip the check.
     // Note: getRepoContents swallows 404 and returns []. We call Octokit directly here
     // so we can distinguish "not found" from "transient error".
     if (project.contentRoot) {
@@ -152,7 +158,7 @@ export async function addProjectToConfigAction(
             error: `Folder "${project.contentRoot}" does not exist in this repository on branch "${branch}".`,
           }
         }
-        // Non-404 errors (rate limit, network) — allow through so a transient failure doesn't block creation
+        // Non-404 errors (rate limit, network) - allow through so a transient failure doesn't block creation
       }
     }
 
@@ -187,12 +193,42 @@ export async function updateProjectInConfigAction(
   repo: string,
   branch: string,
   configProjectId: string,
-  updates: Partial<Pick<ProjectConfig, "name" | "framework" | "contentType" | "branch" | "preview" | "components">>,
+  updates: Partial<
+    Pick<ProjectConfig, "name" | "framework" | "contentType" | "branch" | "preview" | "components" | "contentRoot">
+  >,
 ): Promise<ConfigActionResult> {
   try {
     const { token, actingUserId } = await resolveAuthContext()
     await requireWriteAccess(token, owner, repo, actingUserId)
     const { config, sha } = await fetchConfigOrThrow(token, owner, repo, branch)
+
+    // Validate contentRoot directory exists if it's being updated
+    if (updates.contentRoot !== undefined && updates.contentRoot !== "") {
+      const { createGitHubClient } = await import("@/lib/github")
+      const octokit = createGitHubClient(token)
+      try {
+        const { data } = await octokit.repos.getContent({
+          owner,
+          repo,
+          path: updates.contentRoot,
+          ref: branch,
+        })
+        if (!Array.isArray(data)) {
+          return {
+            success: false,
+            error: `"${updates.contentRoot}" is a file, not a folder.`,
+          }
+        }
+      } catch (err: any) {
+        if (err.status === 404) {
+          return {
+            success: false,
+            error: `Folder "${updates.contentRoot}" does not exist in ${owner}/${repo} on branch ${branch}.`,
+          }
+        }
+        // Non-404 errors: let through to avoid blocking on transient failures
+      }
+    }
 
     const updatedConfig = updateProject(config, configProjectId, updates)
     await commitConfig(
@@ -238,7 +274,7 @@ export async function removeProjectFromConfigAction(
       updatedConfig = removeProject(config, configProjectId)
     } catch (err: any) {
       if (err.message?.includes("not found in config")) {
-        // Project is already absent — idempotent success. Skip the GitHub commit
+        // Project is already absent - idempotent success. Skip the GitHub commit
         // and fall through to sync so Convex orphan detection can clean up.
         skipCommit = true
       } else {
@@ -257,7 +293,7 @@ export async function removeProjectFromConfigAction(
         `chore(repopress): remove project "${configProjectId}"`,
       )
     }
-    // If the project is not in the config, skip the commit — it was already
+    // If the project is not in the config, skip the commit - it was already
     // removed (e.g. the config was manually cleared). The sync below will
     // trigger orphan detection and flag the Convex record appropriately.
 
@@ -332,7 +368,7 @@ export async function keepProjectAsManualAction(
   projectId: string,
 ): Promise<{ success: true } | { success: false; error: string }> {
   try {
-    const { project, actingUserId, projectAccessToken } = await resolveProjectOwnerActionContext(projectId)
+    const { convex, project, actingUserId, projectAccessToken } = await resolveProjectOwnerActionContext(projectId)
 
     await convex.mutation(api.projects.keepAsManual, {
       projectId: projectId as never,
@@ -351,7 +387,7 @@ export async function deleteProjectPermanentlyAction(
   projectId: string,
 ): Promise<{ success: true } | { success: false; error: string }> {
   try {
-    const { project, actingUserId, projectAccessToken } = await resolveProjectOwnerActionContext(projectId)
+    const { convex, project, actingUserId, projectAccessToken } = await resolveProjectOwnerActionContext(projectId)
 
     await convex.mutation(api.projects.removeFull, {
       projectId: projectId as never,
@@ -377,13 +413,13 @@ export async function cleanUpAllOrphansAction(
   try {
     const { token, actingUserId } = await resolveAuthContext()
 
-    // Require owner role — consistent with deleteProjectPermanentlyAction
+    // Require owner role - consistent with deleteProjectPermanentlyAction
     const { role } = await resolveRepoRole(token, owner, repo, actingUserId)
     if (role !== "owner") {
       throw new Error("Unauthorized: owner access required to remove all orphans")
     }
 
-    const serverQueryToken = await mintServerQueryToken()
+    const { convex, serverQueryToken } = await createServerQueryContext()
     const result = await convex.mutation(api.projects.removeAllOrphans, {
       actingUserId,
       serverQueryToken,

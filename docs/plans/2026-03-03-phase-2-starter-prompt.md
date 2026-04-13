@@ -1,4 +1,4 @@
-# Starter Prompt for Claude — RepoPress Phase 2
+# Starter Prompt for Claude - RepoPress Phase 2
 
 > **Status:** ARCHIVED (Phase 2 plan is complete)  
 > **Use Instead for Current Work:** `docs/plans/2026-03-03-mdx-runtime-hardening-handover-starter-prompt.md`

@@ -1,6 +1,6 @@
-const encoder = new TextEncoder()
+import type { Role } from "@/lib/roles"
 
-type Role = "owner" | "editor" | "viewer"
+const encoder = new TextEncoder()
 
 type ProjectAccessTokenPayload = {
   projectId: string
@@ -48,7 +48,7 @@ async function signValue(value: string) {
  *
  * Recomputes the expected HMAC and compares it against the provided signature
  * using XOR-based constant-time comparison. This is safe because we're
- * comparing two hex-encoded HMAC outputs — even a timing leak would only
+ * comparing two hex-encoded HMAC outputs - even a timing leak would only
  * reveal the HMAC, not the secret key needed to forge tokens.
  *
  * Avoids crypto.subtle.generateKey() (requires randomness, forbidden in
