@@ -3,12 +3,17 @@
 import { compile } from "@mdx-js/mdx"
 import { parse } from "acorn"
 import MagicString from "magic-string"
-import { type ExtractedImport, remarkTransformImports } from "@/components/mdx-runtime/transformImports"
+import {
+  type ExtractedImport,
+  remarkTransformImports,
+  type TransformImportsData,
+} from "@/components/mdx-runtime/transformImports"
 
 export interface CompileMdxResult {
   code?: string
   error?: string
   imports?: ExtractedImport[]
+  diagnostics?: string[]
 }
 
 /**
@@ -64,7 +69,9 @@ export async function compileMdxAction(
       development: false,
     })
 
-    const imports = vfile.data.extractedImports as ExtractedImport[] | undefined
+    const transformData = vfile.data as TransformImportsData
+    const imports = transformData.extractedImports
+    const diagnostics = transformData.importDiagnostics
     let code = String(vfile)
 
     code = makeTopLevelDeclarationsMutable(code)
@@ -73,6 +80,7 @@ export async function compileMdxAction(
     return {
       code,
       imports: imports || [],
+      diagnostics: diagnostics || [],
     }
   } catch (error: any) {
     console.error("[compileMdxAction] failed", error)

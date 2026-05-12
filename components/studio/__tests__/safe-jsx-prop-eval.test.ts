@@ -4,7 +4,7 @@ import { safeEvalJsExpression } from "../safe-jsx-prop-eval"
 describe("safeEvalJsExpression", () => {
   it("evaluates optional chaining member access", () => {
     const scope = {
-      DOCS_SETUP_MEDIA: {
+      MEDIA_REGISTRY: {
         cloudflare: {
           images: {
             test: "https://example.com/test.png",
@@ -13,7 +13,7 @@ describe("safeEvalJsExpression", () => {
       },
     }
 
-    const result = safeEvalJsExpression('DOCS_SETUP_MEDIA.cloudflare?.images?.["test"]', scope)
+    const result = safeEvalJsExpression('MEDIA_REGISTRY.cloudflare?.images?.["test"]', scope)
     expect(result.ok).toBe(true)
     if (result.ok) {
       expect(result.value).toBe("https://example.com/test.png")
@@ -22,12 +22,12 @@ describe("safeEvalJsExpression", () => {
 
   it("returns undefined when optional chain hits nullish object", () => {
     const scope = {
-      DOCS_SETUP_MEDIA: {
+      MEDIA_REGISTRY: {
         cloudflare: null,
       },
     }
 
-    const result = safeEvalJsExpression("DOCS_SETUP_MEDIA.cloudflare?.images", scope)
+    const result = safeEvalJsExpression("MEDIA_REGISTRY.cloudflare?.images", scope)
     expect(result.ok).toBe(true)
     if (result.ok) {
       expect(result.value).toBeUndefined()
@@ -36,12 +36,12 @@ describe("safeEvalJsExpression", () => {
 
   it("keeps non-optional null access as an error", () => {
     const scope = {
-      DOCS_SETUP_MEDIA: {
+      MEDIA_REGISTRY: {
         cloudflare: null,
       },
     }
 
-    const result = safeEvalJsExpression("DOCS_SETUP_MEDIA.cloudflare.images", scope)
+    const result = safeEvalJsExpression("MEDIA_REGISTRY.cloudflare.images", scope)
     expect(result.ok).toBe(false)
   })
 })

@@ -2,7 +2,9 @@
 
 import { api } from "@/convex/_generated/api"
 import { getGitHubToken } from "@/lib/auth-server"
+import { buildDetectionContext, detectFrameworkFromContext } from "@/lib/framework-adapters/registry"
 import { fetchRepoConfig } from "@/lib/repopress/config"
+import { resolveResolvedRuntime } from "@/lib/repopress/resolved-runtime"
 import { createServerQueryContext, resolveActingUserId } from "@/lib/server-context"
 
 /**
@@ -24,17 +26,47 @@ export async function syncProjectsServerSide(
   const { config } = await fetchRepoConfig(token, owner, repo, branch)
   if (!config) return null
 
-  const projectsToSync = config.projects.map((p) => ({
-    configProjectId: p.id,
-    name: p.name,
-    contentRoot: p.contentRoot,
-    framework: p.framework === "auto" ? "detected" : p.framework,
-    contentType: p.contentType as "blog" | "docs" | "pages" | "changelog" | "custom",
-    branch: p.branch || config.defaults?.branch || branch,
-    previewEntry: p.preview?.entry || config.defaults?.preview?.entry,
-    enabledPlugins: p.preview?.plugins || config.defaults?.preview?.plugins,
-    components: p.components,
-  }))
+  const detectionContexts = new Map<string, Awaited<ReturnType<typeof buildDetectionContext>>>()
+  const getDetectionContext = async (contentRoot: string) => {
+    const key = contentRoot || ""
+    if (!detectionContexts.has(key)) {
+      detectionContexts.set(key, await buildDetectionContext(token, owner, repo, branch, contentRoot))
+    }
+    return detectionContexts.get(key)!
+  }
+
+  const projectsToSync = await Promise.all(
+    config.projects.map(async (p) => {
+      const previewEntry = p.preview?.entry || config.defaults?.preview?.entry
+      const detectionContext = await getDetectionContext(p.contentRoot)
+      const detectedFramework =
+        p.framework === "auto" || p.framework === "detected"
+          ? (await detectFrameworkFromContext(detectionContext)).framework
+          : p.framework
+      const resolvedRuntime = await resolveResolvedRuntime({
+        owner,
+        repo,
+        branch,
+        framework: detectedFramework,
+        contentRoot: p.contentRoot,
+        overrideEntry: previewEntry,
+        readFile: detectionContext.readFile,
+      })
+
+      return {
+        configProjectId: p.id,
+        name: p.name,
+        contentRoot: p.contentRoot,
+        framework: detectedFramework,
+        contentType: p.contentType as "blog" | "docs" | "pages" | "changelog" | "custom",
+        branch: p.branch || config.defaults?.branch || branch,
+        previewEntry,
+        enabledPlugins: p.preview?.plugins || config.defaults?.preview?.plugins,
+        components: p.components,
+        resolvedRuntime,
+      }
+    }),
+  )
 
   const { convex, serverQueryToken } = await createServerQueryContext()
 

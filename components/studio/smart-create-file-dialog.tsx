@@ -1,6 +1,5 @@
 "use client"
 
-import matter from "gray-matter"
 import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -14,6 +13,7 @@ import { groupFields } from "@/lib/framework-adapters/field-groups"
 import { getFolderContext } from "@/lib/framework-adapters/folder-context"
 import type { FrameworkAdapter, FrontmatterFieldDef } from "@/lib/framework-adapters/types"
 import type { FileTreeNode } from "@/lib/github"
+import { parseContentFile } from "@/lib/repopress/content-file"
 import {
   blankSmartCreateValue,
   buildSiblingFields,
@@ -77,8 +77,7 @@ async function fetchSiblingFrontmatter(
     const res = await fetch(`/api/github/file?${params.toString()}`)
     if (!res.ok) return null
     const payload = (await res.json()) as { content: string; sha: string }
-    const parsed = matter(payload.content || "")
-    return parsed.data as Record<string, unknown>
+    return parseContentFile(payload.content || "", path).frontmatter
   } catch {
     return null
   }

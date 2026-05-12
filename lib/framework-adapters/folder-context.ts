@@ -27,7 +27,7 @@ export type FolderContext = {
   /** How filenames should be derived from the title */
   namingStrategy: NamingStrategy
   /** File extension for new files */
-  fileExtension: ".mdx" | ".md"
+  fileExtension: ".mdx" | ".md" | ".markdown"
   /** Optional hint to show in the dialog */
   hint?: string
 }
@@ -110,7 +110,8 @@ export function getFolderContext(folderPath: string, adapter: FrameworkAdapter |
   const segment = lastSegment(folderPath)
 
   const namingStrategy: NamingStrategy = adapter?.namingStrategy ?? "slug"
-  const fileExtension: ".mdx" | ".md" = adapter?.fileExtension ?? (adapter?.id === "custom" ? ".md" : ".mdx")
+  const fileExtension: ".mdx" | ".md" | ".markdown" =
+    adapter?.fileExtension ?? (adapter?.id === "custom" ? ".md" : ".mdx")
 
   // Fields the user must fill in (excluding title and draft)
   const requiredFields =

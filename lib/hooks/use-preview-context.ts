@@ -18,6 +18,7 @@ interface UsePreviewContextOptions {
   repo: string
   branch: string
   adapterPath?: string | null
+  adapterRoot?: string | null
   enabledPlugins?: string[] | null
   pluginRegistry?: Record<string, string> | null
 }
@@ -85,12 +86,18 @@ function emit(entry: PreviewStoreEntry) {
   }
 }
 
-function dedupedAdapterRequest(owner: string, repo: string, branch: string, adapterPath: string) {
-  const key = `${owner}/${repo}@${branch}:${adapterPath}`
+function dedupedAdapterRequest(
+  owner: string,
+  repo: string,
+  branch: string,
+  adapterPath: string,
+  adapterRoot: string | null,
+) {
+  const key = `${owner}/${repo}@${branch}:${adapterPath}:${adapterRoot ?? ""}`
   const existing = inFlightAdapterRequests.get(key)
   if (existing) return existing
 
-  const request = fetchAdapterSourceAction(owner, repo, branch, adapterPath).finally(() => {
+  const request = fetchAdapterSourceAction(owner, repo, branch, adapterPath, adapterRoot).finally(() => {
     inFlightAdapterRequests.delete(key)
   })
   inFlightAdapterRequests.set(key, request)
@@ -140,38 +147,54 @@ async function loadPreviewContext(
       }
 
       if (options.adapterPath) {
-        const result = await dedupedAdapterRequest(options.owner, options.repo, options.branch, options.adapterPath)
+        const result = await dedupedAdapterRequest(
+          options.owner,
+          options.repo,
+          options.branch,
+          options.adapterPath,
+          options.adapterRoot,
+        )
         if (result.success && "source" in result && result.source) {
-          if ("rateLimited" in result && result.rateLimited) {
+          try {
+            if ("rateLimited" in result && result.rateLimited) {
+              diagnostics.push(
+                `Adapter request for ${options.adapterPath} hit GitHub rate limits and retried ${result.retryCount} time(s).`,
+              )
+            }
+
+            const sourceSha = ("sha" in result ? result.sha : null) || hashSource(result.source)
+            const cacheKey = buildAdapterCacheKey(
+              options.owner,
+              options.repo,
+              options.branch,
+              options.adapterPath,
+              sourceSha,
+            )
+            let transpiled = await getCachedAdapter(cacheKey, sourceSha)
+            if (!transpiled) {
+              const entryPath = ("entryPath" in result ? result.entryPath : null) || options.adapterPath
+              transpiled = await transpileAdapter({
+                entryPath,
+                sources: ("sources" in result ? result.sources : null) || {
+                  [options.adapterPath]: result.source,
+                },
+                runtimeRoot: options.adapterRoot,
+              })
+              await setCachedAdapter({
+                key: cacheKey,
+                sourceSha,
+                transpiledCode: transpiled,
+              })
+            }
+            entry.adapter = evaluateAdapter(transpiled)
+          } catch (error: unknown) {
+            entry.adapter = null
             diagnostics.push(
-              `Adapter request for ${options.adapterPath} hit GitHub rate limits and retried ${result.retryCount} time(s).`,
+              `Adapter at ${options.adapterPath} could not be executed. Falling back to generic preview: ${
+                error instanceof Error ? error.message : "Unknown error"
+              }`,
             )
           }
-
-          const sourceSha = ("sha" in result ? result.sha : null) || hashSource(result.source)
-          const cacheKey = buildAdapterCacheKey(
-            options.owner,
-            options.repo,
-            options.branch,
-            options.adapterPath,
-            sourceSha,
-          )
-          let transpiled = await getCachedAdapter(cacheKey, sourceSha)
-          if (!transpiled) {
-            const entryPath = ("entryPath" in result ? result.entryPath : null) || options.adapterPath
-            transpiled = await transpileAdapter({
-              entryPath,
-              sources: ("sources" in result ? result.sources : null) || {
-                [options.adapterPath]: result.source,
-              },
-            })
-            await setCachedAdapter({
-              key: cacheKey,
-              sourceSha,
-              transpiledCode: transpiled,
-            })
-          }
-          entry.adapter = evaluateAdapter(transpiled)
         } else {
           diagnostics.push(`Adapter missing or failed at ${options.adapterPath}: ${result.error}`)
           entry.adapter = null
@@ -207,7 +230,7 @@ async function loadPreviewContext(
             } catch (error: unknown) {
               return {
                 id,
-                error: error instanceof Error ? error.message : "Unknown error",
+                error: `Falling back to project preview: ${error instanceof Error ? error.message : "Unknown error"}`,
               }
             }
           })
@@ -278,6 +301,7 @@ export function usePreviewContext({
   repo,
   branch,
   adapterPath,
+  adapterRoot,
   enabledPlugins,
   pluginRegistry,
 }: UsePreviewContextOptions): UsePreviewContextResult {
@@ -295,13 +319,15 @@ export function usePreviewContext({
         repo,
         branch,
         adapterPath: adapterPath || null,
+        adapterRoot: adapterRoot ?? null,
         enabledPlugins: normalizedPlugins,
         pluginRegistry: normalizedRegistry,
       }),
-    [owner, repo, branch, adapterPath, normalizedPlugins, normalizedRegistry],
+    [owner, repo, branch, adapterPath, adapterRoot, normalizedPlugins, normalizedRegistry],
   )
 
   const normalizedAdapterPath = adapterPath || null
+  const normalizedAdapterRoot = adapterRoot ?? null
 
   const subscribe = useCallback(
     (listener: () => void) =>
@@ -312,12 +338,13 @@ export function usePreviewContext({
           repo,
           branch,
           adapterPath: normalizedAdapterPath,
+          adapterRoot: normalizedAdapterRoot,
           enabledPlugins: normalizedPlugins,
           pluginRegistry: normalizedRegistry,
         },
         listener,
       ),
-    [key, owner, repo, branch, normalizedAdapterPath, normalizedPlugins, normalizedRegistry],
+    [key, owner, repo, branch, normalizedAdapterPath, normalizedAdapterRoot, normalizedPlugins, normalizedRegistry],
   )
 
   const snap = useCallback(() => getSnapshot(key), [key])

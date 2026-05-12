@@ -1,7 +1,6 @@
 "use client"
 
 import { useMutation } from "convex/react"
-import matter from "gray-matter"
 import { AlertCircle, Command, FileText, FolderOpen, History, Loader2, Search, Settings, X } from "lucide-react"
 import Link from "next/link"
 import * as React from "react"
@@ -29,7 +28,7 @@ import { DOCUMENT_STATUS_CONFIG, type DocumentStatus, isPublishableDocumentStatu
 import { getFrameworkAdapter } from "@/lib/framework-adapters"
 import { type FileTreeNode, findTreeNode } from "@/lib/github"
 import { usePreviewContext } from "@/lib/hooks/use-preview-context"
-import { standardComponents } from "@/lib/repopress/standard-library"
+import { parseContentFile } from "@/lib/repopress/content-file"
 import { buildHistoryHref } from "@/lib/studio/history-link"
 import { getPublishLaneViewModel } from "@/lib/studio/publish-lane-view-model"
 import { cn } from "@/lib/utils"
@@ -857,15 +856,15 @@ function StudioLayoutInner({
         content: string
         sha: string
       }
-      const parsed = matter(payload.content || "")
-      const parsedFrontmatter = (parsed.data || {}) as Record<string, unknown>
+      const parsed = parseContentFile(payload.content || "", oldPath)
+      const parsedFrontmatter = parsed.frontmatter
       const title =
         typeof parsedFrontmatter.title === "string" && parsedFrontmatter.title.trim().length > 0
           ? parsedFrontmatter.title
           : inferTitleFromPath(oldPath)
 
       return {
-        body: parsed.content || "",
+        body: parsed.body || "",
         frontmatter: parsedFrontmatter,
         title,
         previousSha: payload.sha || undefined,
@@ -1723,7 +1722,7 @@ function StudioLayoutInner({
                       <StudioPreviewLoading />
                     ) : adapterLoading && !adapter ? (
                       <div className="h-full flex items-center justify-center">
-                        <div className="text-sm text-studio-fg-muted">Loading preview adapter...</div>
+                        <div className="text-sm text-studio-fg-muted">Loading preview runtime...</div>
                       </div>
                     ) : adapterError && !adapter ? (
                       <div className="h-full flex items-center justify-center p-4">
@@ -1763,7 +1762,11 @@ function StudioLayoutInner({
             isSaving={isSaving}
             lastSavedAt={document?.updatedAt}
             fileType={
-              selectedFile?.path.endsWith(".mdx") ? "MDX" : selectedFile?.path.endsWith(".md") ? "Markdown" : "Text"
+              selectedFile?.path.endsWith(".mdx")
+                ? "MDX"
+                : /\.(md|markdown)$/i.test(selectedFile?.path ?? "")
+                  ? "Markdown"
+                  : "Text"
             }
             filePath={selectedFile?.path}
             pendingChanges={totalPendingCount}
@@ -1888,6 +1891,7 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
   const studioQueries = useStudioQueries(selectedFile?.path, { tree })
   const {
     previewEntry,
+    resolvedRuntime,
     enabledPlugins,
     pluginRegistry,
     currentPublishLane,
@@ -1912,7 +1916,8 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
     owner,
     repo,
     branch: currentPublishLane?.branchName ?? branch,
-    adapterPath: previewEntry,
+    adapterPath: resolvedRuntime?.entryPath ?? previewEntry,
+    adapterRoot: resolvedRuntime?.rootPath ?? null,
     enabledPlugins,
     pluginRegistry,
   })
@@ -1943,18 +1948,15 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
       adapterError: previewContext.error,
       adapterDiagnostics: previewContext.diagnostics,
       components: componentSchema,
-      // Resolve insert-picker components by contentRoot:
-      //  1. If the adapter declares componentsByContext for this root, use that (fully context-aware).
-      //  2. Otherwise fall back to standardComponents - the universal safe set that never includes
-      //     docs-only components like DocsImage/DocsVideo that come from the adapter layer.
-      //     The full previewContext.context.components (adapter-augmented) is still used for
-      //     *rendering* existing MDX; we deliberately exclude adapter additions from the insert picker
-      //     when no explicit context split is declared.
+      // Resolve insert-picker components by precedence:
+      //  1. Use contentRoot-scoped adapter components when the native runtime provides them.
+      //  2. Otherwise use the full merged adapter context so repo-native components remain discoverable.
+      //  3. The registry layer still gives project config schema precedence and falls back to framework defaults.
       resolvedComponents:
         contentRoot && previewContext.context?.componentsByContext?.[contentRoot]
           ? previewContext.context.componentsByContext[contentRoot]
           : previewContext.context
-            ? standardComponents
+            ? previewContext.context.components
             : undefined,
       detectedFramework: studioQueries.project?.detectedFramework as string | undefined,
     }),

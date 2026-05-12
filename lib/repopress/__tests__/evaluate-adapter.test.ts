@@ -31,6 +31,27 @@ describe("evaluateAdapter", () => {
     expect(adapter.scope?.answer).toBe(42)
   })
 
+  it("bundles repo-local alias imports relative to the native runtime root", async () => {
+    const code = await transpileAdapter({
+      entryPath: "apps/docs/mdx-components.tsx",
+      runtimeRoot: "apps/docs",
+      sources: {
+        "apps/docs/mdx-components.tsx": `
+          import { Callout } from "@/components/callout"
+
+          export function getMDXComponents(components) {
+            return { ...components, Callout }
+          }
+        `,
+        "apps/docs/components/callout.tsx": "export const Callout = (props) => props.children",
+      },
+    })
+
+    const adapter = evaluateAdapter(code)
+
+    expect(adapter.components?.Callout).toBeDefined()
+  })
+
   it("suppresses constructor access through the React object during evaluation", async () => {
     const code = await transpileAdapter({
       entryPath: "mdx-preview.tsx",
@@ -44,14 +65,18 @@ describe("evaluateAdapter", () => {
     expect(adapter.scope?.ctorType).toBe("undefined")
   })
 
-  it("exports real DocsImage component via SHIM_MODULES (not null stub)", async () => {
+  it("derives components from a native useMDXComponents export", async () => {
     const code = await transpileAdapter({
-      entryPath: "mdx-preview.tsx",
+      entryPath: "mdx-components.tsx",
       sources: {
-        "mdx-preview.tsx": `
-          const { DocsImage } = require('@/components/docs/doc-media')
-          export const adapter = { 
-            components: { DocsImage }
+        "mdx-components.tsx": `
+          import Link from "next/link"
+
+          export function useMDXComponents(components) {
+            return {
+              ...components,
+              Link,
+            }
           }
         `,
       },
@@ -59,38 +84,20 @@ describe("evaluateAdapter", () => {
 
     const adapter = evaluateAdapter(code)
 
-    expect(adapter.components?.DocsImage).toBeDefined()
-    expect(adapter.components?.DocsImage).not.toBeNull()
-    expect(typeof adapter.components?.DocsImage).toBe("object")
+    expect(adapter.components?.Link).toBeDefined()
   })
 
-  it("exports real DocsVideo component via SHIM_MODULES (not null stub)", async () => {
+  it("derives components from a native getMDXComponents export", async () => {
     const code = await transpileAdapter({
-      entryPath: "mdx-preview.tsx",
+      entryPath: "mdx-components.tsx",
       sources: {
-        "mdx-preview.tsx": `
-          const { DocsVideo } = require('@/components/docs/doc-media')
-          export const adapter = { 
-            components: { DocsVideo }
-          }
-        `,
-      },
-    })
+        "mdx-components.tsx": `
+          import { defaultComponents } from "fumadocs-ui/mdx"
 
-    const adapter = evaluateAdapter(code)
-
-    expect(adapter.components?.DocsVideo).toBeDefined()
-    expect(adapter.components?.DocsVideo).not.toBeNull()
-  })
-
-  it("exports real Callout component via SHIM_MODULES (not null stub)", async () => {
-    const code = await transpileAdapter({
-      entryPath: "mdx-preview.tsx",
-      sources: {
-        "mdx-preview.tsx": `
-          const { Callout } = require('@/components/docs/doc-media')
-          export const adapter = { 
-            components: { Callout }
+          export function getMDXComponents() {
+            return {
+              ...defaultComponents,
+            }
           }
         `,
       },
@@ -99,17 +106,19 @@ describe("evaluateAdapter", () => {
     const adapter = evaluateAdapter(code)
 
     expect(adapter.components?.Callout).toBeDefined()
-    expect(adapter.components?.Callout).not.toBeNull()
   })
 
-  it("supports @components alias for SHIM_MODULES path", async () => {
+  it("provides a next/image shim for native runtimes", async () => {
     const code = await transpileAdapter({
-      entryPath: "mdx-preview.tsx",
+      entryPath: "mdx-components.tsx",
       sources: {
-        "mdx-preview.tsx": `
-          const { DocsImage } = require('@components/docs/doc-media')
-          export const adapter = { 
-            components: { DocsImage }
+        "mdx-components.tsx": `
+          import Image from "next/image"
+
+          export const adapter = {
+            components: {
+              Image,
+            },
           }
         `,
       },
@@ -117,6 +126,6 @@ describe("evaluateAdapter", () => {
 
     const adapter = evaluateAdapter(code)
 
-    expect(adapter.components?.DocsImage).toBeDefined()
+    expect(adapter.components?.Image).toBeDefined()
   })
 })

@@ -115,15 +115,7 @@ function adapterToConfig(
  * Run all adapter detect() + detectInFolder() functions concurrently.
  * The highest combined score wins. Falls back to the custom adapter if nothing matches.
  */
-export async function detectFramework(
-  token: string,
-  owner: string,
-  repo: string,
-  branch?: string,
-  contentRoot?: string,
-): Promise<FrameworkConfig> {
-  const ctx = await buildDetectionContext(token, owner, repo, branch, contentRoot)
-
+export async function detectFrameworkFromContext(ctx: DetectionContext): Promise<FrameworkConfig> {
   const results = await Promise.allSettled(
     registry.map(async (adapter) => {
       const repoResult = await adapter.detect(ctx)
@@ -175,6 +167,17 @@ export async function detectFramework(
   }
 
   return adapterToConfig(bestAdapter, bestResult)
+}
+
+export async function detectFramework(
+  token: string,
+  owner: string,
+  repo: string,
+  branch?: string,
+  contentRoot?: string,
+): Promise<FrameworkConfig> {
+  const ctx = await buildDetectionContext(token, owner, repo, branch, contentRoot)
+  return detectFrameworkFromContext(ctx)
 }
 
 /**

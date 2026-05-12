@@ -57,6 +57,13 @@ type ProjectRow = {
   enabledPlugins?: string[]
   pluginRegistry?: unknown
   components?: unknown
+  resolvedRuntime?: {
+    strategy: "native" | "override" | "generic-fallback"
+    entryPath: string | null
+    rootPath: string | null
+    metadataDefault: "frontmatter" | "metadata-export"
+    extensions: [".md", ".mdx", ".markdown"]
+  }
 }
 
 function makeProject(overrides: Partial<ProjectRow> & { _id: string }): ProjectRow {
@@ -245,6 +252,57 @@ describe("syncProjectsFromConfig", () => {
         }),
       )
       expect(result.created).toContain("brand_new_proj")
+    })
+
+    it("persists resolvedRuntime on insert and update", async () => {
+      const resolvedRuntime = {
+        strategy: "native" as const,
+        entryPath: "apps/docs/mdx-components.tsx",
+        rootPath: "apps/docs",
+        metadataDefault: "frontmatter" as const,
+        extensions: [".md", ".mdx", ".markdown"] as [".md", ".mdx", ".markdown"],
+      }
+
+      const insert = vi.fn().mockResolvedValue("brand_new_proj")
+      const patch = vi.fn()
+      const existing = makeProject({
+        _id: "proj_1",
+        configProjectId: "docs",
+        resolvedRuntime: {
+          strategy: "generic-fallback",
+          entryPath: null,
+          rootPath: null,
+          metadataDefault: "frontmatter",
+          extensions: [".md", ".mdx", ".markdown"],
+        },
+      })
+
+      const createCtxInsert = createCtx({ repoProjects: [], insert })
+      await (syncProjectsFromConfig as any).handler(createCtxInsert, {
+        ...BASE_ARGS,
+        projects: [{ ...BASE_ARGS.projects[0], resolvedRuntime }],
+      })
+
+      expect(insert).toHaveBeenCalledWith(
+        "projects",
+        expect.objectContaining({
+          resolvedRuntime,
+        }),
+      )
+
+      const createCtxPatch = createCtx({ repoProjects: [existing], patch })
+      const result = await (syncProjectsFromConfig as any).handler(createCtxPatch, {
+        ...BASE_ARGS,
+        projects: [{ ...BASE_ARGS.projects[0], resolvedRuntime }],
+      })
+
+      expect(patch).toHaveBeenCalledWith(
+        "proj_1",
+        expect.objectContaining({
+          resolvedRuntime,
+        }),
+      )
+      expect(result.synced).toContain("proj_1")
     })
 
     it("migrates a legacy project (no configProjectId) matched by contentRoot+branch", async () => {

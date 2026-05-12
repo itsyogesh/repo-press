@@ -8,9 +8,15 @@ export interface ExtractedImport {
   local: string
 }
 
+export interface TransformImportsData {
+  extractedImports?: ExtractedImport[]
+  importDiagnostics?: string[]
+}
+
 export const remarkTransformImports: Plugin<[{ allowedImports: Record<string, string[]> }], Root> = (options) => {
   return (tree, file) => {
     const extracted: ExtractedImport[] = []
+    const diagnostics: string[] = []
     const allowed = options?.allowedImports || {}
 
     visit(tree, "mdxjsEsm", (node, index, parent) => {
@@ -25,8 +31,8 @@ export const remarkTransformImports: Plugin<[{ allowedImports: Record<string, st
           const allowedSpecifiers = allowed[source]
 
           if (!allowedSpecifiers) {
-            file.fail(`Import from '${source}' is not allowed in this project.`)
-            return
+            diagnostics.push(`Import from '${source}' is not available in the preview sandbox and was skipped.`)
+            continue
           }
 
           for (const specifier of statement.specifiers) {
@@ -38,8 +44,10 @@ export const remarkTransformImports: Plugin<[{ allowedImports: Record<string, st
               const localName = specifier.local.name
 
               if (!allowedSpecifiers.includes(importedName)) {
-                file.fail(`Importing '${importedName}' from '${source}' is not allowed.`)
-                return
+                diagnostics.push(
+                  `Importing '${importedName}' from '${source}' is not available in the preview sandbox.`,
+                )
+                continue
               }
 
               extracted.push({
@@ -50,8 +58,8 @@ export const remarkTransformImports: Plugin<[{ allowedImports: Record<string, st
             } else if (specifier.type === "ImportDefaultSpecifier") {
               const localName = specifier.local.name
               if (!allowedSpecifiers.includes("default")) {
-                file.fail(`Default import from '${source}' is not allowed.`)
-                return
+                diagnostics.push(`Default import from '${source}' is not available in the preview sandbox.`)
+                continue
               }
               extracted.push({
                 source,
@@ -59,8 +67,7 @@ export const remarkTransformImports: Plugin<[{ allowedImports: Record<string, st
                 local: localName,
               })
             } else {
-              file.fail(`Unsupported import specifier type: ${specifier.type}`)
-              return
+              diagnostics.push(`Unsupported import specifier type '${specifier.type}' from '${source}' was skipped.`)
             }
           }
         } else if (statement.type === "ExportNamedDeclaration" || statement.type === "ExportDefaultDeclaration") {
@@ -79,6 +86,7 @@ export const remarkTransformImports: Plugin<[{ allowedImports: Record<string, st
       }
     })
 
-    ;(file.data as { extractedImports?: ExtractedImport[] }).extractedImports = extracted
+    ;(file.data as TransformImportsData).extractedImports = extracted
+    ;(file.data as TransformImportsData).importDiagnostics = diagnostics
   }
 }

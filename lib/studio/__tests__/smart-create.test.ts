@@ -45,6 +45,15 @@ describe("smart create helpers", () => {
     expect(extension).toBe(".md")
   })
 
+  it("preserves markdown sibling extensions", () => {
+    const extension = resolveSmartCreateExtension({
+      adapter: customAdapter,
+      siblingPath: "content/blog/post.markdown",
+    })
+
+    expect(extension).toBe(".markdown")
+  })
+
   it("defaults custom / unknown repos to markdown when no stronger signal exists", () => {
     const extension = resolveSmartCreateExtension({
       adapter: customAdapter,

@@ -75,12 +75,38 @@ function normalizeJoin(baseDir: string, specifier: string) {
   return output.join("/")
 }
 
+function normalizeAliasJoin(rootDir: string, specifier: string) {
+  const aliasPath = specifier.replace(/^[@~]\//, "")
+  return normalizeJoin(rootDir || ".", aliasPath)
+}
+
+function moduleCandidates(resolvedBase: string) {
+  return /\.[a-z0-9]+$/i.test(resolvedBase)
+    ? [resolvedBase]
+    : [
+        `${resolvedBase}.ts`,
+        `${resolvedBase}.tsx`,
+        `${resolvedBase}.js`,
+        `${resolvedBase}.jsx`,
+        `${resolvedBase}.mjs`,
+        `${resolvedBase}.cjs`,
+        `${resolvedBase}/index.ts`,
+        `${resolvedBase}/index.tsx`,
+        `${resolvedBase}/index.js`,
+        `${resolvedBase}/index.jsx`,
+        `${resolvedBase}/index.mjs`,
+        `${resolvedBase}/index.cjs`,
+      ]
+}
+
 export async function transpileAdapter({
   entryPath,
   sources,
+  runtimeRoot,
 }: {
   entryPath: string
   sources: Record<string, string>
+  runtimeRoot?: string | null
 }): Promise<string> {
   await initEsbuild()
 
@@ -88,6 +114,9 @@ export async function transpileAdapter({
     Object.entries(sources).map(([filePath, source]) => [normalizeRepoPath(filePath), source]),
   )
   const normalizedEntryPath = normalizeRepoPath(entryPath)
+  const normalizedRuntimeRoot = normalizeRepoPath(
+    runtimeRoot === undefined ? dirname(normalizedEntryPath) : runtimeRoot || "",
+  )
   const entrySource = normalizedSources[normalizedEntryPath]
   if (!entrySource) {
     throw new Error(`Adapter entry source missing for ${normalizedEntryPath}`)
@@ -110,30 +139,26 @@ export async function transpileAdapter({
         name: "repo-local-modules",
         setup(build) {
           build.onResolve({ filter: /.*/ }, (args) => {
-            if (args.path.startsWith("./") || args.path.startsWith("../")) {
-              const baseDir = args.resolveDir || dirname(args.importer || normalizedEntryPath)
-              const resolvedBase = normalizeJoin(baseDir, args.path)
-              const candidates = /\.[a-z0-9]+$/i.test(resolvedBase)
-                ? [resolvedBase]
-                : [
-                    `${resolvedBase}.ts`,
-                    `${resolvedBase}.tsx`,
-                    `${resolvedBase}.js`,
-                    `${resolvedBase}.jsx`,
-                    `${resolvedBase}.mjs`,
-                    `${resolvedBase}.cjs`,
-                    `${resolvedBase}/index.ts`,
-                    `${resolvedBase}/index.tsx`,
-                    `${resolvedBase}/index.js`,
-                    `${resolvedBase}/index.jsx`,
-                    `${resolvedBase}/index.mjs`,
-                    `${resolvedBase}/index.cjs`,
-                  ]
+            if (
+              args.path.startsWith("./") ||
+              args.path.startsWith("../") ||
+              args.path.startsWith("@/") ||
+              args.path.startsWith("~/")
+            ) {
+              const isAliasImport = args.path.startsWith("@/") || args.path.startsWith("~/")
+              const resolvedBase = isAliasImport
+                ? normalizeAliasJoin(normalizedRuntimeRoot, args.path)
+                : normalizeJoin(args.resolveDir || dirname(args.importer || normalizedEntryPath), args.path)
+              const candidates = moduleCandidates(resolvedBase)
 
               for (const candidate of candidates) {
                 if (normalizedSources[candidate] !== undefined) {
                   return { path: candidate, namespace: "repo-local" }
                 }
+              }
+
+              if (isAliasImport) {
+                return { path: args.path, external: true }
               }
 
               return {

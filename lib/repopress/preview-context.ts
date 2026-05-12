@@ -1,5 +1,11 @@
 import type { RepoPressPreviewAdapter } from "@/lib/repopress/evaluate-adapter"
-import { standardComponents } from "@/lib/repopress/standard-library"
+import { standardAllowImports, standardComponents } from "@/lib/repopress/standard-library"
+
+function cloneAllowImports() {
+  return Object.fromEntries(
+    Object.entries(standardAllowImports).map(([moduleName, exports]) => [moduleName, { ...exports }]),
+  )
+}
 
 export function buildMergedContext(
   adapter: RepoPressPreviewAdapter | null,
@@ -8,7 +14,7 @@ export function buildMergedContext(
   const result: RepoPressPreviewAdapter = {
     components: { ...standardComponents },
     scope: {},
-    allowImports: {},
+    allowImports: cloneAllowImports(),
   }
 
   for (const plugin of Object.values(plugins)) {

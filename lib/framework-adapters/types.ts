@@ -103,12 +103,12 @@ export type FrameworkAdapter = {
   fieldVariants: FieldVariantMap
   metaFilePattern: string | null
   contentArchitecture?: ContentArchitectureInfo
-  /** Path to the MDX preview adapter file (relative to repo root) */
+  /** Optional RepoPress runtime override entry (relative to repo root). */
   previewEntry?: string | null
   /** How filenames are derived from the user-supplied title. Defaults to "slug" when absent. */
   namingStrategy?: NamingStrategy
   /** Default file extension for new content files. Defaults to ".mdx" when absent. */
-  fileExtension?: ".mdx" | ".md"
+  fileExtension?: ".mdx" | ".md" | ".markdown"
 }
 
 export type FrameworkConfig = {
@@ -120,6 +120,6 @@ export type FrameworkConfig = {
   fieldVariants: FieldVariantMap
   metaFilePattern: string | null
   contentArchitecture?: ContentArchitectureInfo
-  /** Path to the MDX preview adapter file (relative to repo root) */
+  /** Optional RepoPress runtime override entry (relative to repo root). */
   previewEntry?: string | null
 }

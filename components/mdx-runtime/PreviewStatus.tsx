@@ -85,15 +85,13 @@ export function PreviewStatus({ isCompiling, warnings, className }: PreviewStatu
             ) : (
               <div className="p-4 text-center space-y-2">
                 <div className="text-2xl">🎉</div>
-                <p className="text-xs font-medium text-muted-foreground">
-                  Everything looks perfect! No issues detected in your MDX or adapter.
-                </p>
+                <p className="text-xs font-medium text-muted-foreground">No issues detected in your MDX or runtime.</p>
               </div>
             )}
           </div>
           <div className="p-3 bg-muted/30 border-t text-[10px] text-muted-foreground italic text-left">
             {warnings.length > 0
-              ? "Issues can usually be resolved in your repopress.config.json or mdx-preview.tsx."
+              ? "Issues can usually be resolved in the native MDX runtime or an optional RepoPress override."
               : "Your repository is fully optimized for RepoPress MDX editing."}
           </div>
         </PopoverContent>
