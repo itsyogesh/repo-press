@@ -6,7 +6,6 @@ export default defineConfig({
     include: ["**/__tests__/**/*.test.ts", "**/__tests__/**/*.test.tsx"],
     exclude: ["node_modules", ".next", ".worktrees", "convex"],
     environment: "jsdom",
-    setupFiles: ["./vitest.setup.ts"],
   },
   resolve: {
     alias: {

@@ -67,6 +67,7 @@ interface RepoProjectHubProps {
   configJson: string | null
   configSha: string | null
   actingUserId?: string | null
+  projectAccessTokens?: Record<string, string>
 }
 
 function HubProjectCard({
@@ -220,6 +221,7 @@ export function RepoProjectHub({
   configJson,
   configSha,
   actingUserId,
+  projectAccessTokens,
 }: RepoProjectHubProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()

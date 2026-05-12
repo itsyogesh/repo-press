@@ -4,6 +4,7 @@ import { RepoProjectHub } from "@/components/repo-project-hub"
 import { api } from "@/convex/_generated/api"
 import { getGitHubToken } from "@/lib/auth-server"
 import { resolveRepoRole } from "@/lib/github-permissions"
+import { mintProjectAccessToken, mintServerQueryToken } from "@/lib/project-access-token"
 import { fetchRepoConfig } from "@/lib/repopress/config"
 import { createServerQueryContext, resolveActingUserId } from "@/lib/server-context"
 import { syncProjectsServerSide } from "@/lib/sync-projects"
@@ -63,6 +64,30 @@ export default async function RepoPage({ params }: RepoPageProps) {
     repoName: repo,
     serverQueryToken,
   })
+  const projectAccessTokens: Record<string, string> = {}
+
+  if (actingUserId) {
+    const tokens = await Promise.all(
+      projects.map(
+        async (project) =>
+          [
+            project._id,
+            await mintProjectAccessToken({
+              projectId: project._id,
+              userId: actingUserId,
+              repoOwner: project.repoOwner,
+              repoName: project.repoName,
+              branch: project.branch,
+              role: repoRole,
+            }),
+          ] as const,
+      ),
+    )
+
+    for (const [projectId, token] of tokens) {
+      projectAccessTokens[projectId] = token
+    }
+  }
 
   const hasConfig = !!config
   const configSynced = hasConfig && !syncError
@@ -100,6 +125,7 @@ export default async function RepoPage({ params }: RepoPageProps) {
         configJson={config ? JSON.stringify(config, null, 2) : null}
         configSha={configSha ?? null}
         actingUserId={actingUserId}
+        projectAccessTokens={projectAccessTokens}
       />
     </div>
   )

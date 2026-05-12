@@ -2,7 +2,7 @@
 
 import { useQuery } from "convex/react"
 import { Folder, FolderOpen, Loader2, Save } from "lucide-react"
-import { useEffect, useState, useTransition } from "react"
+import { useCallback, useEffect, useState, useTransition } from "react"
 import { toast } from "sonner"
 import { updateProjectInConfigAction } from "@/app/dashboard/[owner]/[repo]/config-actions"
 import { api } from "@/convex/_generated/api"
@@ -43,6 +43,7 @@ export interface EditableProject {
   contentType: string
   branch: string
   configProjectId?: string
+  projectAccessToken?: string
 }
 
 interface EditProjectDialogProps {
@@ -74,23 +75,25 @@ export function EditProjectDialog({
   const [folderPickerOpen, setFolderPickerOpen] = useState(false)
 
   // Sync form state when project changes
-  const resetToProject = (p: EditableProject) => {
-    setName(p.name)
-    setFramework(p.detectedFramework || "auto")
-    setContentType(p.contentType)
-    setBranch(p.branch === defaultBranch ? "" : p.branch)
-    setContentRoot(p.contentRoot)
-    setFolderPickerOpen(false)
-    setError(null)
-  }
+  const resetToProject = useCallback(
+    (p: EditableProject) => {
+      setName(p.name)
+      setFramework(p.detectedFramework || "auto")
+      setContentType(p.contentType)
+      setBranch(p.branch === defaultBranch ? "" : p.branch)
+      setContentRoot(p.contentRoot)
+      setFolderPickerOpen(false)
+      setError(null)
+    },
+    [defaultBranch],
+  )
 
   // Reset form when dialog opens or project identity changes.
   // Radix controlled Dialog does NOT call onOpenChange(true) when the parent
   // sets open=true, so we must use useEffect instead of relying on handleOpenChange.
   useEffect(() => {
     if (open && project) resetToProject(project)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, project?._id])
+  }, [open, project, resetToProject])
 
   const handleOpenChange = (o: boolean) => {
     if (!o) setError(null)
@@ -99,7 +102,12 @@ export function EditProjectDialog({
 
   const hasContent = useQuery(
     api.documents.hasContentForProject,
-    project ? { projectId: project._id as Id<"projects"> } : "skip",
+    project
+      ? {
+          projectId: project._id as Id<"projects">,
+          projectAccessToken: project.projectAccessToken || undefined,
+        }
+      : "skip",
   )
 
   if (!project) return null
