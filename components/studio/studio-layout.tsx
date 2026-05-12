@@ -1360,7 +1360,7 @@ function StudioLayoutInner({
                   }}
                   className="min-w-0"
                 >
-                  <StudioPanelShell className="bg-studio-canvas-inset/70">
+                  <StudioPanelShell className="flex flex-col bg-studio-canvas-inset/70">
                     {projectId && shouldShowProjectDataSkeleton ? (
                       <StudioSidebarLoading />
                     ) : (
