@@ -30,6 +30,7 @@ import { type FileTreeNode, findTreeNode } from "@/lib/github"
 import { usePreviewContext } from "@/lib/hooks/use-preview-context"
 import { parseContentFile } from "@/lib/repopress/content-file"
 import { buildHistoryHref } from "@/lib/studio/history-link"
+import { resolvePreviewAdapterPath, resolvePreviewAdapterRoot } from "@/lib/studio/preview-adapter-selection"
 import { getPublishLaneViewModel } from "@/lib/studio/publish-lane-view-model"
 import { cn } from "@/lib/utils"
 import { CommandPalette } from "./command-palette"
@@ -1898,6 +1899,8 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
     userId,
     components: componentSchema,
   } = studioQueries
+  const previewAdapterPath = resolvePreviewAdapterPath(resolvedRuntime, previewEntry)
+  const previewAdapterRoot = resolvePreviewAdapterRoot(resolvedRuntime)
 
   // Verify the active publish lane's PR is still open on GitHub.
   // Corrects state drift when the closed/merged webhook was never delivered.
@@ -1916,8 +1919,8 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
     owner,
     repo,
     branch: currentPublishLane?.branchName ?? branch,
-    adapterPath: resolvedRuntime?.entryPath ?? previewEntry,
-    adapterRoot: resolvedRuntime?.rootPath ?? null,
+    adapterPath: previewAdapterPath,
+    adapterRoot: previewAdapterRoot,
     enabledPlugins,
     pluginRegistry,
   })

@@ -1,4 +1,4 @@
-import { ArrowUpRight, FileText, FolderTree, GitBranch, Layers3, PanelTopOpen, Sparkles } from "lucide-react"
+import { ArrowUpRight, FolderTree, GitBranch, Layers3, PanelTopOpen, Sparkles } from "lucide-react"
 
 const frameworks = ["Next.js", "Astro", "Fumadocs", "Nextra", "Docusaurus", "Hugo"]
 
@@ -53,54 +53,6 @@ export default function FeatureGrid() {
                   {signal}
                 </div>
               ))}
-            </div>
-
-            <div className="mt-8 overflow-hidden rounded-[1.5rem] border border-border/70 bg-background">
-              <div className="flex items-center justify-between border-b border-border/70 px-5 py-4">
-                <div>
-                  <p className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-muted-foreground">
-                    Studio snapshot
-                  </p>
-                  <p className="text-sm font-semibold tracking-[-0.02em] text-foreground">docs/getting-started.mdx</p>
-                </div>
-                <span className="rounded-full bg-primary/10 px-3 py-1 font-mono text-[0.62rem] uppercase tracking-[0.18em] text-primary">
-                  Preview synced
-                </span>
-              </div>
-
-              <div className="grid gap-0 lg:grid-cols-[0.88fr_1.12fr]">
-                <div className="border-b border-border/70 bg-muted/35 px-5 py-5 lg:border-b-0 lg:border-r">
-                  <div className="space-y-3">
-                    <div className="h-4 w-40 rounded-full bg-muted" />
-                    <div className="h-10 rounded-2xl border border-border/70 bg-background" />
-                    <div className="h-24 rounded-2xl border border-border/70 bg-background" />
-                    <div className="h-16 rounded-2xl border border-primary/15 bg-primary/8" />
-                  </div>
-                </div>
-
-                <div className="px-5 py-5">
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-2xl border border-border/70 bg-muted/35 p-4">
-                      <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                        <FileText className="h-4 w-4 text-primary" />
-                        Rich content editing
-                      </div>
-                      <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                        Edit formatted text, images, and interactive components in one place.
-                      </p>
-                    </div>
-                    <div className="rounded-2xl border border-border/70 bg-muted/35 p-4">
-                      <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                        <GitBranch className="h-4 w-4 text-primary" />
-                        Pull requests
-                      </div>
-                      <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                        Publish your changes as a pull request when you're ready.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
             </div>
           </div>
 

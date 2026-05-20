@@ -138,14 +138,12 @@ describe("FolderPickerDialog", () => {
       expect(screen.getAllByText("content")[0]).toBeInTheDocument()
     })
 
-    // Find the content row and click it to expand (clicking the row toggles expansion)
-    const contentButtons = screen.getAllByText("content")
-    const contentButton = contentButtons[0]
-    const contentRow = contentButton.closest("[role='button']") as HTMLElement
-
-    if (contentRow) {
-      fireEvent.click(contentRow)
-    }
+    // Click the actual tree item button; TreeItem renders a native <button>
+    // and does not add a custom role attribute.
+    const contentButton = screen.getByRole("button", {
+      name: /content/i,
+    })
+    fireEvent.click(contentButton)
 
     // Wait for children to load
     await waitFor(() => {

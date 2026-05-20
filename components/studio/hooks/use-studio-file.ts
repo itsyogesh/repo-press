@@ -192,13 +192,10 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
       setIsFileLoading(true)
       const requestVersion = ++requestVersionRef.current
 
-      if (!resolvedNode.sha) {
-        if (cached) {
-          applySnapshot(filePath, cached)
-        } else {
-          fileCacheRef.current.set(filePath, emptySnapshot)
-          applySnapshot(filePath, emptySnapshot)
-        }
+      if (!resolvedNode.sha && cached) {
+        // Keep local drafts/snapshots responsive when the tree doesn't have a sha yet.
+        // If no cache exists, still attempt a remote fetch (covers deep links before tree hydration).
+        applySnapshot(filePath, cached)
         setIsFileLoading(false)
         return
       }

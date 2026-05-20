@@ -33,5 +33,6 @@ next-env.d.ts
 .agents
 .gemini
 .claude
+.opencode
 body_text.txt
 .worktrees/
