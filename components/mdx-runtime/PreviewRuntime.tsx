@@ -374,32 +374,6 @@ export function PreviewRuntime({
           ...importBindings,
         }
 
-        const commonKeys = [
-          "Callout",
-          "Image",
-          "Video",
-          "Button",
-          "Card",
-          "Badge",
-          "Steps",
-          "Step",
-          "FileTree",
-          "Tab",
-          "Tabs",
-        ]
-
-        for (const key of commonKeys) {
-          if (!(key in mergedScope)) {
-            Object.defineProperty(mergedScope, key, {
-              get: () => {
-                return safeComponents[key]
-              },
-              enumerable: true,
-              configurable: true,
-            })
-          }
-        }
-
         const MdxComponent = evaluateMdx(code, mergedScope, (name) => {
           noteMissing(name)
         })
