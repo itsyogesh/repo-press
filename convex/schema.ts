@@ -1,7 +1,7 @@
 import { defineSchema, defineTable } from "convex/server"
 import { v } from "convex/values"
 
-const resolvedRuntimeValidator = v.object({
+export const resolvedRuntimeValidator = v.object({
   strategy: v.union(v.literal("native"), v.literal("override"), v.literal("generic-fallback")),
   entryPath: v.union(v.string(), v.null()),
   rootPath: v.union(v.string(), v.null()),

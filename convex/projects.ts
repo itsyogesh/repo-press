@@ -4,6 +4,7 @@ import { internal } from "./_generated/api"
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server"
 import { authComponent } from "./auth"
 import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
+import { resolvedRuntimeValidator } from "./schema"
 
 /**
  * Verify that the caller is the user they claim to be (OAuth session check).
@@ -338,14 +339,6 @@ const contentTypeValidator = v.union(
   v.literal("changelog"),
   v.literal("custom"),
 )
-
-const resolvedRuntimeValidator = v.object({
-  strategy: v.union(v.literal("native"), v.literal("override"), v.literal("generic-fallback")),
-  entryPath: v.union(v.string(), v.null()),
-  rootPath: v.union(v.string(), v.null()),
-  metadataDefault: v.union(v.literal("frontmatter"), v.literal("metadata-export")),
-  extensions: v.array(v.string()),
-})
 
 const projectArgs = {
   userId: v.string(),
