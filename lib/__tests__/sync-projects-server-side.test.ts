@@ -83,4 +83,39 @@ describe("syncProjectsServerSide", () => {
       }),
     )
   })
+
+  it("still syncs healthy projects when one project's detection throws", async () => {
+    fetchRepoConfigMock.mockResolvedValue({
+      config: {
+        version: 1,
+        defaults: { branch: "main", framework: "auto" },
+        projects: [
+          { id: "broken", name: "Broken", contentRoot: "broken/root", framework: "auto", contentType: "docs" },
+          { id: "healthy", name: "Healthy", contentRoot: "healthy/root", framework: "hugo", contentType: "blog" },
+        ],
+      },
+    })
+    buildDetectionContextMock.mockImplementation(async (_t: string, _o: string, _r: string, _b: string, root: string) => {
+      if (root === "broken/root") throw new Error("GitHub rate limit exceeded")
+      return { readFile: async () => null }
+    })
+    detectFrameworkFromContextMock.mockResolvedValue({ framework: "next-mdx" })
+
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+
+    await syncProjectsServerSide("token", "itsyogesh", "merry-magic-mail", "main", "user_1")
+
+    expect(mutationMock).toHaveBeenCalledTimes(1)
+    const payload = mutationMock.mock.calls[0][1]
+    const broken = payload.projects.find((p: { configProjectId: string }) => p.configProjectId === "broken")
+    const healthy = payload.projects.find((p: { configProjectId: string }) => p.configProjectId === "healthy")
+
+    expect(broken).toBeDefined()
+    expect(broken.resolvedRuntime).toBeUndefined()
+    expect(broken.framework).toBe("custom")
+    expect(healthy).toBeDefined()
+    expect(healthy.framework).toBe("hugo")
+
+    consoleSpy.mockRestore()
+  })
 })

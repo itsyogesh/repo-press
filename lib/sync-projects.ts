@@ -38,32 +38,43 @@ export async function syncProjectsServerSide(
   const projectsToSync = await Promise.all(
     config.projects.map(async (p) => {
       const previewEntry = p.preview?.entry || config.defaults?.preview?.entry
-      const detectionContext = await getDetectionContext(p.contentRoot)
-      const detectedFramework =
-        p.framework === "auto" || p.framework === "detected"
-          ? (await detectFrameworkFromContext(detectionContext)).framework
-          : p.framework
-      const resolvedRuntime = await resolveResolvedRuntime({
-        owner,
-        repo,
-        branch,
-        framework: detectedFramework,
-        contentRoot: p.contentRoot,
-        overrideEntry: previewEntry,
-        readFile: detectionContext.readFile,
-      })
-
-      return {
+      const base = {
         configProjectId: p.id,
         name: p.name,
         contentRoot: p.contentRoot,
-        framework: detectedFramework,
         contentType: p.contentType as "blog" | "docs" | "pages" | "changelog" | "custom",
         branch: p.branch || config.defaults?.branch || branch,
         previewEntry,
         enabledPlugins: p.preview?.plugins || config.defaults?.preview?.plugins,
         components: p.components,
-        resolvedRuntime,
+      }
+
+      try {
+        const detectionContext = await getDetectionContext(p.contentRoot)
+        const detectedFramework =
+          p.framework === "auto" || p.framework === "detected"
+            ? (await detectFrameworkFromContext(detectionContext)).framework
+            : p.framework
+        const resolvedRuntime = await resolveResolvedRuntime({
+          owner,
+          repo,
+          branch,
+          framework: detectedFramework,
+          contentRoot: p.contentRoot,
+          overrideEntry: previewEntry,
+          readFile: detectionContext.readFile,
+        })
+
+        return { ...base, framework: detectedFramework, resolvedRuntime }
+      } catch (error) {
+        // A single project's detection failure (rate limit, 404, parse error) must not
+        // abort the whole sync. Fall back to syncing without resolvedRuntime.
+        console.error(
+          `[RepoPress] Runtime detection failed for project ${p.id} (${owner}/${repo}); syncing without resolvedRuntime.`,
+          error,
+        )
+        const framework = p.framework === "auto" || p.framework === "detected" ? "custom" : p.framework
+        return { ...base, framework, resolvedRuntime: undefined }
       }
     }),
   )
