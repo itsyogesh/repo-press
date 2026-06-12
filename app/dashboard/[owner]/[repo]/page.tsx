@@ -84,8 +84,8 @@ export default async function RepoPage({ params }: RepoPageProps) {
       ),
     )
 
-    for (const [projectId, token] of tokens) {
-      projectAccessTokens[projectId] = token
+    for (const [projectId, projectToken] of tokens) {
+      projectAccessTokens[projectId] = projectToken
     }
   }
 

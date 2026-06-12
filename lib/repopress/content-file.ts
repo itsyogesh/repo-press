@@ -77,13 +77,16 @@ function convertExpression(node: ts.Expression): unknown {
   throw new Error(`Unsupported metadata expression: ${ts.SyntaxKind[expression.kind]}`)
 }
 
-function extractMetadataExport(source: string): {
+function extractMetadataExport(
+  source: string,
+  filePath: string,
+): {
   frontmatter: Record<string, unknown> | null
   body: string
   warnings: string[]
 } {
   const warnings: string[] = []
-  const sourceFile = ts.createSourceFile("content-file.mdx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+  const sourceFile = ts.createSourceFile(filePath, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
 
   for (const statement of sourceFile.statements) {
     if (
@@ -147,7 +150,7 @@ export function parseContentFile(rawContent: string, filePath: string): ParsedCo
     }
   }
 
-  const metadataExport = extractMetadataExport(bodyWithoutFrontmatter)
+  const metadataExport = extractMetadataExport(bodyWithoutFrontmatter, filePath)
   warnings.push(...metadataExport.warnings)
 
   if (metadataExport.frontmatter) {
