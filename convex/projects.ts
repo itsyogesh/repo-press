@@ -731,6 +731,9 @@ export const keepAsManual = mutation({
       configProjectId: undefined,
       configVersion: undefined,
       configPath: undefined,
+      // The project is no longer config-driven; drop the config-derived runtime
+      // so it isn't applied to what is now a manually-managed project.
+      resolvedRuntime: undefined,
       updatedAt: Date.now(),
     })
   },
