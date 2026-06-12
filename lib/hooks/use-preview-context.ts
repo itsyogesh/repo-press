@@ -168,6 +168,7 @@ async function loadPreviewContext(
               options.repo,
               options.branch,
               options.adapterPath,
+              options.adapterRoot,
               sourceSha,
             )
             let transpiled = await getCachedAdapter(cacheKey, sourceSha)

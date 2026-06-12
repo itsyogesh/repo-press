@@ -91,9 +91,10 @@ export function buildAdapterCacheKey(
   repo: string,
   branch: string,
   entryPath: string,
+  adapterRoot: string | null,
   sourceSha: string,
 ) {
-  return `${owner}/${repo}@${branch}:${entryPath}:${sourceSha}`
+  return `${owner}/${repo}@${branch}:${entryPath}:${adapterRoot ?? ""}:${sourceSha}`
 }
 
 export async function setCachedAdapter(input: SetCachedAdapterInput) {
