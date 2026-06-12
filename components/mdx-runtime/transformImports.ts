@@ -66,6 +66,13 @@ export const remarkTransformImports: Plugin<[{ allowedImports: Record<string, st
                 imported: "default",
                 local: localName,
               })
+            } else if (specifier.type === "ImportNamespaceSpecifier") {
+              // `import * as X from 'source'` binds the whole allowed export map.
+              extracted.push({
+                source,
+                imported: "*",
+                local: specifier.local.name,
+              })
             } else {
               diagnostics.push(`Unsupported import specifier type '${specifier.type}' from '${source}' was skipped.`)
             }

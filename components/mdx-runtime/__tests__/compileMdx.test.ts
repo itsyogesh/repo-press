@@ -52,6 +52,21 @@ import { Callout } from "fumadocs-ui/mdx"
     )
   })
 
+  it("extracts namespace imports as a wildcard binding when the source is allowed", async () => {
+    const source = `
+import * as Lib from "fumadocs-ui/mdx"
+
+<Lib.Callout>Heads up</Lib.Callout>
+`
+
+    const result = await compileMdx(source, { "fumadocs-ui/mdx": ["Callout"] })
+
+    expect(result.error).toBeUndefined()
+    expect(result.imports).toEqual(
+      expect.arrayContaining([expect.objectContaining({ source: "fumadocs-ui/mdx", imported: "*", local: "Lib" })]),
+    )
+  })
+
   it("strips unsupported imports and reports diagnostics instead of failing compilation", async () => {
     const source = `
 import FancyCard from "@repo/ui/fancy-card"

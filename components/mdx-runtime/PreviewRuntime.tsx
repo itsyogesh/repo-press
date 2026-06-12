@@ -268,6 +268,12 @@ export function PreviewRuntime({
           const exportMap = currentAdapter?.allowImports?.[imported.source]
           if (!exportMap) continue
 
+          if (imported.imported === "*") {
+            // Namespace import: bind a shallow copy of the whole allowed export map.
+            importBindings[imported.local] = { ...exportMap }
+            continue
+          }
+
           const importedValue = exportMap[imported.imported]
           if (importedValue === undefined) continue
 
