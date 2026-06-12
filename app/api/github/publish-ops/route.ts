@@ -93,7 +93,10 @@ export async function POST(request: Request) {
 
     for (const doc of dirtyDocs) {
       if (createOpPaths.has(doc.filePath)) continue
-      if (!doc.githubSha) continue
+      // Prefetch regardless of githubSha: even when a dirty doc lost its sha, the file
+      // may still exist on GitHub. We need its current content to detect the real
+      // metadata format (frontmatter vs. export const metadata) and avoid reformatting it.
+      // getFile returns null for a genuinely-new file, which correctly yields metadataSource "none".
       const fullPath = prefixContentRoot(doc.filePath, contentRoot)
       pathsToFetch.push({ key: `doc:${doc.filePath}`, fullPath })
     }
