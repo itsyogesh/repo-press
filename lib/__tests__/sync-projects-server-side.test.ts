@@ -95,10 +95,12 @@ describe("syncProjectsServerSide", () => {
         ],
       },
     })
-    buildDetectionContextMock.mockImplementation(async (_t: string, _o: string, _r: string, _b: string, root: string) => {
-      if (root === "broken/root") throw new Error("GitHub rate limit exceeded")
-      return { readFile: async () => null }
-    })
+    buildDetectionContextMock.mockImplementation(
+      async (_t: string, _o: string, _r: string, _b: string, root: string) => {
+        if (root === "broken/root") throw new Error("GitHub rate limit exceeded")
+        return { readFile: async () => null }
+      },
+    )
     detectFrameworkFromContextMock.mockResolvedValue({ framework: "next-mdx" })
 
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {})

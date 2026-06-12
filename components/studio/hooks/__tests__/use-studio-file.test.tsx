@@ -1,5 +1,5 @@
-import { render, screen, waitFor } from "@testing-library/react"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { cleanup, render, screen, waitFor } from "@testing-library/react"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 const { studioContextValue } = vi.hoisted(() => ({
   studioContextValue: {
@@ -52,6 +52,10 @@ function Harness({ currentPath }: { currentPath: string }) {
 }
 
 describe("useStudioFile", () => {
+  afterEach(() => {
+    cleanup()
+  })
+
   beforeEach(() => {
     vi.restoreAllMocks()
     const localStorageMock = createLocalStorageMock()
@@ -83,6 +87,25 @@ describe("useStudioFile", () => {
     await waitFor(() => {
       expect(screen.getByTestId("selected-path").textContent).toBe("content/docs/integrations/cloudflare.mdx")
       expect(screen.getByTestId("content").textContent).toContain("# Cloudflare")
+      expect(screen.getByTestId("loading").textContent).toBe("false")
+    })
+  })
+
+  it("resolves the loading state without crashing when a deep-linked fetch fails", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: false,
+      status: 404,
+      json: vi.fn().mockResolvedValue({}),
+    } as never)
+
+    render(<Harness currentPath="content/docs/missing.mdx" />)
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled()
+    })
+
+    // A failed fetch must not leave the editor stuck in a loading state.
+    await waitFor(() => {
       expect(screen.getByTestId("loading").textContent).toBe("false")
     })
   })

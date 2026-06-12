@@ -145,4 +145,55 @@ describe("resolveResolvedRuntime", () => {
       extensions: [".md", ".mdx", ".markdown"],
     })
   })
+
+  it("resolves a repo-root runtime when contentRoot is empty", async () => {
+    const runtime = await resolveResolvedRuntime({
+      owner: "acme",
+      repo: "docs",
+      branch: "main",
+      framework: "next-mdx",
+      contentRoot: "",
+      readFile: createReadFile(["mdx-components.tsx"]),
+    })
+
+    expect(runtime).toEqual<RepoPressResolvedRuntime>({
+      strategy: "native",
+      entryPath: "mdx-components.tsx",
+      rootPath: "",
+      metadataDefault: "frontmatter",
+      extensions: [".md", ".mdx", ".markdown"],
+    })
+  })
+
+  it("uses frontmatter defaults for next-mdx roots outside the app directory", async () => {
+    const runtime = await resolveResolvedRuntime({
+      owner: "acme",
+      repo: "docs",
+      branch: "main",
+      framework: "next-mdx",
+      contentRoot: "content/blog",
+      readFile: createReadFile(["mdx-components.tsx"]),
+    })
+
+    expect(runtime).toMatchObject({
+      strategy: "native",
+      entryPath: "mdx-components.tsx",
+      metadataDefault: "frontmatter",
+    })
+  })
+
+  it("falls back to generic markdown when a non-markdown-first framework has no runtime entry", async () => {
+    const runtime = await resolveRuntime({
+      framework: "fumadocs",
+      contentRoot: "apps/docs/content/docs",
+    })
+
+    expect(runtime).toEqual<RepoPressResolvedRuntime>({
+      strategy: "generic-fallback",
+      entryPath: null,
+      rootPath: null,
+      metadataDefault: "frontmatter",
+      extensions: [".md", ".mdx", ".markdown"],
+    })
+  })
 })

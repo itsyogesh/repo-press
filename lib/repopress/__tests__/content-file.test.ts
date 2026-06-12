@@ -137,4 +137,24 @@ describe("extractTitleFromContentFile", () => {
 
     expect(title).toBe("Template title")
   })
+
+  it("falls back to the filename stem when there is no title", () => {
+    const title = extractTitleFromContentFile("# Just a heading", "docs/getting-started.mdx")
+    expect(title).toBe("getting-started")
+  })
+})
+
+describe("parseContentFile edge cases", () => {
+  it("treats a plain markdown file with no frontmatter as metadataSource 'none'", () => {
+    const parsed = parseContentFile("# Just a heading\n\nSome text", "blog/plain.md")
+    expect(parsed.metadataSource).toBe("none")
+    expect(parsed.frontmatter).toEqual({})
+    expect(parsed.body).toBe("# Just a heading\n\nSome text")
+  })
+
+  it("warns and ignores a metadata export that is not an object literal", () => {
+    const parsed = parseContentFile(`export const metadata = ["not", "an", "object"]\n\n# Hello`, "app/page.mdx")
+    expect(parsed.warnings).toContain("Metadata export must evaluate to an object literal.")
+    expect(parsed.metadataSource).toBe("none")
+  })
 })

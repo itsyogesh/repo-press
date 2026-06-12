@@ -4,7 +4,11 @@
  * Handles YAML frontmatter `title:` and MDX `export const metadata = { title: ... }`.
  */
 export function extractTitleFromContent(rawContent: string, filePath: string): string {
-  const fallback = filePath.split("/").pop()?.replace(/\.(mdx?|markdown)$/i, "") || filePath
+  const fallback =
+    filePath
+      .split("/")
+      .pop()
+      ?.replace(/\.(mdx?|markdown)$/i, "") || filePath
 
   const fmMatch = rawContent.match(/^---\r?\n([\s\S]*?)\r?\n---/)
   if (fmMatch) {
@@ -12,9 +16,7 @@ export function extractTitleFromContent(rawContent: string, filePath: string): s
     if (titleMatch?.[1]?.trim()) return titleMatch[1].trim()
   }
 
-  const metaMatch = rawContent.match(
-    /export\s+const\s+metadata\s*=\s*\{[\s\S]*?\btitle\s*:\s*["'`]([^"'`]+)["'`]/,
-  )
+  const metaMatch = rawContent.match(/export\s+const\s+metadata\s*=\s*\{[\s\S]*?\btitle\s*:\s*["'`]([^"'`]+)["'`]/)
   if (metaMatch?.[1]?.trim()) return metaMatch[1].trim()
 
   return fallback
