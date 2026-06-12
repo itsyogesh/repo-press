@@ -89,7 +89,6 @@ function PreviewSkeleton() {
 
 export function PreviewRuntime({
   source,
-  frontmatter,
   adapter,
   externalDiagnostics = [],
   resolveAssetUrl,
@@ -111,12 +110,11 @@ export function PreviewRuntime({
 
   // Stabilize deps: use content-based keys so the compilation effect only
   // re-fires when the actual content changes, not on referential inequality.
-  const frontmatterRef = useRef(frontmatter)
-  frontmatterRef.current = frontmatter
+  // Note: frontmatter is intentionally NOT a compile input — it is not read
+  // during compilation, so changes to it must not trigger a recompile.
   const adapterRef = useRef(adapter)
   adapterRef.current = adapter
 
-  const frontmatterKey = useMemo(() => JSON.stringify(frontmatter ?? null), [frontmatter])
   const adapterKey = useMemo(() => {
     if (!adapter) return "null"
     return JSON.stringify({
@@ -125,7 +123,7 @@ export function PreviewRuntime({
       i: Object.keys(adapter.allowImports || {}).sort(),
     })
   }, [adapter])
-  const compileInputsKey = useMemo(() => JSON.stringify({ frontmatterKey, adapterKey }), [frontmatterKey, adapterKey])
+  const compileInputsKey = adapterKey
 
   const allWarnings = useMemo(() => {
     return Array.from(new Set([...externalDiagnostics, ...warnings])).sort()
