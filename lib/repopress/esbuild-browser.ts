@@ -1,31 +1,39 @@
 import * as esbuild from "esbuild-wasm"
 
 let esbuildInitialized = false
+let esbuildInitPromise: Promise<void> | null = null
 const WORKDIR_PREFIX =
   typeof process !== "undefined" && typeof process.cwd === "function" ? `${process.cwd().replace(/\\/g, "/")}/` : ""
 
 export async function initEsbuild() {
   if (esbuildInitialized) return
+  // Concurrent callers share a single in-flight initialization. esbuild-wasm
+  // throws if initialize() runs twice, so guarding on a boolean alone races.
+  if (esbuildInitPromise) return esbuildInitPromise
 
-  try {
-    if (typeof window === "undefined") {
-      esbuildInitialized = true
-      return
-    } else {
+  esbuildInitPromise = (async () => {
+    try {
+      if (typeof window === "undefined") {
+        esbuildInitialized = true
+        return
+      }
       await esbuild.initialize({
         worker: false, // In browser, we might use worker. For simple tasks, worker: false is easier to setup without external URLs
         wasmURL: "/esbuild.wasm",
       })
-    }
-    esbuildInitialized = true
-  } catch (e: any) {
-    if (e.message.includes('Cannot call "initialize" more than once')) {
       esbuildInitialized = true
-      return
+    } catch (e: any) {
+      if (typeof e?.message === "string" && e.message.includes('Cannot call "initialize" more than once')) {
+        esbuildInitialized = true
+        return
+      }
+      esbuildInitPromise = null // allow a genuine failure to be retried
+      console.error("Failed to initialize esbuild", e)
+      throw e
     }
-    console.error("Failed to initialize esbuild", e)
-    throw e
-  }
+  })()
+
+  return esbuildInitPromise
 }
 
 function loaderForFile(filePath: string): esbuild.Loader {
