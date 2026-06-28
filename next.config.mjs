@@ -2,6 +2,11 @@ import { withSentryConfig } from "@sentry/nextjs"
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Pin the workspace root to this project — a stray pnpm-lock.yaml in the
+  // home dir was otherwise inferred as the Turbopack root.
+  turbopack: {
+    root: import.meta.dirname,
+  },
   async headers() {
     return [
       {

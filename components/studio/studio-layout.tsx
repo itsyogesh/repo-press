@@ -21,10 +21,11 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
 import { Skeleton } from "@/components/ui/skeleton"
+import { StatusBadge } from "@/components/ui/status-badge"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
-import { DOCUMENT_STATUS_CONFIG, type DocumentStatus, isPublishableDocumentStatus } from "@/lib/document-status"
+import { type DocumentStatus, isPublishableDocumentStatus } from "@/lib/document-status"
 import { getFrameworkAdapter } from "@/lib/framework-adapters"
 import { type FileTreeNode, findTreeNode } from "@/lib/github"
 import { usePreviewContext } from "@/lib/hooks/use-preview-context"
@@ -1298,7 +1299,6 @@ function StudioLayoutInner({
   const showSidebarRail = !isMobile && isSidebarCollapsed
 
   const currentStatus: DocumentStatus = (document?.status as DocumentStatus | undefined) ?? "draft"
-  const statusInfo = DOCUMENT_STATUS_CONFIG[currentStatus] || DOCUMENT_STATUS_CONFIG.draft
   const canPublish = isPublishableDocumentStatus(currentStatus)
   const historyHref = buildHistoryHref({ owner, repo, branch, projectId })
 
@@ -1323,7 +1323,6 @@ function StudioLayoutInner({
             contentRoot={contentRoot}
             documentId={document?._id}
             currentStatus={currentStatus}
-            statusInfo={statusInfo}
             onSave={saveDraft}
             isSaving={isSaving || isFileLoading}
           />
@@ -1533,7 +1532,7 @@ function StudioLayoutInner({
                         canPublish={canPublish}
                         statusBadge={
                           <div className="flex items-center gap-1">
-                            <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
+                            <StatusBadge status={currentStatus} />
                             {document && <StatusActions documentId={document._id} currentStatus={currentStatus} />}
                           </div>
                         }

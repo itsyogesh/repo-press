@@ -1,0 +1,111 @@
+/* ============================================================
+   RepoPress — Base layer & reusable primitives
+   ------------------------------------------------------------
+   Light defaults applied to the document. Utility classes used
+   across specimen cards and UI kits so the editorial register
+   stays consistent.
+   ============================================================ */
+
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+  font-weight: var(--weight-regular);
+  line-height: var(--leading-relaxed);
+  letter-spacing: var(--tracking-snug);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "ss01", "cv01";
+}
+
+::selection {
+  background: var(--slate-subtle);
+  color: var(--text-primary);
+}
+
+/* ---- Type primitives ---- */
+.rp-serif {
+  font-family: var(--font-serif);
+  font-weight: var(--weight-regular);
+  letter-spacing: var(--tracking-display);
+  line-height: var(--leading-tight);
+}
+.rp-mono { font-family: var(--font-mono); }
+
+.rp-overline {
+  font-family: var(--font-mono);
+  font-size: var(--text-overline);
+  font-weight: var(--weight-medium);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-overline);
+  color: var(--text-muted);
+}
+
+.rp-display {
+  font-family: var(--font-serif);
+  font-weight: var(--weight-regular);
+  font-size: var(--text-display-lg);
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-display);
+  color: var(--text-primary);
+}
+
+/* ---- Surfaces ---- */
+.rp-card {
+  background: var(--surface-card);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-1);
+}
+.rp-raised {
+  background: var(--surface-raised);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-2);
+}
+
+/* ---- Hairline helpers ---- */
+.rp-hairline { border: var(--border-width) solid var(--border); }
+.rp-ring { box-shadow: var(--shadow-ring); }
+
+/* ---- Focus ring (accent, never color-only — also outline offset) ---- */
+.rp-focusable:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--ring);
+  border-color: var(--slate);
+}
+
+/* ---- Prose (preview / reading surfaces, ~720px measure) ---- */
+.rp-prose {
+  max-width: var(--measure);
+  color: var(--text-primary);
+  line-height: var(--leading-relaxed);
+}
+.rp-prose h1, .rp-prose h2 {
+  font-family: var(--font-serif);
+  font-weight: var(--weight-regular);
+  letter-spacing: var(--tracking-tight);
+  line-height: var(--leading-snug);
+}
+.rp-prose a { color: var(--text-link); text-underline-offset: 2px; }
+.rp-prose code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--surface-muted);
+  padding: 0.1em 0.35em;
+  border-radius: var(--radius-xs);
+}
+
+/* ---- Scroll-reveal ----
+   The resting state is fully visible. The reveal entrance (hide → fade/rise
+   in on view) is owned entirely by JS (window.RP.Reveal), which also commits
+   a guaranteed opacity:1 end-state so content is never stuck hidden in
+   print, no-JS, reduced-motion, or throttled/background capture contexts. */
+.rp-reveal { opacity: 1; }

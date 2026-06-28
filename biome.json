@@ -17,7 +17,8 @@
       "!!**/convex/_generated",
       "!!**/skills",
       "!!**/.next",
-      "!!**/.agents"
+      "!!**/.agents",
+      "!!**/docs/design-system"
     ]
   },
   "formatter": {

@@ -1,0 +1,64 @@
+/* ============================================================
+   RepoPress — Typography tokens
+   ------------------------------------------------------------
+   Three registers:
+   • Serif (Instrument Serif, 400)  → display & marketing headlines,
+     sentence case, tight negative tracking. Literary, calm, confident.
+   • Sans  (Geist, 400/500/600)     → all UI + body. Never 700 in chrome.
+   • Mono  (Geist Mono)             → file paths, branches, SHAs,
+     frontmatter keys, inline code, and uppercase overlines (+0.2em).
+
+   Body ~1.6 line-height; max reading width ~720px.
+   ============================================================ */
+
+:root {
+  /* ---- Families ---- */
+  --font-serif: "Instrument Serif", "Iowan Old Style", Georgia, "Times New Roman", serif;
+  --font-sans:  "Geist", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono:  "Geist Mono", "SF Mono", ui-monospace, "Cascadia Mono", Menlo, monospace;
+
+  /* ---- Weights (3 carry the system; 700 = inline prose bold only) ---- */
+  --weight-regular:  400;
+  --weight-medium:   500;
+  --weight-semibold: 600;
+
+  /* ---- Display sizes (serif) — hero & marketing ---- */
+  --text-display-2xl: 5.5rem;   /* 88px — hero on large screens */
+  --text-display-xl:  4rem;     /* 64px */
+  --text-display-lg:  3rem;     /* 48px — section openers */
+  --text-display-md:  2.25rem;  /* 36px */
+
+  /* ---- Heading sizes (sans, semibold) — UI ---- */
+  --text-h1: 2rem;      /* 32px — page titles */
+  --text-h2: 1.5rem;    /* 24px — section anchors */
+  --text-h3: 1.25rem;   /* 20px — card titles */
+  --text-h4: 1.0625rem; /* 17px — panel headers */
+
+  /* ---- Body & UI (sans) ---- */
+  --text-body-lg: 1.125rem;  /* 18px — intro paragraphs */
+  --text-body:    0.9375rem; /* 15px — standard reading text */
+  --text-sm:      0.8125rem; /* 13px — compact, secondary copy */
+  --text-label:   0.8125rem; /* 13px — form labels, nav items */
+  --text-caption: 0.75rem;   /* 12px — timestamps, metadata */
+  --text-overline:0.6875rem; /* 11px — mono uppercase overlines */
+  --text-code:    0.8125rem; /* 13px — inline code, paths */
+
+  /* ---- Line heights ---- */
+  --leading-tight:  1.05;  /* display */
+  --leading-snug:   1.18;  /* headings */
+  --leading-normal: 1.4;   /* labels, ui */
+  --leading-relaxed:1.6;   /* body / reading */
+  --leading-code:   1.7;   /* code blocks, editor */
+
+  /* ---- Tracking ---- */
+  --tracking-display: -0.025em; /* tight negative at hero scale */
+  --tracking-tight:   -0.018em; /* headings */
+  --tracking-snug:    -0.01em;  /* body large */
+  --tracking-normal:  0;
+  --tracking-mono:    0;
+  --tracking-overline: 0.2em;   /* mono uppercase overlines */
+
+  /* ---- Reading measure ---- */
+  --measure: 42rem;   /* ~672px max reading width */
+  --measure-wide: 45rem;
+}

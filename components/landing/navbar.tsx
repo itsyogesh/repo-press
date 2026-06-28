@@ -3,6 +3,7 @@
 import { Github, Menu } from "lucide-react"
 import Link from "next/link"
 import { useState } from "react"
+import { Logo } from "@/components/brand/logo"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 
@@ -24,16 +25,8 @@ export default function Navbar() {
   return (
     <nav className="sticky top-0 z-50 w-full px-4 pt-4">
       <div className="glass-navbar mx-auto flex h-16 max-w-6xl items-center justify-between rounded-2xl px-4 sm:px-6">
-        <Link href="/" className="flex items-center gap-3">
-          <span className="inline-flex size-10 items-center justify-center rounded-xl border border-border/70 bg-background/80 font-mono text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-foreground">
-            RP
-          </span>
-          <div className="flex flex-col">
-            <span className="text-sm font-semibold tracking-[-0.03em] text-foreground">RepoPress</span>
-            <span className="font-mono text-[0.65rem] uppercase tracking-[0.22em] text-muted-foreground">
-              Git-native studio
-            </span>
-          </div>
+        <Link href="/" aria-label="RepoPress home">
+          <Logo />
         </Link>
 
         <div className="hidden items-center gap-7 md:flex">
@@ -86,17 +79,7 @@ export default function Navbar() {
                 <SheetDescription>Browse RepoPress pages and sign in options.</SheetDescription>
               </SheetHeader>
               <div className="glass-panel flex h-full flex-col rounded-[1.5rem] p-6">
-                <div className="mb-8 flex items-center gap-3">
-                  <span className="inline-flex size-10 items-center justify-center rounded-xl border border-border/70 bg-background/70 font-mono text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-foreground">
-                    RP
-                  </span>
-                  <div className="flex flex-col">
-                    <span className="text-sm font-semibold tracking-[-0.03em] text-foreground">RepoPress</span>
-                    <span className="font-mono text-[0.65rem] uppercase tracking-[0.22em] text-muted-foreground">
-                      Git-native studio
-                    </span>
-                  </div>
-                </div>
+                <Logo className="mb-8" />
 
                 <div className="flex flex-1 flex-col gap-3">
                   {navLinks.map((link) =>

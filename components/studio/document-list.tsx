@@ -3,12 +3,12 @@
 import { useQuery } from "convex/react"
 import { FileText, Search } from "lucide-react"
 import * as React from "react"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
+import { StatusBadge } from "@/components/ui/status-badge"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
 import { DOCUMENT_STATUS_CONFIG, type DocumentStatus } from "@/lib/document-status"
@@ -107,7 +107,6 @@ export function DocumentList({ projectId, selectedFilePath, onSelectDocument }: 
             </div>
           ) : (
             displayedDocs.map((doc) => {
-              const statusInfo = DOCUMENT_STATUS_CONFIG[doc.status as DocumentStatus] || DOCUMENT_STATUS_CONFIG.draft
               return (
                 <Button
                   key={doc._id}
@@ -123,9 +122,7 @@ export function DocumentList({ projectId, selectedFilePath, onSelectDocument }: 
                   <div className="flex flex-col items-start gap-0.5 min-w-0">
                     <span className="truncate text-sm w-full text-left">{doc.title}</span>
                     <div className="flex items-center gap-1">
-                      <Badge variant={statusInfo.variant} className="text-[10px] px-1 py-0 h-4">
-                        {statusInfo.label}
-                      </Badge>
+                      <StatusBadge status={doc.status as DocumentStatus} size="sm" dot={false} />
                       <span className="text-[10px] text-muted-foreground truncate">
                         {doc.filePath.split("/").pop()}
                       </span>

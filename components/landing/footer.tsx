@@ -1,5 +1,6 @@
 import { Github } from "lucide-react"
 import Link from "next/link"
+import { Logo } from "@/components/brand/logo"
 
 const productLinks = [
   { href: "/#features", label: "Features" },
@@ -33,16 +34,8 @@ export default function Footer() {
       <div className="mx-auto max-w-6xl rounded-[2rem] border border-border/70 bg-muted/35 px-6 py-10 sm:px-8">
         <div className="grid gap-10 lg:grid-cols-[1.2fr_0.8fr_0.8fr_0.8fr]">
           <div className="flex flex-col gap-4">
-            <Link href="/" className="flex items-center gap-3">
-              <span className="inline-flex size-10 items-center justify-center rounded-xl border border-border/70 bg-background/80 font-mono text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-foreground">
-                RP
-              </span>
-              <div className="flex flex-col">
-                <span className="text-sm font-semibold tracking-[-0.03em] text-foreground">RepoPress</span>
-                <span className="font-mono text-[0.65rem] uppercase tracking-[0.22em] text-muted-foreground">
-                  Git-native studio
-                </span>
-              </div>
+            <Link href="/" aria-label="RepoPress home">
+              <Logo />
             </Link>
             <p className="max-w-sm text-sm leading-6 text-muted-foreground">
               A visual editor for anyone managing content in GitHub repositories - no terminal required.

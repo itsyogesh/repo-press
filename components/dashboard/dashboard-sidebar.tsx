@@ -1,9 +1,10 @@
 "use client"
 
 import { useQuery } from "convex/react"
-import { Box, Clock, Folder, Home, LayoutDashboard, Pencil, Settings } from "lucide-react"
+import { Clock, Folder, Home, LayoutDashboard, Pencil, Settings } from "lucide-react"
 import Link from "next/link"
 import { usePathname, useSearchParams } from "next/navigation"
+import { BrandMark } from "@/components/brand/logo"
 import { DashboardSidebarFooter } from "@/components/dashboard/sidebar-footer"
 import {
   Sidebar,
@@ -89,11 +90,9 @@ export function DashboardSidebar() {
             <SidebarMenuButton asChild tooltip="RepoPress">
               <Link href="/dashboard">
                 {/* In collapsed (icon) mode only the svg is visible; in expanded mode the branded wrapper shows */}
-                <Box className="size-4 shrink-0 group-data-[collapsible=icon]:block hidden" />
+                <BrandMark tile className="size-5 shrink-0 group-data-[collapsible=icon]:block hidden" />
                 <div className="flex items-center gap-2 group-data-[collapsible=icon]:hidden">
-                  <div className="flex aspect-square size-6 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
-                    <Box className="size-3.5" />
-                  </div>
+                  <BrandMark tile className="size-6 shrink-0" />
                   <div className="grid flex-1 text-left text-sm leading-tight">
                     <span className="truncate font-semibold">RepoPress</span>
                     <span className="truncate text-xs text-muted-foreground">Content Management</span>

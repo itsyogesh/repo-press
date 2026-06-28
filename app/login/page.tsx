@@ -3,6 +3,7 @@
 import { AlertCircle, Eye, EyeOff, Github, Key } from "lucide-react"
 import { useSearchParams } from "next/navigation"
 import { useState } from "react"
+import { BrandMark } from "@/components/brand/logo"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -36,8 +37,9 @@ export default function LoginPage() {
     <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10 bg-muted/20">
       <div className="w-full max-w-sm">
         <Card>
-          <CardHeader className="text-center">
-            <CardTitle className="text-2xl">Welcome to RepoPress</CardTitle>
+          <CardHeader className="justify-items-center text-center">
+            <BrandMark tile className="mb-2 size-12" />
+            <CardTitle className="font-serif text-3xl font-normal tracking-[-0.02em]">Welcome to RepoPress</CardTitle>
             <CardDescription>Sign in to manage your content</CardDescription>
           </CardHeader>
           <CardContent>

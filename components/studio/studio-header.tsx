@@ -18,7 +18,6 @@ import Link from "next/link"
 import * as React from "react"
 import { toast } from "sonner"
 import { syncProjectsFromConfigAction } from "@/app/dashboard/[owner]/[repo]/actions"
-import { Badge } from "@/components/ui/badge"
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -29,7 +28,9 @@ import {
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { StatusBadge } from "@/components/ui/status-badge"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import type { DocumentStatus } from "@/lib/document-status"
 import type { FileTreeNode } from "@/lib/github"
 import { buildHistoryHref } from "@/lib/studio/history-link"
 import { ProjectSwitcher } from "./project-switcher"
@@ -41,11 +42,7 @@ interface StudioHeaderProps {
   selectedFile: FileTreeNode | null
   contentRoot?: string
   documentId?: string
-  currentStatus: string
-  statusInfo: {
-    label: string
-    variant: "default" | "secondary" | "outline" | "destructive"
-  }
+  currentStatus: DocumentStatus
   onSave: () => void
   isSaving: boolean
 }
@@ -55,7 +52,6 @@ export function StudioHeader({
   contentRoot,
   documentId,
   currentStatus,
-  statusInfo,
   onSave,
   isSaving,
 }: StudioHeaderProps) {
@@ -156,9 +152,7 @@ export function StudioHeader({
       <div className="ml-auto flex shrink-0 items-center gap-2">
         {selectedFile && (
           <div className="hidden items-center gap-1 rounded-xl border border-studio-border/70 bg-studio-canvas-inset/50 px-2.5 py-1.5 lg:flex">
-            <Badge variant={statusInfo.variant} className="capitalize">
-              {statusInfo.label}
-            </Badge>
+            <StatusBadge status={currentStatus} />
             {documentId && <StatusActions documentId={documentId} currentStatus={currentStatus as any} />}
           </div>
         )}

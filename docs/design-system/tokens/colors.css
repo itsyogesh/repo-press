@@ -1,0 +1,160 @@
+/* ============================================================
+   RepoPress — Color tokens (OKLCH)
+   ------------------------------------------------------------
+   Balanced warm monochrome + ONE chromatic signal (Signal Slate).
+   Light = warm near-white paper.  Dark = warm near-black.
+   Both modes are first-class.
+
+   Rule: Signal Slate is the only chromatic UI color. If you reach
+   for a second accent, solve the hierarchy with scale/weight/space.
+   ============================================================ */
+
+:root {
+  /* ---- Raw neutral ramp (warm: hue 75, whisper chroma) ---- */
+  --paper-0:  oklch(0.993 0.004 75);   /* page canvas, warmest near-white */
+  --paper-1:  oklch(0.985 0.004 75);   /* sidebar / subtle surface */
+  --paper-2:  oklch(0.972 0.005 75);   /* muted fills, hover */
+  --paper-3:  oklch(0.955 0.005 75);   /* pressed / deeper fill */
+  --ink-0:    oklch(0.20 0.012 75);    /* primary text, warm near-black */
+  --ink-1:    oklch(0.44 0.010 75);    /* secondary text */
+  --ink-2:    oklch(0.556 0.008 75);   /* tertiary: labels, metadata */
+  --ink-3:    oklch(0.70 0.006 75);    /* disabled */
+
+  /* ---- Signal Slate — the one accent ---- */
+  --slate:          oklch(0.52 0.13 255);
+  --slate-hover:    oklch(0.44 0.15 255);
+  --slate-press:    oklch(0.40 0.15 255);
+  --slate-subtle:   oklch(0.952 0.022 255);  /* selected rows, accent fills */
+  --slate-on:       oklch(1 0 0);            /* text on accent */
+
+  /* ---- Semantic surfaces ---- */
+  --background:        var(--paper-0);
+  --surface-card:      oklch(1 0 0);
+  --surface-raised:    oklch(1 0 0);          /* popovers, dropdowns, modals */
+  --surface-sunken:    var(--paper-1);
+  --surface-muted:     var(--paper-2);
+  --surface-sidebar:   var(--paper-1);
+  --surface-inverse:   var(--ink-0);          /* dark blocks on light page */
+
+  /* ---- Semantic text ---- */
+  --text-primary:    var(--ink-0);
+  --text-secondary:  var(--ink-1);
+  --text-muted:      var(--ink-2);
+  --text-disabled:   var(--ink-3);
+  --text-on-inverse: var(--paper-0);
+  --text-link:       var(--slate);
+  --text-accent:     var(--slate);
+
+  /* ---- Borders (whisper-weight hairlines) ---- */
+  --border:          oklch(0.918 0.004 75);
+  --border-subtle:   oklch(0.945 0.004 75);
+  --border-strong:   oklch(0.85 0.004 75);
+  --border-inverse:  oklch(1 0 0 / 0.12);
+  --ring:            oklch(0.52 0.13 255 / 0.40);
+
+  /* ---- Document workflow status ----
+     draft=gray · in_review=amber · approved=emerald
+     published=green · scheduled=slate · archived=muted   */
+  --status-draft-fg:        var(--ink-2);
+  --status-draft-bg:        var(--paper-2);
+  --status-draft-border:    var(--border);
+
+  --status-review-fg:       oklch(0.50 0.12 75);
+  --status-review-bg:       oklch(0.955 0.040 75);
+  --status-review-border:   oklch(0.86 0.07 75);
+
+  --status-approved-fg:     oklch(0.46 0.12 155);
+  --status-approved-bg:     oklch(0.955 0.035 155);
+  --status-approved-border: oklch(0.84 0.08 155);
+
+  --status-published-fg:    oklch(1 0 0);
+  --status-published-bg:    oklch(0.60 0.15 150);
+  --status-published-border: oklch(0.60 0.15 150);
+
+  --status-scheduled-fg:    oklch(0.46 0.12 255);
+  --status-scheduled-bg:    oklch(0.952 0.030 255);
+  --status-scheduled-border: oklch(0.84 0.07 255);
+
+  --status-archived-fg:     oklch(0.62 0.006 75);
+  --status-archived-bg:     var(--paper-1);
+  --status-archived-border: var(--border-subtle);
+
+  /* ---- Other semantic signals ---- */
+  --success: oklch(0.60 0.15 150);
+  --warning: oklch(0.72 0.14 75);
+  --danger:  oklch(0.55 0.18 27);
+  --danger-subtle: oklch(0.955 0.030 27);
+
+  /* ---- Syntax (editor / code blocks) ---- */
+  --syntax-key:     var(--slate);
+  --syntax-string:  oklch(0.50 0.10 150);
+  --syntax-comment: var(--ink-3);
+  --syntax-punct:   var(--ink-2);
+}
+
+/* ============================================================
+   Dark — warm near-black, content emerges by luminance
+   ============================================================ */
+.dark,
+[data-theme="dark"] {
+  --paper-0:  oklch(0.165 0.006 75);
+  --paper-1:  oklch(0.195 0.006 75);
+  --paper-2:  oklch(0.245 0.006 75);
+  --paper-3:  oklch(0.295 0.006 75);
+  --ink-0:    oklch(0.965 0.003 75);
+  --ink-1:    oklch(0.74 0.006 75);
+  --ink-2:    oklch(0.62 0.006 75);
+  --ink-3:    oklch(0.46 0.006 75);
+
+  --slate:          oklch(0.72 0.11 255);
+  --slate-hover:    oklch(0.78 0.09 255);
+  --slate-press:    oklch(0.68 0.11 255);
+  --slate-subtle:   oklch(0.30 0.06 255);
+  --slate-on:       oklch(0.165 0.01 255);
+
+  --surface-card:    oklch(0.185 0.006 75);
+  --surface-raised:  oklch(0.215 0.006 75);
+  --surface-sunken:  oklch(0.145 0.006 75);
+  --surface-muted:   var(--paper-2);
+  --surface-sidebar: oklch(0.19 0.006 75);
+  --surface-inverse: var(--ink-0);
+
+  --text-on-inverse: oklch(0.18 0.01 75);
+
+  --border:         oklch(1 0 0 / 0.10);
+  --border-subtle:  oklch(1 0 0 / 0.06);
+  --border-strong:  oklch(1 0 0 / 0.16);
+  --border-inverse: oklch(0 0 0 / 0.14);
+  --ring:           oklch(0.72 0.11 255 / 0.45);
+
+  --status-draft-fg:        var(--ink-2);
+  --status-draft-bg:        oklch(1 0 0 / 0.05);
+  --status-draft-border:    var(--border);
+
+  --status-review-fg:       oklch(0.80 0.12 75);
+  --status-review-bg:       oklch(0.30 0.06 75);
+  --status-review-border:   oklch(0.45 0.08 75);
+
+  --status-approved-fg:     oklch(0.80 0.12 155);
+  --status-approved-bg:     oklch(0.28 0.06 155);
+  --status-approved-border: oklch(0.42 0.08 155);
+
+  --status-published-fg:    oklch(0.16 0.02 150);
+  --status-published-bg:    oklch(0.70 0.15 150);
+  --status-published-border: oklch(0.70 0.15 150);
+
+  --status-scheduled-fg:    oklch(0.82 0.10 255);
+  --status-scheduled-bg:    oklch(0.30 0.06 255);
+  --status-scheduled-border: oklch(0.44 0.08 255);
+
+  --status-archived-fg:     oklch(0.58 0.006 75);
+  --status-archived-bg:     oklch(1 0 0 / 0.04);
+  --status-archived-border: var(--border-subtle);
+
+  --success: oklch(0.72 0.15 150);
+  --warning: oklch(0.80 0.13 75);
+  --danger:  oklch(0.68 0.17 27);
+  --danger-subtle: oklch(0.30 0.07 27);
+
+  --syntax-string:  oklch(0.74 0.12 150);
+}

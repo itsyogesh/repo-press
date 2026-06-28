@@ -3,11 +3,11 @@
 import { useQuery } from "convex/react"
 import { ArrowUpDown, Search, X } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
+import { RepoRow } from "@/components/dashboard/repo-row"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { api } from "@/convex/_generated/api"
 import type { GitHubRepo } from "@/lib/github"
-import { RepoCard } from "./repo-card"
 
 interface RepoGridProps {
   repos: GitHubRepo[]
@@ -41,9 +41,9 @@ function RepoSection({
         </p>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="flex flex-col">
         {repos.map((repo) => (
-          <RepoCard key={repo.id} repo={repo} connectedProjectCount={getProjectCount(repo)} />
+          <RepoRow key={repo.id} repo={repo} connectedProjectCount={getProjectCount(repo)} />
         ))}
       </div>
     </section>
@@ -177,9 +177,9 @@ export function RepoGrid({ repos, serverProjects }: RepoGridProps) {
           </Button>
         </div>
       ) : useFlatLayout ? (
-        <div className="grid gap-4 xl:grid-cols-2">
+        <div className="flex flex-col">
           {filtered.map((repo) => (
-            <RepoCard key={repo.id} repo={repo} connectedProjectCount={getProjectCount(repo)} />
+            <RepoRow key={repo.id} repo={repo} connectedProjectCount={getProjectCount(repo)} />
           ))}
         </div>
       ) : (
