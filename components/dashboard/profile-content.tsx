@@ -34,7 +34,7 @@ export function ProfileContent() {
       <div className="mx-auto w-full max-w-2xl px-4 py-10 sm:px-6">
         <div className="flex flex-col gap-6">
           <Skeleton className="h-8 w-48" />
-          <Skeleton className="h-64 w-full rounded-xl" />
+          <Skeleton className="h-64 w-full rounded-lg" />
         </div>
       </div>
     )
@@ -63,9 +63,9 @@ export function ProfileContent() {
         <Card className="overflow-hidden border-border/70">
           <CardContent className="p-6 sm:p-8">
             <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
-              <Avatar className="h-20 w-20 shrink-0 rounded-xl">
+              <Avatar className="h-20 w-20 shrink-0 rounded-full">
                 <AvatarImage src={avatarUrl} alt={displayName} />
-                <AvatarFallback className="rounded-xl text-lg">{getInitials(displayName)}</AvatarFallback>
+                <AvatarFallback className="rounded-full text-lg">{getInitials(displayName)}</AvatarFallback>
               </Avatar>
 
               <div className="min-w-0 flex-1 space-y-4">

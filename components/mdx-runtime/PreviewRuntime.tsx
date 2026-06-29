@@ -77,7 +77,7 @@ function PreviewSkeleton() {
         <div className="h-4 w-5/6 bg-muted rounded-md opacity-70" />
       </div>
 
-      <div className="h-64 w-full bg-muted/50 rounded-xl border border-dashed" />
+      <div className="h-64 w-full bg-muted/50 rounded-lg border border-dashed" />
 
       <div className="space-y-4">
         <div className="h-4 w-full bg-muted rounded-md opacity-70" />
@@ -210,7 +210,7 @@ export function PreviewRuntime({
             </button>
           ),
           Card: (props) => (
-            <div className="my-4 p-6 border rounded-xl bg-card shadow-sm text-left font-sans">{props.children}</div>
+            <div className="my-4 p-6 border rounded-lg bg-card text-left font-sans">{props.children}</div>
           ),
           FileTree: (props) => (
             <div className="my-4 p-4 border rounded-md bg-muted/20 font-mono text-xs text-left">{props.children}</div>

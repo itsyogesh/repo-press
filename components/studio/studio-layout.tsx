@@ -1616,7 +1616,7 @@ function StudioLayoutInner({
                                     navigateToFile(firstResult.path)
                                   }
                                 }}
-                                className="h-11 rounded-xl border-studio-border bg-studio-canvas pl-10 pr-10 shadow-sm"
+                                className="h-11 rounded-md border-studio-border bg-studio-canvas pl-10 pr-10"
                                 placeholder="Search docs..."
                               />
                               <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
@@ -1654,7 +1654,7 @@ function StudioLayoutInner({
                                       <li key={file.path}>
                                         <button
                                           type="button"
-                                          className="flex w-full items-start gap-2 rounded-xl px-2 py-2 text-left transition-colors hover:bg-studio-canvas-inset"
+                                          className="flex w-full items-start gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-studio-canvas-inset"
                                           onClick={() => navigateToFile(file.path)}
                                         >
                                           <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-studio-fg-muted" />

@@ -84,7 +84,7 @@ function ToolbarCluster({ label, children }: { label: string; children: React.Re
   return (
     <div
       className={cn(
-        "flex items-center gap-0.5 rounded-xl border border-studio-border/70 bg-studio-canvas px-1.5 py-1 shadow-sm",
+        "flex items-center gap-0.5 rounded-md border border-studio-border/70 bg-studio-canvas px-1.5 py-1",
         "before:pointer-events-none",
       )}
     >

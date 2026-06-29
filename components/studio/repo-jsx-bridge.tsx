@@ -34,7 +34,7 @@ const STUDIO_SAFE_RENDERERS: Record<string, React.ComponentType<any>> = {
     const resolvedSrc = rawSrc && resolveAssetUrl ? resolveAssetUrl(rawSrc) : rawSrc
     if (!resolvedSrc) {
       return (
-        <div className="my-6 flex items-center justify-center gap-2 rounded-xl border border-dashed border-studio-border p-6 text-sm text-studio-fg-muted font-sans">
+        <div className="my-6 flex items-center justify-center gap-2 rounded-lg border border-dashed border-studio-border p-6 text-sm text-studio-fg-muted font-sans">
           <ImageIcon className="h-5 w-5 opacity-50 shrink-0" />
           <span>DynamicImage - no source provided</span>
         </div>
@@ -44,7 +44,7 @@ const STUDIO_SAFE_RENDERERS: Record<string, React.ComponentType<any>> = {
       <img
         src={resolvedSrc}
         alt={alt ?? ""}
-        className="my-6 w-full h-auto rounded-xl border border-studio-border object-cover"
+        className="my-6 w-full h-auto rounded-lg border border-studio-border object-cover"
       />
     )
   },

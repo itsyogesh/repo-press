@@ -28,8 +28,8 @@ export function AppSettingsContent() {
       <div className="mx-auto w-full max-w-2xl px-4 py-10 sm:px-6">
         <div className="flex flex-col gap-6">
           <Skeleton className="h-8 w-48" />
-          <Skeleton className="h-48 w-full rounded-xl" />
-          <Skeleton className="h-48 w-full rounded-xl" />
+          <Skeleton className="h-48 w-full rounded-lg" />
+          <Skeleton className="h-48 w-full rounded-lg" />
         </div>
       </div>
     )

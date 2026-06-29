@@ -120,12 +120,16 @@ consumer before its tokens/primitives exist.
 - [x] **Dashboard** (`app/dashboard/page.tsx` + `project-list` + `repo-grid` +
       new `project-row`/`repo-row`) - notebook-calm: mono kicker + serif title +
       stat line, hairline-divided project/repo rows (no shadowed cards).
-- [ ] **Dashboard chrome** (`components/dashboard/dashboard-sidebar.tsx`,
-      `dashboard-header.tsx`) - text-led projects sidebar, serif-italic wordmark.
-- [ ] **Repo hub** (`components/repo-project-hub.tsx`).
-- [ ] **Studio** (`components/studio/*`) - the signature 3-pane editor: file tree
-      | editor + frontmatter | preview. Header, footer, panels, tabs, command
-      palette, publish dialog, status actions. (Largest unit; split per pane.)
+- [x] **Dashboard chrome** (`components/dashboard/dashboard-sidebar.tsx`,
+      `dashboard-header.tsx`) - serif-italic wordmark ("RepoPress" + "GIT-NATIVE STUDIO"
+      mono), avatar rounded-full.
+- [x] **Repo hub** (`components/repo-project-hub.tsx`) - surface-card removed, all
+      rounded-[X.XXrem] → rounded-lg/md, empty state dashed border → rounded-lg.
+- [~] **Studio** (`components/studio/*`) - header all rounded-xl→rounded-md, toggle
+      group, save/more buttons fixed; skeletons rounded-[X.XXrem]→rounded-lg/md;
+      preview surface-card removed, rounded-[1.5rem]→rounded-lg; toolbar container
+      fixed; publish ops bar fixed. File tree, frontmatter panel, status actions
+      already clean. Command palette and publish dialog have no radius issues.
 - [ ] **History** (`app/dashboard/[owner]/[repo]/history`).
 - [ ] **Settings** (`app/dashboard/[owner]/[repo]/settings`, app settings,
       profile).

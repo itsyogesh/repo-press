@@ -74,8 +74,8 @@ function LiveConfigurePreview({ def, formState }: { def: RepoComponentDef; formS
   ) {
     return (
       <div className="w-full max-w-sm space-y-3">
-        <div className="w-full aspect-video rounded-xl border border-studio-border overflow-hidden bg-studio-canvas-inset">
-          <StudioVideoPreview url={formState.src} className="w-full h-full rounded-xl" />
+        <div className="w-full aspect-video rounded-lg border border-studio-border overflow-hidden bg-studio-canvas-inset">
+          <StudioVideoPreview url={formState.src} className="w-full h-full rounded-lg" />
         </div>
         {typeof formState.title === "string" && formState.title && (
           <p className="text-xs font-medium text-studio-fg text-center">{formState.title}</p>
@@ -98,7 +98,7 @@ function LiveConfigurePreview({ def, formState }: { def: RepoComponentDef; formS
     const s = typeStyles[type] ?? typeStyles.info
 
     return (
-      <div className={cn("w-full max-w-sm rounded-xl border p-4 space-y-2", s.bg, s.border)}>
+      <div className={cn("w-full max-w-sm rounded-lg border p-4 space-y-2", s.bg, s.border)}>
         <div className="flex items-center gap-2">
           <span className="text-sm">{s.icon}</span>
           <p className="text-xs font-semibold text-studio-fg">

@@ -20,7 +20,7 @@ export const DocsImage = React.forwardRef<
   return (
     <div
       ref={ref}
-      className="my-6 overflow-hidden rounded-xl border bg-muted/30 flex flex-col group relative text-left font-sans shadow-sm"
+      className="my-6 overflow-hidden rounded-lg border bg-muted/30 flex flex-col group relative text-left font-sans"
     >
       {resolvedSrc ? (
         <div className="relative">
@@ -70,7 +70,7 @@ export const DocsVideo = React.forwardRef<
   return (
     <div
       ref={ref}
-      className="my-6 relative aspect-video overflow-hidden rounded-xl border bg-foreground text-background flex items-center justify-center text-left font-sans shadow-lg"
+      className="my-6 relative aspect-video overflow-hidden rounded-lg border bg-foreground text-background flex items-center justify-center text-left font-sans"
     >
       {hasVideo ? (
         videoInfo?.provider === "direct" ? (
