@@ -397,9 +397,9 @@ export function ComponentInsertModal({
                       type="button"
                       onClick={() => setActiveCategory(cat)}
                       className={cn(
-                        "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold transition-all duration-150 whitespace-nowrap shrink-0",
+                        "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium transition-all duration-150 whitespace-nowrap shrink-0",
                         activeCategory === cat
-                          ? "bg-studio-accent text-white shadow-sm border border-studio-accent"
+                          ? "bg-studio-accent text-white border border-studio-accent"
                           : "text-studio-fg hover:text-studio-accent hover:bg-studio-canvas-inset",
                       )}
                     >
@@ -559,8 +559,8 @@ export function ComponentInsertModal({
                         disabled={hasErrors}
                         size="sm"
                         className={cn(
-                          "h-9 px-6 text-xs font-semibold tracking-wide",
-                          hasErrors ? "opacity-50 cursor-not-allowed" : "shadow-sm",
+                          "h-9 px-6 text-xs font-medium tracking-wide",
+                          hasErrors ? "opacity-50 cursor-not-allowed" : "",
                         )}
                         title={hasErrors ? "Fill all required fields" : "Insert this component"}
                       >

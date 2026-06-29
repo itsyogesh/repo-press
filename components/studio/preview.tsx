@@ -283,7 +283,7 @@ export function Preview({
       <div className="flex items-center justify-between border-b border-studio-border px-4 py-3 shrink-0">
         <div className="min-w-0 space-y-1">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold uppercase tracking-[0.18em] text-studio-fg-muted">Preview</span>
+            <span className="text-xs font-medium uppercase tracking-[0.18em] text-studio-fg-muted">Preview</span>
             <span className="truncate rounded-full border border-studio-border/60 bg-studio-canvas-inset/45 px-2 py-0.5 text-[11px] text-studio-fg">
               {fileName}
             </span>
