@@ -1464,7 +1464,7 @@ function StudioLayoutInner({
                 {openFiles.length > 0 && (
                   <div className="shrink-0 border-b border-studio-border bg-studio-canvas">
                     <div className="flex items-center gap-2 overflow-x-auto px-3 py-2">
-                      <span className="hidden shrink-0 text-[10px] font-semibold uppercase tracking-[0.16em] text-studio-fg-muted md:inline">
+                      <span className="hidden shrink-0 text-[10px] font-medium uppercase tracking-[0.16em] text-studio-fg-muted md:inline">
                         Open
                       </span>
                       {openFiles.map((path: string) => {

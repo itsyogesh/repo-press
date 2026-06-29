@@ -382,7 +382,7 @@ export function FileTree({
 
   return (
     <div ref={treeRootRef} className="h-full flex flex-col bg-studio-canvas text-studio-fg text-sm">
-      <div className="p-2 border-b border-studio-border text-xs font-semibold text-studio-fg uppercase tracking-wider flex items-center justify-between sticky top-0 bg-studio-canvas z-10">
+      <div className="p-2 border-b border-studio-border text-xs font-medium text-studio-fg uppercase tracking-wider flex items-center justify-between sticky top-0 bg-studio-canvas z-10">
         <span>Explorer ({totalFiles})</span>
         <div className="flex items-center gap-1">
           {onCreateFile && (

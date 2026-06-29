@@ -123,7 +123,7 @@ export function PublishOpsBar({
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold text-studio-fg">
+                <span className="text-sm font-medium text-studio-fg">
                   {total} pending change{total !== 1 ? "s" : ""}
                 </span>
                 {isExpanded ? (

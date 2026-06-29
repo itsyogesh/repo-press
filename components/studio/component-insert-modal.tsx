@@ -101,9 +101,7 @@ function LiveConfigurePreview({ def, formState }: { def: RepoComponentDef; formS
       <div className={cn("w-full max-w-sm rounded-lg border p-4 space-y-2", s.bg, s.border)}>
         <div className="flex items-center gap-2">
           <span className="text-sm">{s.icon}</span>
-          <p className="text-xs font-semibold text-studio-fg">
-            {title || type.charAt(0).toUpperCase() + type.slice(1)}
-          </p>
+          <p className="text-xs font-medium text-studio-fg">{title || type.charAt(0).toUpperCase() + type.slice(1)}</p>
         </div>
         <div className="space-y-1.5 pl-5">
           <div className="w-full h-1.5 rounded-full bg-studio-fg/10" />
@@ -527,7 +525,7 @@ export function ComponentInsertModal({
                     <button
                       type="button"
                       onClick={() => setShowPreview(!showPreview)}
-                      className="flex items-center gap-1.5 text-[12px] font-semibold text-studio-fg-muted hover:text-studio-fg transition-colors group"
+                      className="flex items-center gap-1.5 text-[12px] font-medium text-studio-fg-muted hover:text-studio-fg transition-colors group"
                       title="Preview the generated JSX code"
                     >
                       <Code className="h-4 w-4 transition-colors group-hover:text-studio-accent" />

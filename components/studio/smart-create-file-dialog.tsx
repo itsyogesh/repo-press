@@ -351,7 +351,7 @@ export function SmartCreateFileDialog({
               <div className="py-4 space-y-6">
                 {/* Title - always first */}
                 <div className="grid gap-2">
-                  <Label htmlFor="smart-create-title" className="font-semibold text-sm">
+                  <Label htmlFor="smart-create-title" className="font-medium text-sm">
                     {primaryFieldLabel}
                     <span className="text-muted-foreground font-normal ml-1 text-xs">(required)</span>
                   </Label>
@@ -369,7 +369,7 @@ export function SmartCreateFileDialog({
                 {groupFields(siblingFields).map((grouped) => (
                   <div key={grouped.group}>
                     {/* Section header */}
-                    <div className="text-xs font-semibold text-studio-fg-muted uppercase tracking-wider mb-3 pb-2 border-b border-studio-border">
+                    <div className="text-xs font-medium text-studio-fg-muted uppercase tracking-wider mb-3 pb-2 border-b border-studio-border">
                       {grouped.groupLabel}
                     </div>
                     {/* Fields in this group */}

@@ -103,7 +103,7 @@ export function FrontmatterPanel({
         {fieldsInFile.length > 0 ? (
           groupMergedFields(fieldsInFile).map((grouped) => (
             <div key={grouped.group}>
-              <div className="text-xs font-semibold text-studio-fg-muted uppercase tracking-wider mb-2 pb-1 border-b border-studio-border">
+              <div className="text-xs font-medium text-studio-fg-muted uppercase tracking-wider mb-2 pb-1 border-b border-studio-border">
                 {grouped.groupLabel}
               </div>
               <div className="space-y-4">
@@ -146,7 +146,7 @@ export function FrontmatterPanel({
               <div className="mt-3 space-y-4">
                 {groupMergedFields(emptySchemaFields).map((grouped) => (
                   <div key={`empty-${grouped.group}`}>
-                    <div className="text-xs font-semibold text-studio-fg-muted uppercase tracking-wider mb-2 pb-1 border-b border-studio-border">
+                    <div className="text-xs font-medium text-studio-fg-muted uppercase tracking-wider mb-2 pb-1 border-b border-studio-border">
                       {grouped.groupLabel}
                     </div>
                     <div className="space-y-4">

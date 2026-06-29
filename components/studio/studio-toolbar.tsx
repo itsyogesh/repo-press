@@ -88,7 +88,7 @@ function ToolbarCluster({ label, children }: { label: string; children: React.Re
         "before:pointer-events-none",
       )}
     >
-      <span className="hidden px-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-studio-fg-muted xl:inline">
+      <span className="hidden px-1 text-[10px] font-medium uppercase tracking-[0.16em] text-studio-fg-muted xl:inline">
         {label}
       </span>
       {children}

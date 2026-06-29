@@ -78,7 +78,7 @@ export function PublishDialog({
 
         {/* Change Summary */}
         <div className="rounded-lg border border-studio-border bg-studio-canvas-inset p-3">
-          <p className="text-xs font-semibold text-studio-fg uppercase tracking-wider mb-2">Summary</p>
+          <p className="text-xs font-medium text-studio-fg uppercase tracking-wider mb-2">Summary</p>
           <div className="flex items-center gap-2 flex-wrap">
             {creates > 0 && (
               <Badge variant="secondary" className="gap-1 bg-studio-success-muted text-studio-success border-0">
@@ -112,7 +112,7 @@ export function PublishDialog({
           <div className="rounded-lg border border-studio-danger/30 bg-studio-danger/5 p-3">
             <div className="flex items-center gap-2 mb-2">
               <AlertTriangle className="h-4 w-4 text-studio-danger" />
-              <p className="font-semibold text-sm text-studio-danger">
+              <p className="font-medium text-sm text-studio-danger">
                 {conflicts.length} conflict{conflicts.length !== 1 ? "s" : ""} detected
               </p>
             </div>

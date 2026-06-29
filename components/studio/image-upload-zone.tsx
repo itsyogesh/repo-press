@@ -212,7 +212,7 @@ export function ImageUploadZone({
 
       {isDragging && (
         <div className="absolute inset-0 z-10 flex items-center justify-center bg-studio-accent/10 rounded-lg pointer-events-none animate-in fade-in duration-200">
-          <div className="bg-studio-accent text-white px-4 py-2 rounded-full text-sm font-bold shadow-lg flex items-center gap-2">
+          <div className="bg-studio-accent text-white px-4 py-2 rounded-full text-sm font-medium flex items-center gap-2">
             <FileImage className="h-4 w-4" />
             Drop to upload
           </div>
