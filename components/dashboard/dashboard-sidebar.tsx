@@ -92,10 +92,14 @@ export function DashboardSidebar() {
                 {/* In collapsed (icon) mode only the svg is visible; in expanded mode the branded wrapper shows */}
                 <BrandMark tile className="size-5 shrink-0 group-data-[collapsible=icon]:block hidden" />
                 <div className="flex items-center gap-2 group-data-[collapsible=icon]:hidden">
-                  <BrandMark tile className="size-6 shrink-0" />
-                  <div className="grid flex-1 text-left text-sm leading-tight">
-                    <span className="truncate font-semibold">RepoPress</span>
-                    <span className="truncate text-xs text-muted-foreground">Content Management</span>
+                  <BrandMark tile className="size-5 shrink-0" />
+                  <div className="grid flex-1 text-left leading-tight">
+                    <span className="truncate font-serif italic text-[1.05rem] leading-none tracking-[-0.02em]">
+                      RepoPress
+                    </span>
+                    <span className="truncate font-mono text-[0.6rem] uppercase tracking-[0.18em] text-muted-foreground">
+                      Git-Native Studio
+                    </span>
                   </div>
                 </div>
               </Link>

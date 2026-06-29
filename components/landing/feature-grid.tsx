@@ -66,13 +66,15 @@ export default function FeatureGrid() {
               through menus or switching between tools.
             </p>
             <div className="mt-8 divide-y divide-border">
-              {["Side-by-side editing with live preview", "Title, metadata, and images in one place", "Find any file fast with keyboard shortcuts"].map(
-                (signal) => (
-                  <p key={signal} className="py-3 text-sm text-muted-foreground">
-                    {signal}
-                  </p>
-                ),
-              )}
+              {[
+                "Side-by-side editing with live preview",
+                "Title, metadata, and images in one place",
+                "Find any file fast with keyboard shortcuts",
+              ].map((signal) => (
+                <p key={signal} className="py-3 text-sm text-muted-foreground">
+                  {signal}
+                </p>
+              ))}
             </div>
           </div>
 
@@ -80,7 +82,9 @@ export default function FeatureGrid() {
             {/* Auto-setup */}
             <div className="rounded-lg border border-border bg-background p-6">
               <p className="rp-overline mb-3">Auto-setup</p>
-              <h3 className="text-lg font-medium tracking-[-0.02em] text-foreground">Connects to your repo in seconds.</h3>
+              <h3 className="text-lg font-medium tracking-[-0.02em] text-foreground">
+                Connects to your repo in seconds.
+              </h3>
               <p className="mt-3 text-sm leading-6 text-muted-foreground">
                 RepoPress scans your repository and figures out how your content is organized. No configuration files to
                 write, no setup wizard.

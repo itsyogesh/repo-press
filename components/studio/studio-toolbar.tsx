@@ -39,7 +39,7 @@ export function StudioToolbar({
 }: StudioToolbarProps) {
   return (
     <DiffSourceToggleWrapper options={["rich-text", "source"]}>
-      <div className="flex flex-wrap items-center gap-2 rounded-[1rem] border border-studio-border/70 bg-studio-canvas-inset/45 p-2 shadow-sm">
+      <div className="flex flex-wrap items-center gap-2 rounded-md border border-studio-border/70 bg-studio-canvas-inset/45 p-2">
         <ToolbarCluster label="Insert">
           <InsertJsxButton
             owner={owner}

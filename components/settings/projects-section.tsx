@@ -14,7 +14,7 @@ interface ProjectsSectionProps {
 export function ProjectsSection({ projects, owner, repo }: ProjectsSectionProps) {
   if (projects.length === 0) {
     return (
-      <div className="text-center py-12 border-2 border-dashed rounded-xl bg-muted/5 border-studio-border/50">
+      <div className="text-center py-12 border-2 border-dashed rounded-lg bg-muted/5 border-studio-border/50">
         <p className="text-muted-foreground font-sans">No projects found for this repository.</p>
         <Button variant="link" asChild className="mt-2 text-primary">
           <Link href={`/dashboard/${owner}/${repo}/setup`}>Configure a project</Link>

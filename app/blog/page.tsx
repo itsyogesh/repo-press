@@ -43,7 +43,7 @@ export default function BlogIndexPage() {
                 <Link
                   key={post.slug}
                   href={`/blog/${post.slug}`}
-                  className="group flex flex-col bg-card border border-border rounded-2xl p-6 hover:border-primary/50 transition-colors"
+                  className="group flex flex-col bg-card border border-border rounded-lg p-6 hover:border-primary/50 transition-colors"
                 >
                   <time dateTime={post.date} className="text-caption">
                     {formatDate(post.date)}

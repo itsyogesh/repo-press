@@ -95,7 +95,7 @@ function HubProjectCard({
   const updatedOn = formatUtcDate(project.updatedAt)
 
   return (
-    <article className="surface-card flex h-full flex-col rounded-[1.5rem] border p-5 sm:p-6">
+    <article className="flex h-full flex-col rounded-lg border border-border bg-background p-5 sm:p-6">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <p className="font-mono text-[0.65rem] uppercase tracking-[0.2em] text-muted-foreground">
@@ -301,7 +301,7 @@ export function RepoProjectHub({
 
   return (
     <div className="flex flex-col gap-8">
-      <section className="surface-card rounded-[2rem] border p-6 sm:p-8">
+      <section className="rounded-lg border border-border bg-background p-6 sm:p-8">
         <div className="flex flex-col gap-8 xl:flex-row xl:items-start xl:justify-between">
           <div className="max-w-3xl">
             <Button
@@ -375,14 +375,14 @@ export function RepoProjectHub({
         </div>
 
         <div className="mt-8 grid gap-3 sm:grid-cols-3">
-          <div className="rounded-[1.5rem] border border-border/70 bg-background/80 p-4">
+          <div className="rounded-md border border-border/70 bg-background/80 p-4">
             <p className="font-mono text-[0.62rem] uppercase tracking-[0.18em] text-muted-foreground">Projects</p>
             <p className="mt-3 text-2xl font-semibold tracking-[-0.03em] text-foreground">{activeProjects.length}</p>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
               Active editing surfaces connected to this repository.
             </p>
           </div>
-          <div className="rounded-[1.5rem] border border-border/70 bg-background/80 p-4">
+          <div className="rounded-md border border-border/70 bg-background/80 p-4">
             <p className="font-mono text-[0.62rem] uppercase tracking-[0.18em] text-muted-foreground">
               Needs attention
             </p>
@@ -391,7 +391,7 @@ export function RepoProjectHub({
               Projects removed from config but still present until cleaned up.
             </p>
           </div>
-          <div className="rounded-[1.5rem] border border-border/70 bg-background/80 p-4">
+          <div className="rounded-md border border-border/70 bg-background/80 p-4">
             <p className="font-mono text-[0.62rem] uppercase tracking-[0.18em] text-muted-foreground">Access</p>
             <p className="mt-3 text-2xl font-semibold tracking-[-0.03em] text-foreground capitalize">{role}</p>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
@@ -512,7 +512,7 @@ export function RepoProjectHub({
             })}
           </div>
         ) : !orphanedProjects.length ? (
-          <div className="flex flex-col items-center justify-center rounded-[1.75rem] border border-dashed border-border/70 bg-muted/20 px-6 py-14 text-center">
+          <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border/70 bg-muted/20 px-6 py-14 text-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-background text-muted-foreground">
               <Folder className="h-5 w-5" />
             </div>

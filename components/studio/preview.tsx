@@ -166,7 +166,7 @@ export function Preview({
 
   const previewContent = (
     <article className="mx-auto flex w-full max-w-[980px] flex-col gap-6 px-4 py-5 md:px-6 md:py-6">
-      <div className="surface-card overflow-hidden rounded-[1.5rem] border border-studio-border/80 bg-studio-canvas">
+      <div className="overflow-hidden rounded-lg border border-studio-border/80 bg-studio-canvas">
         <div className="border-b border-studio-border/70 px-5 py-5 md:px-7">
           <div className="mb-3 flex flex-wrap items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-studio-fg-muted">
             <span className="inline-flex items-center gap-1.5 rounded-full border border-studio-border/60 bg-studio-canvas-inset/45 px-2.5 py-1">
@@ -217,7 +217,7 @@ export function Preview({
             <img
               src={image}
               alt={title || fileName}
-              className="aspect-video w-full rounded-[1.25rem] border border-studio-border/60 object-cover"
+              className="aspect-video w-full rounded-md border border-studio-border/60 object-cover"
               loading="lazy"
               onError={() => setImageError(true)}
             />

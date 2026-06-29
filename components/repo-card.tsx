@@ -22,8 +22,8 @@ export function RepoCard({ repo, connectedProjectCount = 0 }: RepoCardProps) {
   return (
     <article
       className={cn(
-        "flex h-full flex-col rounded-[1.5rem] border p-5 sm:p-6",
-        isConnected ? "surface-card border-border/80" : "bg-muted/20",
+        "flex h-full flex-col rounded-lg border p-5 sm:p-6",
+        isConnected ? "border-border bg-background" : "border-border bg-muted/20",
       )}
     >
       <div className="flex items-start justify-between gap-4">

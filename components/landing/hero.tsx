@@ -104,14 +104,11 @@ export default function Hero() {
                     <span className="text-background">"Getting started with your blog"</span>
                   </p>
                   <p>
-                    <span className="text-primary/80">status:</span>{" "}
-                    <span className="text-background">"draft"</span>
+                    <span className="text-primary/80">status:</span> <span className="text-background">"draft"</span>
                   </p>
                   <p className="text-background/45">---</p>
                   <p className="pt-3 text-background"># Getting started with your blog</p>
-                  <p className="text-background/72">
-                    A step-by-step guide to publishing your first post.
-                  </p>
+                  <p className="text-background/72">A step-by-step guide to publishing your first post.</p>
                   <div className="mt-4 rounded-md border border-background/10 bg-background/5 p-3 text-xs text-background/75">
                     &lt;Callout variant="note"&gt;Ready to preview&lt;/Callout&gt;
                   </div>
@@ -137,8 +134,7 @@ export default function Hero() {
                 </p>
                 <div className="mt-5 space-y-2">
                   <div className="rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
-                    Auto-detected:{" "}
-                    <span className="font-mono text-xs text-foreground">blog/</span>
+                    Auto-detected: <span className="font-mono text-xs text-foreground">blog/</span>
                   </div>
                   <div className="rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
                     <GitBranch className="mr-1.5 inline h-3.5 w-3.5 text-primary" />

@@ -59,7 +59,7 @@ function Logo({
     <span className={cn("flex items-center gap-3", className)}>
       <BrandMark tile={tile} className={cn("size-10", markClassName)} />
       <span className="flex flex-col">
-        <span className="text-sm font-semibold tracking-[-0.03em] text-foreground">RepoPress</span>
+        <span className="text-sm font-medium tracking-[-0.03em] text-foreground">RepoPress</span>
         {tagline ? (
           <span className="font-mono text-[0.65rem] uppercase tracking-[0.22em] text-muted-foreground">
             Git-native studio

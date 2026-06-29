@@ -161,7 +161,7 @@ export default async function SettingsPage({ params }: SettingsPageProps) {
               </Card>
             ))
           ) : (
-            <div className="text-center py-12 border-2 border-dashed rounded-xl bg-muted/5">
+            <div className="text-center py-12 border-2 border-dashed rounded-lg bg-muted/5">
               <p className="text-muted-foreground">No projects found for this repository.</p>
               <Button variant="link" asChild className="mt-2">
                 <Link href={`/dashboard/${owner}/${repo}/setup`}>Configure a project</Link>

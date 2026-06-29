@@ -46,7 +46,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
   const repoLabel = `${project.repoOwner}/${project.repoName}`
 
   return (
-    <article className="surface-card flex h-full flex-col rounded-[1.5rem] border p-5 sm:p-6">
+    <article className="flex h-full flex-col rounded-lg border border-border bg-background p-5 sm:p-6">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <p className="font-mono text-[0.65rem] uppercase tracking-[0.2em] text-muted-foreground">{repoLabel}</p>

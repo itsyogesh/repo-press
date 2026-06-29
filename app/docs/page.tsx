@@ -47,7 +47,7 @@ export default function DocsPage() {
             <Link
               key={guide.href}
               href={guide.href}
-              className="group rounded-xl border border-border bg-card p-6 transition-colors hover:border-primary/40 hover:bg-accent"
+              className="group rounded-lg border border-border bg-card p-6 transition-colors hover:border-primary/40 hover:bg-accent"
             >
               <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary transition-colors group-hover:bg-primary/20">
                 <Icon className="h-5 w-5" />

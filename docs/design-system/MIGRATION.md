@@ -111,9 +111,11 @@ consumer before its tokens/primitives exist.
 
 ## 4. Pages and surfaces
 
-- [ ] **Marketing landing** (`app/page.tsx` + `components/landing/*`) - serif
-      hero + floating editor mock, numbered asymmetric features, how-it-works,
-      comparison, pricing, FAQ, inverse CTA, footer, scroll-reveals.
+- [x] **Marketing landing** (`app/page.tsx` + `components/landing/*`) - full
+      demolish + rebuild: flat sticky scroll-hairline navbar (no glass), centered
+      serif hero with clean editor mock, hairline-divided how-it-works rows (no
+      icon cards), rounded-lg feature cards (no surface-card gloss), flat
+      comparison rows, flat full-width inverse CTA, flat border-t footer.
 - [x] **Login** (`app/login/page.tsx`) - editorial card, brand mark, serif title.
 - [x] **Dashboard** (`app/dashboard/page.tsx` + `project-list` + `repo-grid` +
       new `project-row`/`repo-row`) - notebook-calm: mono kicker + serif title +
