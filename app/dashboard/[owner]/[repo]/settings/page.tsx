@@ -125,7 +125,7 @@ export default async function SettingsPage({ params }: SettingsPageProps) {
                         <CardTitle className="text-xl">{project.name}</CardTitle>
                         <Badge
                           variant="secondary"
-                          className="h-5 px-1.5 text-[10px] uppercase font-bold tracking-tight bg-muted/50"
+                          className="h-5 px-1.5 text-[10px] uppercase font-medium tracking-tight bg-muted/50"
                         >
                           {project.contentType}
                         </Badge>
@@ -139,13 +139,13 @@ export default async function SettingsPage({ params }: SettingsPageProps) {
                 <CardContent className="space-y-6 pt-0">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                     <div className="space-y-1">
-                      <p className="text-muted-foreground text-xs font-bold uppercase tracking-wider">Source</p>
+                      <p className="text-muted-foreground text-xs font-medium uppercase tracking-wider">Source</p>
                       <p className="font-mono bg-muted/30 px-2 py-1 rounded border text-[12px] inline-block">
                         {project.frameworkSource === "config" ? "repopress.config.json" : "Manual / Detected"}
                       </p>
                     </div>
                     <div className="space-y-1">
-                      <p className="text-muted-foreground text-xs font-bold uppercase tracking-wider">Framework</p>
+                      <p className="text-muted-foreground text-xs font-medium uppercase tracking-wider">Framework</p>
                       <p className="font-medium">{project.detectedFramework || "Generic"}</p>
                     </div>
                   </div>
