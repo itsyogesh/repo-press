@@ -99,11 +99,17 @@ consumer before its tokens/primitives exist.
 - [x] **Dropdown / Popover** - rounded-md→rounded-lg (8→12px, floating content).
 - [x] **Command palette** - rounded-[calc(var(--radius)+0.5rem)]→rounded-xl (16→14px).
 - [x] **Card primitive** - surface-card (gloss + shadow) replaced with flat bg-card + border-border.
-- [ ] Sweep remaining `components/ui/*` (checkbox, radio, slider, accordion,
-      tooltip, table, etc.) for radius/weight/color-token compliance.
+- [x] Sweep remaining `components/ui/*` — select/hover-card/context-menu/menubar
+      floating content rounded-md→rounded-lg (8→12px); slider thumb bg-white→bg-background.
 
 ## 3. Composed / cross-cutting
 
+- [x] **Glass utilities removed** — `glass-command` replaced with flat bg-background+border-border+shadow-lg
+      in `command.tsx` (last consumer). `--glass-*` tokens remain in globals.css but unused.
+- [x] **Color tokens** — profile/settings emerald-* → studio-success-muted/studio-success;
+      ErrorBoundary bg-red-* → destructive tokens; publish-dialog bg-red-500/15 → bg-studio-danger-muted.
+- [x] **Copilot instructions** updated to match editorial spec (no-glass, no-gloss, radius scale,
+      font weight rules, Instrument Serif, Signal Slate).
 - [x] **StatusBadge** (`components/ui/status-badge.tsx`) wired into studio
       header, studio layout, and document list (replacing generic Badge variants).
 - [x] **Brand logo** (`components/brand/logo.tsx`) + caret favicon
@@ -139,7 +145,8 @@ consumer before its tokens/primitives exist.
       profile) - font-bold→font-medium/semibold throughout settings chrome.
 - [x] **Setup / connect** (`app/dashboard/[owner]/[repo]/setup`,
       `repo-setup-form.tsx`) - status chip font-bold→font-medium.
-- [ ] **Files / collection** browsers.
+- [x] **Files** browser page — editorial mono overline + 2xl h1 heading, branch chip as mono badge.
+- [ ] **Collection** browser.
 - [ ] **Docs** (`app/docs/*`) and **Blog** (`app/blog/*`).
 - [ ] **Taxonomy manager** (net-new: authors / tags / nested categories UI).
 - [ ] **Media library** (net-new: tracked assets, usage, dedup UI).
