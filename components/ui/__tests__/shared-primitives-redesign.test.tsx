@@ -107,7 +107,8 @@ describe("shared primitives redesign", () => {
       </Card>,
     )
 
-    expect(html).toContain("surface-card")
+    expect(html).toContain("bg-card")
+    expect(html).toContain("border-border")
     expect(html).toContain("px-[var(--space-panel-lg)]")
     expect(html).toContain("tracking-[-0.02em]")
   })
