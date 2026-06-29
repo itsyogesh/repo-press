@@ -1,12 +1,6 @@
-import { ArrowUpRight, FolderTree, GitBranch, Layers3, PanelTopOpen, Sparkles } from "lucide-react"
+import { GitBranch, Layers3, PanelTopOpen, Sparkles } from "lucide-react"
 
 const frameworks = ["Next.js", "Astro", "Fumadocs", "Nextra", "Docusaurus", "Hugo"]
-
-const studioSignals = [
-  "Side-by-side editing with live preview",
-  "Title, metadata, and images managed in one place",
-  "Find any file fast with keyboard shortcuts",
-]
 
 const historyMoments = [
   { label: "Current", detail: "Updated the getting started guide", time: "2m ago" },
@@ -14,72 +8,88 @@ const historyMoments = [
   { label: "Original", detail: "First version imported from repo", time: "Today" },
 ]
 
+const features = [
+  {
+    icon: PanelTopOpen,
+    tag: "Studio editor",
+    title: "One workspace for everything.",
+    description:
+      "Edit your content, preview the result, check version history, and publish — all in one screen. No hunting through menus or switching between tools.",
+  },
+  {
+    icon: Layers3,
+    tag: "Your content",
+    title: "Content stays in GitHub.",
+    description:
+      "No separate database, no vendor lock-in. RepoPress reads from and writes to your repository. If you stop using it, your content is exactly where you left it.",
+    inverse: true,
+  },
+  {
+    icon: Sparkles,
+    tag: "Preview",
+    title: "See your actual page.",
+    description:
+      "Preview how your content will look on your site. Images, formatting, and components render in real time as you type.",
+  },
+  {
+    icon: GitBranch,
+    tag: "Workflow",
+    title: "Built-in review workflow.",
+    description:
+      "Draft, review, approve, and publish — every step tracked. Your team reviews changes before anything goes live.",
+  },
+]
+
 export default function FeatureGrid() {
   return (
-    <section id="features" className="px-4 py-24">
-      <div className="mx-auto max-w-6xl">
-        <div className="mx-auto flex max-w-3xl flex-col items-center gap-4 text-center">
-          <p className="font-mono text-[0.72rem] uppercase tracking-[0.24em] text-muted-foreground">What you get</p>
-          <h2 className="text-4xl font-semibold tracking-[-0.05em] text-balance text-foreground sm:text-5xl">
+    <section id="features" className="border-t border-border px-6 py-24">
+      <div className="mx-auto max-w-[1120px]">
+        {/* Heading */}
+        <div className="mb-16">
+          <p className="rp-overline mb-4">What you get</p>
+          <h2 className="rp-display max-w-[24ch] text-[clamp(1.75rem,4vw,2.5rem)] text-balance">
             Everything you need to edit content. Nothing you don't.
           </h2>
-          <p className="text-base leading-7 text-muted-foreground sm:text-lg sm:leading-8">
-            A focused workspace for writing, previewing, and publishing - without the complexity of a traditional CMS.
-          </p>
         </div>
 
-        <div className="mt-14 grid gap-6 xl:grid-cols-[1.12fr_0.88fr]">
-          <div className="surface-card rounded-[2rem] border p-8 sm:p-10">
-            <div className="flex flex-col gap-4">
-              <div className="inline-flex w-fit items-center gap-2 rounded-full border border-border/70 bg-background/75 px-3 py-1.5 font-mono text-[0.68rem] uppercase tracking-[0.2em] text-muted-foreground">
-                <PanelTopOpen className="h-3.5 w-3.5 text-primary" />
-                Studio editor
-              </div>
-              <h3 className="max-w-[14ch] text-3xl font-semibold tracking-[-0.04em] text-foreground sm:text-4xl">
-                One workspace for everything.
-              </h3>
-              <p className="max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base sm:leading-7">
-                Edit your content, preview the result, check version history, and publish - all in one screen. No
-                hunting through menus or switching between tools.
-              </p>
+        {/* Main feature row: studio + auto-setup */}
+        <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+          {/* Studio — primary */}
+          <div className="rounded-lg border border-border bg-background p-8">
+            <div className="mb-6 flex items-center gap-2">
+              <PanelTopOpen className="h-4 w-4 text-primary" />
+              <p className="rp-overline">Studio editor</p>
             </div>
-
-            <div className="mt-8 grid gap-3 sm:grid-cols-3">
-              {studioSignals.map((signal) => (
-                <div
-                  key={signal}
-                  className="rounded-2xl border border-border/70 bg-muted/35 p-4 text-sm leading-6 text-muted-foreground"
-                >
-                  {signal}
-                </div>
-              ))}
+            <h3 className="rp-display text-[1.75rem] text-balance">One workspace for everything.</h3>
+            <p className="mt-4 text-sm leading-7 text-muted-foreground">
+              Edit your content, preview the result, check version history, and publish — all in one screen. No hunting
+              through menus or switching between tools.
+            </p>
+            <div className="mt-8 divide-y divide-border">
+              {["Side-by-side editing with live preview", "Title, metadata, and images in one place", "Find any file fast with keyboard shortcuts"].map(
+                (signal) => (
+                  <p key={signal} className="py-3 text-sm text-muted-foreground">
+                    {signal}
+                  </p>
+                ),
+              )}
             </div>
           </div>
 
-          <div className="grid gap-6">
-            <div className="surface-card rounded-[1.75rem] border p-6">
-              <div className="flex items-center gap-3">
-                <span className="inline-flex size-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                  <FolderTree className="h-5 w-5" />
-                </span>
-                <div>
-                  <p className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-muted-foreground">
-                    Auto-setup
-                  </p>
-                  <h3 className="text-xl font-semibold tracking-[-0.03em] text-foreground">
-                    Connects to your repo in seconds
-                  </h3>
-                </div>
-              </div>
-              <p className="mt-4 text-sm leading-6 text-muted-foreground">
+          <div className="flex flex-col gap-6">
+            {/* Auto-setup */}
+            <div className="rounded-lg border border-border bg-background p-6">
+              <p className="rp-overline mb-3">Auto-setup</p>
+              <h3 className="text-lg font-medium tracking-[-0.02em] text-foreground">Connects to your repo in seconds.</h3>
+              <p className="mt-3 text-sm leading-6 text-muted-foreground">
                 RepoPress scans your repository and figures out how your content is organized. No configuration files to
-                write, no setup wizard to click through.
+                write, no setup wizard.
               </p>
-              <div className="mt-5 flex flex-wrap gap-2">
+              <div className="mt-5 flex flex-wrap gap-1.5">
                 {frameworks.map((framework) => (
                   <span
                     key={framework}
-                    className="rounded-full border border-border/70 bg-background px-3 py-1.5 font-mono text-[0.62rem] uppercase tracking-[0.18em] text-muted-foreground"
+                    className="rounded-full border border-border px-3 py-1 font-mono text-[0.62rem] uppercase tracking-[0.16em] text-muted-foreground"
                   >
                     {framework}
                   </span>
@@ -87,81 +97,72 @@ export default function FeatureGrid() {
               </div>
             </div>
 
-            <div className="rounded-[1.75rem] border border-foreground/10 bg-foreground px-6 py-7 text-background">
-              <div className="flex items-center gap-3">
-                <span className="inline-flex size-11 items-center justify-center rounded-xl border border-background/10 bg-background/5 text-background">
-                  <Layers3 className="h-5 w-5" />
-                </span>
-                <div>
-                  <p className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-background/60">
-                    Your content
-                  </p>
-                  <h3 className="text-xl font-semibold tracking-[-0.03em]">Content stays in GitHub</h3>
-                </div>
-              </div>
-              <p className="mt-4 text-sm leading-6 text-background/72">
-                No separate database, no vendor lock-in. RepoPress reads from and writes to your repository. If you stop
-                using it, your content is exactly where you left it.
+            {/* Content in GitHub — inverse */}
+            <div className="rounded-lg border border-foreground/10 bg-foreground p-6 text-background">
+              <p className="mb-3 font-mono text-[0.6875rem] uppercase tracking-[0.2em] text-background/55">
+                Your content
               </p>
-              <div className="mt-6 inline-flex items-center gap-2 font-mono text-[0.68rem] uppercase tracking-[0.2em] text-background/68">
-                Open source and self-hostable
-                <ArrowUpRight className="h-4 w-4" />
-              </div>
+              <h3 className="text-lg font-medium tracking-[-0.02em]">Content stays in GitHub.</h3>
+              <p className="mt-3 text-sm leading-6 text-background/72">
+                No separate database, no vendor lock-in. RepoPress reads from and writes to your repository. Open source
+                and self-hostable.
+              </p>
             </div>
           </div>
         </div>
 
-        <div className="mt-6 grid gap-6 lg:grid-cols-[0.82fr_1.02fr_0.86fr]">
-          <div className="surface-card rounded-[1.75rem] border p-6">
-            <div className="flex items-center gap-3">
-              <Sparkles className="h-5 w-5 text-primary" />
-              <h3 className="text-lg font-semibold tracking-[-0.03em] text-foreground">See your actual page</h3>
+        {/* Secondary features: preview + history + workflow */}
+        <div className="mt-6 grid gap-6 lg:grid-cols-3">
+          {/* Live preview */}
+          <div className="rounded-lg border border-border bg-background p-6">
+            <div className="mb-4 flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-primary" />
+              <p className="rp-overline">Preview</p>
             </div>
+            <h3 className="text-lg font-medium tracking-[-0.02em] text-foreground">See your actual page.</h3>
             <p className="mt-3 text-sm leading-6 text-muted-foreground">
-              Preview how your content will look on your site. Images, formatting, and components render in real time as
-              you type.
+              Images, formatting, and components render in real time as you type.
             </p>
           </div>
 
-          <div className="surface-card rounded-[1.75rem] border p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-muted-foreground">History</p>
-                <h3 className="text-lg font-semibold tracking-[-0.03em] text-foreground">Full version history</h3>
+          {/* Version history */}
+          <div className="rounded-lg border border-border bg-background p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <p className="rp-overline">History</p>
               </div>
-              <span className="rounded-full border border-border/70 bg-background/80 px-3 py-1 font-mono text-[0.62rem] uppercase tracking-[0.18em] text-muted-foreground">
+              <span className="rounded-full border border-border px-2.5 py-1 font-mono text-[0.6rem] uppercase tracking-[0.16em] text-muted-foreground">
                 Snapshot aware
               </span>
             </div>
-            <div className="mt-5 space-y-4 border-l border-border/70 pl-4">
+            <h3 className="mb-4 text-lg font-medium tracking-[-0.02em] text-foreground">Full version history.</h3>
+            <div className="space-y-4 border-l border-border pl-4">
               {historyMoments.map((moment) => (
                 <div key={moment.label} className="relative">
-                  <span className="absolute -left-[1.15rem] top-1.5 h-2.5 w-2.5 rounded-full bg-primary" />
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-medium tracking-[-0.01em] text-foreground">{moment.label}</span>
-                    <span className="font-mono text-[0.62rem] uppercase tracking-[0.18em] text-muted-foreground">
+                  <span className="absolute -left-[1.15rem] top-1.5 h-2 w-2 rounded-full bg-primary" />
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-foreground">{moment.label}</span>
+                    <span className="font-mono text-[0.6rem] uppercase tracking-[0.16em] text-muted-foreground">
                       {moment.time}
                     </span>
                   </div>
-                  <p className="mt-1 text-sm leading-6 text-muted-foreground">{moment.detail}</p>
+                  <p className="mt-0.5 text-sm text-muted-foreground">{moment.detail}</p>
                 </div>
               ))}
             </div>
           </div>
 
-          <div className="surface-card rounded-[1.75rem] border p-6">
-            <div className="flex items-center gap-3">
-              <GitBranch className="h-5 w-5 text-primary" />
-              <h3 className="text-lg font-semibold tracking-[-0.03em] text-foreground">Built-in review workflow</h3>
+          {/* Review workflow */}
+          <div className="rounded-lg border border-border bg-background p-6">
+            <div className="mb-4 flex items-center gap-2">
+              <GitBranch className="h-4 w-4 text-primary" />
+              <p className="rp-overline">Workflow</p>
             </div>
-            <div className="mt-5 space-y-3 font-mono text-[0.68rem] uppercase tracking-[0.18em] text-muted-foreground">
-              <div className="rounded-2xl border border-border/70 bg-background px-4 py-3">
-                draft → ready for review
-              </div>
-              <div className="rounded-2xl border border-border/70 bg-background px-4 py-3">review → approved</div>
-              <div className="rounded-2xl border border-primary/15 bg-primary/10 px-4 py-3 text-primary">
-                approved → published via pull request
-              </div>
+            <h3 className="mb-5 text-lg font-medium tracking-[-0.02em] text-foreground">Built-in review workflow.</h3>
+            <div className="divide-y divide-border font-mono text-[0.68rem] uppercase tracking-[0.16em] text-muted-foreground">
+              <p className="py-2.5">draft → ready for review</p>
+              <p className="py-2.5">review → approved</p>
+              <p className="py-2.5 text-primary">approved → published via pull request</p>
             </div>
           </div>
         </div>

@@ -49,20 +49,18 @@ export function VideoPreview() {
       ref={sectionRef}
       id="product-video"
       data-slot="landing-video-preview"
-      className="container mx-auto px-4 py-24"
+      className="border-t border-border px-6 py-24"
     >
-      <div className="mx-auto flex max-w-[58rem] flex-col items-center space-y-4 text-center">
-        <p className="font-mono text-[11px] font-medium uppercase tracking-[0.04em] text-muted-foreground">
-          Product demo
-        </p>
-        <h2 className="text-3xl font-semibold tracking-tight md:text-4xl">See RepoPress in action</h2>
-        <p className="max-w-[48rem] text-balance text-muted-foreground sm:text-lg sm:leading-7">
-          See how one config file connects your repo, opens the browser studio, and creates a pull request - the
+      <div className="mx-auto flex max-w-[52ch] flex-col items-center gap-4 text-center">
+        <p className="rp-overline">Product demo</p>
+        <h2 className="rp-display text-[clamp(1.75rem,4vw,2.5rem)]">See RepoPress in action</h2>
+        <p className="text-balance text-muted-foreground sm:text-base sm:leading-7">
+          See how one config file connects your repo, opens the browser studio, and creates a pull request — the
           complete flow in 20 seconds.
         </p>
       </div>
 
-      <div className="mx-auto mt-10 max-w-5xl overflow-hidden rounded-[10px] border border-border bg-card">
+      <div className="mx-auto mt-10 max-w-5xl overflow-hidden rounded-lg border border-border bg-background shadow-[var(--shadow-1)]">
         {shouldRenderPlayer ? <VideoPreviewPlayer /> : <VideoPreviewPlaceholder state="idle" />}
       </div>
     </section>
@@ -80,7 +78,7 @@ function VideoPreviewPlaceholder({ state }: { state: "idle" | "loading" }) {
       style={{ aspectRatio: `${studioDemoComposition.width} / ${studioDemoComposition.height}` }}
     >
       <div className="flex max-w-md flex-col items-center gap-4 px-6 text-center">
-        <div className="flex h-12 w-12 items-center justify-center rounded-full border border-border bg-background">
+        <div className="flex h-10 w-10 items-center justify-center rounded-full border border-border bg-background">
           <Icon className={state === "loading" ? "h-5 w-5 animate-spin text-foreground" : "h-5 w-5 text-foreground"} />
         </div>
         <div className="space-y-2">
