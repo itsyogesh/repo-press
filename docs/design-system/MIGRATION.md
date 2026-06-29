@@ -95,10 +95,12 @@ consumer before its tokens/primitives exist.
 - [x] **Tabs** (`tabs.tsx`) - ported from shadcn pill to underline bar with slate
       active underline (`Tabs.jsx`).
 - [x] **Avatar** (`avatar.tsx`) - compliant via foundation (rounded-full).
-- [ ] **Dialog / Dropdown / Popover / Tooltip / Sheet** - modal radius 14
-      (`rounded-xl`), elevation `--shadow-2/3`, hairline borders.
+- [x] **Dialog / AlertDialog** - rounded-lg→rounded-xl (12→14px modal spec), shadow-lg kept.
+- [x] **Dropdown / Popover** - rounded-md→rounded-lg (8→12px, floating content).
+- [x] **Command palette** - rounded-[calc(var(--radius)+0.5rem)]→rounded-xl (16→14px).
+- [x] **Card primitive** - surface-card (gloss + shadow) replaced with flat bg-card + border-border.
 - [ ] Sweep remaining `components/ui/*` (checkbox, radio, slider, accordion,
-      command, table, etc.) for radius/weight/color-token compliance.
+      tooltip, table, etc.) for radius/weight/color-token compliance.
 
 ## 3. Composed / cross-cutting
 
@@ -125,16 +127,18 @@ consumer before its tokens/primitives exist.
       mono), avatar rounded-full.
 - [x] **Repo hub** (`components/repo-project-hub.tsx`) - surface-card removed, all
       rounded-[X.XXrem] → rounded-lg/md, empty state dashed border → rounded-lg.
-- [~] **Studio** (`components/studio/*`) - header all rounded-xl→rounded-md, toggle
-      group, save/more buttons fixed; skeletons rounded-[X.XXrem]→rounded-lg/md;
-      preview surface-card removed, rounded-[1.5rem]→rounded-lg; toolbar container
-      fixed; publish ops bar fixed. File tree, frontmatter panel, status actions
-      already clean. Command palette and publish dialog have no radius issues.
-- [ ] **History** (`app/dashboard/[owner]/[repo]/history`).
-- [ ] **Settings** (`app/dashboard/[owner]/[repo]/settings`, app settings,
-      profile).
-- [ ] **Setup / connect** (`app/dashboard/[owner]/[repo]/setup`,
-      `repo-setup-form.tsx`).
+- [x] **Studio** (`components/studio/*`) - full radius sweep complete: header all
+      rounded-xl→rounded-md controls; skeletons rounded-[X.XXrem]→rounded-lg/md;
+      preview surface-card removed, rounded-[1.5rem]→rounded-lg, icon buttons fixed;
+      toolbar cluster container fixed; publish ops bar rounded-[X.XXrem]→rounded-md;
+      search input + result buttons rounded-xl→rounded-md; component insert modal +
+      repo-jsx-bridge image containers fixed. File tree, frontmatter panel, status
+      actions, command palette, publish dialog already clean.
+- [x] **History** (`app/dashboard/[owner]/[repo]/history`) - added mono overline + editorial h1 tracking.
+- [x] **Settings** (`app/dashboard/[owner]/[repo]/settings`, app settings,
+      profile) - font-bold→font-medium/semibold throughout settings chrome.
+- [x] **Setup / connect** (`app/dashboard/[owner]/[repo]/setup`,
+      `repo-setup-form.tsx`) - status chip font-bold→font-medium.
 - [ ] **Files / collection** browsers.
 - [ ] **Docs** (`app/docs/*`) and **Blog** (`app/blog/*`).
 - [ ] **Taxonomy manager** (net-new: authors / tags / nested categories UI).
