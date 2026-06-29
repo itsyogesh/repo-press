@@ -430,7 +430,7 @@ export function FileTree({
             placeholder="Search files..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="h-7 w-full pl-8 pr-12 text-xs bg-studio-canvas border-studio-border focus-visible:ring-1 focus-visible:ring-studio-accent rounded-md shadow-sm transition-all"
+            className="h-7 w-full pl-8 pr-12 text-xs bg-studio-canvas border-studio-border focus-visible:ring-1 focus-visible:ring-studio-accent rounded-md transition-all"
           />
           <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-1">
             {searchQuery ? (

@@ -68,7 +68,7 @@ export function ImageField({
       <BlurFade delay={0.1} inView>
         <div
           className={cn(
-            "relative group rounded-lg border border-studio-border overflow-hidden bg-studio-canvas-inset transition-all duration-200 hover:border-studio-border-hover shadow-sm",
+            "relative group rounded-lg border border-studio-border overflow-hidden bg-studio-canvas-inset transition-all duration-200 hover:border-studio-border-hover",
             className,
           )}
         >
@@ -110,7 +110,7 @@ export function ImageField({
                 href={resolvedValuePreview}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-secondary text-secondary-foreground shadow-sm hover:bg-secondary/80 h-8 w-8"
+                className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-secondary text-secondary-foreground hover:bg-secondary/80 h-8 w-8"
               >
                 <ExternalLink className="h-3.5 w-3.5" />
               </a>

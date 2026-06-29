@@ -200,7 +200,7 @@ export function ImageUploadZone({
         </div>
       ) : (
         <>
-          <div className="bg-background shadow-sm border border-studio-border rounded-full p-3 mb-3 group-hover:scale-110 transition-transform duration-200">
+          <div className="bg-background border border-studio-border rounded-full p-3 mb-3 group-hover:scale-110 transition-transform duration-200">
             <Upload className="h-5 w-5 text-studio-fg-muted group-hover:text-studio-accent transition-colors" />
           </div>
           <div className="text-center space-y-1">
