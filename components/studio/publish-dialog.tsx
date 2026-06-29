@@ -93,7 +93,7 @@ export function PublishDialog({
               </Badge>
             )}
             {deletes > 0 && (
-              <Badge variant="secondary" className="gap-1 bg-red-500/15 text-studio-danger border-0">
+              <Badge variant="secondary" className="gap-1 bg-studio-danger-muted text-studio-danger border-0">
                 <FileMinus className="h-3 w-3" />
                 {deletes} file{deletes !== 1 ? "s" : ""} deleted
               </Badge>

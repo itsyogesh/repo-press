@@ -110,7 +110,7 @@ export function ProfileContent() {
                   <p className="text-xs text-muted-foreground">{user.email ?? "Connected"}</p>
                 </div>
               </div>
-              <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[0.65rem] font-medium text-emerald-600 dark:text-emerald-400">
+              <span className="rounded-full bg-studio-success-muted px-2 py-0.5 text-[0.65rem] font-medium text-studio-success">
                 Active
               </span>
             </div>
