@@ -116,8 +116,9 @@ export function HistoryClient({ owner, repo, branch: _branch, projectId, project
           </div>
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-semibold">Document History</h1>
-              <p className="text-muted-foreground">View version history and compare changes</p>
+              <p className="font-mono text-[0.72rem] uppercase tracking-[0.24em] text-muted-foreground">Repository</p>
+              <h1 className="mt-1 text-2xl font-semibold tracking-[-0.03em]">Document History</h1>
+              <p className="mt-0.5 text-sm text-muted-foreground">View version history and compare changes</p>
             </div>
             {selectedDoc && documentHistory && documentHistory.length > 0 && (
               <div className="flex gap-2">

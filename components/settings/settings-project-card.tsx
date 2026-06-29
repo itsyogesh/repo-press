@@ -18,20 +18,15 @@ interface SettingsProjectCardProps {
  */
 export function SettingsProjectCard({ project, className }: SettingsProjectCardProps) {
   return (
-    <Card
-      className={cn(
-        "group overflow-hidden border-border bg-card transition-all duration-200 hover:shadow-md",
-        className,
-      )}
-    >
+    <Card className={cn("group overflow-hidden border-border bg-card transition-all duration-200", className)}>
       <CardHeader className="pb-4 px-6 pt-6">
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-1.5 min-w-0">
             <div className="flex items-center gap-2">
-              <CardTitle className="text-xl font-bold tracking-tight truncate">{project.name}</CardTitle>
+              <CardTitle className="text-xl font-semibold tracking-tight truncate">{project.name}</CardTitle>
               <Badge
                 variant="secondary"
-                className="h-5 px-1.5 text-[10px] uppercase font-bold tracking-tight bg-muted/50 text-muted-foreground shrink-0"
+                className="h-5 px-1.5 text-[10px] uppercase font-medium tracking-tight bg-muted/50 text-muted-foreground shrink-0"
               >
                 {project.contentType}
               </Badge>
@@ -56,7 +51,7 @@ export function SettingsProjectCard({ project, className }: SettingsProjectCardP
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-muted-foreground">
               <Terminal className="h-3 w-3" />
-              <p className="text-[10px] font-bold uppercase tracking-widest font-sans opacity-60">Framework</p>
+              <p className="text-[10px] font-medium uppercase tracking-widest font-sans opacity-60">Framework</p>
             </div>
             <p className="font-mono text-sm text-foreground font-medium uppercase tracking-tight">
               {project.detectedFramework || "Generic"}
@@ -64,7 +59,7 @@ export function SettingsProjectCard({ project, className }: SettingsProjectCardP
           </div>
 
           <div className="space-y-2">
-            <p className="text-muted-foreground text-[10px] font-bold uppercase tracking-widest font-sans opacity-60 pl-5">
+            <p className="text-muted-foreground text-[10px] font-medium uppercase tracking-widest font-sans opacity-60 pl-5">
               Source
             </p>
             <p className="font-mono text-sm text-foreground/80 pl-5">

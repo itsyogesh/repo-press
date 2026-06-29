@@ -126,7 +126,7 @@ export function RepoSetupForm({
         <CardHeader>
           <div className="flex items-center justify-between mb-2">
             <CardTitle>Configure Repository</CardTitle>
-            <div className="flex items-center gap-1 rounded-full border border-studio-success/20 bg-studio-success-muted/60 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-studio-success">
+            <div className="flex items-center gap-1 rounded-full border border-studio-success/20 bg-studio-success-muted/60 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-studio-success">
               <CheckCircle2 className="h-3 w-3" />
               Config Found
             </div>
@@ -249,7 +249,7 @@ export function RepoSetupForm({
       <CardHeader>
         <div className="flex items-center justify-between mb-2">
           <CardTitle>Initialize RepoPress</CardTitle>
-          <div className="flex items-center gap-1 rounded-full border border-studio-attention/20 bg-studio-attention-muted px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-studio-attention">
+          <div className="flex items-center gap-1 rounded-full border border-studio-attention/20 bg-studio-attention-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-studio-attention">
             <Sparkles className="h-3 w-3" />
             New Repo
           </div>

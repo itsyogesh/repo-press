@@ -42,7 +42,7 @@ export function SettingsLayout({ children }: SettingsLayoutProps) {
           <aside className="w-full md:w-56 shrink-0">
             <div className="sticky top-24 space-y-6">
               <div>
-                <h2 className="text-xs font-bold uppercase tracking-widest text-muted-foreground px-3 mb-3 font-sans opacity-50">
+                <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground px-3 mb-3 font-sans opacity-50">
                   Configuration
                 </h2>
                 <Suspense fallback={<div className="h-10 w-full animate-pulse bg-muted rounded-md" />}>

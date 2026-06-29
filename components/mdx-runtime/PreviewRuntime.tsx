@@ -186,7 +186,7 @@ export function PreviewRuntime({
           ),
           Step: (props) => (
             <div className="relative text-left font-sans">
-              <div className="absolute -left-[33px] top-0 size-4 rounded-full bg-background border-2 border-muted flex items-center justify-center text-[10px] font-bold" />
+              <div className="absolute -left-[33px] top-0 size-4 rounded-full bg-background border-2 border-muted flex items-center justify-center text-[10px]" />
               {props.children}
             </div>
           ),
@@ -327,10 +327,10 @@ export function PreviewRuntime({
               noteMissing(prop)
               return function MissingComponent(props: any) {
                 return (
-                  <div className="my-4 rounded-lg border border-muted bg-muted/20 p-4 font-sans not-prose text-left shadow-sm text-foreground">
+                  <div className="my-4 rounded-lg border border-muted bg-muted/20 p-4 font-sans not-prose text-left text-foreground">
                     <div className="mb-2 flex items-center gap-2 text-muted-foreground">
                       <Settings className="h-3.5 w-3.5" />
-                      <span className="font-mono text-[10px] font-bold uppercase tracking-widest opacity-70">
+                      <span className="font-mono text-[10px] font-medium uppercase tracking-widest opacity-70">
                         Dev Placeholder
                       </span>
                     </div>
@@ -401,10 +401,10 @@ export function PreviewRuntime({
   return (
     <>
       {error ? (
-        <div className="m-4 rounded-lg border border-destructive/20 bg-destructive/10 p-6 font-sans text-destructive shadow-sm">
+        <div className="m-4 rounded-lg border border-destructive/20 bg-destructive/10 p-6 font-sans text-destructive">
           <div className="mb-4 flex items-center gap-2 text-destructive">
             <AlertCircle className="h-5 w-5" />
-            <h3 className="font-bold text-lg">MDX Preview Failure</h3>
+            <h3 className="font-semibold text-lg">MDX Preview Failure</h3>
           </div>
           <div className="mb-4 max-h-[300px] overflow-auto break-all rounded-md bg-destructive px-4 py-4 font-mono text-sm whitespace-pre-wrap text-destructive-foreground shadow-inner">
             {error}

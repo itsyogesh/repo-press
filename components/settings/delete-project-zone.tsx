@@ -62,7 +62,7 @@ export function DeleteProjectZone({ project, projectAccessToken }: DeleteProject
     <div className="rounded-lg border border-destructive/20 bg-destructive/10 p-6">
       <div className="mb-4 flex items-center gap-2 text-destructive">
         <AlertCircle className="h-5 w-5" />
-        <h2 className="text-lg font-bold uppercase tracking-tight">Danger Zone</h2>
+        <h2 className="text-lg font-semibold tracking-tight">Danger Zone</h2>
       </div>
 
       <div className="space-y-4">
@@ -74,7 +74,7 @@ export function DeleteProjectZone({ project, projectAccessToken }: DeleteProject
         {isConfigDriven && (
           <Alert className="border-studio-attention/25 bg-studio-attention-muted text-studio-attention">
             <AlertTriangle className="h-4 w-4" />
-            <AlertTitle className="text-xs font-bold uppercase tracking-tight text-studio-attention">
+            <AlertTitle className="text-xs font-medium uppercase tracking-tight text-studio-attention">
               Source of Truth Warning
             </AlertTitle>
             <AlertDescription className="text-xs text-studio-attention">
@@ -107,7 +107,7 @@ export function DeleteProjectZone({ project, projectAccessToken }: DeleteProject
                 This will delete the{" "}
                 <button
                   type="button"
-                  className="inline font-bold text-foreground cursor-pointer hover:underline bg-transparent border-0 p-0 text-inherit"
+                  className="inline font-medium text-foreground cursor-pointer hover:underline bg-transparent border-0 p-0 text-inherit"
                   title="Click to fill"
                   onClick={() => setConfirmName(project.name)}
                 >
@@ -122,7 +122,7 @@ export function DeleteProjectZone({ project, projectAccessToken }: DeleteProject
                 Type{" "}
                 <button
                   type="button"
-                  className="inline font-mono font-bold text-foreground cursor-pointer hover:underline bg-transparent border-0 p-0 text-sm"
+                  className="inline font-mono font-medium text-foreground cursor-pointer hover:underline bg-transparent border-0 p-0 text-sm"
                   title="Click to fill"
                   onClick={() => setConfirmName(project.name)}
                 >

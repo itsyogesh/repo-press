@@ -29,7 +29,7 @@ export class ErrorBoundary extends Component<Props, State> {
     if (this.state.hasError) {
       return (
         <div className="p-4 bg-red-50 text-red-900 border border-red-200 rounded-md font-mono text-sm break-all whitespace-pre-wrap">
-          <div className="font-bold mb-2">Preview Error</div>
+          <div className="font-semibold mb-2">Preview Error</div>
           {this.state.error?.message}
         </div>
       )

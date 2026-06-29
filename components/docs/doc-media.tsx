@@ -43,7 +43,7 @@ export const DocsImage = React.forwardRef<
         <div className="aspect-video flex items-center justify-center">
           <div className="text-muted-foreground flex flex-col items-center gap-2">
             <Info className="h-8 w-8 opacity-20" />
-            <span className="text-[10px] uppercase font-bold tracking-widest opacity-50">No Source</span>
+            <span className="text-[10px] uppercase font-medium tracking-widest opacity-50">No Source</span>
           </div>
         </div>
       )}
@@ -94,7 +94,7 @@ export const DocsVideo = React.forwardRef<
           <div className="size-12 rounded-full border-2 border-background/20 bg-background/5 flex items-center justify-center">
             <div className="ml-1 size-0 border-t-[8px] border-t-transparent border-l-[12px] border-l-background/70 border-b-[8px] border-b-transparent" />
           </div>
-          <span className="text-[10px] uppercase font-bold tracking-widest opacity-50">
+          <span className="text-[10px] uppercase font-medium tracking-widest opacity-50">
             Video: {title || "No Source"}
           </span>
         </div>

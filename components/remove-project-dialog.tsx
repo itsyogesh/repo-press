@@ -124,7 +124,7 @@ export function RemoveProjectDialog({
                 Type{" "}
                 <button
                   type="button"
-                  className="inline font-bold cursor-pointer hover:underline bg-transparent border-0 p-0 text-inherit"
+                  className="inline font-medium cursor-pointer hover:underline bg-transparent border-0 p-0 text-inherit"
                   title="Click to fill"
                   onClick={() => setConfirmText(project.name)}
                 >
