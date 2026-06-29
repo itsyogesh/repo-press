@@ -44,13 +44,18 @@ export default async function FilesPage({ params, searchParams }: FilesPageProps
   return (
     <div className="container mx-auto py-8 px-4">
       <div className="flex flex-col gap-6">
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-2">
           <RepoBreadcrumb owner={owner} repo={repo} path={pathSegments} branch={currentBranch} />
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl font-semibold tracking-tight">
-              {currentPath ? currentPath.split("/").slice(-1)[0] : `${owner}/${repo}`}
-            </h1>
-            <span className="text-xs font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-mono text-[0.72rem] uppercase tracking-[0.24em] text-muted-foreground">
+                {owner}/{repo}
+              </p>
+              <h1 className="mt-1 text-2xl font-semibold tracking-[-0.03em]">
+                {currentPath ? currentPath.split("/").slice(-1)[0] : "Files"}
+              </h1>
+            </div>
+            <span className="rounded-sm bg-muted px-2 py-0.5 font-mono text-xs text-muted-foreground">
               {currentBranch}
             </span>
           </div>
