@@ -113,7 +113,7 @@ describe("shared primitives redesign", () => {
     expect(html).toContain("tracking-[-0.02em]")
   })
 
-  it("applies glass treatment to the command palette shell", () => {
+  it("applies flat editorial treatment to the command palette shell", () => {
     const html = renderToStaticMarkup(
       <CommandDialog open onOpenChange={() => {}} showCloseButton={false}>
         <CommandInput value="" onValueChange={() => {}} />
@@ -129,7 +129,8 @@ describe("shared primitives redesign", () => {
     )
     const dialogShellClasses = html.match(/data-slot="dialog-content"[^>]*class="([^"]+)"/)?.[1]
 
-    expect(html).toContain("glass-command")
+    expect(html).toContain("bg-background")
+    expect(html).toContain("border-border")
     expect(html).toContain("max-h-[min(32rem,80vh)]")
     expect(html).toContain("tracking-[0.18em]")
     expect(dialogShellClasses).not.toContain("border-0")
