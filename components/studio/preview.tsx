@@ -296,7 +296,7 @@ export function Preview({
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8 rounded-xl border border-studio-border/70 bg-studio-canvas-inset/45"
+            className="h-8 w-8 rounded-md border border-studio-border/70 bg-studio-canvas-inset/45"
             onClick={() => setIsFullScreen(true)}
             title="Full-screen preview"
           >
