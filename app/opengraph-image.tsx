@@ -27,7 +27,7 @@ export default async function OGImage() {
           left: 0,
           right: 0,
           height: "4px",
-          background: "linear-gradient(to right, #2563eb, #3b82f6, #2563eb)",
+          background: "linear-gradient(to right, #4e67d4, #3b82f6, #4e67d4)",
         }}
       />
 
@@ -45,7 +45,7 @@ export default async function OGImage() {
             width: "64px",
             height: "64px",
             borderRadius: "16px",
-            backgroundColor: "#2563eb",
+            backgroundColor: "#4e67d4",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",

@@ -63,9 +63,7 @@ export default function AboutPage() {
         {/* Hero */}
         <section className="container mx-auto px-4 py-16 md:py-24">
           <div className="max-w-3xl mx-auto text-center">
-            <h1 className="text-3xl md:text-5xl font-semibold tracking-tight text-foreground mb-6">
-              A visual editor for content that lives in GitHub
-            </h1>
+            <h1 className="rp-display mb-6 text-3xl md:text-5xl">A visual editor for content that lives in GitHub</h1>
             <p className="text-lg md:text-xl text-muted-foreground leading-relaxed max-w-2xl mx-auto">
               RepoPress exists because updating a blog post or documentation page shouldn&apos;t require a terminal.
               Your content stays in your repository. We just make it easier to edit.

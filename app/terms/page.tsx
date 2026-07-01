@@ -14,7 +14,7 @@ export default function TermsPage() {
       <main className="flex-1">
         <div className="container mx-auto px-4 py-16 md:py-24">
           <div className="max-w-3xl mx-auto">
-            <h1 className="text-3xl md:text-4xl font-semibold tracking-tight text-foreground mb-8">Terms of Service</h1>
+            <h1 className="rp-display mb-8 text-3xl md:text-4xl">Terms of Service</h1>
 
             <p className="text-muted-foreground leading-relaxed mb-8">
               Welcome to RepoPress. By using our service, you agree to these terms. Please read them carefully.

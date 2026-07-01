@@ -14,7 +14,7 @@ export default function PrivacyPage() {
       <main className="flex-1">
         <div className="container mx-auto px-4 py-16 md:py-24">
           <div className="max-w-3xl mx-auto">
-            <h1 className="text-3xl md:text-4xl font-semibold tracking-tight text-foreground mb-8">Privacy Policy</h1>
+            <h1 className="rp-display mb-8 text-3xl md:text-4xl">Privacy Policy</h1>
 
             <p className="text-muted-foreground leading-relaxed mb-8">
               Your privacy matters. This policy explains what information RepoPress collects, how we use it, and the

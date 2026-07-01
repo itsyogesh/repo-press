@@ -182,13 +182,14 @@ export default async function BlogPostPage({ params }: { params: Promise<{ slug:
 
             {/* Post header */}
             <header>
-              <time dateTime={post.date} className="text-caption">
+              <time
+                dateTime={post.date}
+                className="font-mono text-[0.6875rem] uppercase tracking-[0.18em] text-muted-foreground/55"
+              >
                 {formatDate(post.date)}
               </time>
-              <h1 className="mt-3 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl md:text-5xl">
-                {post.title}
-              </h1>
-              <p className="mt-4 text-body-large">{post.excerpt}</p>
+              <h1 className="rp-display mt-3 text-3xl sm:text-4xl md:text-5xl">{post.title}</h1>
+              <p className="mt-4 text-lg leading-8 text-muted-foreground">{post.excerpt}</p>
             </header>
 
             {/* Divider */}
