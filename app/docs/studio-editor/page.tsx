@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 export default function StudioEditorPage() {
   return (
     <div>
-      <h1 className="mb-6 text-3xl font-semibold tracking-tight">Studio Editor</h1>
+      <h1 className="rp-display mb-6 text-3xl md:text-4xl">Studio Editor</h1>
 
       <p className="mb-4 leading-relaxed text-muted-foreground">
         The Studio is the heart of RepoPress - a visual editor for MDX and Markdown files that commits directly to your

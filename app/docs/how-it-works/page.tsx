@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 export default function HowItWorksPage() {
   return (
     <div>
-      <h1 className="mb-6 text-3xl font-semibold tracking-tight">How It Works</h1>
+      <h1 className="rp-display mb-6 text-3xl md:text-4xl">How It Works</h1>
 
       <p className="mb-4 leading-relaxed text-muted-foreground">
         RepoPress is a visual editor that works directly with your GitHub repository. Instead of copying your content

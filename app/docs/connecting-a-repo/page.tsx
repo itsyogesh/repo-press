@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 export default function ConnectingARepoPage() {
   return (
     <div>
-      <h1 className="mb-6 text-3xl font-semibold tracking-tight">Connecting a Repository</h1>
+      <h1 className="rp-display mb-6 text-3xl md:text-4xl">Connecting a Repository</h1>
 
       <p className="mb-4 leading-relaxed text-muted-foreground">
         RepoPress connects to your GitHub repositories to read and write content. This guide covers everything from

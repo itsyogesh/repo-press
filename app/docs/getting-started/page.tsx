@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 export default function GettingStartedPage() {
   return (
     <div>
-      <h1 className="mb-6 text-3xl font-semibold tracking-tight">Getting Started</h1>
+      <h1 className="rp-display mb-6 text-3xl md:text-4xl">Getting Started</h1>
 
       <p className="mb-4 leading-relaxed text-muted-foreground">
         RepoPress makes it easy to manage your website&rsquo;s content directly from your GitHub repository. Follow
