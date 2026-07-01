@@ -113,8 +113,8 @@ export const Callout = React.forwardRef<
 >(({ children, type = "info" }, ref) => {
   const styles = {
     info: "border-primary/20 bg-primary/10",
-    warning: "border-border bg-muted",
-    success: "border-border bg-muted",
+    warning: "border-warning/30 bg-warning/10",
+    success: "border-success/30 bg-success/10",
     error: "border-destructive/20 bg-destructive/10",
   }
 

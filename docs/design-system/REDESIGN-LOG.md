@@ -1,7 +1,7 @@
 # RepoPress Redesign — Decision Log
 
 Surface-by-surface redesign in code (Editorial identity, iterated live in Chrome).
-Surfaces landed: **Landing · Dashboard shell + sidebar · Studio chrome · Docs · Blog · Secondary pages · Dashboard interior · OG image** — all serif h1s, no raw colors.
+Surfaces landed: **Landing · Dashboard shell + sidebar · Studio chrome · Docs · Blog · Secondary pages · Dashboard interior · OG image · Full heading sweep · Callout tokens** — zero bold-sans headings, zero raw colors, warning/success callouts now distinct.
 
 ---
 
@@ -189,10 +189,7 @@ not cards." Verified: tsc/lint clean, 583/583, confirmed live.
 red-500` → semantic tokens (`primary`, `muted`, `destructive`). `border-2` on
 DocsVideo empty state → `border` (1px, ban complied).
 
-**NEEDS REVIEW (callout tokens):** `warning` and `success` callouts share
-`border-border bg-muted` because the design system has no `--warning`/`--success`
-tokens. Functionally they look identical; to distinguish them, add those tokens
-to `globals.css`. Deferred.
+**Callout tokens resolved:** `warning` → `border-warning/30 bg-warning/10`; `success` → `border-success/30 bg-success/10`. Both tokens (`--color-warning`, `--color-success`) were already in the `@theme` block of `globals.css` — only the callout `styles` map needed updating.
 
 **Blog index:** `text-section-heading` h1 → `rp-display`; identical card grid
 → hairline list (mono date kicker / title / 2-line excerpt / arrow) matching the
