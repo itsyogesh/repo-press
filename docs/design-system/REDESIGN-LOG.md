@@ -1,4 +1,11 @@
-# RepoPress Landing Redesign — Decision Log
+# RepoPress Redesign — Decision Log
+
+Surface-by-surface redesign in code (Editorial identity, iterated live in Chrome).
+Surfaces landed so far: **Landing** (below), **Dashboard shell + sidebar** (end).
+
+---
+
+## Landing
 
 Autonomous redesign of the marketing landing (`app/page.tsx` + `components/landing/*`)
 in code, iterated live in Chrome, keeping the committed "Editorial" identity
@@ -84,3 +91,35 @@ Each is a reasonable default chosen to keep moving; flag any you'd do differentl
   landing, tracked in the broader audit.
 - No new scroll-reveal motion added to lower sections yet (kept static for
   robustness); could add capture-safe IntersectionObserver reveals later.
+
+---
+
+## Dashboard shell + sidebar
+
+**Problem:** the dashboard *content* already spoke the Editorial register (mono
+overlines WORKSPACE / RECENT PROJECTS / REPOSITORY HUBS → serif headings →
+hairline rows → mono `owner/repo` paths), but the **sidebar** used the generic
+shadcn defaults (plain-sans "Navigation" / "Recent Projects" labels, project name
+only). The sidebar read as a stock app-nav bolted next to an editorial page.
+
+**Fix (`components/dashboard/dashboard-sidebar.tsx`):** brought the sidebar into
+the app's own established voice — kept the shadcn `Sidebar` primitive (collapse /
+mobile-sheet / rail intact), restyled the `SidebarGroupLabel`s to mono uppercase
+overlines, made the repo-context group label a mono path, and turned recent-project
+rows two-line (`size="lg"`) with the git `owner/repo` path in mono under the name.
+No IA change — the fix is register-consistency, not a reinvention.
+
+### NEEDS REVIEW (dashboard)
+
+- **Register-consistency, not a reinvention.** I judged the sidebar's IA
+  (wordmark → nav → repo sub-nav → recent → user) as sensible and only made it
+  feel *authored* by matching the content's editorial voice, rather than gutting
+  the structure. If you wanted a more radical sidebar, say so.
+- **Header/shell left mostly as-is.** The top bar (sidebar toggle · theme · user
+  menu) is minimal and clean; the desktop header shows no wordmark (mobile-only),
+  so I left it. Not touched.
+- Collapsed *icon* mode wasn't live-confirmed (the desktop toggle didn't visibly
+  collapse in testing — appears pre-existing); the two-line rows hide their text
+  via the same `group-data-[collapsible=icon]:hidden` pattern the header uses.
+
+Verified: tsc clean, lint clean, 583/583 tests, expanded sidebar confirmed live.

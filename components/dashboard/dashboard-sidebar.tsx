@@ -110,7 +110,9 @@ export function DashboardSidebar() {
 
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Navigation</SidebarGroupLabel>
+          <SidebarGroupLabel className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-sidebar-foreground/55">
+            Navigation
+          </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {NAV_ITEMS.map((item) => (
@@ -134,7 +136,7 @@ export function DashboardSidebar() {
         {/* Contextual repo sub-nav (visible when inside a repo route, except studio) */}
         {repoContext && !isStudio && (
           <SidebarGroup>
-            <SidebarGroupLabel className="truncate">
+            <SidebarGroupLabel className="truncate font-mono text-[0.65rem] tracking-[0.02em] text-sidebar-foreground/55">
               {repoContext.owner}/{repoContext.repo}
             </SidebarGroupLabel>
             <SidebarGroupContent>
@@ -181,7 +183,9 @@ export function DashboardSidebar() {
         )}
 
         <SidebarGroup>
-          <SidebarGroupLabel>Recent Projects</SidebarGroupLabel>
+          <SidebarGroupLabel className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-sidebar-foreground/55">
+            Recent Projects
+          </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {recentProjects === undefined ? (
@@ -203,12 +207,18 @@ export function DashboardSidebar() {
                     <SidebarMenuItem key={project._id}>
                       <SidebarMenuButton
                         asChild
+                        size="lg"
                         isActive={pathname.startsWith(`/dashboard/${project.repoOwner}/${project.repoName}`)}
                         tooltip={project.name}
                       >
                         <Link href={studioUrl}>
                           <Folder className={cn("size-4", "shrink-0")} />
-                          <span className="truncate">{project.name}</span>
+                          <div className="grid flex-1 leading-tight group-data-[collapsible=icon]:hidden">
+                            <span className="truncate text-sm">{project.name}</span>
+                            <span className="truncate font-mono text-[0.6rem] tracking-[-0.01em] text-muted-foreground">
+                              {project.repoOwner}/{project.repoName}
+                            </span>
+                          </div>
                         </Link>
                       </SidebarMenuButton>
                     </SidebarMenuItem>
