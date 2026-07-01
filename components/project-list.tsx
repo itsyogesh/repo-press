@@ -27,9 +27,7 @@ export function ProjectList({ serverProjects }: ProjectListProps) {
     return (
       <section className="mt-12">
         <SectionLabel>Recent projects</SectionLabel>
-        <h2 className="mt-2 font-serif text-2xl font-normal tracking-[-0.01em] text-foreground">
-          Pick up where you left off
-        </h2>
+        <h2 className="mt-2 rp-display text-2xl">Pick up where you left off</h2>
         <div className="mt-6 flex flex-col">
           {Array.from({ length: 3 }).map((_, i) => (
             // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholders
@@ -50,9 +48,7 @@ export function ProjectList({ serverProjects }: ProjectListProps) {
     return (
       <section className="mt-12">
         <SectionLabel>Recent projects</SectionLabel>
-        <h2 className="mt-2 font-serif text-2xl font-normal tracking-[-0.01em] text-foreground">
-          Pick up where you left off
-        </h2>
+        <h2 className="mt-2 rp-display text-2xl">Pick up where you left off</h2>
         <div className="mt-6 border-y border-border py-12 text-center">
           <p className="text-sm font-medium text-foreground">No recent projects yet</p>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">

@@ -70,7 +70,7 @@ export function ProfileContent() {
 
               <div className="min-w-0 flex-1 space-y-4">
                 <div>
-                  <h2 className="text-xl font-semibold tracking-tight text-foreground">{displayName}</h2>
+                  <h2 className="rp-display text-xl">{displayName}</h2>
                   {user.email && (
                     <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
                       <Mail className="h-3.5 w-3.5 shrink-0" />

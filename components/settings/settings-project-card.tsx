@@ -23,7 +23,7 @@ export function SettingsProjectCard({ project, className }: SettingsProjectCardP
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-1.5 min-w-0">
             <div className="flex items-center gap-2">
-              <CardTitle className="text-xl font-semibold tracking-tight truncate">{project.name}</CardTitle>
+              <CardTitle className="rp-display text-xl truncate">{project.name}</CardTitle>
               <Badge
                 variant="secondary"
                 className="h-5 px-1.5 text-[10px] uppercase font-medium tracking-tight bg-muted/50 text-muted-foreground shrink-0"

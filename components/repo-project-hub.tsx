@@ -101,7 +101,7 @@ function HubProjectCard({
           <p className="font-mono text-[0.65rem] uppercase tracking-[0.2em] text-muted-foreground">
             {project.contentRoot || "Repository root"}
           </p>
-          <h3 className="mt-3 truncate text-xl font-semibold tracking-[-0.03em] text-foreground">{project.name}</h3>
+          <h3 className="mt-3 truncate rp-display text-xl">{project.name}</h3>
         </div>
 
         {canManage ? (
@@ -436,7 +436,7 @@ export function RepoProjectHub({
               <p className="font-mono text-[0.68rem] uppercase tracking-[0.22em] text-muted-foreground">
                 Needs attention
               </p>
-              <h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-foreground">Removed from config</h2>
+              <h2 className="mt-2 rp-display text-2xl">Removed from config</h2>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">
                 These projects were removed from the repository config but still exist in RepoPress until cleaned up.
               </p>
@@ -470,7 +470,7 @@ export function RepoProjectHub({
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="font-mono text-[0.68rem] uppercase tracking-[0.22em] text-muted-foreground">Projects</p>
-            <h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-foreground">
+            <h2 className="mt-2 rp-display text-2xl">
               {activeProjects.length > 0 ? "Content surfaces for this repository" : "No projects connected yet"}
             </h2>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
@@ -516,7 +516,7 @@ export function RepoProjectHub({
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-background text-muted-foreground">
               <Folder className="h-5 w-5" />
             </div>
-            <h3 className="mt-5 text-lg font-semibold tracking-[-0.03em] text-foreground">No projects found</h3>
+            <h3 className="mt-5 rp-display text-lg">No projects found</h3>
             {hasConfig && syncError ? (
               <p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">
                 A config file was found but sync failed. Retry sync, then come back here to open the generated projects.

@@ -17,7 +17,7 @@ export default function ConnectingARepoPage() {
       </p>
 
       {/* GitHub OAuth Permissions */}
-      <h2 className="mb-4 mt-12 text-2xl font-semibold">What we ask for when you sign in</h2>
+      <h2 className="rp-display text-2xl mb-4 mt-12">What we ask for when you sign in</h2>
       <p className="mb-4 leading-relaxed text-muted-foreground">
         When you sign in with GitHub, RepoPress requests permission to:
       </p>
@@ -49,7 +49,7 @@ export default function ConnectingARepoPage() {
       </p>
 
       {/* Selecting a Repository */}
-      <h2 className="mb-4 mt-12 text-2xl font-semibold">Selecting a Repository</h2>
+      <h2 className="rp-display text-2xl mb-4 mt-12">Selecting a Repository</h2>
       <p className="mb-4 leading-relaxed text-muted-foreground">
         After signing in, navigate to the dashboard. You&rsquo;ll see a list of all repositories accessible to your
         GitHub account - both personal and organization repositories. Click on any repository to begin setting up a
@@ -57,7 +57,7 @@ export default function ConnectingARepoPage() {
       </p>
 
       {/* Content Root Configuration */}
-      <h2 className="mb-4 mt-12 text-2xl font-semibold">Choosing a content folder</h2>
+      <h2 className="rp-display text-2xl mb-4 mt-12">Choosing a content folder</h2>
       <p className="mb-4 leading-relaxed text-muted-foreground">
         The content folder tells RepoPress where your editable files live. Common locations include:
       </p>
@@ -84,7 +84,7 @@ export default function ConnectingARepoPage() {
       </p>
 
       {/* Framework Auto-Detection */}
-      <h2 className="mb-4 mt-12 text-2xl font-semibold">Automatic framework detection</h2>
+      <h2 className="rp-display text-2xl mb-4 mt-12">Automatic framework detection</h2>
       <p className="mb-4 leading-relaxed text-muted-foreground">
         RepoPress looks at your repository to identify which site framework you use. Currently supported:
       </p>
@@ -114,7 +114,7 @@ export default function ConnectingARepoPage() {
       </p>
 
       {/* Multiple Projects */}
-      <h2 className="mb-4 mt-12 text-2xl font-semibold">Multiple projects from one repository</h2>
+      <h2 className="rp-display text-2xl mb-4 mt-12">Multiple projects from one repository</h2>
       <p className="mb-4 leading-relaxed text-muted-foreground">
         You can create multiple RepoPress projects from the same GitHub repository. This is useful when you have
         different content areas - for example, a{" "}
@@ -124,7 +124,7 @@ export default function ConnectingARepoPage() {
       </p>
 
       {/* Private Repo Support */}
-      <h2 className="mb-4 mt-12 text-2xl font-semibold">Private repositories</h2>
+      <h2 className="rp-display text-2xl mb-4 mt-12">Private repositories</h2>
       <p className="mb-4 leading-relaxed text-muted-foreground">
         RepoPress works with private repositories. If your GitHub account has access to the repository, you can connect
         it the same way you would a public one. Content is fetched through authenticated requests and is not stored on

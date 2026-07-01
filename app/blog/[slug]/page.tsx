@@ -93,7 +93,7 @@ function parseContent(content: string): RenderedBlock[] {
       rendered.push({
         key,
         element: (
-          <h2 key={key} className="mt-10 mb-4 text-2xl font-semibold tracking-tight text-foreground">
+          <h2 key={key} className="rp-display text-2xl mt-10 mb-4">
             {block.slice(3)}
           </h2>
         ),

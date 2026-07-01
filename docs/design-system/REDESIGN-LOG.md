@@ -262,6 +262,38 @@ Verified: tsc clean, lint 0 errors (12 pre-existing warnings), 583/583 tests.
 
 Verified: tsc clean, lint 0 errors (12 pre-existing warnings), 583/583 tests.
 
+## Second sweep — article headings + remaining components
+
+**Root cause:** the earlier sweep targeted page-level h1s and primary section h2s but missed the *internal article headings* inside docs, terms, privacy, about, and blog post — plus several dashboard and settings components.
+
+**All h2/h3 article headings across docs, terms, privacy, about, and blog rendered as bold-sans. Now `rp-display`:**
+
+- `app/terms/page.tsx` — 9 section h2s (Acceptance of Terms, GitHub Integration, etc.)
+- `app/privacy/page.tsx` — 7 section h2s
+- `app/about/page.tsx` — 4 section h2s + 3 card h3s (principle titles, tech names, creator name)
+- `app/docs/getting-started/page.tsx` — all step h2s
+- `app/docs/connecting-a-repo/page.tsx` — all section h2s
+- `app/docs/how-it-works/page.tsx` — all h2s + subsection h3s
+- `app/docs/studio-editor/page.tsx` — all h2s + flow step h3s
+- `app/blog/[slug]/page.tsx` — dynamic markdown `## heading` renderer
+- `components/project-list.tsx` — 3 section h2s ("Pick up where you left off")
+- `components/repo-card.tsx` — repo name h3 in hub grid
+- `components/repo-project-hub.tsx` — 4 headings (project name, state h2s, empty state h3)
+- `components/settings/settings-project-card.tsx` — project CardTitle
+- `components/dashboard/profile-content.tsx` — user display name h2
+
+### NEEDS REVIEW (article headings)
+
+- **`app/docs/docs-sidebar.tsx` nav label:** two `<h3 className="text-sm font-semibold">Documentation</h3>` lines at `text-sm`. These are navigation category labels in the docs sidebar, not article headings; `rp-display` at 14px would be over-styled for a nav label. Left as `font-semibold text-sm`. If you want full typographic consistency in the nav, convert.
+- **About card h3s converted to `rp-display` (no explicit size):** The principle titles and tech stack names are now Instrument Serif at base size (16px). If they read as too decorative inside the 2-col card grid, downgrade to `font-medium text-foreground` (lighter sans).
+
+**Final verified state:**
+- Zero bold-sans heading violations remaining in `app/` and `components/` (excluding intentional NEEDS REVIEW exceptions)
+- Zero raw Tailwind color classes
+- Zero legacy typography class names
+
+Verified: tsc clean, lint 0 errors (12 pre-existing warnings), 583/583 tests.
+
 ---
 
 ## OG image — full redesign

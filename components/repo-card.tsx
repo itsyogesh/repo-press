@@ -29,7 +29,7 @@ export function RepoCard({ repo, connectedProjectCount = 0 }: RepoCardProps) {
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <p className="font-mono text-[0.65rem] uppercase tracking-[0.2em] text-muted-foreground">{repo.full_name}</p>
-          <h3 className="mt-3 text-xl font-semibold tracking-[-0.03em] text-foreground">{repo.name}</h3>
+          <h3 className="mt-3 rp-display text-xl">{repo.name}</h3>
         </div>
 
         <Badge
