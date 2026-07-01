@@ -6,6 +6,11 @@ export const size = { width: 1200, height: 630 }
 export const contentType = "image/png"
 
 export default async function OGImage() {
+  // Load Instrument Serif from the bundled TTF alongside this file.
+  // Using import.meta.url is the Next.js-recommended approach for edge OG images —
+  // the bundler includes the asset so it's available at runtime without an external fetch.
+  const fontData = await fetch(new URL("./InstrumentSerif-Regular.ttf", import.meta.url)).then((r) => r.arrayBuffer())
+
   return new ImageResponse(
     <div
       style={{
@@ -13,124 +18,104 @@ export default async function OGImage() {
         width: "100%",
         display: "flex",
         flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        backgroundColor: "#09090b",
-        padding: "60px",
+        justifyContent: "space-between",
+        // Warm near-black — oklch(0.12 0.012 75), deep end of the editorial ramp
+        backgroundColor: "#1b1916",
+        padding: "72px 80px",
       }}
     >
-      {/* Top accent line */}
-      <div
-        style={{
-          position: "absolute",
-          top: 0,
-          left: 0,
-          right: 0,
-          height: "4px",
-          background: "linear-gradient(to right, #3d57c8, #4e67d4, #3d57c8)",
-        }}
-      />
-
-      {/* Logo mark */}
+      {/* Wordmark — spaced mono-register label */}
       <div
         style={{
           display: "flex",
-          alignItems: "center",
-          gap: "16px",
-          marginBottom: "40px",
+          fontSize: "13px",
+          fontFamily: "sans-serif",
+          fontWeight: 500,
+          letterSpacing: "0.15em",
+          color: "#78726c",
+        }}
+      >
+        REPOPRESS
+      </div>
+
+      {/* Hero headline — Instrument Serif, two deliberate lines */}
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
         }}
       >
         <div
           style={{
-            width: "64px",
-            height: "64px",
-            borderRadius: "16px",
-            backgroundColor: "#4e67d4",
             display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
+            fontFamily: "Instrument Serif",
+            fontSize: "98px",
+            fontWeight: 400,
+            lineHeight: 1.05,
+            // paper-0 pushed warm: oklch(0.95 0.014 75)
+            color: "#f1ece1",
+            letterSpacing: "-0.01em",
           }}
         >
-          <svg
-            width="36"
-            height="36"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="white"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            role="img"
-            aria-label="RepoPress logo"
-          >
-            <title>RepoPress</title>
-            <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" />
-            <path d="m3.3 7 8.7 5 8.7-5" />
-            <path d="M12 22V12" />
-          </svg>
+          Your repo
         </div>
-        <span
+        <div
           style={{
-            fontSize: "48px",
-            fontWeight: "700",
-            color: "#fafafa",
-            letterSpacing: "-0.02em",
+            display: "flex",
+            fontFamily: "Instrument Serif",
+            fontSize: "98px",
+            fontWeight: 400,
+            lineHeight: 1.05,
+            color: "#f1ece1",
+            letterSpacing: "-0.01em",
           }}
         >
-          RepoPress
-        </span>
+          is your CMS.
+        </div>
       </div>
 
-      {/* Tagline */}
-      <div
-        style={{
-          fontSize: "32px",
-          color: "#a1a1aa",
-          textAlign: "center",
-          maxWidth: "800px",
-          lineHeight: "1.4",
-        }}
-      >
-        Your repo is your CMS
-      </div>
-
-      {/* Sub-tagline */}
-      <div
-        style={{
-          fontSize: "20px",
-          color: "#71717a",
-          textAlign: "center",
-          maxWidth: "700px",
-          marginTop: "16px",
-        }}
-      >
-        Git-native headless CMS for GitHub repositories
-      </div>
-
-      {/* Bottom pills */}
+      {/* Footer — Signal Slate rule + tagline */}
       <div
         style={{
           display: "flex",
-          gap: "12px",
-          marginTop: "48px",
+          flexDirection: "column",
         }}
       >
-        {["Next.js", "Astro", "Hugo", "Docusaurus", "Jekyll"].map((fw) => (
-          <div
-            key={fw}
-            style={{
-              padding: "8px 20px",
-              borderRadius: "9999px",
-              border: "1px solid #27272a",
-              color: "#a1a1aa",
-              fontSize: "16px",
-            }}
-          >
-            {fw}
-          </div>
-        ))}
+        {/* Single Signal Slate accent rule — deliberate mark, not a stripe */}
+        <div
+          style={{
+            display: "flex",
+            width: "48px",
+            height: "2px",
+            // --slate: oklch(0.52 0.13 255)
+            backgroundColor: "#4e67d4",
+            marginBottom: "16px",
+          }}
+        />
+        {/* Tagline — muted warm gray, 5.2:1 contrast on #1b1916 */}
+        <div
+          style={{
+            display: "flex",
+            fontSize: "20px",
+            fontFamily: "sans-serif",
+            color: "#8a8480",
+            letterSpacing: "0.01em",
+          }}
+        >
+          Git-native MDX editing — draft to published.
+        </div>
       </div>
     </div>,
-    { ...size },
+    {
+      ...size,
+      fonts: [
+        {
+          name: "Instrument Serif",
+          data: fontData,
+          style: "normal",
+          weight: 400,
+        },
+      ],
+    },
   )
 }

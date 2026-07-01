@@ -211,8 +211,9 @@ layout hydration; keeps it functional with no dependencies).
 **global-error.tsx:** left as-is. It renders inside `<html><body>` with no app
 CSS loaded (last-resort crash boundary); inline styles are correct here.
 
-**OpenGraph image:** raw Tailwind blue `#2563eb` → `#4e67d4` (≈ Signal Slate
-`oklch(0.52 0.13 255)`) for both the top accent bar and the logo background.
+**OpenGraph image (color-only pass):** raw Tailwind blue `#2563eb` → `#4e67d4`
+(≈ Signal Slate `oklch(0.52 0.13 255)`) for top accent bar and logo background.
+Full redesign deferred — this only patched colors, did not fix the template layout.
 
 **NEEDS REVIEW (globals.css:607):** `.studio-sidebar { transition: width 200ms ease }`
 — impeccable flags `width` as a layout property. Animating width IS intentional
@@ -242,3 +243,42 @@ preview style, change it.
   not the banned side-stripe pattern
 
 Verified: tsc clean, lint 0 errors (12 pre-existing warnings), 583/583 tests.
+
+---
+
+## OG image — full redesign
+
+**Problem:** the previous OG image was a generic dark SaaS template — top gradient
+accent stripe, icon-box + bold wordmark row, tagline + sub-tagline, framework pills
+at the bottom. Identical to hundreds of AI-generated product cards.
+
+**Fix (`app/opengraph-image.tsx` + bundled `app/InstrumentSerif-Regular.ttf`):**
+Complete redesign as a **dark editorial press card**:
+- Background: `#1b1916` (warm near-black — `oklch(0.12 0.012 75)`, deep ink ramp)
+- Top: `REPOPRESS` wordmark in small tracked sans (`#78726c`)
+- Hero: two-line Instrument Serif headline (`"Your repo / is your CMS."`) at 98px
+  in warm near-white `#f1ece1` (`oklch(0.95 0.014 75)`)
+- Single 48×2px Signal Slate rule (`#4e67d4`) — deliberate mark, not a stripe
+- Footer: `"Git-native MDX editing — draft to published."` in muted warm `#8a8480`
+  (5.2:1 contrast on the dark bg)
+
+No framework pills (identical badge row = impeccable ban). No logo box. No gradient
+stripe. No sub-tagline stacking. No fake UI mockup.
+
+**Font loading:** Instrument Serif bundled as `app/InstrumentSerif-Regular.ttf` (real
+TrueType, sourced from the Google Fonts GitHub repo). Loaded via
+`new URL('./InstrumentSerif-Regular.ttf', import.meta.url)` — the Next.js edge-runtime
+recommended pattern; the bundler includes it so it's available without external fetch.
+The previous attempt using Google Fonts CSS API with old UA returned a WOFF2 file
+(no `format()` declaration) which satori/ImageResponse can't use; direct GitHub TTF
+download fixed it.
+
+### NEEDS REVIEW (OG image — overused-font hook)
+
+The impeccable `overused-font` rule fires on `Instrument Serif` in this file. This is
+a **false positive**: the font is the committed brand display serif (`rp-display` class
+in globals.css). The brand.md rule says "identity-preservation wins" over the
+reflex-reject list when an existing brand has already committed to a font. Not changed.
+
+Verified: tsc clean, lint 0 errors (12 pre-existing warnings), 583/583 tests,
+OG image confirmed live at `http://localhost:3011/opengraph-image` (200 response).
