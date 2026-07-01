@@ -57,7 +57,7 @@ export function ProfileContent() {
       <div className="flex flex-col gap-8">
         <div>
           <p className="font-mono text-[0.72rem] uppercase tracking-[0.24em] text-muted-foreground">Account</p>
-          <h1 className="mt-3 text-3xl font-semibold tracking-[-0.05em] text-foreground">Profile</h1>
+          <h1 className="rp-display mt-3 text-2xl">Profile</h1>
         </div>
 
         <Card className="overflow-hidden border-border/70">

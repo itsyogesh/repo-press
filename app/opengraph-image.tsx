@@ -27,7 +27,7 @@ export default async function OGImage() {
           left: 0,
           right: 0,
           height: "4px",
-          background: "linear-gradient(to right, #4e67d4, #3b82f6, #4e67d4)",
+          background: "linear-gradient(to right, #3d57c8, #4e67d4, #3d57c8)",
         }}
       />
 

@@ -64,9 +64,7 @@ export default async function DashboardPage() {
     <div className="mx-auto flex w-full max-w-[820px] flex-col px-6 py-10 sm:px-10">
       <header className="border-b border-border pb-6">
         <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Workspace</p>
-        <h1 className="mt-2.5 font-serif text-4xl font-normal leading-[1.05] tracking-[-0.015em] text-foreground sm:text-5xl">
-          Dashboard
-        </h1>
+        <h1 className="rp-display mt-2.5 text-4xl sm:text-5xl">Dashboard</h1>
         <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
           Recent projects stay front and center. Repositories remain the system of record when you need setup, sync, and
           broader content organization.

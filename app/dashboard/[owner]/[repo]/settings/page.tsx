@@ -95,7 +95,7 @@ export default async function SettingsPage({ params }: SettingsPageProps) {
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-2">
             <Settings className="h-6 w-6 text-muted-foreground" />
-            <h1 className="text-3xl font-semibold tracking-tight text-foreground">Project Settings</h1>
+            <h1 className="rp-display text-2xl">Project Settings</h1>
           </div>
           <p className="text-muted-foreground">
             Manage your projects for {owner}/{repo}

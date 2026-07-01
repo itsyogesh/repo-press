@@ -40,7 +40,7 @@ export function AppSettingsContent() {
       <div className="flex flex-col gap-8">
         <div>
           <p className="font-mono text-[0.72rem] uppercase tracking-[0.24em] text-muted-foreground">Preferences</p>
-          <h1 className="mt-3 text-3xl font-semibold tracking-[-0.05em] text-foreground">Settings</h1>
+          <h1 className="rp-display mt-3 text-2xl">Settings</h1>
         </div>
 
         {/* Appearance */}

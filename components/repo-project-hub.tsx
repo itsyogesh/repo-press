@@ -320,7 +320,7 @@ export function RepoProjectHub({
               Repository hub
             </p>
             <p className="mt-4 font-mono text-[0.7rem] uppercase tracking-[0.2em] text-muted-foreground">{owner}</p>
-            <h1 className="mt-2 text-3xl font-semibold tracking-[-0.05em] text-foreground sm:text-4xl">{repo}</h1>
+            <h1 className="rp-display mt-2 text-3xl sm:text-4xl">{repo}</h1>
             <p className="mt-4 text-sm leading-7 text-muted-foreground sm:text-base">{configDescription}</p>
 
             <div className="mt-5 flex flex-wrap gap-2">

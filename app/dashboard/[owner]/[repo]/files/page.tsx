@@ -51,7 +51,7 @@ export default async function FilesPage({ params, searchParams }: FilesPageProps
               <p className="font-mono text-[0.72rem] uppercase tracking-[0.24em] text-muted-foreground">
                 {owner}/{repo}
               </p>
-              <h1 className="mt-1 text-2xl font-semibold tracking-[-0.03em]">
+              <h1 className="rp-display mt-1 text-2xl">
                 {currentPath ? currentPath.split("/").slice(-1)[0] : "Files"}
               </h1>
             </div>
