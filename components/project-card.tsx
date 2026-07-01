@@ -50,7 +50,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <p className="font-mono text-[0.65rem] uppercase tracking-[0.2em] text-muted-foreground">{repoLabel}</p>
-          <h3 className="mt-3 truncate text-xl font-semibold tracking-[-0.03em] text-foreground">{project.name}</h3>
+          <h3 className="mt-3 truncate rp-display text-xl">{project.name}</h3>
         </div>
 
         {project.detectedFramework &&

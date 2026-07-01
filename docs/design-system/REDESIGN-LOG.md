@@ -246,6 +246,24 @@ Verified: tsc clean, lint 0 errors (12 pre-existing warnings), 583/583 tests.
 
 ---
 
+## Login + dashboard components (loop continuation)
+
+**Surfaces missed in the main sweep, caught by audit agent:**
+
+**`app/login/page.tsx:42`:** `CardTitle` used `font-serif text-3xl font-normal tracking-[-0.02em]` — switched to `rp-display text-3xl`. Login is the first authenticated surface a user sees; the heading must be Instrument Serif via the semantic class, not font-family directly.
+
+**`components/project-card.tsx:53`:** project name `<h3>` used `text-xl font-semibold` (bold Geist sans) — switched to `rp-display text-xl`. Project cards are the primary editorial unit on the dashboard; their titles should carry the display register.
+
+**`components/repo-grid.tsx:36`:** section sub-header `<h3>` ("Connected repositories" / "Available repositories") used `text-lg font-semibold` — switched to `rp-display text-lg`. Consistent with all other UI section headers in the sweep.
+
+### NEEDS REVIEW (login + dashboard components)
+
+- **`components/repo-setup-form.tsx` uses `studio-*` semantic tokens** (`studio-success`, `studio-attention`, `studio-accent`) for framework-detection status banners. These ARE design-system tokens defined in `globals.css`; they're not raw colors. No change made. Acceptable deviation — the setup form borrows studio-level semantic color roles because the detection pipeline is a git/framework-intelligence surface. Revisit only if the studio-* palette diverges from editorial intent.
+
+Verified: tsc clean, lint 0 errors (12 pre-existing warnings), 583/583 tests.
+
+---
+
 ## OG image — full redesign
 
 **Problem:** the previous OG image was a generic dark SaaS template — top gradient

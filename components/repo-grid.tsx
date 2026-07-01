@@ -33,7 +33,7 @@ function RepoSection({
     <section className="space-y-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h3 className="text-lg font-semibold tracking-[-0.03em] text-foreground">{title}</h3>
+          <h3 className="rp-display text-lg">{title}</h3>
           <p className="mt-1 text-sm leading-6 text-muted-foreground">{description}</p>
         </div>
         <p className="text-sm text-muted-foreground">

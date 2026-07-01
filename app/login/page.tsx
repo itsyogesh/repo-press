@@ -39,7 +39,7 @@ export default function LoginPage() {
         <Card>
           <CardHeader className="justify-items-center text-center">
             <BrandMark tile className="mb-2 size-12" />
-            <CardTitle className="font-serif text-3xl font-normal tracking-[-0.02em]">Welcome to RepoPress</CardTitle>
+            <CardTitle className="rp-display text-3xl">Welcome to RepoPress</CardTitle>
             <CardDescription>Sign in to manage your content</CardDescription>
           </CardHeader>
           <CardContent>
