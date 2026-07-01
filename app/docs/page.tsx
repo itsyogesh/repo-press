@@ -1,4 +1,4 @@
-import { BookOpen, GitBranch, PenTool, Rocket } from "lucide-react"
+import { ArrowRight } from "lucide-react"
 import type { Metadata } from "next"
 import Link from "next/link"
 
@@ -12,51 +12,48 @@ const guides = [
     href: "/docs/getting-started",
     title: "Getting Started",
     description: "Set up RepoPress and connect your first repository.",
-    icon: Rocket,
   },
   {
     href: "/docs/how-it-works",
     title: "How It Works",
     description: "See how RepoPress connects to your repository and manages content.",
-    icon: BookOpen,
   },
   {
     href: "/docs/connecting-a-repo",
     title: "Connecting a Repository",
     description: "Connect your GitHub repo and choose a content folder to edit.",
-    icon: GitBranch,
   },
   {
     href: "/docs/studio-editor",
     title: "Studio Editor",
     description: "Write and publish with the visual editor, live preview, and version history.",
-    icon: PenTool,
   },
 ]
 
 export default function DocsPage() {
   return (
     <div>
-      <h1 className="mb-4 text-3xl font-semibold tracking-tight md:text-4xl">Documentation</h1>
-      <p className="mb-12 text-lg text-muted-foreground">Everything you need to get started with RepoPress.</p>
+      <h1 className="rp-display text-4xl md:text-5xl">Documentation</h1>
+      <p className="mt-4 mb-12 max-w-[46ch] text-lg leading-8 text-muted-foreground">
+        Everything you need to get started with RepoPress.
+      </p>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        {guides.map((guide) => {
-          const Icon = guide.icon
-          return (
-            <Link
-              key={guide.href}
-              href={guide.href}
-              className="group rounded-lg border border-border bg-card p-6 transition-colors hover:border-primary/40 hover:bg-accent"
-            >
-              <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary transition-colors group-hover:bg-primary/20">
-                <Icon className="h-5 w-5" />
-              </div>
-              <h2 className="mb-1 text-lg font-semibold text-card-foreground">{guide.title}</h2>
-              <p className="text-sm text-muted-foreground">{guide.description}</p>
-            </Link>
-          )
-        })}
+      <div className="border-t border-border">
+        {guides.map((guide) => (
+          <Link
+            key={guide.href}
+            href={guide.href}
+            className="group flex items-baseline justify-between gap-6 border-b border-border py-5"
+          >
+            <div>
+              <h2 className="text-lg font-medium tracking-[-0.01em] text-foreground transition-colors group-hover:text-primary">
+                {guide.title}
+              </h2>
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">{guide.description}</p>
+            </div>
+            <ArrowRight className="mt-1.5 h-4 w-4 shrink-0 text-muted-foreground/40 transition-all group-hover:translate-x-0.5 group-hover:text-primary" />
+          </Link>
+        ))}
       </div>
     </div>
   )

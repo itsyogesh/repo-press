@@ -160,3 +160,31 @@ git-native chrome: the owner/repo·branch pill and breadcrumb path in
 
 Verified: tsc clean, lint clean, 583/583 tests; single header + mono chrome +
 relocated theme toggle confirmed live.
+
+---
+
+## Loop mode — autonomous resolutions + docs
+
+Self-paced continuation (directive: "make the most reasonable choice and log it
+under NEEDS REVIEW; don't stop").
+
+**The two Studio judgment calls, resolved with reasonable defaults:**
+- **Editor body → kept readable Geist sans** (not mono). WYSIWYG "writing app,
+  not a developer tool"; git-native mono stays on the chrome.
+- **Frontmatter panel → `bg-studio-canvas-inset`** — the studio-token equivalent
+  of the brief's `bg-muted`, keeping the studio palette consistent while giving
+  the metadata panel subtle separation from the white editor canvas.
+
+**Docs index (`app/docs/page.tsx`):** bold-sans "Documentation" → serif
+`rp-display`; the banned 2×2 icon-card grid → a hairline-divided nav list
+(title + description + hover arrow, hover→Slate). Matches "docs nav = a list,
+not cards." Verified: tsc/lint clean, 583/583, confirmed live.
+
+### Still pending (docs/blog + secondary pages)
+
+- Docs subpages (getting-started / how-it-works / connecting-a-repo /
+  studio-editor) still have bold-sans `h1`s → serif.
+- `components/docs/doc-media.tsx` callouts use raw blue/amber/green/red + a
+  `border-2` → semantic tokens + 1px.
+- Blog index/post headings; about / privacy / terms / 404 / global-error;
+  OpenGraph image (raw Tailwind blue → Slate).

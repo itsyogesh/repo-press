@@ -81,7 +81,7 @@ export function FrontmatterPanel({
         setIsOpen(open)
         setUserInteracted(true)
       }}
-      className="border-b border-studio-border bg-studio-canvas"
+      className="border-b border-studio-border bg-studio-canvas-inset"
     >
       <div className="flex items-center justify-between px-4 py-2 border-b border-studio-border">
         <h3 className="text-xs font-semibold text-studio-fg uppercase tracking-wider flex items-center gap-2">
