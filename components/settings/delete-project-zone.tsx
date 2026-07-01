@@ -62,7 +62,7 @@ export function DeleteProjectZone({ project, projectAccessToken }: DeleteProject
     <div className="rounded-lg border border-destructive/20 bg-destructive/10 p-6">
       <div className="mb-4 flex items-center gap-2 text-destructive">
         <AlertCircle className="h-5 w-5" />
-        <h2 className="text-lg font-semibold tracking-tight">Danger Zone</h2>
+        <h2 className="rp-display text-lg">Danger Zone</h2>
       </div>
 
       <div className="space-y-4">
