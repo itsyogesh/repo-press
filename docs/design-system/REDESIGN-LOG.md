@@ -413,3 +413,50 @@ across the entire `app/` and `components/` tree (grep confirms).
 the documented intentional exceptions.
 
 Verified: tsc clean, lint 0 errors (11 warnings, 1 fixed by fmt pass), 583/583 tests.
+
+---
+
+## Dialog / modal title sweep + globals dead-class removal (loop continuation)
+
+**Problem:** shadcn `DialogTitle`, `AlertDialogTitle`, and `CardTitle` default to
+`text-lg font-semibold` — they pass through raw HTML without the `rp-display` semantic class, so
+all 14 dialog and modal headings across the app were still bold-sans.
+
+**Fixed:**
+- `add-project-dialog.tsx`, `edit-project-dialog.tsx`, `remove-project-dialog.tsx`,
+  `delete-project-dialog.tsx`, `folder-picker-dialog.tsx` — all DialogTitle / AlertDialogTitle
+  → `rp-display`
+- `file-content-viewer.tsx` CardTitle `text-lg` → `rp-display text-lg`
+- `settings/page.tsx` — CardTitle "Settings unavailable" (`text-lg`) and project name
+  (`text-xl`) → `rp-display`
+- `history-client.tsx` AlertDialogTitle "Restore this version?" → `rp-display`
+- Studio dialogs: `studio-header.tsx` (Keyboard Shortcuts), `publish-dialog.tsx` (Publish
+  Changes), `image-field.tsx` + `image-field-control.tsx` (Select Image), `status-actions.tsx`
+  (Submit for Review / Request Changes), `studio-layout.tsx` (Discard all pending changes?),
+  `component-insert-modal.tsx` (Insert Component) → all `rp-display`
+- `settings/delete-project-zone.tsx` AlertDialogTitle → `rp-display`
+
+**Intentional non-conversions (below text-lg threshold):**
+- `repo-setup-form.tsx` CardTitle (no explicit size = ≈15px default) — below threshold
+- `smart-create-file-dialog.tsx` SheetTitle (no explicit size, text-base) — nav label
+- `navbar.tsx` SheetTitle "Navigation menu" — mobile nav label
+- `dashboard/profile-content.tsx` CardTitle `text-base font-medium` — UI chrome
+- `component-insert-modal.tsx:460` DialogTitle `text-base` — detail header
+
+**Also in this commit:**
+- `pricing.tsx` `$0` — `font-semibold text-4xl` → `font-mono text-4xl font-medium tabular-nums`
+  (numbers are data, data uses mono)
+- `app/globals.css` — removed entire dead `@layer utilities` block: `text-hero`,
+  `text-section-heading`, `text-section-subheading`, `text-card-title`, `text-body-large`,
+  `text-caption`, `text-overline` — all had zero usages.
+
+### NEEDS REVIEW (dialog title sweep)
+
+- **`image-field{,-control}.tsx` `border-accent-on-rounded` hook flags** — false positives.
+  The flagged elements are tab triggers with `rounded-none border-b-2` (a standard underline
+  indicator). No rounded corners exist on these elements; the rule's "border clashes with
+  border-radius" premise doesn't apply. Intentionally not suppressed via config since
+  the user hasn't confirmed the ignore.
+- **Error-panel headings still bold-sans** — see previous section (functional register).
+
+Verified: tsc clean, lint 0 errors (11 warnings), 583/583 tests.
