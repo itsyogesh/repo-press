@@ -43,9 +43,8 @@ export default function FAQ() {
     <section id="faq" className="border-t border-border px-6 py-24">
       <div className="mx-auto max-w-[1120px]">
         <div className="mb-16 text-center">
-          <p className="rp-overline mb-4">FAQ</p>
-          <h2 className="rp-display text-[clamp(1.75rem,4vw,2.5rem)]">Frequently asked questions</h2>
-          <p className="mx-auto mt-4 max-w-[48ch] text-balance text-muted-foreground">
+          <h2 className="rp-display text-[clamp(2rem,4.5vw,3rem)]">Frequently asked questions</h2>
+          <p className="mx-auto mt-5 max-w-[48ch] text-balance text-lg text-muted-foreground">
             Common questions about RepoPress, answered plainly.
           </p>
         </div>

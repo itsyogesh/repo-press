@@ -26,7 +26,6 @@ export default function CTA() {
       <div className="mx-auto max-w-[1120px]">
         <div className="grid gap-10 lg:grid-cols-[1fr_auto] lg:items-start">
           <div>
-            <p className="rp-overline mb-4 text-background/55">Get started</p>
             <h2 className="rp-display max-w-[18ch] text-[clamp(2rem,4vw,3rem)]">
               Your content is in GitHub. Start editing it visually.
             </h2>
@@ -54,18 +53,14 @@ export default function CTA() {
           </div>
         </div>
 
-        <div className="mt-16 grid border-t border-background/15 md:grid-cols-3 md:divide-x md:divide-background/15">
-          {ctaFeatures.map((f, i) => {
+        <div className="mt-14 flex flex-wrap items-center gap-x-8 gap-y-3 border-t border-background/15 pt-8 font-mono text-[0.6875rem] uppercase tracking-[0.18em] text-background/55">
+          {ctaFeatures.map((f) => {
             const Icon = f.icon
             return (
-              <div
-                key={f.title}
-                className="border-b border-background/15 px-6 py-6 last:border-b-0 md:border-b-0 md:first:pl-0"
-              >
-                <Icon className="mb-4 h-5 w-5 text-background/60" />
-                <h3 className="text-base font-medium tracking-[-0.01em]">{f.title}</h3>
-                <p className="mt-2 text-sm leading-6 text-background/68">{f.description}</p>
-              </div>
+              <span key={f.title} className="flex items-center gap-2">
+                <Icon className="h-3.5 w-3.5 text-primary" />
+                {f.title}
+              </span>
             )
           })}
         </div>

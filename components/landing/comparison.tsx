@@ -30,12 +30,11 @@ export default function Comparison() {
   return (
     <section id="comparison" className="border-t border-border px-6 py-24">
       <div className="mx-auto max-w-[1120px]">
-        <div className="mb-16">
-          <p className="rp-overline mb-4">Alternatives</p>
-          <h2 className="rp-display max-w-[22ch] text-[clamp(1.75rem,4vw,2.5rem)] text-balance">
+        <div className="mb-16 max-w-[30ch]">
+          <h2 className="rp-display text-[clamp(2rem,4.5vw,3rem)] text-balance">
             A better way to manage content in your GitHub repository.
           </h2>
-          <p className="mt-4 max-w-[52ch] text-base leading-7 text-muted-foreground">
+          <p className="mt-5 max-w-[52ch] text-lg leading-8 text-muted-foreground">
             Other tools make you choose between a developer experience and an editing experience. RepoPress gives you
             both.
           </p>

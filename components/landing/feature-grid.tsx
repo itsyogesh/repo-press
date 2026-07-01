@@ -45,11 +45,13 @@ export default function FeatureGrid() {
     <section id="features" className="border-t border-border px-6 py-24">
       <div className="mx-auto max-w-[1120px]">
         {/* Heading */}
-        <div className="mb-16">
-          <p className="rp-overline mb-4">What you get</p>
-          <h2 className="rp-display max-w-[24ch] text-[clamp(1.75rem,4vw,2.5rem)] text-balance">
+        <div className="mb-16 max-w-[30ch]">
+          <h2 className="rp-display text-[clamp(2rem,4.5vw,3rem)] text-balance">
             Everything you need to edit content. Nothing you don't.
           </h2>
+          <p className="mt-5 max-w-[46ch] text-lg leading-8 text-muted-foreground">
+            One workspace for writing, previewing, reviewing, and publishing — reading straight from your repository.
+          </p>
         </div>
 
         {/* Main feature row: studio + auto-setup */}

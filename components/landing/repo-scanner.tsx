@@ -44,8 +44,7 @@ export default function RepoScanner() {
           {/* Left — description */}
           <div className="flex flex-col gap-6">
             <div className="space-y-4">
-              <p className="rp-overline">Interactive demo</p>
-              <h2 className="rp-display max-w-[16ch] text-[clamp(1.75rem,4vw,2.5rem)] text-balance">
+              <h2 className="rp-display max-w-[16ch] text-[clamp(1.9rem,4vw,2.75rem)] text-balance">
                 Paste a repo. See what RepoPress would detect.
               </h2>
               <p className="max-w-xl text-base leading-7 text-muted-foreground">
@@ -55,7 +54,7 @@ export default function RepoScanner() {
             </div>
 
             <div className="space-y-3">
-              <p className="rp-overline">Try a sample repo</p>
+              <p className="text-sm font-medium tracking-[-0.01em] text-foreground">Try a sample repo</p>
               <div className="flex flex-wrap gap-2">
                 {sampleRepos.map(({ url, label }) => {
                   const isActive = input === url

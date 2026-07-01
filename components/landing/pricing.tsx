@@ -18,9 +18,8 @@ export default function Pricing() {
     <section id="pricing" className="border-t border-border px-6 py-24">
       <div className="mx-auto max-w-[1120px]">
         <div className="mb-16 text-center">
-          <p className="rp-overline mb-4">Pricing</p>
-          <h2 className="rp-display text-[clamp(1.75rem,4vw,2.5rem)]">Free to use. Open source forever.</h2>
-          <p className="mx-auto mt-4 max-w-[48ch] text-balance text-muted-foreground">
+          <h2 className="rp-display text-[clamp(2rem,4.5vw,3rem)]">Free to use. Open source forever.</h2>
+          <p className="mx-auto mt-5 max-w-[48ch] text-balance text-lg text-muted-foreground">
             RepoPress is free during early access and will remain open source under the MIT license. No credit card, no
             trial expiration.
           </p>

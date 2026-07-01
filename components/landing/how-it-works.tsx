@@ -1,14 +1,16 @@
+import { GitMerge } from "lucide-react"
+
 const steps = [
   {
     num: "01",
-    eyebrow: "Connect",
+    ref: "connect",
     title: "Sign in with GitHub and pick a repo.",
     description: "Sign in with your GitHub account and select the repository where your content lives.",
     detail: "No imports, no migration, no separate database to maintain.",
   },
   {
     num: "02",
-    eyebrow: "Detect",
+    ref: "detect",
     title: "RepoPress finds your content automatically.",
     description:
       "We scan your repository, detect the framework, and locate your docs and blog posts — no configuration needed.",
@@ -16,7 +18,7 @@ const steps = [
   },
   {
     num: "03",
-    eyebrow: "Edit",
+    ref: "edit",
     title: "Write and preview in a visual editor.",
     description:
       "Edit your content with a side-by-side preview. Update titles, images, and metadata without touching code.",
@@ -24,40 +26,65 @@ const steps = [
   },
   {
     num: "04",
-    eyebrow: "Publish",
+    ref: "publish",
     title: "Publish your changes as a pull request.",
     description:
-      "When you're ready, create a pull request with your changes. Your team can review before anything goes live.",
+      "When you're ready, open a pull request with your changes. Your team can review before anything goes live.",
     detail: "Every change is tracked in your repository's history.",
   },
 ]
 
 export default function HowItWorks() {
   return (
-    <section id="how-it-works" className="border-t border-border px-6 py-24">
+    <section id="how-it-works" className="border-t border-border px-6 py-28">
       <div className="mx-auto max-w-[1120px]">
-        <div className="mb-16">
-          <p className="rp-overline mb-4">How it works</p>
-          <h2 className="rp-display max-w-[22ch] text-[clamp(1.75rem,4vw,2.5rem)] text-balance">
-            From GitHub login to published content in four steps.
+        <div className="mb-16 max-w-[26ch]">
+          <h2 className="rp-display text-[clamp(2rem,4.5vw,3rem)] text-balance">
+            Every edit becomes a commit on its way to main.
           </h2>
+          <p className="mt-5 max-w-[46ch] text-lg leading-8 text-muted-foreground">
+            Four steps from GitHub login to published content — and the whole path is tracked in your repository's
+            history.
+          </p>
         </div>
 
-        <div className="divide-y divide-border">
-          {steps.map((step) => (
-            <div key={step.num} className="grid py-8 md:grid-cols-[4rem_1fr_1fr] md:gap-12">
-              <div className="mb-4 font-mono text-[0.6875rem] uppercase tracking-[0.2em] text-muted-foreground md:mb-0 md:pt-0.5">
-                {step.num}
+        {/* Git-graph rail — each step is a commit node on a Signal-Slate branch line that merges into main. */}
+        <ol className="mx-auto max-w-[52rem]">
+          {steps.map((step, index) => (
+            <li key={step.num} className="grid grid-cols-[2.25rem_1fr] gap-x-5 sm:grid-cols-[2.5rem_1fr] sm:gap-x-8">
+              {/* rail */}
+              <div className="flex flex-col items-center">
+                <span className="z-10 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-primary/30 bg-primary/10 font-mono text-xs font-medium text-primary">
+                  {step.num}
+                </span>
+                <span aria-hidden className="w-px flex-1 bg-gradient-to-b from-primary/40 to-primary/15" />
               </div>
-              <div>
-                <p className="rp-overline mb-2">{step.eyebrow}</p>
-                <h3 className="text-lg font-medium tracking-[-0.02em] text-foreground">{step.title}</h3>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">{step.description}</p>
+              {/* content */}
+              <div className="pb-12">
+                <span className="font-mono text-[0.6875rem] uppercase tracking-[0.2em] text-primary">{step.ref}</span>
+                <h3 className="mt-2 text-xl font-medium tracking-[-0.02em] text-foreground">{step.title}</h3>
+                <p className="mt-2 max-w-[52ch] text-base leading-7 text-muted-foreground">{step.description}</p>
+                <p className="mt-3 border-l border-border pl-4 text-sm leading-6 text-muted-foreground/80">
+                  {step.detail}
+                </p>
               </div>
-              <p className="mt-3 text-sm leading-6 text-muted-foreground md:mt-0">{step.detail}</p>
-            </div>
+            </li>
           ))}
-        </div>
+
+          {/* merge into main */}
+          <li className="grid grid-cols-[2.25rem_1fr] gap-x-5 sm:grid-cols-[2.5rem_1fr] sm:gap-x-8">
+            <div className="flex flex-col items-center">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                <GitMerge className="h-4 w-4" />
+              </span>
+            </div>
+            <div className="flex items-center">
+              <p className="font-mono text-sm text-foreground">
+                merged into <span className="text-primary">main</span> — your content is live.
+              </p>
+            </div>
+          </li>
+        </ol>
       </div>
     </section>
   )

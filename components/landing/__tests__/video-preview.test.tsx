@@ -7,7 +7,7 @@ describe("landing video preview", () => {
   it("renders a sized placeholder shell before the player is activated", () => {
     const html = renderToStaticMarkup(<VideoPreview />)
 
-    expect(html).toContain("See RepoPress in action")
+    expect(html).toContain("Watch the whole flow, start to published.")
     expect(html).toContain('data-video-preview-placeholder="idle"')
   })
 
