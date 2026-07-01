@@ -180,11 +180,42 @@ under NEEDS REVIEW; don't stop").
 (title + description + hover arrow, hover→Slate). Matches "docs nav = a list,
 not cards." Verified: tsc/lint clean, 583/583, confirmed live.
 
-### Still pending (docs/blog + secondary pages)
+### Docs + secondary pages — all done
 
-- Docs subpages (getting-started / how-it-works / connecting-a-repo /
-  studio-editor) still have bold-sans `h1`s → serif.
-- `components/docs/doc-media.tsx` callouts use raw blue/amber/green/red + a
-  `border-2` → semantic tokens + 1px.
-- Blog index/post headings; about / privacy / terms / 404 / global-error;
-  OpenGraph image (raw Tailwind blue → Slate).
+**Docs subpages:** all four (`getting-started`, `how-it-works`, `connecting-a-repo`,
+`studio-editor`) — bold-sans h1 → `rp-display md:text-4xl`. Matches docs index.
+
+**doc-media.tsx:** Callout `styles` object — raw `blue-500/amber-500/green-500/
+red-500` → semantic tokens (`primary`, `muted`, `destructive`). `border-2` on
+DocsVideo empty state → `border` (1px, ban complied).
+
+**NEEDS REVIEW (callout tokens):** `warning` and `success` callouts share
+`border-border bg-muted` because the design system has no `--warning`/`--success`
+tokens. Functionally they look identical; to distinguish them, add those tokens
+to `globals.css`. Deferred.
+
+**Blog index:** `text-section-heading` h1 → `rp-display`; identical card grid
+→ hairline list (mono date kicker / title / 2-line excerpt / arrow) matching the
+docs index register. All `text-caption`/`text-section-subheading`/`text-body-large`
+custom classes replaced with direct Tailwind tokens throughout.
+
+**Blog post:** h1 → `rp-display` display serif; `text-caption` → mono pattern;
+`text-body-large` → `text-lg leading-8 text-muted-foreground`.
+
+**About / Privacy / Terms:** h1 → `rp-display`.
+
+**404 (`not-found.tsx`):** rebuilt — mono "404" kicker + serif heading + one-line
+message + return-home link. No nav chrome (Next.js 404 fallback renders before
+layout hydration; keeps it functional with no dependencies).
+
+**global-error.tsx:** left as-is. It renders inside `<html><body>` with no app
+CSS loaded (last-resort crash boundary); inline styles are correct here.
+
+**OpenGraph image:** raw Tailwind blue `#2563eb` → `#4e67d4` (≈ Signal Slate
+`oklch(0.52 0.13 255)`) for both the top accent bar and the logo background.
+
+**NEEDS REVIEW (globals.css:607):** `.studio-sidebar { transition: width 200ms ease }`
+— impeccable flags `width` as a layout property. Animating width IS intentional
+here (sidebar collapse) and hard to replace without structural changes; leave as-is.
+
+Verified: tsc clean, lint 0 errors (12 pre-existing warnings), 583/583 tests.
