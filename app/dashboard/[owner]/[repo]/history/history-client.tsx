@@ -148,7 +148,7 @@ export function HistoryClient({ owner, repo, branch: _branch, projectId, project
       <div className="container mx-auto px-4 py-6">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="border rounded-lg p-4">
-            <h2 className="text-lg font-medium mb-4 flex items-center gap-2">
+            <h2 className="rp-display text-lg mb-4 flex items-center gap-2">
               <FileText className="h-5 w-5" />
               Documents
             </h2>
@@ -208,7 +208,7 @@ export function HistoryClient({ owner, repo, branch: _branch, projectId, project
           <div className="lg:col-span-2 border rounded-lg p-4">
             {viewMode === "list" ? (
               <>
-                <h2 className="text-lg font-medium mb-4 flex items-center gap-2">
+                <h2 className="rp-display text-lg mb-4 flex items-center gap-2">
                   <Clock className="h-5 w-5" />
                   Version History
                   {documentHistory && (
@@ -308,7 +308,7 @@ export function HistoryClient({ owner, repo, branch: _branch, projectId, project
               </>
             ) : (
               <>
-                <h2 className="text-lg font-medium mb-4 flex items-center gap-2">
+                <h2 className="rp-display text-lg mb-4 flex items-center gap-2">
                   <GitCommit className="h-5 w-5" />
                   Compare Versions
                 </h2>

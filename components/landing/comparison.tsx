@@ -45,7 +45,9 @@ export default function Comparison() {
           <div className="divide-y divide-border">
             {notes.map((note) => (
               <div key={note.name} className="py-6">
-                <p className="rp-overline mb-3">{note.name}</p>
+                <p className="font-mono text-[0.6875rem] font-medium uppercase tracking-[0.2em] text-muted-foreground mb-3">
+                  {note.name}
+                </p>
                 <p className="text-sm font-medium tracking-[-0.01em] text-foreground">{note.tension}</p>
                 <p className="mt-2 text-sm leading-6 text-muted-foreground">{note.response}</p>
               </div>
@@ -54,7 +56,9 @@ export default function Comparison() {
 
           {/* Commitments */}
           <div className="mt-10 md:mt-0 md:border-l md:border-border md:pl-16">
-            <p className="rp-overline border-b border-border pb-4">What we believe</p>
+            <p className="font-mono text-[0.6875rem] font-medium uppercase tracking-[0.2em] text-muted-foreground border-b border-border pb-4">
+              What we believe
+            </p>
             <div className="divide-y divide-border">
               {commitments.map((commitment) => (
                 <div key={commitment} className="flex gap-3 py-4">

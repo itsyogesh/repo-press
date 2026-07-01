@@ -100,10 +100,12 @@ export default function RepoScanner() {
           <div className="rounded-lg border border-border bg-background p-6 sm:p-7">
             <div className="mb-6 flex flex-col gap-1">
               <div className="flex items-center justify-between">
-                <p className="rp-overline">Repo scanner</p>
+                <p className="font-mono text-[0.6875rem] font-medium uppercase tracking-[0.2em] text-muted-foreground">
+                  Repo scanner
+                </p>
                 <p className="font-mono text-[0.6rem] text-muted-foreground/50">demo · no network requests</p>
               </div>
-              <h3 className="text-xl font-medium tracking-[-0.03em] text-foreground">Framework-aware setup preview</h3>
+              <h3 className="rp-display text-xl text-foreground">Framework-aware setup preview</h3>
             </div>
 
             <form
@@ -157,7 +159,9 @@ export default function RepoScanner() {
               >
                 <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-muted/40 px-4 py-3">
                   <div>
-                    <p className="rp-overline mb-1">Detected repo</p>
+                    <p className="font-mono text-[0.6875rem] font-medium uppercase tracking-[0.2em] text-muted-foreground mb-1">
+                      Detected repo
+                    </p>
                     <p className="text-sm font-medium tracking-[-0.02em] text-foreground">
                       {result.owner}/{result.repo}
                     </p>
@@ -167,22 +171,26 @@ export default function RepoScanner() {
                   </div>
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-3">
+                <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 rounded-md border border-border bg-background px-4 py-3">
                   {[
-                    { label: "Collections", value: result.collections },
-                    { label: "Documents", value: result.documents },
-                    { label: "Assets", value: result.assets },
+                    { label: "collections", value: result.collections },
+                    { label: "documents", value: result.documents },
+                    { label: "assets", value: result.assets },
                   ].map((stat) => (
-                    <div key={stat.label} className="rounded-md border border-border bg-background p-4">
-                      <p className="rp-overline mb-2">{stat.label}</p>
-                      <p className="text-2xl font-semibold tracking-[-0.04em] text-foreground">{stat.value}</p>
-                    </div>
+                    <span key={stat.label} className="flex items-baseline gap-1.5">
+                      <span className="font-mono text-sm font-medium tabular-nums text-foreground">{stat.value}</span>
+                      <span className="font-mono text-[0.6875rem] uppercase tracking-[0.2em] text-muted-foreground">
+                        {stat.label}
+                      </span>
+                    </span>
                   ))}
                 </div>
 
                 <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
                   <div className="rounded-md border border-border bg-background p-5">
-                    <p className="rp-overline mb-4">Scanner output</p>
+                    <p className="font-mono text-[0.6875rem] font-medium uppercase tracking-[0.2em] text-muted-foreground mb-4">
+                      Scanner output
+                    </p>
                     <div className="space-y-4">
                       <div>
                         <p className="text-sm font-medium tracking-[-0.01em] text-foreground">Suggested content root</p>
@@ -202,7 +210,9 @@ export default function RepoScanner() {
                   </div>
 
                   <div className="rounded-md border border-border bg-muted/30 p-5">
-                    <p className="rp-overline mb-4">Detected structure</p>
+                    <p className="font-mono text-[0.6875rem] font-medium uppercase tracking-[0.2em] text-muted-foreground mb-4">
+                      Detected structure
+                    </p>
                     <div className="space-y-3 text-sm text-muted-foreground">
                       <div className="flex items-center gap-3">
                         <Github className="h-4 w-4 text-primary" />

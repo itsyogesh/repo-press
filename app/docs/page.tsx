@@ -46,7 +46,7 @@ export default function DocsPage() {
             className="group flex items-baseline justify-between gap-6 border-b border-border py-5"
           >
             <div>
-              <h2 className="text-lg font-medium tracking-[-0.01em] text-foreground transition-colors group-hover:text-primary">
+              <h2 className="rp-display text-lg text-foreground transition-colors group-hover:text-primary">
                 {guide.title}
               </h2>
               <p className="mt-1 text-sm leading-6 text-muted-foreground">{guide.description}</p>

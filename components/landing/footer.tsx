@@ -44,7 +44,9 @@ export default function Footer() {
           </div>
 
           <div>
-            <p className="rp-overline mb-4">Product</p>
+            <p className="font-mono text-[0.6875rem] font-medium uppercase tracking-[0.2em] text-muted-foreground mb-4">
+              Product
+            </p>
             <ul className="flex flex-col gap-3">
               {productLinks.map((link) => (
                 <li key={link.href + link.label}>
@@ -60,7 +62,9 @@ export default function Footer() {
           </div>
 
           <div>
-            <p className="rp-overline mb-4">Resources</p>
+            <p className="font-mono text-[0.6875rem] font-medium uppercase tracking-[0.2em] text-muted-foreground mb-4">
+              Resources
+            </p>
             <ul className="flex flex-col gap-3">
               {resourceLinks.map((link) => (
                 <li key={link.href + link.label}>
@@ -87,7 +91,9 @@ export default function Footer() {
           </div>
 
           <div>
-            <p className="rp-overline mb-4">Legal</p>
+            <p className="font-mono text-[0.6875rem] font-medium uppercase tracking-[0.2em] text-muted-foreground mb-4">
+              Legal
+            </p>
             <ul className="flex flex-col gap-3">
               {legalLinks.map((link) => (
                 <li key={link.href}>

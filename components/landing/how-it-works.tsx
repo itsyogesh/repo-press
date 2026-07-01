@@ -62,7 +62,7 @@ export default function HowItWorks() {
               {/* content */}
               <div className="pb-12">
                 <span className="font-mono text-[0.6875rem] uppercase tracking-[0.2em] text-primary">{step.ref}</span>
-                <h3 className="mt-2 text-xl font-medium tracking-[-0.02em] text-foreground">{step.title}</h3>
+                <h3 className="mt-2 rp-display text-xl">{step.title}</h3>
                 <p className="mt-2 max-w-[52ch] text-base leading-7 text-muted-foreground">{step.description}</p>
                 <p className="mt-3 border-l border-border pl-4 text-sm leading-6 text-muted-foreground/80">
                   {step.detail}

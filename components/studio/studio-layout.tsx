@@ -1556,7 +1556,7 @@ function StudioLayoutInner({
                         <div className="space-y-5">
                           <div className="space-y-3 text-left">
                             <div className="space-y-2">
-                              <h2 className="text-2xl font-medium tracking-tight text-studio-fg">
+                              <h2 className="rp-display text-2xl text-studio-fg">
                                 Open a file and keep the whole studio in flow
                               </h2>
                               <p className="max-w-xl text-sm leading-6 text-studio-fg-muted">

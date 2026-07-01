@@ -52,7 +52,7 @@ export default function BlogIndexPage() {
                     >
                       {formatDate(post.date)}
                     </time>
-                    <h2 className="mt-1.5 text-lg font-medium tracking-[-0.01em] text-foreground transition-colors group-hover:text-primary">
+                    <h2 className="mt-1.5 rp-display text-lg text-foreground transition-colors group-hover:text-primary">
                       {post.title}
                     </h2>
                     <p className="mt-1 line-clamp-2 text-sm leading-6 text-muted-foreground">{post.excerpt}</p>

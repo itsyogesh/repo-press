@@ -1,7 +1,7 @@
 # RepoPress Redesign — Decision Log
 
 Surface-by-surface redesign in code (Editorial identity, iterated live in Chrome).
-Surfaces landed: **Landing · Dashboard shell + sidebar · Studio chrome · Docs · Blog · Secondary pages · Dashboard interior · OG image · Full heading sweep · Callout tokens** — zero bold-sans headings, zero raw colors, warning/success callouts now distinct.
+Surfaces landed: **Landing · Dashboard shell + sidebar · Studio chrome · Docs · Blog · Secondary pages · Dashboard interior · OG image · Full heading sweep · Callout tokens · Hero-metric reform · rp-overline purge · font-medium sweep complete** — zero bold/medium-sans headings at text-lg+, zero raw colors, zero `rp-overline`/`rp-mono` usages, warning/success callouts distinct, stat-triplet no longer hero-metric.
 
 ---
 
@@ -84,8 +84,7 @@ Each is a reasonable default chosen to keep moving; flag any you'd do differentl
 
 ## Not done on the landing (deferred / follow-up)
 
-- Scanner stat-triplet (6 / 148 / 38 big-number cards) still reads a little
-  "hero-metric"; could be integrated more subtly.
+- ~~Scanner stat-triplet~~ — reformed (see loop continuation section below).
 - Secondary marketing pages (about / privacy / terms / 404 / global-error) and
   the OpenGraph image are still the old bold-sans treatment — separate from the
   landing, tracked in the broader audit.
@@ -329,3 +328,88 @@ reflex-reject list when an existing brand has already committed to a font. Not c
 
 Verified: tsc clean, lint 0 errors (12 pre-existing warnings), 583/583 tests,
 OG image confirmed live at `http://localhost:3011/opengraph-image` (200 response).
+
+---
+
+## Hero-metric reform + rp-overline purge (loop continuation)
+
+**Problem 1 — scanner stat-triplet was a hero-metric pattern.** `components/landing/repo-scanner.tsx` showed the Collections / Documents / Assets stats in a 3-column grid of individual cards, each with an `rp-overline` label above a `text-2xl font-semibold` number. Exactly the impeccable absolute-ban: "Big number, small label, supporting stats. SaaS cliché."
+
+**Fix:** collapsed the 3-card grid into a single compact flex row where each stat is an inline `value label` pair — number in `font-mono text-sm font-medium tabular-nums`, label in `font-mono text-[0.6875rem] uppercase tracking-[0.2em] text-muted-foreground`. The stats now read like data output (`6 collections · 148 documents · 38 assets`) rather than a SaaS metrics dashboard.
+
+**Problem 2 — `rp-overline` still used in `components/`.** The second sweep had cleared `rp-overline` from `app/` but left 9 usages in `components/landing/` (repo-scanner, comparison, footer, feature-grid). The class is a legacy typography shorthand; all uses should be direct Tailwind equivalents.
+
+**Fix:** replaced all 9 instances with the literal Tailwind expansion (`font-mono text-[0.6875rem] font-medium uppercase tracking-[0.2em] text-muted-foreground`). The definition in `globals.css` is left in place (it's still referenced in the legacy `rp-display` classname context and safe to remove after a final usage audit).
+
+### NEEDS REVIEW (hero-metric + overline)
+
+- **`rp-overline` definition still in `globals.css:509`** — all usages are now inlined but the class definition remains. Safe to remove in a cleanup pass; left in place to avoid a false-alarm "unused class" lint warning before confirming the grep.
+- **Dark mode live-verification on landing still deferred** — no theme toggle on the logged-out marketing view. Semantic tokens mean it should flip correctly by construction; verify when a themed session is next.
+
+Verified: lint 0 errors (11 warnings — improved from 12, one dead Layers3 import removed), tsc clean, 583/583 tests.
+
+---
+
+## Font-medium heading sweep (loop continuation)
+
+**Root cause:** the earlier sweep targeted `font-semibold`/`font-bold` on headings but left `font-medium` headings unconverted — which are also bold-sans, just softer. A targeted scan found 8 additional heading elements using `text-lg` or larger with `font-medium`.
+
+**Converted to `rp-display`:**
+
+- `components/landing/feature-grid.tsx` — 5 feature card h3s (Auto-setup, See your actual page, Full version history, Built-in review workflow, Connects to your repo in seconds) → `rp-display text-lg`. Exception: the dark inverse "Your content" card h3 uses manual serif props (`font-serif font-normal leading-[1.05] tracking-[-0.025em]`) without `rp-display` to avoid the class's color declaration overriding the dark card's inherited `text-background`.
+- `app/docs/page.tsx` — doc list item h2 titles → `rp-display text-lg text-foreground` (explicit color preserves hover-to-primary).
+- `app/blog/page.tsx` — blog list item h2 titles → `rp-display text-lg text-foreground` (same reason).
+- `app/dashboard/[owner]/[repo]/history/history-client.tsx` — 3 history section h2s (Documents, Published, Draft Saves) → `rp-display text-lg`.
+- `components/landing/repo-scanner.tsx` — scanner panel h3 "Framework-aware setup preview" → `rp-display text-xl`.
+- `components/studio/studio-layout.tsx` — studio empty-state h2 "Open a file and keep the whole studio in flow" → `rp-display text-2xl text-studio-fg` (explicit studio token overrides rp-display's color).
+
+**Also cleaned up:**
+- Removed orphaned `rp-mono` definition from `globals.css` (zero usages).
+- Removed dead `features` array and unused `Layers3` import from `feature-grid.tsx` (Biome had flagged them; pre-existing dead code surfaced by the rp-overline replacement pass).
+
+### NEEDS REVIEW (font-medium sweep)
+
+- **Dark inverse card h3 uses manual serif props, not `rp-display`** — the `Your content` card has `bg-foreground text-background` inversion; `rp-display` would override the inherited text color. Manual expansion is equivalent but not the semantic class. If `rp-display` is ever refactored to not include a color declaration, switch to it.
+- **`settings-layout.tsx`, `studio-layout.tsx:268`, `component-insert-modal.tsx`, `studio-header.tsx` `font-medium` headings kept** — all at `text-xs`/`text-sm` or `text-[10px]`. Instrument Serif at ≤14px reads poorly; these are functional UI labels, not editorial headings.
+- **`repo-scanner.tsx:89` "What makes it different?" kept at `text-sm font-medium`** — 13px info callout inside a card; not editorial copy.
+- **`studio-layout.tsx:1559` now `rp-display text-2xl`** — the studio empty state heading uses `text-studio-fg` token so an explicit override was needed; confirm visually.
+
+Verified: tsc clean, lint 0 errors (11 warnings), 583/583 tests.
+
+---
+
+## Final heading sweep + error-heading audit (loop continuation)
+
+**Scope:** comprehensive grep for any remaining `h[234]` elements at `text-xl`+ not using
+`rp-display`. All previous NEEDS REVIEW exceptions are at `text-sm`/`text-xs` or are
+documented intentional deviations.
+
+**Last remaining hit:**
+
+- `components/landing/how-it-works.tsx` — step h3 titles (`Sign in with GitHub and pick a
+  repo.` / `RepoPress finds your content automatically.` / etc.) used `text-xl font-medium
+  tracking-[-0.02em] text-foreground` → `rp-display text-xl`. The tracking and color props
+  are now inherited from the `rp-display` definition.
+
+After that fix: zero heading elements at `text-xl`+ remain as bold- or medium-weight sans
+across the entire `app/` and `components/` tree (grep confirms).
+
+**Error-heading audit result:**
+
+- `components/mdx-runtime/PreviewRuntime.tsx:407` — `<h3 className="font-semibold text-lg">MDX Preview Failure</h3>`.
+  Inside a destructive error panel rendered in the preview pane. Intentionally left as
+  bold-sans: error/diagnostic headings should feel utilitarian, not editorial; Instrument Serif
+  on an error state would look decorative in the wrong register.
+- `components/studio/error-boundary.tsx` (3× h3 `font-semibold text-studio-fg`) — same
+  reasoning; no explicit size class (defaults to text-base), UI chrome level.
+
+### NEEDS REVIEW (final sweep)
+
+- **Error-heading exceptions above** — left as bold-sans (functional register, not editorial).
+  If you want full typographic purity including error panels, convert `PreviewRuntime.tsx:407`
+  to `rp-display text-lg text-destructive` (the explicit utility overrides rp-display's color).
+
+**Heading migration complete.** Zero bold/medium-sans headings at `text-lg`+ remain outside
+the documented intentional exceptions.
+
+Verified: tsc clean, lint 0 errors (11 warnings, 1 fixed by fmt pass), 583/583 tests.

@@ -1,4 +1,4 @@
-import { GitBranch, Layers3, PanelTopOpen, Sparkles } from "lucide-react"
+import { GitBranch, PanelTopOpen, Sparkles } from "lucide-react"
 
 const frameworks = ["Next.js", "Astro", "Fumadocs", "Nextra", "Docusaurus", "Hugo"]
 
@@ -6,38 +6,6 @@ const historyMoments = [
   { label: "Current", detail: "Updated the getting started guide", time: "2m ago" },
   { label: "Review", detail: "Editor approved content changes", time: "48m ago" },
   { label: "Original", detail: "First version imported from repo", time: "Today" },
-]
-
-const features = [
-  {
-    icon: PanelTopOpen,
-    tag: "Studio editor",
-    title: "One workspace for everything.",
-    description:
-      "Edit your content, preview the result, check version history, and publish — all in one screen. No hunting through menus or switching between tools.",
-  },
-  {
-    icon: Layers3,
-    tag: "Your content",
-    title: "Content stays in GitHub.",
-    description:
-      "No separate database, no vendor lock-in. RepoPress reads from and writes to your repository. If you stop using it, your content is exactly where you left it.",
-    inverse: true,
-  },
-  {
-    icon: Sparkles,
-    tag: "Preview",
-    title: "See your actual page.",
-    description:
-      "Preview how your content will look on your site. Images, formatting, and components render in real time as you type.",
-  },
-  {
-    icon: GitBranch,
-    tag: "Workflow",
-    title: "Built-in review workflow.",
-    description:
-      "Draft, review, approve, and publish — every step tracked. Your team reviews changes before anything goes live.",
-  },
 ]
 
 export default function FeatureGrid() {
@@ -60,7 +28,9 @@ export default function FeatureGrid() {
           <div className="rounded-lg border border-border bg-background p-8">
             <div className="mb-6 flex items-center gap-2">
               <PanelTopOpen className="h-4 w-4 text-primary" />
-              <p className="rp-overline">Studio editor</p>
+              <p className="font-mono text-[0.6875rem] font-medium uppercase tracking-[0.2em] text-muted-foreground">
+                Studio editor
+              </p>
             </div>
             <h3 className="rp-display text-[1.75rem] text-balance">One workspace for everything.</h3>
             <p className="mt-4 text-sm leading-7 text-muted-foreground">
@@ -83,10 +53,10 @@ export default function FeatureGrid() {
           <div className="flex flex-col gap-6">
             {/* Auto-setup */}
             <div className="rounded-lg border border-border bg-background p-6">
-              <p className="rp-overline mb-3">Auto-setup</p>
-              <h3 className="text-lg font-medium tracking-[-0.02em] text-foreground">
-                Connects to your repo in seconds.
-              </h3>
+              <p className="font-mono text-[0.6875rem] font-medium uppercase tracking-[0.2em] text-muted-foreground mb-3">
+                Auto-setup
+              </p>
+              <h3 className="rp-display text-lg">Connects to your repo in seconds.</h3>
               <p className="mt-3 text-sm leading-6 text-muted-foreground">
                 RepoPress scans your repository and figures out how your content is organized. No configuration files to
                 write, no setup wizard.
@@ -108,7 +78,9 @@ export default function FeatureGrid() {
               <p className="mb-3 font-mono text-[0.6875rem] uppercase tracking-[0.2em] text-background/55">
                 Your content
               </p>
-              <h3 className="text-lg font-medium tracking-[-0.02em]">Content stays in GitHub.</h3>
+              <h3 className="font-serif font-normal leading-[1.05] tracking-[-0.025em] text-lg">
+                Content stays in GitHub.
+              </h3>
               <p className="mt-3 text-sm leading-6 text-background/72">
                 No separate database, no vendor lock-in. RepoPress reads from and writes to your repository. Open source
                 and self-hostable.
@@ -123,9 +95,11 @@ export default function FeatureGrid() {
           <div className="rounded-lg border border-border bg-background p-6">
             <div className="mb-4 flex items-center gap-2">
               <Sparkles className="h-4 w-4 text-primary" />
-              <p className="rp-overline">Preview</p>
+              <p className="font-mono text-[0.6875rem] font-medium uppercase tracking-[0.2em] text-muted-foreground">
+                Preview
+              </p>
             </div>
-            <h3 className="text-lg font-medium tracking-[-0.02em] text-foreground">See your actual page.</h3>
+            <h3 className="rp-display text-lg">See your actual page.</h3>
             <p className="mt-3 text-sm leading-6 text-muted-foreground">
               Images, formatting, and components render in real time as you type.
             </p>
@@ -135,13 +109,15 @@ export default function FeatureGrid() {
           <div className="rounded-lg border border-border bg-background p-6">
             <div className="mb-4 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <p className="rp-overline">History</p>
+                <p className="font-mono text-[0.6875rem] font-medium uppercase tracking-[0.2em] text-muted-foreground">
+                  History
+                </p>
               </div>
               <span className="rounded-full border border-border px-2.5 py-1 font-mono text-[0.6rem] uppercase tracking-[0.16em] text-muted-foreground">
                 Snapshot aware
               </span>
             </div>
-            <h3 className="mb-4 text-lg font-medium tracking-[-0.02em] text-foreground">Full version history.</h3>
+            <h3 className="rp-display text-lg mb-4">Full version history.</h3>
             <div className="space-y-4 border-l border-border pl-4">
               {historyMoments.map((moment) => (
                 <div key={moment.label} className="relative">
@@ -162,9 +138,11 @@ export default function FeatureGrid() {
           <div className="rounded-lg border border-border bg-background p-6">
             <div className="mb-4 flex items-center gap-2">
               <GitBranch className="h-4 w-4 text-primary" />
-              <p className="rp-overline">Workflow</p>
+              <p className="font-mono text-[0.6875rem] font-medium uppercase tracking-[0.2em] text-muted-foreground">
+                Workflow
+              </p>
             </div>
-            <h3 className="mb-5 text-lg font-medium tracking-[-0.02em] text-foreground">Built-in review workflow.</h3>
+            <h3 className="rp-display text-lg mb-5">Built-in review workflow.</h3>
             <div className="divide-y divide-border font-mono text-[0.68rem] uppercase tracking-[0.16em] text-muted-foreground">
               <p className="py-2.5">draft → ready for review</p>
               <p className="py-2.5">review → approved</p>
