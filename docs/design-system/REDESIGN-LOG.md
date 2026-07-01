@@ -1,7 +1,7 @@
 # RepoPress Redesign — Decision Log
 
 Surface-by-surface redesign in code (Editorial identity, iterated live in Chrome).
-Surfaces landed: **Landing · Dashboard shell + sidebar · Studio chrome · Docs · Blog · Secondary pages · Dashboard interior · OG image · Full heading sweep · Callout tokens · Hero-metric reform · rp-overline purge · font-medium sweep complete** — zero bold/medium-sans headings at text-lg+, zero raw colors, zero `rp-overline`/`rp-mono` usages, warning/success callouts distinct, stat-triplet no longer hero-metric.
+Surfaces landed: **Landing · Dashboard shell + sidebar · Studio chrome · Docs · Blog · Secondary pages · Dashboard interior · OG image · Full heading sweep · Callout tokens · Hero-metric reform · rp-overline purge · font-medium sweep · Dialog title sweep · Hub stat values** — zero bold/medium-sans headings at text-lg+, zero raw colors, zero `rp-overline`/`rp-mono` usages, zero dead legacy class definitions, warning/success callouts distinct, all stat values in mono, migration complete.
 
 ---
 
@@ -458,5 +458,34 @@ all 14 dialog and modal headings across the app were still bold-sans.
   border-radius" premise doesn't apply. Intentionally not suppressed via config since
   the user hasn't confirmed the ignore.
 - **Error-panel headings still bold-sans** — see previous section (functional register).
+
+Verified: tsc clean, lint 0 errors (11 warnings), 583/583 tests.
+
+---
+
+## Hub stat values + final bold-sans sweep (loop continuation)
+
+**Problem:** `components/repo-project-hub.tsx` stat triplet (Projects / Needs attention / Access)
+had three `text-2xl font-semibold tracking-[-0.03em]` value cells. These are data values
+(integer counts and a role string), not headings — the same structural pattern as the `$0`
+pricing fix (big value + small mono label above + description below).
+
+**Fix:** all three → `font-mono text-2xl font-medium tabular-nums` (counts) /
+`font-mono text-2xl font-medium capitalize` (role string). Data values use mono in the
+Editorial system; `tabular-nums` aligns number changes without layout shift; `font-semibold`
+dropped (bold sans at this size = heading register, not data register).
+
+### NEEDS REVIEW (hub stats)
+
+- **Role string in mono** — values like "Admin" / "Editor" / "Viewer" are now Geist Mono.
+  If you want the role to feel more like a status badge than a data value, `rp-display`
+  would work too (short serif word reads well at 2xl). Current choice (mono) treats it
+  symmetrically with the numeric stats — all three cells are "values".
+
+**Final grep result:** only two `font-semibold` hits at `text-2xl`+ remain:
+- `components/studio/preview.tsx:183` — user-content h1 in the preview pane (intentional)
+- `components/mdx-runtime/PreviewRuntime.tsx:407` — error boundary heading (intentional)
+
+Both documented in prior sections. Migration complete.
 
 Verified: tsc clean, lint 0 errors (11 warnings), 583/583 tests.

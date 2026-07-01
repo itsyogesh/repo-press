@@ -377,7 +377,7 @@ export function RepoProjectHub({
         <div className="mt-8 grid gap-3 sm:grid-cols-3">
           <div className="rounded-md border border-border/70 bg-background/80 p-4">
             <p className="font-mono text-[0.62rem] uppercase tracking-[0.18em] text-muted-foreground">Projects</p>
-            <p className="mt-3 text-2xl font-semibold tracking-[-0.03em] text-foreground">{activeProjects.length}</p>
+            <p className="mt-3 font-mono text-2xl font-medium tabular-nums text-foreground">{activeProjects.length}</p>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
               Active editing surfaces connected to this repository.
             </p>
@@ -386,14 +386,16 @@ export function RepoProjectHub({
             <p className="font-mono text-[0.62rem] uppercase tracking-[0.18em] text-muted-foreground">
               Needs attention
             </p>
-            <p className="mt-3 text-2xl font-semibold tracking-[-0.03em] text-foreground">{orphanedProjects.length}</p>
+            <p className="mt-3 font-mono text-2xl font-medium tabular-nums text-foreground">
+              {orphanedProjects.length}
+            </p>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
               Projects removed from config but still present until cleaned up.
             </p>
           </div>
           <div className="rounded-md border border-border/70 bg-background/80 p-4">
             <p className="font-mono text-[0.62rem] uppercase tracking-[0.18em] text-muted-foreground">Access</p>
-            <p className="mt-3 text-2xl font-semibold tracking-[-0.03em] text-foreground capitalize">{role}</p>
+            <p className="mt-3 font-mono text-2xl font-medium capitalize text-foreground">{role}</p>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
               {isWriter
                 ? "You can add or modify projects in this repository."
