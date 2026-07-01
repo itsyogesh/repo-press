@@ -106,7 +106,7 @@ export default async function SettingsPage({ params }: SettingsPageProps) {
           {settingsLoadError ? (
             <Card className="overflow-hidden border-destructive/30 bg-destructive/5 shadow-sm">
               <CardHeader className="pb-3">
-                <CardTitle className="text-lg">Settings unavailable</CardTitle>
+                <CardTitle className="rp-display text-lg">Settings unavailable</CardTitle>
                 <CardDescription>{settingsLoadError}</CardDescription>
               </CardHeader>
               <CardContent className="pt-0">
@@ -122,7 +122,7 @@ export default async function SettingsPage({ params }: SettingsPageProps) {
                   <div className="flex items-start justify-between">
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
-                        <CardTitle className="text-xl">{project.name}</CardTitle>
+                        <CardTitle className="rp-display text-xl">{project.name}</CardTitle>
                         <Badge
                           variant="secondary"
                           className="h-5 px-1.5 text-[10px] uppercase font-medium tracking-tight bg-muted/50"

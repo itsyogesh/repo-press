@@ -65,7 +65,7 @@ export function PublishDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
+          <DialogTitle className="rp-display flex items-center gap-2">
             <GitPullRequest className="h-5 w-5 text-studio-accent" />
             Publish Changes
           </DialogTitle>

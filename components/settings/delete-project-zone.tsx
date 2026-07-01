@@ -102,7 +102,7 @@ export function DeleteProjectZone({ project, projectAccessToken }: DeleteProject
           </AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+              <AlertDialogTitle className="rp-display">Are you absolutely sure?</AlertDialogTitle>
               <AlertDialogDescription>
                 This will delete the{" "}
                 <button

@@ -54,7 +54,7 @@ export function DeleteProjectDialog({ project, open, onOpenChange, onSuccess }: 
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Delete &ldquo;{project?.name}&rdquo;?</AlertDialogTitle>
+          <AlertDialogTitle className="rp-display">Delete &ldquo;{project?.name}&rdquo;?</AlertDialogTitle>
           <AlertDialogDescription>
             This will permanently delete{" "}
             <button

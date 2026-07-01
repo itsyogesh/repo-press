@@ -18,7 +18,7 @@ export function FileContentViewer({ fileName, content, language }: FileContentVi
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <File className="h-5 w-5 text-muted-foreground" />
-            <CardTitle className="text-lg">{fileName}</CardTitle>
+            <CardTitle className="rp-display text-lg">{fileName}</CardTitle>
           </div>
           {language && (
             <Badge variant="outline" className="text-xs">

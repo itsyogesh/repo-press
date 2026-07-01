@@ -158,7 +158,7 @@ export function EditProjectDialog({
         onCloseAutoFocus={(e) => e.preventDefault()}
       >
         <DialogHeader>
-          <DialogTitle>Edit Project</DialogTitle>
+          <DialogTitle className="rp-display">Edit Project</DialogTitle>
           <DialogDescription>
             {isConfigManaged
               ? "Update project settings. Changes will be committed to the config file on GitHub."

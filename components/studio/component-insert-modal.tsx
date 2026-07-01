@@ -358,9 +358,7 @@ export function ComponentInsertModal({
               <div className="px-6 pt-5 pb-4 border-b border-studio-border shrink-0">
                 <div className="flex items-start justify-between mb-3">
                   <div>
-                    <DialogTitle className="text-xl font-semibold tracking-tight text-studio-fg">
-                      Insert Component
-                    </DialogTitle>
+                    <DialogTitle className="rp-display text-xl text-studio-fg">Insert Component</DialogTitle>
                     <DialogDescription className="text-xs text-studio-fg-muted mt-0.5">
                       Extend your document with a reusable component
                     </DialogDescription>

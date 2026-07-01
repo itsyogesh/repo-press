@@ -144,7 +144,7 @@ function ImageSelectorDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-xl overflow-hidden flex flex-col max-h-[90vh] p-0">
         <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
-          <DialogTitle>Select Image</DialogTitle>
+          <DialogTitle className="rp-display">Select Image</DialogTitle>
           <DialogDescription>Choose an image for your content</DialogDescription>
         </DialogHeader>
 

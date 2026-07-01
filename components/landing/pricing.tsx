@@ -27,7 +27,7 @@ export default function Pricing() {
 
         <div className="mx-auto max-w-sm">
           <div className="rounded-lg border border-border bg-background p-8">
-            <div className="mb-1 text-4xl font-semibold tracking-tight">$0</div>
+            <div className="mb-1 font-mono text-4xl font-medium tabular-nums">$0</div>
             <p className="mb-8 text-sm text-muted-foreground">Free forever for open source</p>
             <ul className="mb-8 space-y-3">
               {features.map((feature) => (

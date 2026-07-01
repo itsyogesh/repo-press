@@ -249,7 +249,7 @@ export function StudioHeader({
             onCloseAutoFocus={(e) => e.preventDefault()}
           >
             <DialogHeader>
-              <DialogTitle>Keyboard Shortcuts</DialogTitle>
+              <DialogTitle className="rp-display">Keyboard Shortcuts</DialogTitle>
               <DialogDescription>Use shortcuts to navigate and edit without leaving the keyboard.</DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4 md:grid-cols-2">

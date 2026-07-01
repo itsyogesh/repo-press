@@ -345,7 +345,7 @@ export function HistoryClient({ owner, repo, branch: _branch, projectId, project
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Restore this version?</AlertDialogTitle>
+            <AlertDialogTitle className="rp-display">Restore this version?</AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-2">
                 <p>This will overwrite the current document content with the selected version.</p>

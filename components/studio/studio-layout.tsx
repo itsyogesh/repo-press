@@ -1823,7 +1823,7 @@ function StudioLayoutInner({
         >
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Discard all pending changes?</AlertDialogTitle>
+              <AlertDialogTitle className="rp-display">Discard all pending changes?</AlertDialogTitle>
               <AlertDialogDescription>
                 This will revert all your staged creations, deletions, and edits. This action cannot be undone.
               </AlertDialogDescription>
