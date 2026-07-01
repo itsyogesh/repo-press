@@ -53,7 +53,7 @@ export function StudioFooter({
 
         {filePath ? (
           <div className="hidden min-w-0 items-center rounded-full border border-studio-border/60 bg-studio-canvas px-2.5 py-1 md:flex">
-            <span className="truncate">{filePath}</span>
+            <span className="truncate font-mono">{filePath}</span>
           </div>
         ) : null}
       </div>

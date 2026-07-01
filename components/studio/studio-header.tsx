@@ -36,6 +36,7 @@ import { buildHistoryHref } from "@/lib/studio/history-link"
 import { ProjectSwitcher } from "./project-switcher"
 import { StatusActions } from "./status-actions"
 import { useStudio } from "./studio-context"
+import { StudioPageThemeToggle } from "./studio-page-theme-toggle"
 import { useViewMode } from "./view-mode-context"
 
 interface StudioHeaderProps {
@@ -115,7 +116,7 @@ export function StudioHeader({
         </div>
 
         <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden rounded-md border border-studio-border/70 bg-studio-canvas-inset/45 px-3 py-2">
-          <div className="hidden shrink-0 items-center gap-2 rounded-full border border-studio-border/60 bg-studio-canvas px-2.5 py-1 text-[11px] font-medium text-studio-fg-muted xl:flex">
+          <div className="hidden shrink-0 items-center gap-2 rounded-full border border-studio-border/60 bg-studio-canvas px-2.5 py-1 font-mono text-[11px] font-medium text-studio-fg-muted xl:flex">
             <span className="truncate text-studio-fg">
               {owner}/{repo}
             </span>
@@ -127,7 +128,7 @@ export function StudioHeader({
           </div>
 
           <div className="min-w-0 flex-1 overflow-x-auto">
-            <Breadcrumb className="min-w-max text-sm">
+            <Breadcrumb className="min-w-max font-mono text-sm">
               <BreadcrumbList className="flex-nowrap whitespace-nowrap">
                 {pathSegments.map((seg) => (
                   <React.Fragment key={`breadcrumb-${seg}`}>
@@ -185,6 +186,8 @@ export function StudioHeader({
           {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
           <span>{isSaving ? "Saving…" : "Save draft"}</span>
         </Button>
+
+        <StudioPageThemeToggle />
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

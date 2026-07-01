@@ -123,3 +123,40 @@ No IA change — the fix is register-consistency, not a reinvention.
   via the same `group-data-[collapsible=icon]:hidden` pattern the header uses.
 
 Verified: tsc clean, lint clean, 583/583 tests, expanded sidebar confirmed live.
+
+---
+
+## Studio chrome
+
+**Problem (from audit + triage):** the 3-pane IA and empty state are good, but the
+chrome was cluttered — the Studio page rendered its own top bar with a bold
+`{owner}/{repo}` h1 **and** a theme toggle, directly above `StudioHeader`, which
+*also* shows owner/repo + branch. Two stacked bars. Plus git-native strings
+(breadcrumb path, owner/repo, branch, footer path) rendered in sans.
+
+**Fix:** removed the redundant page-level bar
+(`app/dashboard/[owner]/[repo]/studio/[[...path]]/page.tsx`) and relocated the
+theme toggle into `StudioHeader`'s right action cluster — the Studio now starts
+with a single header and reclaims that vertical space. Applied `font-mono` to the
+git-native chrome: the owner/repo·branch pill and breadcrumb path in
+`studio-header.tsx`, and the file path in `studio-footer.tsx`.
+
+### NEEDS REVIEW (Studio)
+
+- **Editor body left readable, NOT mono — deliberate deviation from the brief.**
+  `docs/design-system` says "Geist Mono for editor content", and the audit flagged
+  the editor's `font-sans`. But the editor is a **WYSIWYG** surface and the
+  product explicitly positions as "a writing app, not a developer tool" — forcing
+  the body to monospace would make it read as a code editor and fight that
+  promise. So the git-native *mono* register is applied to the chrome
+  (paths/branches/breadcrumb/footer) and the editing body stays readable. If you
+  want the editor body forced to mono, say so.
+- **Frontmatter panel background NOT changed.** The brief says the frontmatter
+  panel should be `bg-muted`; it currently uses `bg-studio-canvas` (page bg). Left
+  as-is pending your call — changing it separates the metadata panel from the
+  editor canvas, which may or may not be desired.
+- **File-tree item names** not converted to mono in this pass (they already carry
+  a mono `.mdx` subline); deferred as low-priority.
+
+Verified: tsc clean, lint clean, 583/583 tests; single header + mono chrome +
+relocated theme toggle confirmed live.
