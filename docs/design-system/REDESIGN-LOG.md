@@ -1,7 +1,7 @@
 # RepoPress Redesign — Decision Log
 
 Surface-by-surface redesign in code (Editorial identity, iterated live in Chrome).
-Surfaces landed so far: **Landing** (below), **Dashboard shell + sidebar** (end).
+Surfaces landed: **Landing · Dashboard shell + sidebar · Studio chrome · Docs · Blog · Secondary pages · Dashboard interior · OG image** — all serif h1s, no raw colors.
 
 ---
 
@@ -217,5 +217,28 @@ CSS loaded (last-resort crash boundary); inline styles are correct here.
 **NEEDS REVIEW (globals.css:607):** `.studio-sidebar { transition: width 200ms ease }`
 — impeccable flags `width` as a layout property. Animating width IS intentional
 here (sidebar collapse) and hard to replace without structural changes; leave as-is.
+
+## Dashboard interior + OG image (loop continuation)
+
+**Dashboard pages:** `dashboard/page.tsx` h1 hand-coded `font-serif` inline →
+`rp-display`; `files/page.tsx`, `history-client.tsx`, `settings/page.tsx` bold-sans
+`text-2xl font-semibold` → `rp-display text-2xl`.
+
+**Components:** `repo-project-hub.tsx` repo-name h1 → `rp-display text-3xl sm:text-4xl`;
+`profile-content.tsx`, `app-settings-content.tsx` → `rp-display text-2xl`.
+
+**NEEDS REVIEW (preview title):** `components/studio/preview.tsx:183` — the document
+title in the Studio preview pane is still bold-sans. Applying `rp-display` there
+would impose Instrument Serif on every user's content preview regardless of their
+site's typography. Left as bold-sans; if the Studio should have an editorial-only
+preview style, change it.
+
+**Final sweep results:**
+- Zero remaining bold-sans page h1s (except preview.tsx, justified above)
+- Zero raw Tailwind color classes (`bg-blue-*/bg-red-*/etc.`) in app or components
+- Zero legacy typography class names (`text-section-heading`, `text-body-large`,
+  `text-caption`, `rp-overline`) in `app/` directory
+- All `border-2` instances are dashed drop-zone indicators (standard DnD UX) —
+  not the banned side-stripe pattern
 
 Verified: tsc clean, lint 0 errors (12 pre-existing warnings), 583/583 tests.
