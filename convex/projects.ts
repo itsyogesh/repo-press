@@ -468,6 +468,10 @@ export const syncProjectsFromConfig = mutation({
         enabledPlugins: v.optional(v.array(v.string())),
         components: v.optional(v.any()),
         resolvedRuntime: v.optional(resolvedRuntimeValidator),
+        // Set by the server-side sync when runtime detection failed transiently for
+        // this project. Tells the handler to preserve the existing framework/runtime
+        // instead of overwriting it with the fallback in `framework`/`resolvedRuntime`.
+        detectionFailed: v.optional(v.boolean()),
       }),
     ),
   },
@@ -539,12 +543,18 @@ export const syncProjectsFromConfig = mutation({
         )
 
       if (existing) {
+        // If runtime detection failed transiently during this sync, keep the
+        // previously-stored framework/runtime instead of clobbering good data with
+        // the "custom"/undefined fallback. A later successful sync updates them.
+        const effectiveFramework = p.detectionFailed ? existing.detectedFramework : p.framework
+        const effectiveResolvedRuntime = p.detectionFailed ? existing.resolvedRuntime : p.resolvedRuntime
+
         // Idempotency check: only patch if something actually changed
         const needsUpdate =
           existing.name !== p.name ||
           existing.contentRoot !== p.contentRoot ||
           existing.branch !== nextBranch ||
-          existing.detectedFramework !== p.framework ||
+          existing.detectedFramework !== effectiveFramework ||
           existing.contentType !== p.contentType ||
           existing.configProjectId !== p.configProjectId ||
           existing.configVersion !== args.configVersion ||
@@ -553,7 +563,7 @@ export const syncProjectsFromConfig = mutation({
           JSON.stringify(existing.enabledPlugins) !== JSON.stringify(p.enabledPlugins) ||
           JSON.stringify(existing.pluginRegistry) !== JSON.stringify(args.pluginRegistry) ||
           JSON.stringify(existing.components) !== JSON.stringify(p.components) ||
-          JSON.stringify(existing.resolvedRuntime) !== JSON.stringify(p.resolvedRuntime) ||
+          JSON.stringify(existing.resolvedRuntime) !== JSON.stringify(effectiveResolvedRuntime) ||
           existing.frameworkSource !== "config" ||
           // Re-added orphan: configRemoved was set but project is back in config
           existing.configRemoved !== undefined
@@ -563,7 +573,7 @@ export const syncProjectsFromConfig = mutation({
             name: p.name,
             contentRoot: p.contentRoot,
             branch: nextBranch,
-            detectedFramework: p.framework,
+            detectedFramework: effectiveFramework,
             contentType: p.contentType,
             configProjectId: p.configProjectId,
             configVersion: args.configVersion,
@@ -572,7 +582,7 @@ export const syncProjectsFromConfig = mutation({
             enabledPlugins: p.enabledPlugins,
             pluginRegistry: args.pluginRegistry,
             components: p.components,
-            resolvedRuntime: p.resolvedRuntime,
+            resolvedRuntime: effectiveResolvedRuntime,
             frameworkSource: "config",
             // Clear orphan flag if it was previously set
             configRemoved: undefined,

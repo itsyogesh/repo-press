@@ -305,6 +305,45 @@ describe("syncProjectsFromConfig", () => {
       expect(result.synced).toContain("proj_1")
     })
 
+    it("preserves existing framework/runtime when a transient detection failure is flagged", async () => {
+      const goodRuntime = {
+        strategy: "native" as const,
+        entryPath: "mdx-components.tsx",
+        rootPath: "",
+        metadataDefault: "metadata-export" as const,
+        extensions: [".md", ".mdx", ".markdown"] as [".md", ".mdx", ".markdown"],
+      }
+      // Previously synced as next-mdx with a working native runtime; all other fields
+      // already match the incoming config so ONLY framework/runtime could differ.
+      const existing = makeProject({
+        _id: "proj_1",
+        configProjectId: "docs",
+        name: "Documentation",
+        contentRoot: "content/docs",
+        branch: "main",
+        detectedFramework: "next-mdx",
+        contentType: "docs",
+        configVersion: 1,
+        configPath: "repopress.config.json",
+        frameworkSource: "config",
+        resolvedRuntime: goodRuntime,
+      })
+      const patch = vi.fn()
+      const ctx = createCtx({ repoProjects: [existing], patch })
+
+      // A transient detection failure syncs the "custom"/undefined fallback + flag.
+      const result = await (syncProjectsFromConfig as any).handler(ctx, {
+        ...BASE_ARGS,
+        projects: [
+          { ...BASE_ARGS.projects[0], framework: "custom", resolvedRuntime: undefined, detectionFailed: true },
+        ],
+      })
+
+      // The good framework/runtime must survive: nothing changed, so no clobbering patch.
+      expect(patch).not.toHaveBeenCalled()
+      expect(result.unchanged).toContain("proj_1")
+    })
+
     it("migrates a legacy project (no configProjectId) matched by contentRoot+branch", async () => {
       // Pre-config-era project: no configProjectId stored
       const legacy = makeProject({

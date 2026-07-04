@@ -4,7 +4,7 @@ RepoPress is a Git-native headless CMS for GitHub repositories. It provides visu
 
 ## 🎨 Design System
 
-**Read `DESIGN.md` at the repo root before building any UI.** The authoritative design spec is also in `docs/design-system/`. Key rules:
+**Read the design system in `docs/design-system/` (start with `README.md`) before building any UI.** Key rules:
 
 **"RepoPress Editorial"** — warm monochrome, Instrument Serif display, hairlines + whitespace. No card shadows, no icon grids, no gradient backgrounds.
 

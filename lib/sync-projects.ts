@@ -74,7 +74,10 @@ export async function syncProjectsServerSide(
           error,
         )
         const framework = p.framework === "auto" || p.framework === "detected" ? "custom" : p.framework
-        return { ...base, framework, resolvedRuntime: undefined }
+        // Flag the transient failure so `syncProjectsFromConfig` preserves any
+        // previously-detected framework/runtime for an already-synced project
+        // instead of overwriting it with this fallback.
+        return { ...base, framework, resolvedRuntime: undefined, detectionFailed: true }
       }
     }),
   )

@@ -115,8 +115,12 @@ describe("syncProjectsServerSide", () => {
     expect(broken).toBeDefined()
     expect(broken.resolvedRuntime).toBeUndefined()
     expect(broken.framework).toBe("custom")
+    // Transient failure must be flagged so the mutation preserves any existing
+    // detected framework/runtime instead of persisting this "custom" fallback.
+    expect(broken.detectionFailed).toBe(true)
     expect(healthy).toBeDefined()
     expect(healthy.framework).toBe("hugo")
+    expect(healthy.detectionFailed).toBeUndefined()
 
     consoleSpy.mockRestore()
   })
