@@ -2,12 +2,13 @@
 
 import { Eye, Maximize2, Minimize2 } from "lucide-react"
 import * as React from "react"
-import { PreviewRuntime } from "@/components/mdx-runtime/PreviewRuntime"
+import { GenericPreview } from "@/components/mdx-runtime/GenericPreview"
 import { PreviewStatus } from "@/components/mdx-runtime/PreviewStatus"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import type { FieldVariantMap } from "@/lib/framework-adapters"
 import { resolveFieldValue } from "@/lib/framework-adapters"
+import { buildGenericRenderModel } from "@/lib/preview/generic-render-model"
 import type { RepoPressPreviewAdapter } from "@/lib/repopress/evaluate-adapter"
 import { resolveStudioAssetUrl } from "@/lib/studio/media-resolve"
 import { cn } from "@/lib/utils"
@@ -88,17 +89,15 @@ export function Preview({
   contentRoot = "",
   scrollContainerRef,
   onScroll,
-  onCompilingChange,
-  adapter,
-  adapterDiagnostics,
 }: PreviewProps) {
   const [viewport, setViewport] = React.useState<Viewport>("desktop")
   const [isFullScreen, setIsFullScreen] = React.useState(false)
-  const [isCompiling, setIsCompiling] = React.useState(false)
-  const [warnings, setWarnings] = React.useState<string[]>([])
+  const isCompiling = false
+  const warnings = React.useMemo<string[]>(() => [], [])
 
   // Debounced content for preview (300ms delay)
   const [debouncedContent, setDebouncedContent] = React.useState(content)
+  const genericRenderModel = React.useMemo(() => buildGenericRenderModel(debouncedContent), [debouncedContent])
 
   React.useEffect(() => {
     const timer = setTimeout(() => {
@@ -136,20 +135,10 @@ export function Preview({
     setImageError(false)
   }, [image])
 
-  // Stabilize the asset resolver to prevent infinite re-renders in PreviewRuntime
+  // Resolve repository-relative media without changing the serializable model.
   const resolveAssetUrl = React.useMemo(() => {
     return (path: string) => resolveStudioAssetUrl(path, projectId, userId, filePath, undefined, contentRoot)
   }, [projectId, userId, filePath, contentRoot])
-
-  const compileStatusForwarder = React.useMemo(
-    () => createCompileStatusForwarder(onCompilingChange),
-    [onCompilingChange],
-  )
-
-  React.useEffect(() => {
-    compileStatusForwarder.update(isCompiling)
-    return () => compileStatusForwarder.cancel()
-  }, [compileStatusForwarder, isCompiling])
 
   // Escape exits full-screen
   React.useEffect(() => {
@@ -227,17 +216,9 @@ export function Preview({
         <div className="px-5 py-6 md:px-7 md:py-8">
           <div
             data-scroll-sync-root="preview"
-            className={cn("prose prose-neutral max-w-none dark:prose-invert", "prose-headings:scroll-mt-4")}
+            className={cn("typeset typeset-preview max-w-none", "[&_h1]:scroll-mt-4 [&_h2]:scroll-mt-4")}
           >
-            <PreviewRuntime
-              source={debouncedContent}
-              frontmatter={frontmatter}
-              adapter={adapter ?? undefined}
-              externalDiagnostics={adapterDiagnostics}
-              resolveAssetUrl={resolveAssetUrl}
-              onStatusChange={setIsCompiling}
-              onWarningsChange={setWarnings}
-            />
+            <GenericPreview model={genericRenderModel} resolveAssetUrl={resolveAssetUrl} />
           </div>
         </div>
       </div>
