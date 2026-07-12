@@ -209,7 +209,7 @@ describe("serializable render and runtime data", () => {
     ).toBe(false)
   })
 
-  it("accepts JSON render blocks and rejects non-JSON or unknown model data", () => {
+  it("produces JSON-serializable parsed blocks and rejects functions or unknown model data", () => {
     const model = { blocks: [{ type: "heading", depth: 1, text: "Hello", attributes: { hidden: false } }] }
     const parsed = genericRenderModelSchema.parse(model)
 
@@ -269,6 +269,21 @@ describe("preview results", () => {
         target: { kind: "sandboxed-iframe", url: "https://preview.example/session-1" },
       }).success,
     ).toBe(true)
+  })
+
+  it.each([
+    "javascript:alert(1)",
+    "data:text/html,unsafe",
+    "file:///etc/passwd",
+    "ftp://preview.example/file",
+    "http://preview.example/session-1",
+  ])("rejects the non-HTTPS sandbox target %s", (url) => {
+    expect(
+      previewResultSchema.safeParse({
+        ...validResult,
+        target: { kind: "sandboxed-iframe", url },
+      }).success,
+    ).toBe(false)
   })
 
   it.each([
@@ -348,5 +363,42 @@ describe("preview diagnostics", () => {
     expect(previewDiagnosticSchema.safeParse({ ...baseDiagnostic, severity: "fatal" }).success).toBe(false)
     expect(previewDiagnosticSchema.safeParse({ ...baseDiagnostic, fidelityImpact: "exact" }).success).toBe(false)
     expect(previewDiagnosticSchema.safeParse({ ...baseDiagnostic, credential: "secret" }).success).toBe(false)
+  })
+})
+
+describe("safe ordering integers", () => {
+  const unsafeInteger = Number.MAX_SAFE_INTEGER + 1
+
+  it("accepts the largest safe snapshot version and event sequence", () => {
+    expect(previewRequestSchema.safeParse({ ...validRequest, snapshotVersion: Number.MAX_SAFE_INTEGER }).success).toBe(
+      true,
+    )
+    expect(previewResultSchema.safeParse({ ...validResult, snapshotVersion: Number.MAX_SAFE_INTEGER }).success).toBe(
+      true,
+    )
+    expect(
+      previewSessionEventSchema.safeParse({
+        sessionId: "session-1",
+        snapshotVersion: Number.MAX_SAFE_INTEGER,
+        sequence: Number.MAX_SAFE_INTEGER,
+        type: "status",
+        payload: { status: "ready" },
+      }).success,
+    ).toBe(true)
+  })
+
+  it("rejects unsafe snapshot versions and event sequences", () => {
+    expect(previewRequestSchema.safeParse({ ...validRequest, snapshotVersion: unsafeInteger }).success).toBe(false)
+    expect(previewResultSchema.safeParse({ ...validResult, snapshotVersion: unsafeInteger }).success).toBe(false)
+
+    const event = {
+      sessionId: "session-1",
+      snapshotVersion: 1,
+      sequence: 1,
+      type: "status",
+      payload: { status: "ready" },
+    }
+    expect(previewSessionEventSchema.safeParse({ ...event, snapshotVersion: unsafeInteger }).success).toBe(false)
+    expect(previewSessionEventSchema.safeParse({ ...event, sequence: unsafeInteger }).success).toBe(false)
   })
 })

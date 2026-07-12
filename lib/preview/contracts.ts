@@ -14,6 +14,21 @@ const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
   ]),
 )
 
+const positiveSafeIntegerSchema = z.number().int().positive().safe()
+const httpsUrlSchema = z
+  .string()
+  .url()
+  .refine(
+    (url) => {
+      try {
+        return new URL(url).protocol === "https:"
+      } catch {
+        return false
+      }
+    },
+    { message: "Sandboxed iframe URLs must use HTTPS" },
+  )
+
 export const previewFidelitySchema = z.enum(["generic", "compatible", "native"])
 export type PreviewFidelity = z.infer<typeof previewFidelitySchema>
 
@@ -67,7 +82,7 @@ export type FileOverlayOperation = z.infer<typeof fileOverlayOperationSchema>
 export const previewRequestSchema = z
   .object({
     filePath: z.string().min(1),
-    snapshotVersion: z.number().int().positive(),
+    snapshotVersion: positiveSafeIntegerSchema,
     base: z
       .object({
         ref: z.string().min(1),
@@ -97,7 +112,7 @@ const previewTargetSchema = z.discriminatedUnion("kind", [
   z
     .object({
       kind: z.literal("sandboxed-iframe"),
-      url: z.string().url(),
+      url: httpsUrlSchema,
     })
     .strict(),
   z
@@ -112,7 +127,7 @@ export const previewResultSchema = z
   .object({
     fidelity: previewFidelitySchema,
     sessionId: z.string().min(1),
-    snapshotVersion: z.number().int().positive(),
+    snapshotVersion: positiveSafeIntegerSchema,
     status: previewSessionStatusSchema,
     target: previewTargetSchema,
     diagnostics: z.array(previewDiagnosticSchema),
@@ -129,8 +144,8 @@ export type PreviewResult = z.infer<typeof previewResultSchema>
 export const previewSessionEventSchema = z
   .object({
     sessionId: z.string().min(1),
-    snapshotVersion: z.number().int().positive(),
-    sequence: z.number().int().positive(),
+    snapshotVersion: positiveSafeIntegerSchema,
+    sequence: positiveSafeIntegerSchema,
     type: z.enum(["status", "target", "diagnostics", "fidelity", "expired"]),
     payload: jsonValueSchema,
   })
