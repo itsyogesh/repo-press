@@ -9,7 +9,11 @@ function validLock() {
     lockfileVersion: 1,
     items: {
       "@repopress/icon": {
-        resolved: { address: "https://registry.example/r/icon.json", ref: "v1.0.0" },
+        resolved: {
+          address: "https://registry.example/r/icon.json",
+          sourceRef: "v1.0.0",
+          resolvedRef: "1123456789abcdef0123456789abcdef01234567",
+        },
         integrity,
         dependencies: [],
         targets: [{ path: "components/repopress/icon.tsx", digest }],
@@ -28,7 +32,11 @@ function validLock() {
         localModificationDigest: digest,
       },
       "@repopress/callout": {
-        resolved: { address: "github.com/repopress/registry/callout", ref: "0123456789abcdef0123456789abcdef01234567" },
+        resolved: {
+          address: "github.com/repopress/registry/callout",
+          sourceRef: "v1.0.0",
+          resolvedRef: "0123456789abcdef0123456789abcdef01234567",
+        },
         integrity,
         dependencies: ["@repopress/icon"],
         targets: [{ path: "components/repopress/callout.tsx", digest }],
@@ -57,8 +65,9 @@ describe("repoPressLockSchema", () => {
     input.items["@repopress/callout"].dependencies[0] = "changed"
 
     expect(result.items["@repopress/callout"].dependencies).toEqual(["@repopress/icon"])
-    expect(result.items["@repopress/callout"].resolved.ref).toHaveLength(40)
+    expect(result.items["@repopress/callout"].resolved.resolvedRef).toHaveLength(40)
     expect(result.items["@repopress/callout"].localModificationDigest).toBe(digest)
+    expect(result.items["@repopress/callout"].targets[0].path).toBe("components/repopress/callout.tsx")
     expect(Object.isFrozen(result.items["@repopress/callout"].authoring)).toBe(true)
   })
 
@@ -68,7 +77,7 @@ describe("repoPressLockSchema", () => {
 
   it("rejects unpinned refs, malformed integrity, and malformed digests", () => {
     const unpinned = validLock()
-    unpinned.items["@repopress/callout"].resolved.ref = "main"
+    unpinned.items["@repopress/callout"].resolved.sourceRef = "main"
     expect(repoPressLockSchema.safeParse(unpinned).success).toBe(false)
 
     const badIntegrity = validLock()
@@ -105,6 +114,10 @@ describe("repoPressLockSchema", () => {
     const collision = validLock()
     collision.items["@repopress/icon"].targets[0].path = "components/repopress/callout.tsx"
     expect(repoPressLockSchema.safeParse(collision).success).toBe(false)
+
+    const canonicalCollision = validLock()
+    canonicalCollision.items["@repopress/icon"].targets[0].path = "~/Components/Repopress/Callout.tsx"
+    expect(repoPressLockSchema.safeParse(canonicalCollision).success).toBe(false)
   })
 
   it("rejects unsafe targets, executable metadata, dangerous keys, and non-JSON input", () => {
@@ -127,5 +140,25 @@ describe("repoPressLockSchema", () => {
     const cycle = validLock() as Record<string, unknown>
     cycle.extra = cycle
     expect(repoPressLockSchema.safeParse(cycle).success).toBe(false)
+  })
+
+  it("requires authoritative registry provenance bound to logical ID, version, integrity, and resolved refs", () => {
+    for (const source of ["native", "manual"] as const) {
+      const lock = validLock()
+      lock.items["@repopress/callout"].authoring.provenance.source = source
+      expect(repoPressLockSchema.safeParse(lock).success).toBe(false)
+    }
+
+    const itemMismatch = validLock()
+    itemMismatch.items["@repopress/callout"].authoring.provenance.registryItem = "@repopress/other"
+    expect(repoPressLockSchema.safeParse(itemMismatch).success).toBe(false)
+
+    const versionMismatch = validLock()
+    versionMismatch.items["@repopress/callout"].authoring.provenance.version = "2.0.0"
+    expect(repoPressLockSchema.safeParse(versionMismatch).success).toBe(false)
+
+    const refMismatch = validLock()
+    refMismatch.items["@repopress/callout"].resolved.sourceRef = "v2.0.0"
+    expect(repoPressLockSchema.safeParse(refMismatch).success).toBe(false)
   })
 })

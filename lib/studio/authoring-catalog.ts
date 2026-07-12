@@ -24,12 +24,18 @@ export type AuthoringProvenance = {
   integrity?: string
 }
 
+export type AuthoringAsset = { path: string; type: "image" | "style" | "font" | "file" }
+
 export type AuthoringComponent = {
   logicalId: string
   mdxName: string
   displayName: string
   description?: string
   category?: string
+  version?: string
+  assets?: AuthoringAsset[]
+  import?: { source: string; exportName: string }
+  frameworks?: Array<"next" | "fumadocs" | "astro">
   runtime: "client" | "server" | "astro"
   schemaStatus: "complete" | "incomplete"
   props: AuthoringProp[]
@@ -46,6 +52,10 @@ export type AuthoringComponentMetadata = {
   displayName?: string
   description?: string
   category?: string
+  version?: string
+  assets?: AuthoringAsset[]
+  import?: { source: string; exportName: string }
+  frameworks?: Array<"next" | "fumadocs" | "astro">
   runtime?: AuthoringComponent["runtime"]
   schemaStatus?: AuthoringComponent["schemaStatus"]
   props?: Array<{
@@ -81,13 +91,21 @@ export const AUTHORING_CATALOG_LIMITS = Object.freeze({
   maxOptionsPerProp: 256,
   maxSlotsPerComponent: 64,
   maxFixturesPerComponent: 128,
+  maxAssetsPerComponent: 128,
 })
 
 const PROP_TYPES: readonly AuthoringPropType[] = ["string", "number", "boolean", "expression", "image"]
 const RUNTIMES = new Set(["client", "server", "astro"])
 const SLOT_ACCEPTS = new Set(["text", "markdown", "mdx", "components"])
 const PROVENANCE_SOURCES = new Set(["native", "registry", "manual"])
-const HAZARDOUS_NAMES = new Set(["__proto__", "prototype", "constructor", "toString", "dangerouslySetInnerHTML"])
+const HAZARDOUS_NAMES = new Set([
+  "__proto__",
+  "prototype",
+  "constructor",
+  "toString",
+  "valueOf",
+  "dangerouslySetInnerHTML",
+])
 const MDX_NAME = /^[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)*$/
 const FIELD_NAME = /^[A-Za-z_$][A-Za-z0-9_$-]*$/
 const LOGICAL_ID = /^[A-Za-z0-9_$@][A-Za-z0-9_$@./:-]*$/
@@ -267,6 +285,53 @@ function projectProvenance(metadata: Record<string, unknown>): AuthoringProvenan
       ? { integrity: optionalString(provenance, "integrity", "provenance.integrity") }
       : {}),
   }
+}
+
+function projectAssets(metadata: Record<string, unknown>): AuthoringAsset[] | undefined {
+  const value = ownValue(metadata, "assets")
+  if (value === undefined) return undefined
+  if (!Array.isArray(value)) throw new TypeError("assets must be an array")
+  if (value.length > AUTHORING_CATALOG_LIMITS.maxAssetsPerComponent) {
+    throw new TypeError("Authoring catalog exceeds asset count limit")
+  }
+  const paths = new Set<string>()
+  const assets: AuthoringAsset[] = []
+  for (let index = 0; index < value.length; index += 1) {
+    const asset = requireDataObject(arrayDataValue(value, index, "assets"), `assets[${index}]`)
+    const path = requireString(ownValue(asset, "path"), `assets[${index}].path`)
+    const type = requireString(ownValue(asset, "type"), `assets[${index}].type`)
+    if (!new Set(["image", "style", "font", "file"]).has(type)) throw new TypeError(`Invalid asset type: ${type}`)
+    if (paths.has(path)) throw new TypeError(`Authoring catalog has duplicate asset path: ${path}`)
+    paths.add(path)
+    assets.push({ path, type: type as AuthoringAsset["type"] })
+  }
+  return assets
+}
+
+function projectImport(metadata: Record<string, unknown>): AuthoringComponent["import"] {
+  const value = ownValue(metadata, "import")
+  if (value === undefined) return undefined
+  const declaration = requireDataObject(value, "import")
+  const source = requireString(ownValue(declaration, "source"), "import.source")
+  const exportName = requireString(ownValue(declaration, "exportName"), "import.exportName")
+  validateMdxName(exportName)
+  return { source, exportName }
+}
+
+function projectFrameworks(metadata: Record<string, unknown>): AuthoringComponent["frameworks"] {
+  const value = ownValue(metadata, "frameworks")
+  if (value === undefined) return undefined
+  if (!Array.isArray(value) || value.length > 3) throw new TypeError("frameworks must be a bounded array")
+  const frameworks: Array<"next" | "fumadocs" | "astro"> = []
+  for (let index = 0; index < value.length; index += 1) {
+    const framework = arrayDataValue(value, index, "frameworks")
+    if (framework !== "next" && framework !== "fumadocs" && framework !== "astro") {
+      throw new TypeError(`Invalid authoring framework: ${String(framework)}`)
+    }
+    if (frameworks.includes(framework)) throw new TypeError(`Duplicate authoring framework: ${framework}`)
+    frameworks.push(framework)
+  }
+  return frameworks
 }
 
 type CloneState = { nodes: number; bytes: number; active: WeakSet<object> }
@@ -468,6 +533,10 @@ export function buildAuthoringCatalog(input: BuildAuthoringCatalogInput): Author
       if (typeof fixture !== "string") throw new TypeError("previewFixtures must be a string array")
       projectedFixtures.push(fixture)
     }
+    const version = optionalString(metadata, "version", "version")
+    const assets = projectAssets(metadata)
+    const importDeclaration = projectImport(metadata)
+    const frameworks = projectFrameworks(metadata)
     return {
       logicalId,
       mdxName,
@@ -478,6 +547,10 @@ export function buildAuthoringCatalog(input: BuildAuthoringCatalogInput): Author
       ...(optionalString(metadata, "category", "category") !== undefined
         ? { category: optionalString(metadata, "category", "category") }
         : {}),
+      ...(version !== undefined ? { version } : {}),
+      ...(assets !== undefined ? { assets } : {}),
+      ...(importDeclaration !== undefined ? { import: importDeclaration } : {}),
+      ...(frameworks !== undefined ? { frameworks } : {}),
       runtime: runtime as AuthoringComponent["runtime"],
       schemaStatus: schemaStatus(metadata),
       props: projectProps(metadata),

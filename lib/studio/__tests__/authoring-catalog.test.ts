@@ -3,6 +3,50 @@ import { createRenderBindings, getRenderBindingNames } from "../../preview/rende
 import { AUTHORING_CATALOG_LIMITS, buildAuthoringCatalog } from "../authoring-catalog"
 
 describe("authoring catalog separation", () => {
+  it("projects retained version, assets, import, frameworks, fixtures, runtime, slots, and provenance", () => {
+    const [component] = buildAuthoringCatalog({
+      metadata: {
+        Callout: {
+          version: "1.2.0",
+          assets: [{ path: "components/callout.css", type: "style" }],
+          import: { source: "@/components/callout", exportName: "Callout" },
+          frameworks: ["next", "fumadocs"],
+          previewFixtures: ["fixtures/callout.mdx"],
+          runtime: "client",
+          props: [],
+          slots: [{ name: "children", accepts: "mdx" }],
+          provenance: { source: "registry", registryItem: "@repopress/callout", version: "1.2.0" },
+        },
+      },
+    })
+
+    expect(component).toMatchObject({
+      version: "1.2.0",
+      assets: [{ path: "components/callout.css", type: "style" }],
+      import: { source: "@/components/callout", exportName: "Callout" },
+      frameworks: ["next", "fumadocs"],
+      previewFixtures: ["fixtures/callout.mdx"],
+      runtime: "client",
+      slots: [{ name: "children", accepts: "mdx" }],
+      provenance: { source: "registry", registryItem: "@repopress/callout", version: "1.2.0" },
+    })
+  })
+
+  it("rejects asset accessors without invoking them", () => {
+    const assets: unknown[] = []
+    let invoked = false
+    Object.defineProperty(assets, 0, {
+      enumerable: true,
+      get: () => {
+        invoked = true
+        throw new Error("must not invoke")
+      },
+    })
+    expect(() => buildAuthoringCatalog({ metadata: { Callout: { assets: assets as never } } })).toThrow(
+      "own data descriptor",
+    )
+    expect(invoked).toBe(false)
+  })
   it("keeps executable render bindings outside the serializable catalog", () => {
     const Callout = () => null
     const bindings = createRenderBindings({ Callout })

@@ -1,6 +1,7 @@
-import { type ProjectConfig, type RepoPressConfig, repoPressConfigSchema } from "@/lib/config-schema"
+import { type ProjectConfigInput, type RepoPressConfig, repoPressConfigSchema } from "@/lib/config-schema"
 import { saveFileContent } from "@/lib/github"
 import { type FetchConfigResult, fetchRepoConfig } from "./config"
+import { assertJson } from "./registry-schema"
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -8,9 +9,9 @@ export type ConfigWriteResult =
   | { success: true; config: RepoPressConfig; sha: string }
   | { success: false; error: string; errorType: "fetch-failed" | "validation" | "commit-failed" | "conflict" }
 
-export type NewProjectDef = Omit<ProjectConfig, "preview" | "components"> & {
-  preview?: ProjectConfig["preview"]
-  components?: ProjectConfig["components"]
+export type NewProjectDef = Omit<ProjectConfigInput, "preview" | "components"> & {
+  preview?: ProjectConfigInput["preview"]
+  components?: ProjectConfigInput["components"]
 }
 
 // ── Pure helpers (no side effects, testable) ──────────────────────
@@ -20,6 +21,7 @@ export type NewProjectDef = Omit<ProjectConfig, "preview" | "components"> & {
  * if validation fails (e.g. duplicate id or contentRoot).
  */
 export function addProject(config: RepoPressConfig, project: NewProjectDef): RepoPressConfig {
+  assertJson(config)
   if (config.projects.some((p) => p.id === project.id)) {
     throw new Error(`Project with id "${project.id}" already exists in config`)
   }
@@ -29,7 +31,7 @@ export function addProject(config: RepoPressConfig, project: NewProjectDef): Rep
     )
   }
 
-  const updated: RepoPressConfig = {
+  const updated = {
     ...config,
     projects: [...config.projects, project],
   }
@@ -44,14 +46,17 @@ export function addProject(config: RepoPressConfig, project: NewProjectDef): Rep
 export function updateProject(
   config: RepoPressConfig,
   configProjectId: string,
-  updates: Partial<Pick<ProjectConfig, "name" | "framework" | "contentType" | "branch" | "preview" | "components">>,
+  updates: Partial<
+    Pick<ProjectConfigInput, "name" | "framework" | "contentType" | "branch" | "preview" | "components">
+  >,
 ): RepoPressConfig {
+  assertJson(config)
   const idx = config.projects.findIndex((p) => p.id === configProjectId)
   if (idx === -1) {
     throw new Error(`Project "${configProjectId}" not found in config`)
   }
 
-  const updated: RepoPressConfig = {
+  const updated = {
     ...config,
     projects: config.projects.map((p, i) => (i === idx ? { ...p, ...updates } : p)),
   }
@@ -64,6 +69,7 @@ export function updateProject(
  * the config file rather than committing an empty list.
  */
 export function removeProject(config: RepoPressConfig, configProjectId: string): RepoPressConfig {
+  assertJson(config)
   const filtered = config.projects.filter((p) => p.id !== configProjectId)
   if (filtered.length === config.projects.length) {
     throw new Error(`Project "${configProjectId}" not found in config`)

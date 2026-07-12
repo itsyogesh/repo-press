@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { registryItemSchema } from "../registry-schema"
+import { canonicalizeInstallTarget, normalizeRegistryAuthoringMetadata, registryItemSchema } from "../registry-schema"
 
 function validItem() {
   return {
@@ -15,6 +15,15 @@ function validItem() {
       repopress: {
         apiVersion: 1,
         version: "1.2.0",
+        kind: "mdx-component",
+        logicalId: "@repopress/callout",
+        mdxName: "Callout",
+        exportName: "Callout",
+        frameworks: ["next", "fumadocs"],
+        preview: {
+          fixtures: ["registry/repopress/callout/fixture.mdx"],
+          defaultFixture: "registry/repopress/callout/fixture.mdx",
+        },
         authoring: {
           logicalId: "@repopress/callout",
           mdxName: "Callout",
@@ -75,6 +84,24 @@ describe("registryItemSchema", () => {
     expect(Object.isFrozen(result)).toBe(true)
     expect(Object.isFrozen(result.meta.repopress.authoring.props)).toBe(true)
     expect(result.meta.vendor).toEqual({ searchable: true })
+  })
+
+  it("normalizes registry metadata into the AuthoringCatalog field vocabulary", () => {
+    const normalized = normalizeRegistryAuthoringMetadata(validItem())
+    expect(normalized).toMatchObject({
+      logicalId: "@repopress/callout",
+      mdxName: "Callout",
+      version: "1.2.0",
+      frameworks: ["next", "fumadocs"],
+      previewFixtures: ["registry/repopress/callout/fixture.mdx"],
+      assets: [{ path: "registry/repopress/callout/callout.css", type: "style" }],
+      provenance: {
+        source: "registry",
+        registryItem: "@repopress/callout",
+        version: "1.2.0",
+      },
+    })
+    expect(Object.isFrozen(normalized)).toBe(true)
   })
 
   it.each([0, 2, "1"])("rejects unknown or malformed API version %p", (apiVersion) => {
@@ -141,5 +168,103 @@ describe("registryItemSchema", () => {
 
     item.files = [{ path: "registry/env", type: "registry:file", target: "components/~/env" }] as never
     expect(registryItemSchema.safeParse(item).success).toBe(false)
+  })
+
+  it("supports current shadcn registry:base fields only on base items", () => {
+    const item = validItem()
+    item.type = "registry:base"
+    Object.assign(item, {
+      style: "new-york",
+      iconLibrary: "lucide",
+      baseColor: "neutral",
+      theme: "zinc",
+    })
+    const base = registryItemSchema.parse(item)
+    expect(base).toMatchObject({ style: "new-york", iconLibrary: "lucide", baseColor: "neutral", theme: "zinc" })
+
+    item.type = "registry:component"
+    expect(registryItemSchema.safeParse(item).success).toBe(false)
+
+    const withLegacyConfig = { ...validItem(), config: { style: "new-york" } }
+    expect(registryItemSchema.safeParse(withLegacyConfig).success).toBe(false)
+  })
+
+  it.each([
+    'console.log("x")',
+    "alert(1)",
+    "class X {}",
+    "function run() {}",
+    "new Function('return 1')",
+    "eval('1')",
+    "value => value",
+    "import x from 'x'",
+    "export default 1",
+    '<button onClick="run()">Go</button>',
+    "<script>alert(1)</script>",
+    "javascript:alert(1)",
+    "const x = 1",
+    "let x = 1",
+    "var x = 1",
+    "globalThis.eval('1')",
+    "window.alert(1)",
+    "(0, eval)('1')",
+    "async value => value",
+  ])("rejects standalone executable declarative text: %s", (description) => {
+    const item = validItem()
+    item.meta.repopress.authoring.description = description
+    expect(registryItemSchema.safeParse(item).success).toBe(false)
+  })
+
+  it.each([
+    "This function describes how the Callout behaves.",
+    "The docs mention alert(1) as an example, but do not execute it.",
+    'Use `console.log("x")` while debugging.',
+  ])("allows inert explanatory prose: %s", (description) => {
+    const item = validItem()
+    item.meta.repopress.authoring.description = description
+    expect(registryItemSchema.safeParse(item).success).toBe(true)
+  })
+
+  it("does not scan unrelated shadcn docs or vendor metadata as RepoPress executable truth", () => {
+    const item = validItem()
+    ;(item as typeof item & { docs: string }).docs = 'Run console.log("x") in your application after installation.'
+    ;(item.meta as Record<string, unknown>).vendor = { example: "value => value" }
+    expect(registryItemSchema.safeParse(item).success).toBe(true)
+  })
+
+  it("canonicalizes install target identities and rejects cross-platform hazards", () => {
+    expect(canonicalizeInstallTarget("~/Components/./Café.tsx")).toBe("components/café.tsx")
+    expect(canonicalizeInstallTarget("components\\Callout.tsx")).toBe("components/callout.tsx")
+    expect(() => canonicalizeInstallTarget("components/CON.tsx")).toThrow("reserved")
+    expect(() => canonicalizeInstallTarget("components/name. ")).toThrow("trailing")
+    expect(() => canonicalizeInstallTarget("components/\u202ecallout.tsx")).toThrow("control")
+
+    const duplicate = validItem()
+    duplicate.files = [
+      { path: "registry/Callout.tsx", type: "registry:component", target: "~/Components/Callout.tsx" },
+      { path: "registry/other.tsx", type: "registry:component", target: "components/callout.tsx" },
+    ] as never
+    expect(registryItemSchema.safeParse(duplicate).success).toBe(false)
+
+    const reserved = validItem()
+    reserved.files = [{ path: "registry/con.tsx", type: "registry:component", target: "components/CON.tsx" }] as never
+    expect(registryItemSchema.safeParse(reserved).success).toBe(false)
+  })
+
+  it("rejects oversized containers before visiting their entries", () => {
+    const item = validItem()
+    const files: unknown[] = []
+    files.length = 10_001
+    let visited = false
+    Object.defineProperty(files, 0, {
+      enumerable: true,
+      get: () => {
+        visited = true
+        throw new Error("must not visit")
+      },
+    })
+    item.files = files as never
+    expect(registryItemSchema.safeParse(item).success).toBe(false)
+    expect(visited).toBe(false)
   })
 })

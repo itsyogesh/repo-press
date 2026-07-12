@@ -12,22 +12,17 @@ export const REGISTRY_LIMITS = Object.freeze({
   maxSlots: 64,
   maxAssets: 128,
   maxFixtures: 128,
+  maxObjectProperties: 2_048,
 })
 
-const DANGEROUS_KEYS = new Set(["__proto__", "prototype", "constructor"])
-const EXECUTABLE_KEYS = new Set([
-  "code",
-  "component",
-  "evaluate",
-  "implementation",
-  "loader",
-  "module",
-  "render",
-  "resolver",
-  "script",
-  "transform",
+const DANGEROUS_KEYS = new Set([
+  "__proto__",
+  "prototype",
+  "constructor",
+  "toString",
+  "valueOf",
+  "dangerouslySetInnerHTML",
 ])
-const EXECUTABLE_STRING = /(?:\bfunction\b|=>|\b(?:eval|import)\s*\(|\bnew\s+Function\b|<script\b|javascript\s*:)/iu
 const SAFE_NAME = /^[A-Za-z0-9@][A-Za-z0-9@._/-]{0,255}$/
 const SAFE_FIELD_NAME = /^[A-Za-z_$][A-Za-z0-9_$-]{0,127}$/
 const SAFE_MDX_NAME = /^[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)*$/
@@ -48,6 +43,7 @@ export const integritySchema = z
 type PreflightState = { active: WeakSet<object>; bytes: number; nodes: number }
 
 function addBytes(value: string, state: PreflightState): void {
+  if (value.length > REGISTRY_LIMITS.maxStringBytes) throw new TypeError("Registry string exceeds source length limit")
   const bytes = new TextEncoder().encode(value).byteLength
   if (bytes > REGISTRY_LIMITS.maxStringBytes) throw new TypeError("Registry string exceeds byte limit")
   state.bytes += bytes
@@ -72,13 +68,21 @@ function preflightJson(value: unknown, state: PreflightState, depth = 0, path = 
   state.active.add(value)
   const prototype = Object.getPrototypeOf(value)
   if (Array.isArray(value)) {
+    if (value.length > REGISTRY_LIMITS.maxNodes) throw new TypeError(`${path} exceeds array length limit`)
     for (let index = 0; index < value.length; index += 1) {
       if (!Object.hasOwn(value, index)) throw new TypeError(`${path}[${index}] must not be sparse`)
       preflightJson(value[index], state, depth + 1, `${path}[${index}]`)
     }
   } else {
     if (prototype !== Object.prototype && prototype !== null) throw new TypeError(`${path} must be a plain object`)
-    for (const key of Object.keys(value)) {
+    if (Object.getOwnPropertySymbols(value).length > 0) throw new TypeError(`${path} must not contain symbol keys`)
+    let propertyCount = 0
+    for (const key in value) {
+      if (!Object.hasOwn(value, key)) continue
+      propertyCount += 1
+      if (propertyCount > REGISTRY_LIMITS.maxObjectProperties) {
+        throw new TypeError(`${path} exceeds object property limit`)
+      }
       if (DANGEROUS_KEYS.has(key)) throw new TypeError(`${path} contains dangerous key ${key}`)
       const descriptor = Object.getOwnPropertyDescriptor(value, key)
       if (!descriptor || !("value" in descriptor)) throw new TypeError(`${path}.${key} must be a data property`)
@@ -93,9 +97,24 @@ export function assertJson(value: unknown): void {
   preflightJson(value, { active: new WeakSet(), bytes: 0, nodes: 0 })
 }
 
+/**
+ * Defense-in-depth for constrained RepoPress text fields. Structural schemas
+ * are the executable boundary; this guard never makes metadata safe to run.
+ */
 export function assertDeclarative(value: unknown, path = "meta.repopress"): void {
   if (typeof value === "string") {
-    if (EXECUTABLE_STRING.test(value)) throw new TypeError(`${path} must not contain executable source`)
+    const source = value.trim()
+    const isExecutable =
+      /^javascript\s*:/iu.test(source) ||
+      /^<script\b/iu.test(source) ||
+      /<[^>]+\son[A-Za-z]+\s*=/u.test(source) ||
+      /^(?:async\s+)?(?:function\b|class\s+[A-Za-z_$]|import\s|export\s|(?:const|let|var)\s)/u.test(source) ||
+      /^(?:(?:globalThis|window|self)\.)?(?:new\s+Function|Function|eval|alert|console\.[A-Za-z]+)\s*\(/u.test(
+        source,
+      ) ||
+      /^\(\s*0\s*,\s*eval\s*\)\s*\(/u.test(source) ||
+      /^(?:async\s+)?(?:\([^)]*\)|[A-Za-z_$][A-Za-z0-9_$]*)\s*=>/u.test(source)
+    if (isExecutable) throw new TypeError(`${path} must not contain standalone executable source`)
     return
   }
   if (!value || typeof value !== "object") return
@@ -106,7 +125,6 @@ export function assertDeclarative(value: unknown, path = "meta.repopress"): void
     return
   }
   for (const key of Object.keys(value)) {
-    if (EXECUTABLE_KEYS.has(key) || /^on[A-Z]/.test(key)) throw new TypeError(`${path}.${key} is executable metadata`)
     const descriptor = Object.getOwnPropertyDescriptor(value, key)
     if (!descriptor || !("value" in descriptor)) throw new TypeError(`${path}.${key} must be a data property`)
     assertDeclarative(descriptor.value, `${path}.${key}`)
@@ -139,13 +157,72 @@ export function deepFreeze<T>(value: T): T {
 }
 
 const boundedString = z.string().min(1).max(REGISTRY_LIMITS.maxStringBytes)
-const safeNameSchema = boundedString.regex(SAFE_NAME, "Invalid registry name").refine((value) => {
+export const logicalIdSchema = boundedString.regex(SAFE_NAME, "Invalid registry name").refine((value) => {
   return !value.split(/[./:]/).some((segment) => DANGEROUS_KEYS.has(segment))
 }, "Registry name contains a dangerous segment")
-const semanticVersionSchema = boundedString.regex(
+export const mdxNameSchema = boundedString.regex(SAFE_MDX_NAME, "Invalid MDX name").refine((value) => {
+  return !value.split(".").some((segment) => DANGEROUS_KEYS.has(segment))
+}, "MDX name contains a dangerous segment")
+export const semanticVersionSchema = boundedString.regex(
   /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/,
   "Expected a semantic version",
 )
+const WINDOWS_RESERVED = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/iu
+
+function hasControlOrBidi(value: string): boolean {
+  for (const character of value) {
+    const codePoint = character.codePointAt(0) ?? 0
+    if (
+      codePoint <= 0x1f ||
+      (codePoint >= 0x7f && codePoint <= 0x9f) ||
+      codePoint === 0x61c ||
+      codePoint === 0x200e ||
+      codePoint === 0x200f ||
+      (codePoint >= 0x202a && codePoint <= 0x202e) ||
+      (codePoint >= 0x2066 && codePoint <= 0x2069)
+    ) {
+      return true
+    }
+  }
+  return false
+}
+
+function normalizeInstallTarget(value: string, foldCase: boolean): string {
+  if (typeof value !== "string" || value.length === 0 || value.length > REGISTRY_LIMITS.maxStringBytes) {
+    throw new TypeError("Install target must be a bounded non-empty string")
+  }
+  if (hasControlOrBidi(value)) throw new TypeError("Install target contains control or bidi characters")
+  const normalized = value.normalize("NFC").replaceAll("\\", "/")
+  const withoutRoot = normalized.startsWith("~/") ? normalized.slice(2) : normalized
+  if (withoutRoot.startsWith("/") || withoutRoot.includes("~")) throw new TypeError("Install target must be relative")
+  const segments: string[] = []
+  for (const segment of withoutRoot.split("/")) {
+    if (segment === "" || segment === ".") continue
+    if (segment === "..") throw new TypeError("Install target escapes repository root")
+    if (/[<>:"|?*]/u.test(segment)) throw new TypeError("Install target contains a cross-platform reserved character")
+    if (/[. ]$/u.test(segment)) throw new TypeError("Install target segment has a trailing dot or space")
+    if (WINDOWS_RESERVED.test(segment)) throw new TypeError("Install target uses a Windows reserved name")
+    segments.push(foldCase ? segment.toLocaleLowerCase("en-US") : segment)
+  }
+  if (segments.length === 0) throw new TypeError("Install target must name a file or directory")
+  return segments.join("/")
+}
+
+export function canonicalizeInstallTarget(value: string): string {
+  return normalizeInstallTarget(value, true)
+}
+
+export const installTargetSchema = boundedString.transform((value, context) => {
+  try {
+    return normalizeInstallTarget(value, false)
+  } catch (error) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: error instanceof Error ? error.message : "Invalid target",
+    })
+    return z.NEVER
+  }
+})
 export const relativePathSchema = boundedString.refine((value) => {
   const relative = value.startsWith("~/") ? value.slice(2) : value
   const segments = relative.split("/")
@@ -216,8 +293,8 @@ export const authoringProvenanceSchema = z
   .strict()
 
 const authoringFields = {
-  logicalId: safeNameSchema.optional(),
-  mdxName: boundedString.regex(SAFE_MDX_NAME).optional(),
+  logicalId: logicalIdSchema.optional(),
+  mdxName: mdxNameSchema.optional(),
   displayName: boundedString.optional(),
   description: boundedString.optional(),
   category: boundedString.optional(),
@@ -282,8 +359,8 @@ export const authoringMetadataSchema = z.object(authoringFields).strict().superR
 export const normalizedAuthoringMetadataSchema = z
   .object({
     ...authoringFields,
-    logicalId: safeNameSchema,
-    mdxName: boundedString.regex(SAFE_MDX_NAME),
+    logicalId: logicalIdSchema,
+    mdxName: mdxNameSchema,
     displayName: boundedString,
     runtime: z.enum(["client", "server", "astro"]),
     props: z.array(authoringPropSchema).max(REGISTRY_LIMITS.maxProps),
@@ -300,10 +377,66 @@ export const repoPressMetadataSchema = z
   .object({
     apiVersion: z.literal(1),
     version: semanticVersionSchema,
+    kind: z.literal("mdx-component"),
+    logicalId: logicalIdSchema,
+    mdxName: mdxNameSchema,
+    exportName: mdxNameSchema,
+    frameworks: z
+      .array(z.enum(["next", "fumadocs", "astro"]))
+      .min(1)
+      .max(3),
+    preview: z
+      .object({
+        fixtures: z.array(relativePathSchema).max(REGISTRY_LIMITS.maxFixtures),
+        defaultFixture: relativePathSchema.optional(),
+      })
+      .strict(),
     authoring: authoringMetadataSchema,
   })
   .strict()
   .superRefine((value, context) => {
+    if (new Set(value.frameworks).size !== value.frameworks.length) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["frameworks"], message: "Frameworks must be unique" })
+    }
+    if (value.preview.defaultFixture && !value.preview.fixtures.includes(value.preview.defaultFixture)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["preview", "defaultFixture"],
+        message: "Default fixture must be listed in preview fixtures",
+      })
+    }
+    if (value.authoring.logicalId && value.authoring.logicalId !== value.logicalId) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["authoring", "logicalId"],
+        message: "Logical IDs must match",
+      })
+    }
+    if (value.authoring.mdxName && value.authoring.mdxName !== value.mdxName) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["authoring", "mdxName"], message: "MDX names must match" })
+    }
+    const provenance = value.authoring.provenance
+    if (provenance?.source && provenance.source !== "registry") {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["authoring", "provenance", "source"],
+        message: "Registry item provenance must use the registry source",
+      })
+    }
+    if (provenance?.registryItem && provenance.registryItem !== value.logicalId) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["authoring", "provenance", "registryItem"],
+        message: "Registry provenance item must match the logical ID",
+      })
+    }
+    if (provenance?.version && provenance.version !== value.version) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["authoring", "provenance", "version"],
+        message: "Registry provenance version must match metadata version",
+      })
+    }
     try {
       assertDeclarative(value)
     } catch (error) {
@@ -352,7 +485,7 @@ const registryFontSchema = z
 const rawRegistryItemSchema = z
   .object({
     $schema: z.literal("https://ui.shadcn.com/schema/registry-item.json").optional(),
-    name: safeNameSchema,
+    name: logicalIdSchema,
     type: registryFileSchema.shape.type,
     extends: boundedString.optional(),
     title: boundedString.optional(),
@@ -369,8 +502,11 @@ const rawRegistryItemSchema = z
     meta: z.record(jsonLiteralSchema),
     docs: boundedString.optional(),
     categories: z.array(boundedString).max(128).optional(),
-    config: jsonLiteralSchema.optional(),
     font: registryFontSchema.optional(),
+    style: boundedString.optional(),
+    iconLibrary: boundedString.optional(),
+    baseColor: boundedString.optional(),
+    theme: boundedString.optional(),
   })
   .strict()
   .superRefine((value, context) => {
@@ -380,12 +516,17 @@ const rawRegistryItemSchema = z
     if (value.type !== "registry:font" && value.font) {
       context.addIssue({ code: z.ZodIssueCode.custom, path: ["font"], message: "font is only valid for registry:font" })
     }
-    if (value.type !== "registry:base" && value.config) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["config"],
-        message: "config is only valid for registry:base",
-      })
+    const baseFields = ["style", "iconLibrary", "baseColor", "theme"] as const
+    if (value.type !== "registry:base") {
+      for (const field of baseFields) {
+        if (value[field] !== undefined) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [field],
+            message: `${field} is only valid for registry:base`,
+          })
+        }
+      }
     }
     value.files?.forEach((file, index) => {
       if ((file.type === "registry:file" || file.type === "registry:page") && !file.target) {
@@ -396,9 +537,25 @@ const rawRegistryItemSchema = z
         })
       }
     })
-    const filePaths = value.files?.map((file) => file.path) ?? []
-    if (new Set(filePaths).size !== filePaths.length) {
-      context.addIssue({ code: z.ZodIssueCode.custom, path: ["files"], message: "Registry file paths must be unique" })
+    const fileTargets =
+      value.files?.map((file, index) => {
+        try {
+          return canonicalizeInstallTarget(file.target ?? file.path)
+        } catch (error) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["files", index, file.target ? "target" : "path"],
+            message: error instanceof Error ? error.message : "Invalid install target",
+          })
+          return file.target ?? file.path
+        }
+      }) ?? []
+    if (new Set(fileTargets).size !== fileTargets.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["files"],
+        message: "Registry install targets must be unique",
+      })
     }
     const registryDependencies = value.registryDependencies ?? []
     if (new Set(registryDependencies).size !== registryDependencies.length) {
@@ -427,3 +584,24 @@ export type RegistryItem = z.infer<typeof registryItemSchema>
 export type AuthoringMetadata = z.infer<typeof authoringMetadataSchema>
 export type NormalizedAuthoringMetadata = z.infer<typeof normalizedAuthoringMetadataSchema>
 export type RepoPressMetadata = z.infer<typeof repoPressMetadataSchema>
+
+export function normalizeRegistryAuthoringMetadata(input: unknown) {
+  const item = registryItemSchema.parse(input)
+  const metadata = item.meta.repopress
+  const { fixtures: _fixtures, provenance, ...authoring } = metadata.authoring
+  return deepFreeze({
+    ...authoring,
+    logicalId: metadata.logicalId,
+    mdxName: metadata.mdxName,
+    displayName: authoring.displayName ?? item.title ?? metadata.mdxName,
+    version: metadata.version,
+    frameworks: [...metadata.frameworks],
+    previewFixtures: [...metadata.preview.fixtures],
+    provenance: {
+      source: "registry" as const,
+      registryItem: metadata.logicalId,
+      version: metadata.version,
+      ...(provenance?.integrity ? { integrity: provenance.integrity } : {}),
+    },
+  })
+}

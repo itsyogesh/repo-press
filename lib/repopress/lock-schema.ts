@@ -1,5 +1,13 @@
 import { z } from "zod"
-import { integritySchema, jsonBoundary, normalizedAuthoringMetadataSchema, relativePathSchema } from "./registry-schema"
+import {
+  canonicalizeInstallTarget,
+  installTargetSchema,
+  integritySchema,
+  jsonBoundary,
+  logicalIdSchema,
+  normalizedAuthoringMetadataSchema,
+  semanticVersionSchema,
+} from "./registry-schema"
 
 const digestSchema = z.string().regex(/^sha256:[a-f0-9]{64}$/, "Expected a full SHA-256 digest")
 const immutableRefSchema = z
@@ -7,9 +15,10 @@ const immutableRefSchema = z
   .min(1)
   .max(128)
   .regex(
-    /^(?:[a-f0-9]{40}|[a-f0-9]{64}|v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/,
+    /^(?:[a-f0-9]{40}|[a-f0-9]{64}|(?:refs\/tags\/)?v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/,
     "Expected a full commit SHA or semantic version",
   )
+const resolvedRefSchema = z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64}|sha256:[a-f0-9]{64})$/)
 const resolvedAddressSchema = z
   .string()
   .min(1)
@@ -29,11 +38,13 @@ const resolvedAddressSchema = z
 
 const lockEntrySchema = z
   .object({
-    resolved: z.object({ address: resolvedAddressSchema, ref: immutableRefSchema }).strict(),
+    resolved: z
+      .object({ address: resolvedAddressSchema, sourceRef: immutableRefSchema, resolvedRef: resolvedRefSchema })
+      .strict(),
     integrity: integritySchema,
-    dependencies: z.array(z.string().min(1).max(256)).max(256),
+    dependencies: z.array(logicalIdSchema).max(256),
     targets: z
-      .array(z.object({ path: relativePathSchema, digest: digestSchema }).strict())
+      .array(z.object({ path: installTargetSchema, digest: digestSchema }).strict())
       .min(1)
       .max(512),
     authoring: normalizedAuthoringMetadataSchema,
@@ -44,12 +55,18 @@ const lockEntrySchema = z
 const rawLockSchema = z
   .object({
     lockfileVersion: z.literal(1),
-    items: z.record(z.string().min(1).max(256), lockEntrySchema),
+    items: z.record(logicalIdSchema, lockEntrySchema),
   })
   .strict()
   .superRefine((lock, context) => {
-    if (Object.keys(lock.items).length > 512) {
-      context.addIssue({ code: z.ZodIssueCode.custom, path: ["items"], message: "Lockfile exceeds item count limit" })
+    let itemCount = 0
+    for (const itemName in lock.items) {
+      if (!Object.hasOwn(lock.items, itemName)) continue
+      itemCount += 1
+      if (itemCount > 512) {
+        context.addIssue({ code: z.ZodIssueCode.custom, path: ["items"], message: "Lockfile exceeds item count limit" })
+        return
+      }
     }
     const itemNames = new Set(Object.keys(lock.items))
     const targets = new Map<string, string>()
@@ -66,6 +83,38 @@ const rawLockSchema = z
           code: z.ZodIssueCode.custom,
           path: ["items", itemName, "authoring", "provenance", "integrity"],
           message: "Authoring provenance integrity must match the locked item integrity",
+        })
+      }
+      if (item.authoring.provenance.source !== "registry") {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["items", itemName, "authoring", "provenance", "source"],
+          message: "Locked authoring provenance must come from a registry",
+        })
+      }
+      if (item.authoring.provenance.registryItem !== itemName) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["items", itemName, "authoring", "provenance", "registryItem"],
+          message: "Provenance registry item must match the lock key",
+        })
+      }
+      const version = item.authoring.provenance.version
+      if (!version || !semanticVersionSchema.safeParse(version).success) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["items", itemName, "authoring", "provenance", "version"],
+          message: "Locked registry provenance requires a semantic version",
+        })
+      }
+      const sourceRef = item.resolved.sourceRef
+      const sourceIsCommit = /^[a-f0-9]{40}$|^[a-f0-9]{64}$/u.test(sourceRef)
+      const declaredVersion = sourceRef.replace(/^refs\/tags\//u, "").replace(/^v/u, "")
+      if (sourceIsCommit ? sourceRef !== item.resolved.resolvedRef : declaredVersion !== version) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["items", itemName, "resolved"],
+          message: "Declared source ref must resolve consistently with provenance version and immutable ref",
         })
       }
       const uniqueDependencies = new Set<string>()
@@ -87,14 +136,20 @@ const rawLockSchema = z
         uniqueDependencies.add(dependency)
       }
       for (const target of item.targets) {
-        const owner = targets.get(target.path)
+        let identity: string
+        try {
+          identity = canonicalizeInstallTarget(target.path)
+        } catch {
+          continue
+        }
+        const owner = targets.get(identity)
         if (owner) {
           context.addIssue({
             code: z.ZodIssueCode.custom,
             path: ["items", itemName, "targets"],
             message: `Target ${target.path} collides with ${owner}`,
           })
-        } else targets.set(target.path, itemName)
+        } else targets.set(identity, itemName)
       }
     }
 

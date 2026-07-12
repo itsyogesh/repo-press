@@ -123,7 +123,7 @@ describe("updateProject", () => {
         ],
         assets: [{ path: "components/callout.css", type: "style" as const }],
         slots: [{ name: "children", accepts: "mdx" as const, required: true }],
-        fixtures: ["fixtures/callout.mdx"],
+        previewFixtures: ["fixtures/callout.mdx"],
         provenance: {
           source: "registry" as const,
           registryItem: "@repopress/callout",
@@ -138,6 +138,8 @@ describe("updateProject", () => {
     const result = updateProject(config, "docs", { components })
     expect(result.projects[0].components?.Callout).toMatchObject(components.Callout)
     expect(result.projects[0].components?.Callout).toMatchObject({ hasChildren: true, kind: "flow" })
+    expect(Object.isFrozen(result)).toBe(true)
+    expect(Object.isFrozen(result.projects[0].components?.Callout)).toBe(true)
 
     expect(() =>
       updateProject(config, "docs", {
@@ -167,6 +169,32 @@ describe("updateProject", () => {
         },
       }),
     ).toThrow("dangerous key")
+  })
+
+  it("rejects unsafe or excessive component-map keys and whole-config hostile JSON", () => {
+    const config = makeConfig()
+    for (const name of ["constructor", "prototype", "toString", "valueOf", "not a component", "123Bad"]) {
+      expect(() => updateProject(config, "docs", { components: { [name]: {} } })).toThrow()
+    }
+
+    const tooMany = Object.fromEntries(Array.from({ length: 513 }, (_, index) => [`Component${index}`, {}]))
+    expect(() => updateProject(config, "docs", { components: tooMany })).toThrow("component count")
+
+    const cyclic = makeConfig() as RepoPressConfig & { self?: unknown }
+    cyclic.self = cyclic
+    expect(() =>
+      addProject(cyclic, {
+        id: "blog",
+        name: "Blog",
+        contentRoot: "blog",
+        framework: "custom",
+        contentType: "blog",
+      }),
+    ).toThrow("cycle")
+
+    const accessor = makeConfig()
+    Object.defineProperty(accessor, "plugins", { enumerable: true, get: () => ({ bad: "value" }) })
+    expect(() => removeProject(accessor, "docs")).toThrow("data property")
   })
 })
 
