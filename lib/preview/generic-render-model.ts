@@ -30,6 +30,10 @@ export type GenericRenderModel = { blocks: GenericBlock[] }
 
 export type GenericRenderDiagnosticCode =
   | "SOURCE_BYTE_LIMIT"
+  | "SOURCE_LINE_LIMIT"
+  | "SOURCE_LINE_COUNT_LIMIT"
+  | "SOURCE_CONTAINER_DEPTH_LIMIT"
+  | "SOURCE_CONTAINER_INDENT_LIMIT"
   | "SYNTAX_NODE_LIMIT"
   | "SYNTAX_DEPTH_LIMIT"
   | "OUTPUT_NODE_LIMIT"
@@ -46,6 +50,14 @@ export const GENERIC_RENDER_LIMITS = Object.freeze({
   outputNodes: 5_000,
   outputBytes: 256 * 1024,
   outputDepth: 64,
+})
+
+export const GENERIC_SOURCE_PREFLIGHT_LIMITS = Object.freeze({
+  sourceBytes: GENERIC_RENDER_LIMITS.sourceBytes,
+  lineBytes: 64 * 1024,
+  lines: 20_000,
+  containerDepth: 64,
+  containerIndentColumns: 256,
 })
 
 type SyntaxNode = {
@@ -74,6 +86,10 @@ const SAFE_LINK_SCHEMES = new Set(["http", "https", "mailto", "tel"])
 const SAFE_IMAGE_SCHEMES = new Set(["http", "https"])
 const DIAGNOSTIC_CODES = new Set<GenericRenderDiagnosticCode>([
   "SOURCE_BYTE_LIMIT",
+  "SOURCE_LINE_LIMIT",
+  "SOURCE_LINE_COUNT_LIMIT",
+  "SOURCE_CONTAINER_DEPTH_LIMIT",
+  "SOURCE_CONTAINER_INDENT_LIMIT",
   "SYNTAX_NODE_LIMIT",
   "SYNTAX_DEPTH_LIMIT",
   "OUTPUT_NODE_LIMIT",
@@ -84,14 +100,15 @@ const DIAGNOSTIC_CODES = new Set<GenericRenderDiagnosticCode>([
   "INVALID_MODEL",
 ])
 
-export function buildGenericRenderModel(source: string): GenericRenderModel {
-  if (utf8ByteLengthExceeds(source, GENERIC_RENDER_LIMITS.sourceBytes)) {
-    return diagnosticModel("SOURCE_BYTE_LIMIT")
-  }
+type GenericMdxParser = { parse: (source: string) => unknown }
+
+export function buildGenericRenderModel(source: string, parser: GenericMdxParser = mdxParser): GenericRenderModel {
+  const sourcePreflightFailure = inspectGenericSourcePreflight(source)
+  if (sourcePreflightFailure) return diagnosticModel(sourcePreflightFailure)
 
   let root: SyntaxNode
   try {
-    root = mdxParser.parse(source) as SyntaxNode
+    root = parser.parse(source) as SyntaxNode
   } catch {
     // Invalid MDX fails closed: parsing the whole document as Markdown would
     // preserve import and expression source as ordinary text. Keep only inert
@@ -104,6 +121,156 @@ export function buildGenericRenderModel(source: string): GenericRenderModel {
 
   const definitions = collectDefinitions(root.children ?? [])
   return finalizeBuiltModel({ blocks: toBlocks(root.children ?? [], definitions) })
+}
+
+type SourcePreflightFailure =
+  | "SOURCE_BYTE_LIMIT"
+  | "SOURCE_LINE_LIMIT"
+  | "SOURCE_LINE_COUNT_LIMIT"
+  | "SOURCE_CONTAINER_DEPTH_LIMIT"
+  | "SOURCE_CONTAINER_INDENT_LIMIT"
+
+export function inspectGenericSourcePreflight(source: string): SourcePreflightFailure | null {
+  let totalBytes = 0
+  let lineBytes = 0
+  let lineStart = 0
+  let lines = 1
+  let fence: { marker: "`" | "~"; length: number } | null = null
+
+  const inspectLine = (lineEnd: number): SourcePreflightFailure | null => {
+    const boundary = getFenceBoundary(source, lineStart, lineEnd)
+    if (fence) {
+      if (boundary?.canClose && boundary.marker === fence.marker && boundary.length >= fence.length) fence = null
+    } else if (boundary) {
+      fence = boundary
+    } else {
+      const containerFailure = inspectContainerPrefix(source, lineStart, lineEnd)
+      if (containerFailure) return containerFailure
+    }
+    return lineBytes > GENERIC_SOURCE_PREFLIGHT_LIMITS.lineBytes ? "SOURCE_LINE_LIMIT" : null
+  }
+
+  for (let index = 0; index < source.length; index += 1) {
+    const code = source.charCodeAt(index)
+    let width = 1
+    if (code <= 0x7f) width = 1
+    else if (code <= 0x7ff) width = 2
+    else if (
+      code >= 0xd800 &&
+      code <= 0xdbff &&
+      source.charCodeAt(index + 1) >= 0xdc00 &&
+      source.charCodeAt(index + 1) <= 0xdfff
+    ) {
+      width = 4
+      index += 1
+    } else width = 3
+
+    totalBytes += width
+    if (totalBytes > GENERIC_SOURCE_PREFLIGHT_LIMITS.sourceBytes) return "SOURCE_BYTE_LIMIT"
+
+    if (code === 0x0a || code === 0x0d) {
+      const lineEnd = index
+      if (code === 0x0d && source.charCodeAt(index + 1) === 0x0a) {
+        totalBytes += 1
+        if (totalBytes > GENERIC_SOURCE_PREFLIGHT_LIMITS.sourceBytes) return "SOURCE_BYTE_LIMIT"
+        index += 1
+      }
+      const failure = inspectLine(lineEnd)
+      if (failure) return failure
+      lines += 1
+      if (lines > GENERIC_SOURCE_PREFLIGHT_LIMITS.lines) return "SOURCE_LINE_COUNT_LIMIT"
+      lineStart = index + 1
+      lineBytes = 0
+    } else {
+      lineBytes += width
+    }
+  }
+
+  return inspectLine(source.length)
+}
+
+function inspectContainerPrefix(
+  source: string,
+  lineStart: number,
+  lineEnd: number,
+): "SOURCE_CONTAINER_DEPTH_LIMIT" | "SOURCE_CONTAINER_INDENT_LIMIT" | null {
+  let cursor = lineStart
+  let depth = 0
+  let indentation = 0
+
+  while (cursor < lineEnd) {
+    let whitespaceColumns = 0
+    while (cursor < lineEnd) {
+      const character = source[cursor]
+      if (character === " ") whitespaceColumns += 1
+      else if (character === "\t") whitespaceColumns += 4
+      else break
+      cursor += 1
+    }
+
+    const character = source[cursor]
+    const listMarkerEnd = getListMarkerEnd(source, cursor, lineEnd)
+    if (character !== ">" && listMarkerEnd === null) return null
+
+    indentation += whitespaceColumns
+    if (indentation > GENERIC_SOURCE_PREFLIGHT_LIMITS.containerIndentColumns) {
+      return "SOURCE_CONTAINER_INDENT_LIMIT"
+    }
+    depth += 1
+    if (depth > GENERIC_SOURCE_PREFLIGHT_LIMITS.containerDepth) return "SOURCE_CONTAINER_DEPTH_LIMIT"
+    cursor = character === ">" ? cursor + 1 : (listMarkerEnd ?? cursor + 1)
+  }
+
+  return null
+}
+
+function getListMarkerEnd(source: string, start: number, end: number) {
+  const marker = source[start]
+  if ((marker === "-" || marker === "+" || marker === "*") && isMarkdownWhitespace(source[start + 1], start + 1, end)) {
+    return start + 1
+  }
+
+  let cursor = start
+  let digits = 0
+  while (cursor < end && digits < 9 && /\d/.test(source[cursor] ?? "")) {
+    cursor += 1
+    digits += 1
+  }
+  if (
+    digits > 0 &&
+    (source[cursor] === "." || source[cursor] === ")") &&
+    isMarkdownWhitespace(source[cursor + 1], cursor + 1, end)
+  ) {
+    return cursor + 1
+  }
+  return null
+}
+
+function isMarkdownWhitespace(character: string | undefined, index: number, end: number) {
+  return index >= end || character === " " || character === "\t"
+}
+
+function getFenceBoundary(source: string, start: number, end: number) {
+  let cursor = start
+  let spaces = 0
+  while (cursor < end && source[cursor] === " " && spaces < 4) {
+    cursor += 1
+    spaces += 1
+  }
+  if (spaces > 3) return null
+  const rawMarker = source[cursor]
+  if (rawMarker !== "`" && rawMarker !== "~") return null
+  const marker: "`" | "~" = rawMarker
+  const markerStart = cursor
+  while (cursor < end && source[cursor] === marker) cursor += 1
+  const length = cursor - markerStart
+  if (length < 3) return null
+  let canClose = true
+  while (cursor < end) {
+    if (source[cursor] !== " " && source[cursor] !== "\t") canClose = false
+    cursor += 1
+  }
+  return { marker, length, canClose }
 }
 
 function finalizeBuiltModel(model: GenericRenderModel): GenericRenderModel {
@@ -320,6 +487,12 @@ function isNullableString(value: unknown): value is string | null {
 function diagnosticModel(code: GenericRenderDiagnosticCode): GenericRenderModel {
   const messages: Record<GenericRenderDiagnosticCode, string> = {
     SOURCE_BYTE_LIMIT: "Generic preview is unavailable because this document exceeds the safe source-size limit.",
+    SOURCE_LINE_LIMIT: "Generic preview is unavailable because this document contains an excessively long line.",
+    SOURCE_LINE_COUNT_LIMIT: "Generic preview is unavailable because this document contains too many lines.",
+    SOURCE_CONTAINER_DEPTH_LIMIT:
+      "Generic preview is unavailable because this document contains excessive container nesting.",
+    SOURCE_CONTAINER_INDENT_LIMIT:
+      "Generic preview is unavailable because this document contains excessive container indentation.",
     SYNTAX_NODE_LIMIT: "Generic preview is unavailable because this document has too many syntax nodes.",
     SYNTAX_DEPTH_LIMIT: "Generic preview is unavailable because this document is nested too deeply.",
     OUTPUT_NODE_LIMIT: "Generic preview is unavailable because the safe render node limit was exceeded.",

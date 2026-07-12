@@ -1,5 +1,9 @@
-import { describe, expect, it } from "vitest"
-import { buildGenericRenderModel } from "../generic-render-model"
+import { describe, expect, it, vi } from "vitest"
+import {
+  buildGenericRenderModel,
+  GENERIC_SOURCE_PREFLIGHT_LIMITS,
+  inspectGenericSourcePreflight,
+} from "../generic-render-model"
 
 describe("buildGenericRenderModel", () => {
   it("converts supported Markdown and GFM syntax into a serializable render model", () => {
@@ -172,7 +176,9 @@ export const token = readToken()
 
   it("rejects deeply nested syntax before recursive conversion", () => {
     const secret = "deep-secret"
-    const model = buildGenericRenderModel(`${"> ".repeat(80)}${secret}`)
+    const model = buildGenericRenderModel(
+      `${Array.from({ length: 80 }, () => "<Box>").join("\n")}\n${secret}\n${Array.from({ length: 80 }, () => "</Box>").join("\n")}`,
+    )
 
     expect(model.blocks).toEqual([
       {
@@ -203,7 +209,9 @@ export const token = readToken()
 
   it("rejects output-text exhaustion without returning partial content", () => {
     const secret = "output-secret"
-    const model = buildGenericRenderModel(`${secret}${"x".repeat(270_000)}`)
+    const model = buildGenericRenderModel(
+      `\`\`\`txt\n${secret}${"x".repeat(55_000)}\n${Array.from({ length: 4 }, () => "x".repeat(55_000)).join("\n")}\n\`\`\``,
+    )
 
     expect(model.blocks).toEqual([
       {
@@ -227,5 +235,64 @@ export const token = readToken()
         message: "Generic preview is unavailable because the safe render node limit was exceeded.",
       },
     ])
+  })
+
+  it.each([
+    {
+      name: "blockquote marker flood",
+      source: "> ".repeat(100_000),
+      code: "SOURCE_CONTAINER_DEPTH_LIMIT",
+    },
+    {
+      name: "list marker flood",
+      source: "- ".repeat(100_000),
+      code: "SOURCE_CONTAINER_DEPTH_LIMIT",
+    },
+    {
+      name: "pathological list indentation",
+      source: `${" ".repeat(300)}- item`,
+      code: "SOURCE_CONTAINER_INDENT_LIMIT",
+    },
+    {
+      name: "pathological line count",
+      source: "x\n".repeat(20_001),
+      code: "SOURCE_LINE_COUNT_LIMIT",
+    },
+    {
+      name: "pathological CR line count",
+      source: "x\r".repeat(20_001),
+      code: "SOURCE_LINE_COUNT_LIMIT",
+    },
+    {
+      name: "pathological line length",
+      source: "x".repeat(70_000),
+      code: "SOURCE_LINE_LIMIT",
+    },
+  ])("rejects $name before invoking the MDX parser", ({ source, code }) => {
+    const parser = { parse: vi.fn(() => ({ type: "root", children: [] })) }
+
+    const model = buildGenericRenderModel(source, parser)
+
+    expect(parser.parse).not.toHaveBeenCalled()
+    expect(model.blocks).toEqual([
+      expect.objectContaining({
+        type: "diagnostic",
+        code,
+      }),
+    ])
+    expect(JSON.stringify(model)).not.toContain(source.slice(0, 80))
+  })
+
+  it("allows legitimate long prose, fenced code, and moderate container nesting", () => {
+    const longProse = "a".repeat(60_000)
+    const longCode = `\`\`\`txt\n${"b".repeat(60_000)}\n\`\`\``
+    const codeWithFenceLikeContent = `\`\`\`txt\n\`\`\`not-a-close\n${"> ".repeat(100)}\n\`\`\``
+    const moderateContainers = `${"> ".repeat(20)}Readable\n${"  ".repeat(20)}- nested item`
+
+    expect(inspectGenericSourcePreflight(longProse)).toBeNull()
+    expect(inspectGenericSourcePreflight(longCode)).toBeNull()
+    expect(inspectGenericSourcePreflight(codeWithFenceLikeContent)).toBeNull()
+    expect(inspectGenericSourcePreflight(moderateContainers)).toBeNull()
+    expect(GENERIC_SOURCE_PREFLIGHT_LIMITS.lineBytes).toBeGreaterThan(60_000)
   })
 })
