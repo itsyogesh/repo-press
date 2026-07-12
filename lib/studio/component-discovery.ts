@@ -127,7 +127,9 @@ export function maskHtmlCommentsForDiscovery(
     let end = index + 4
     while (end < source.length && !source.startsWith("-->", end)) end += 1
     if (end >= source.length) return { ok: false, diagnostic: "COMPONENT_DISCOVERY_HTML_COMMENT_ERROR" }
-    masked ??= Array.from(source)
+    // Scanner positions are UTF-16 code-unit offsets; keep the buffer indexed
+    // the same way so astral characters do not shift later mask ranges.
+    masked ??= source.split("")
     for (let cursor = index; cursor < end + 3; cursor += 1) {
       if (masked[cursor] !== "\n" && masked[cursor] !== "\r") masked[cursor] = " "
     }

@@ -64,6 +64,20 @@ describe("current-document component discovery", () => {
     expect(masked.source).not.toContain("Hidden")
   })
 
+  it("preserves UTF-16 offsets around astral characters while masking comments", () => {
+    const source = "😀 before\r\n<!-- 😀 <Hidden /> -->\n<Actual />"
+    const masked = maskHtmlCommentsForDiscovery(source)
+    expect(masked.ok).toBe(true)
+    if (!masked.ok) return
+    expect(masked.source.length).toBe(source.length)
+    expect([...masked.source.matchAll(/\r\n|\n/g)].map((match) => match.index)).toEqual(
+      [...source.matchAll(/\r\n|\n/g)].map((match) => match.index),
+    )
+    expect(masked.source).toContain("😀 before")
+    expect(masked.source).not.toContain("Hidden")
+    expect(discoverMdxComponents(source)).toEqual({ names: ["Actual"] })
+  })
+
   it("fails closed deterministically when source exceeds parser budgets", () => {
     const source = `<Portal />${"界".repeat(175_000)}`
     expect(discoverMdxComponents(source)).toEqual(discoverMdxComponents(source))
