@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest"
+import { buildAuthoringCatalog } from "@/lib/studio/authoring-catalog"
+import { repoPressLockSchema } from "../lock-schema"
 import { canonicalizeInstallTarget, normalizeRegistryAuthoringMetadata, registryItemSchema } from "../registry-schema"
 
 function validItem() {
@@ -45,7 +47,7 @@ function validItem() {
           ],
           slots: [{ name: "children", accepts: "mdx", required: true }],
           assets: [{ path: "registry/repopress/callout/callout.css", type: "style" }],
-          fixtures: ["registry/repopress/callout/fixture.mdx"],
+          previewFixtures: ["registry/repopress/callout/fixture.mdx"],
           provenance: {
             source: "registry",
             registryItem: "@repopress/callout",
@@ -78,7 +80,7 @@ describe("registryItemSchema", () => {
     expect(result.meta.repopress.authoring).toMatchObject({
       displayName: "Callout box",
       runtime: "client",
-      fixtures: ["registry/repopress/callout/fixture.mdx"],
+      previewFixtures: ["registry/repopress/callout/fixture.mdx"],
       assets: [{ path: "registry/repopress/callout/callout.css", type: "style" }],
     })
     expect(Object.isFrozen(result)).toBe(true)
@@ -94,6 +96,8 @@ describe("registryItemSchema", () => {
       version: "1.2.0",
       frameworks: ["next", "fumadocs"],
       previewFixtures: ["registry/repopress/callout/fixture.mdx"],
+      defaultFixture: "registry/repopress/callout/fixture.mdx",
+      exportName: "Callout",
       assets: [{ path: "registry/repopress/callout/callout.css", type: "style" }],
       provenance: {
         source: "registry",
@@ -102,6 +106,32 @@ describe("registryItemSchema", () => {
       },
     })
     expect(Object.isFrozen(normalized)).toBe(true)
+  })
+
+  it("preserves one normalized contract through registry, catalog, and lock", () => {
+    const normalized = normalizeRegistryAuthoringMetadata(validItem())
+    const [catalogEntry] = buildAuthoringCatalog({ metadata: { Callout: normalized } })
+    expect(catalogEntry).toStrictEqual(normalized)
+
+    const digest = `sha256:${"a".repeat(64)}`
+    const lock = repoPressLockSchema.parse({
+      lockfileVersion: 1,
+      items: {
+        "@repopress/callout": {
+          resolved: {
+            address: "https://registry.example/r/callout.json",
+            sourceRef: "v1.2.0",
+            resolvedRef: "0123456789abcdef0123456789abcdef01234567",
+          },
+          integrity: "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+          dependencies: [],
+          targets: [{ path: "components/Callout.tsx", digest }],
+          authoring: catalogEntry,
+          localModificationDigest: digest,
+        },
+      },
+    })
+    expect(lock.items["@repopress/callout"].authoring).toStrictEqual(normalized)
   })
 
   it.each([0, 2, "1"])("rejects unknown or malformed API version %p", (apiVersion) => {
@@ -144,7 +174,10 @@ describe("registryItemSchema", () => {
     expect(registryItemSchema.safeParse(unknown).success).toBe(false)
 
     const oversized = validItem()
-    oversized.meta.repopress.authoring.fixtures = Array.from({ length: 129 }, (_, index) => `fixture-${index}.mdx`)
+    oversized.meta.repopress.authoring.previewFixtures = Array.from(
+      { length: 129 },
+      (_, index) => `fixture-${index}.mdx`,
+    )
     expect(registryItemSchema.safeParse(oversized).success).toBe(false)
   })
 
@@ -209,6 +242,11 @@ describe("registryItemSchema", () => {
     "window.alert(1)",
     "(0, eval)('1')",
     "async value => value",
+    "fetch('/api')",
+    "require('fs')",
+    "doWork()",
+    "while (true) {}",
+    "document.cookie = 'x'",
   ])("rejects standalone executable declarative text: %s", (description) => {
     const item = validItem()
     item.meta.repopress.authoring.description = description
@@ -219,6 +257,10 @@ describe("registryItemSchema", () => {
     "This function describes how the Callout behaves.",
     "The docs mention alert(1) as an example, but do not execute it.",
     'Use `console.log("x")` while debugging.',
+    "import maps describe module resolution.",
+    "export controls determine package visibility.",
+    "class names use PascalCase.",
+    "const assertions preserve literal types.",
   ])("allows inert explanatory prose: %s", (description) => {
     const item = validItem()
     item.meta.repopress.authoring.description = description
@@ -228,8 +270,33 @@ describe("registryItemSchema", () => {
   it("does not scan unrelated shadcn docs or vendor metadata as RepoPress executable truth", () => {
     const item = validItem()
     ;(item as typeof item & { docs: string }).docs = 'Run console.log("x") in your application after installation.'
-    ;(item.meta as Record<string, unknown>).vendor = { example: "value => value" }
-    expect(registryItemSchema.safeParse(item).success).toBe(true)
+    ;(item.meta as Record<string, unknown>).vendor = {
+      example: "value => value",
+      toString: "display helper",
+      valueOf: "display value",
+    }
+    const parsed = registryItemSchema.parse(item)
+    expect(parsed.meta.vendor).toEqual({
+      example: "value => value",
+      toString: "display helper",
+      valueOf: "display value",
+    })
+  })
+
+  it("rejects nested array accessors without invoking them", () => {
+    const item = validItem()
+    const values: unknown[] = []
+    let calls = 0
+    Object.defineProperty(values, 0, {
+      enumerable: true,
+      get: () => {
+        calls += 1
+        return "unsafe"
+      },
+    })
+    ;(item.meta as Record<string, unknown>).vendor = { values }
+    expect(registryItemSchema.safeParse(item).success).toBe(false)
+    expect(calls).toBe(0)
   })
 
   it("canonicalizes install target identities and rejects cross-platform hazards", () => {

@@ -1,49 +1,15 @@
-export type AuthoringPropType = "string" | "number" | "boolean" | "expression" | "image"
+import {
+  compareCodeUnits,
+  type NormalizedAuthoringMetadata,
+  normalizedAuthoringMetadataSchema,
+} from "@/lib/repopress/registry-schema"
 
-export type AuthoringProp = {
-  name: string
-  type: AuthoringPropType
-  label?: string
-  default?: unknown
-  required?: boolean
-  description?: string
-  options?: string[]
-  placeholder?: string
-}
-
-export type AuthoringSlot = {
-  name: string
-  accepts: "text" | "markdown" | "mdx" | "components"
-  required?: boolean
-}
-
-export type AuthoringProvenance = {
-  source: "native" | "registry" | "manual"
-  registryItem?: string
-  version?: string
-  integrity?: string
-}
-
-export type AuthoringAsset = { path: string; type: "image" | "style" | "font" | "file" }
-
-export type AuthoringComponent = {
-  logicalId: string
-  mdxName: string
-  displayName: string
-  description?: string
-  category?: string
-  version?: string
-  assets?: AuthoringAsset[]
-  import?: { source: string; exportName: string }
-  frameworks?: Array<"next" | "fumadocs" | "astro">
-  runtime: "client" | "server" | "astro"
-  schemaStatus: "complete" | "incomplete"
-  props: AuthoringProp[]
-  slots: AuthoringSlot[]
-  previewFixtures: string[]
-  provenance: AuthoringProvenance
-  kind: "flow" | "text"
-}
+export type AuthoringComponent = NormalizedAuthoringMetadata
+export type AuthoringProp = AuthoringComponent["props"][number]
+export type AuthoringPropType = AuthoringProp["type"]
+export type AuthoringSlot = AuthoringComponent["slots"][number]
+export type AuthoringProvenance = AuthoringComponent["provenance"]
+export type AuthoringAsset = AuthoringComponent["assets"][number]
 
 export type AuthoringCatalog = AuthoringComponent[]
 
@@ -54,6 +20,8 @@ export type AuthoringComponentMetadata = {
   category?: string
   version?: string
   assets?: AuthoringAsset[]
+  exportName?: string
+  defaultFixture?: string
   import?: { source: string; exportName: string }
   frameworks?: Array<"next" | "fumadocs" | "astro">
   runtime?: AuthoringComponent["runtime"]
@@ -214,15 +182,17 @@ function projectProps(metadata: Record<string, unknown>): AuthoringProp[] {
     const required = ownValue(prop, "required")
     if (required !== undefined && typeof required !== "boolean")
       throw new TypeError(`props[${index}].required must be boolean`)
+    const defaultValue = hasOwn(prop, "default") ? ownValue(prop, "default") : undefined
+    if (defaultValue !== undefined) {
+      preflightJson(defaultValue, { nodes: 0, bytes: 0, active: new WeakSet() }, 0, `props[${index}].default`)
+    }
     result.push({
       name,
       type,
       ...(optionalString(prop, "label", `props[${index}].label`) !== undefined
         ? { label: optionalString(prop, "label", `props[${index}].label`) }
         : {}),
-      ...(hasOwn(prop, "default") && ownValue(prop, "default") !== undefined
-        ? { default: ownValue(prop, "default") }
-        : {}),
+      ...(defaultValue !== undefined ? { default: defaultValue } : {}),
       ...(required !== undefined ? { required } : {}),
       ...(optionalString(prop, "description", `props[${index}].description`) !== undefined
         ? { description: optionalString(prop, "description", `props[${index}].description`) }
@@ -318,7 +288,7 @@ function projectImport(metadata: Record<string, unknown>): AuthoringComponent["i
   return { source, exportName }
 }
 
-function projectFrameworks(metadata: Record<string, unknown>): AuthoringComponent["frameworks"] {
+function projectFrameworks(metadata: Record<string, unknown>): AuthoringComponent["frameworks"] | undefined {
   const value = ownValue(metadata, "frameworks")
   if (value === undefined) return undefined
   if (!Array.isArray(value) || value.length > 3) throw new TypeError("frameworks must be a bounded array")
@@ -367,8 +337,10 @@ function preflightJson(value: unknown, state: CloneState, depth = 0, path = "cat
       throw new TypeError("Authoring catalog exceeds node limit")
     }
     for (let index = 0; index < value.length; index += 1) {
-      if (!Object.hasOwn(value, index)) throw new TypeError(`Authoring catalog contains undefined at ${path}[${index}]`)
-      preflightJson(value[index], state, depth + 1, `${path}[${index}]`)
+      const descriptor = Object.getOwnPropertyDescriptor(value, String(index))
+      if (!descriptor) throw new TypeError(`Authoring catalog contains undefined at ${path}[${index}]`)
+      if (!("value" in descriptor)) throw new TypeError(`${path}[${index}] must be an own data descriptor`)
+      preflightJson(descriptor.value, state, depth + 1, `${path}[${index}]`)
     }
   } else {
     const prototype = Object.getPrototypeOf(value)
@@ -405,8 +377,10 @@ function cloneJson(value: unknown, state: CloneState, depth = 0, path = "catalog
   let clone: unknown
   if (Array.isArray(value)) {
     clone = Array.from({ length: value.length }, (_, index) => {
-      if (!Object.hasOwn(value, index)) throw new TypeError(`Authoring catalog contains undefined at ${path}[${index}]`)
-      return cloneJson(value[index], state, depth + 1, `${path}[${index}]`)
+      const descriptor = Object.getOwnPropertyDescriptor(value, String(index))
+      if (!descriptor) throw new TypeError(`Authoring catalog contains undefined at ${path}[${index}]`)
+      if (!("value" in descriptor)) throw new TypeError(`${path}[${index}] must be an own data descriptor`)
+      return cloneJson(descriptor.value, state, depth + 1, `${path}[${index}]`)
     })
   } else {
     const prototype = Object.getPrototypeOf(value)
@@ -497,18 +471,21 @@ export function buildAuthoringCatalog(input: BuildAuthoringCatalogInput): Author
     if (!metadata) {
       if (logicalIds.has(mdxName)) throw new TypeError(`Authoring catalog has duplicate logical ID: ${mdxName}`)
       logicalIds.add(mdxName)
-      return {
+      return normalizedAuthoringMetadataSchema.parse({
         logicalId: mdxName,
         mdxName,
         displayName: mdxName,
+        exportName: mdxName,
         runtime: "server",
         schemaStatus: "incomplete",
         props: [],
         slots: [],
+        assets: [],
+        frameworks: [],
         previewFixtures: [],
         provenance: { source: "native" },
         kind: "flow",
-      }
+      })
     }
 
     const logicalId = optionalString(metadata, "logicalId", "logical ID") ?? mdxName
@@ -537,10 +514,16 @@ export function buildAuthoringCatalog(input: BuildAuthoringCatalogInput): Author
     const assets = projectAssets(metadata)
     const importDeclaration = projectImport(metadata)
     const frameworks = projectFrameworks(metadata)
-    return {
+    const exportName = optionalString(metadata, "exportName", "exportName") ?? mdxName
+    validateMdxName(exportName)
+    const defaultFixture = optionalString(metadata, "defaultFixture", "defaultFixture")
+    const displayName = optionalString(metadata, "displayName", "displayName") ?? mdxName
+    preflightJson(displayName, { nodes: 0, bytes: 0, active: new WeakSet() }, 0, "displayName")
+    return normalizedAuthoringMetadataSchema.parse({
       logicalId,
       mdxName,
-      displayName: optionalString(metadata, "displayName", "displayName") ?? mdxName,
+      displayName,
+      exportName,
       ...(optionalString(metadata, "description", "description") !== undefined
         ? { description: optionalString(metadata, "description", "description") }
         : {}),
@@ -548,22 +531,23 @@ export function buildAuthoringCatalog(input: BuildAuthoringCatalogInput): Author
         ? { category: optionalString(metadata, "category", "category") }
         : {}),
       ...(version !== undefined ? { version } : {}),
-      ...(assets !== undefined ? { assets } : {}),
+      assets: assets ?? [],
       ...(importDeclaration !== undefined ? { import: importDeclaration } : {}),
-      ...(frameworks !== undefined ? { frameworks } : {}),
+      frameworks: frameworks ?? [],
       runtime: runtime as AuthoringComponent["runtime"],
       schemaStatus: schemaStatus(metadata),
       props: projectProps(metadata),
       slots: projectSlots(metadata),
       previewFixtures: projectedFixtures,
+      ...(defaultFixture !== undefined ? { defaultFixture } : {}),
       provenance: projectProvenance(metadata),
       kind,
-    }
+    })
   })
 
   // Reject hostile strings/defaults before locale sorting or clone allocation.
   preflightJson(catalog, { nodes: 0, bytes: 0, active: new WeakSet() })
-  catalog.sort((a, b) => a.displayName.localeCompare(b.displayName) || a.mdxName.localeCompare(b.mdxName))
+  catalog.sort((a, b) => compareCodeUnits(a.displayName, b.displayName) || compareCodeUnits(a.mdxName, b.mdxName))
   return cloneAndFreezeCatalog(catalog)
 }
 
@@ -595,7 +579,7 @@ export function extendAuthoringCatalogWithNativeNames(
   }
   return cloneAndFreezeCatalog(
     [...catalog, ...additions].sort(
-      (a, b) => a.displayName.localeCompare(b.displayName) || a.mdxName.localeCompare(b.mdxName),
+      (a, b) => compareCodeUnits(a.displayName, b.displayName) || compareCodeUnits(a.mdxName, b.mdxName),
     ),
   )
 }

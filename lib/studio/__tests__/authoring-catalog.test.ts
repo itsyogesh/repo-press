@@ -47,6 +47,38 @@ describe("authoring catalog separation", () => {
     )
     expect(invoked).toBe(false)
   })
+  it("rejects nested default array accessors without invoking them", () => {
+    const values: unknown[] = []
+    let calls = 0
+    Object.defineProperty(values, 0, {
+      enumerable: true,
+      get: () => {
+        calls += 1
+        return "unsafe"
+      },
+    })
+    expect(() =>
+      buildAuthoringCatalog({
+        metadata: { Widget: { props: [{ name: "data", type: "expression", default: values }] } },
+      }),
+    ).toThrow("data descriptor")
+    expect(calls).toBe(0)
+  })
+
+  it("serializes identical catalogs deterministically across input order", () => {
+    const metadata = {
+      Zed: { props: [], slots: [] },
+      Alpha: { props: [], slots: [] },
+      _Alpha: { props: [], slots: [] },
+    }
+    const first = buildAuthoringCatalog({ nativeComponentNames: ["Zed", "_Alpha", "Alpha"], metadata })
+    const second = buildAuthoringCatalog({
+      nativeComponentNames: ["Alpha", "Zed", "_Alpha"],
+      metadata: { _Alpha: metadata._Alpha, Alpha: metadata.Alpha, Zed: metadata.Zed },
+    })
+    expect(second).toStrictEqual(first)
+    expect(JSON.stringify(second)).toBe(JSON.stringify(first))
+  })
   it("keeps executable render bindings outside the serializable catalog", () => {
     const Callout = () => null
     const bindings = createRenderBindings({ Callout })

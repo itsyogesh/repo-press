@@ -1,3 +1,4 @@
+import { compareCodeUnits } from "@/lib/repopress/registry-schema"
 import {
   inspectGenericSourcePreflight,
   parseRepoPressMdxSyntax,
@@ -187,7 +188,7 @@ export function discoverMdxComponents(content: string): ComponentDiscoveryResult
       if (child) stack.push({ node: child, parent: node, index })
     }
   }
-  return Object.freeze({ names: Object.freeze(Array.from(names).sort((a, b) => a.localeCompare(b))) })
+  return Object.freeze({ names: Object.freeze(Array.from(names).sort(compareCodeUnits)) })
 }
 
 export type CurrentDocumentAuthoringState = Readonly<{
@@ -202,9 +203,7 @@ function buildStateFromDiscovery(
   existingNativeNames: readonly string[],
   existingDiagnostics: readonly string[],
 ): CurrentDocumentAuthoringState {
-  const nativeComponentNames = Array.from(new Set([...existingNativeNames, ...discovery.names])).sort((a, b) =>
-    a.localeCompare(b),
-  )
+  const nativeComponentNames = Array.from(new Set([...existingNativeNames, ...discovery.names])).sort(compareCodeUnits)
   return Object.freeze({
     authoringCatalog: extendAuthoringCatalogWithNativeNames(baseCatalog, nativeComponentNames),
     nativeComponentNames: Object.freeze(nativeComponentNames),

@@ -1,10 +1,11 @@
+import { parse } from "acorn"
 import { z } from "zod"
 
 export const REGISTRY_LIMITS = Object.freeze({
   maxDepth: 24,
   maxNodes: 10_000,
   maxBytes: 256 * 1024,
-  maxStringBytes: 64 * 1024,
+  maxStringBytes: 256 * 1024,
   maxFiles: 512,
   maxDependencies: 256,
   maxProps: 128,
@@ -15,15 +16,9 @@ export const REGISTRY_LIMITS = Object.freeze({
   maxObjectProperties: 2_048,
 })
 
-const DANGEROUS_KEYS = new Set([
-  "__proto__",
-  "prototype",
-  "constructor",
-  "toString",
-  "valueOf",
-  "dangerouslySetInnerHTML",
-])
-const SAFE_NAME = /^[A-Za-z0-9@][A-Za-z0-9@._/-]{0,255}$/
+const DANGEROUS_KEYS = new Set(["__proto__", "prototype", "constructor"])
+const IDENTITY_HAZARDS = new Set([...DANGEROUS_KEYS, "toString", "valueOf", "dangerouslySetInnerHTML"])
+const SAFE_NAME = /^[A-Za-z0-9_$@][A-Za-z0-9_$@./:-]{0,255}$/
 const SAFE_FIELD_NAME = /^[A-Za-z_$][A-Za-z0-9_$-]{0,127}$/
 const SAFE_MDX_NAME = /^[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)*$/
 const SAFE_PATH = /^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))(?!.*[\\\0])[\p{L}\p{N}._@/ +()-]+$/u
@@ -70,8 +65,10 @@ function preflightJson(value: unknown, state: PreflightState, depth = 0, path = 
   if (Array.isArray(value)) {
     if (value.length > REGISTRY_LIMITS.maxNodes) throw new TypeError(`${path} exceeds array length limit`)
     for (let index = 0; index < value.length; index += 1) {
-      if (!Object.hasOwn(value, index)) throw new TypeError(`${path}[${index}] must not be sparse`)
-      preflightJson(value[index], state, depth + 1, `${path}[${index}]`)
+      const descriptor = Object.getOwnPropertyDescriptor(value, String(index))
+      if (!descriptor) throw new TypeError(`${path}[${index}] must not be sparse`)
+      if (!("value" in descriptor)) throw new TypeError(`${path}[${index}] must be an own data descriptor`)
+      preflightJson(descriptor.value, state, depth + 1, `${path}[${index}]`)
     }
   } else {
     if (prototype !== Object.prototype && prototype !== null) throw new TypeError(`${path} must be a plain object`)
@@ -101,33 +98,42 @@ export function assertJson(value: unknown): void {
  * Defense-in-depth for constrained RepoPress text fields. Structural schemas
  * are the executable boundary; this guard never makes metadata safe to run.
  */
-export function assertDeclarative(value: unknown, path = "meta.repopress"): void {
+const DECLARATIVE_TEXT_FIELDS = new Set(["description", "category", "label", "placeholder", "default"])
+
+export function assertDeclarative(value: unknown, path = "meta.repopress", field?: string): void {
   if (typeof value === "string") {
+    if (!field || !DECLARATIVE_TEXT_FIELDS.has(field)) return
     const source = value.trim()
-    const isExecutable =
-      /^javascript\s*:/iu.test(source) ||
-      /^<script\b/iu.test(source) ||
-      /<[^>]+\son[A-Za-z]+\s*=/u.test(source) ||
-      /^(?:async\s+)?(?:function\b|class\s+[A-Za-z_$]|import\s|export\s|(?:const|let|var)\s)/u.test(source) ||
-      /^(?:(?:globalThis|window|self)\.)?(?:new\s+Function|Function|eval|alert|console\.[A-Za-z]+)\s*\(/u.test(
-        source,
-      ) ||
-      /^\(\s*0\s*,\s*eval\s*\)\s*\(/u.test(source) ||
-      /^(?:async\s+)?(?:\([^)]*\)|[A-Za-z_$][A-Za-z0-9_$]*)\s*=>/u.test(source)
-    if (isExecutable) throw new TypeError(`${path} must not contain standalone executable source`)
+    const explicitExecutableMarkup =
+      /^javascript\s*:/iu.test(source) || /^<script\b/iu.test(source) || /<[^>]+\son[A-Za-z]+\s*=/u.test(source)
+    let executableProgram = false
+    if (!explicitExecutableMarkup && source.length > 0) {
+      try {
+        const program = parse(source, { ecmaVersion: "latest", sourceType: "module" })
+        executableProgram = program.body.some((statement) => {
+          if (statement.type !== "ExpressionStatement") return statement.type !== "EmptyStatement"
+          return statement.expression.type !== "Literal" && statement.expression.type !== "Identifier"
+        })
+      } catch {
+        // Ordinary prose is not a complete JavaScript program and is allowed.
+      }
+    }
+    if (explicitExecutableMarkup || executableProgram) {
+      throw new TypeError(`${path} must not contain standalone executable source`)
+    }
     return
   }
   if (!value || typeof value !== "object") return
   if (Array.isArray(value)) {
     value.forEach((entry, index) => {
-      assertDeclarative(entry, `${path}[${index}]`)
+      assertDeclarative(entry, `${path}[${index}]`, field)
     })
     return
   }
   for (const key of Object.keys(value)) {
     const descriptor = Object.getOwnPropertyDescriptor(value, key)
     if (!descriptor || !("value" in descriptor)) throw new TypeError(`${path}.${key} must be a data property`)
-    assertDeclarative(descriptor.value, `${path}.${key}`)
+    assertDeclarative(descriptor.value, `${path}.${key}`, key)
   }
 }
 
@@ -156,12 +162,16 @@ export function deepFreeze<T>(value: T): T {
   return Object.isFrozen(value) ? value : Object.freeze(value)
 }
 
+export function compareCodeUnits(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0
+}
+
 const boundedString = z.string().min(1).max(REGISTRY_LIMITS.maxStringBytes)
 export const logicalIdSchema = boundedString.regex(SAFE_NAME, "Invalid registry name").refine((value) => {
-  return !value.split(/[./:]/).some((segment) => DANGEROUS_KEYS.has(segment))
+  return !value.split(/[./:]/).some((segment) => IDENTITY_HAZARDS.has(segment))
 }, "Registry name contains a dangerous segment")
 export const mdxNameSchema = boundedString.regex(SAFE_MDX_NAME, "Invalid MDX name").refine((value) => {
-  return !value.split(".").some((segment) => DANGEROUS_KEYS.has(segment))
+  return !value.split(".").some((segment) => IDENTITY_HAZARDS.has(segment))
 }, "MDX name contains a dangerous segment")
 export const semanticVersionSchema = boundedString.regex(
   /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/,
@@ -298,12 +308,20 @@ const authoringFields = {
   displayName: boundedString.optional(),
   description: boundedString.optional(),
   category: boundedString.optional(),
+  version: semanticVersionSchema.optional(),
+  exportName: mdxNameSchema.optional(),
+  import: z.object({ source: boundedString, exportName: mdxNameSchema }).strict().optional(),
+  frameworks: z
+    .array(z.enum(["next", "fumadocs", "astro"]))
+    .max(3)
+    .optional(),
   runtime: z.enum(["client", "server", "astro"]).optional(),
   schemaStatus: z.enum(["complete", "incomplete"]).optional(),
   props: z.array(authoringPropSchema).max(REGISTRY_LIMITS.maxProps).optional(),
   slots: z.array(authoringSlotSchema).max(REGISTRY_LIMITS.maxSlots).optional(),
   assets: z.array(authoringAssetSchema).max(REGISTRY_LIMITS.maxAssets).optional(),
-  fixtures: z.array(relativePathSchema).max(REGISTRY_LIMITS.maxFixtures).optional(),
+  previewFixtures: z.array(relativePathSchema).max(REGISTRY_LIMITS.maxFixtures).optional(),
+  defaultFixture: relativePathSchema.optional(),
   provenance: authoringProvenanceSchema.optional(),
   kind: z.enum(["flow", "text"]).optional(),
   hasChildren: z.boolean().optional(),
@@ -314,7 +332,9 @@ function validateAuthoringCollisions(
     props?: Array<{ name: string; options?: string[] }>
     slots?: Array<{ name: string }>
     assets?: Array<{ path: string }>
-    fixtures?: string[]
+    previewFixtures?: string[]
+    defaultFixture?: string
+    frameworks?: string[]
   },
   context: z.RefinementCtx,
 ): void {
@@ -334,7 +354,15 @@ function validateAuthoringCollisions(
   check(value.props?.map((prop) => prop.name) ?? [], "props")
   check(value.slots?.map((slot) => slot.name) ?? [], "slots")
   check(value.assets?.map((asset) => asset.path) ?? [], "assets")
-  check(value.fixtures ?? [], "fixtures")
+  check(value.previewFixtures ?? [], "previewFixtures")
+  check(value.frameworks ?? [], "frameworks")
+  if (value.defaultFixture && !value.previewFixtures?.includes(value.defaultFixture)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["defaultFixture"],
+      message: "Default fixture must be listed in preview fixtures",
+    })
+  }
   value.props?.forEach((prop, index) => {
     const options = prop.options ?? []
     if (new Set(options).size !== options.length) {
@@ -362,16 +390,20 @@ export const normalizedAuthoringMetadataSchema = z
     logicalId: logicalIdSchema,
     mdxName: mdxNameSchema,
     displayName: boundedString,
+    exportName: mdxNameSchema,
     runtime: z.enum(["client", "server", "astro"]),
+    schemaStatus: z.enum(["complete", "incomplete"]),
     props: z.array(authoringPropSchema).max(REGISTRY_LIMITS.maxProps),
     slots: z.array(authoringSlotSchema).max(REGISTRY_LIMITS.maxSlots),
     assets: z.array(authoringAssetSchema).max(REGISTRY_LIMITS.maxAssets),
-    fixtures: z.array(relativePathSchema).max(REGISTRY_LIMITS.maxFixtures),
+    frameworks: z.array(z.enum(["next", "fumadocs", "astro"])).max(3),
+    previewFixtures: z.array(relativePathSchema).max(REGISTRY_LIMITS.maxFixtures),
     provenance: authoringProvenanceSchema,
     kind: z.enum(["flow", "text"]),
   })
   .strict()
   .superRefine(validateAuthoringCollisions)
+  .transform((value) => deepFreeze(value))
 
 export const repoPressMetadataSchema = z
   .object({
@@ -588,20 +620,30 @@ export type RepoPressMetadata = z.infer<typeof repoPressMetadataSchema>
 export function normalizeRegistryAuthoringMetadata(input: unknown) {
   const item = registryItemSchema.parse(input)
   const metadata = item.meta.repopress
-  const { fixtures: _fixtures, provenance, ...authoring } = metadata.authoring
-  return deepFreeze({
+  const { provenance, ...authoring } = metadata.authoring
+  const normalized = {
     ...authoring,
     logicalId: metadata.logicalId,
     mdxName: metadata.mdxName,
     displayName: authoring.displayName ?? item.title ?? metadata.mdxName,
     version: metadata.version,
+    exportName: metadata.exportName,
     frameworks: [...metadata.frameworks],
     previewFixtures: [...metadata.preview.fixtures],
+    ...(metadata.preview.defaultFixture ? { defaultFixture: metadata.preview.defaultFixture } : {}),
+    runtime: authoring.runtime ?? "client",
+    schemaStatus:
+      authoring.schemaStatus === "incomplete" || !(authoring.props && authoring.slots) ? "incomplete" : "complete",
+    props: authoring.props ?? [],
+    slots: authoring.slots ?? [],
+    assets: authoring.assets ?? [],
+    kind: authoring.kind ?? "flow",
     provenance: {
       source: "registry" as const,
       registryItem: metadata.logicalId,
       version: metadata.version,
       ...(provenance?.integrity ? { integrity: provenance.integrity } : {}),
     },
-  })
+  }
+  return normalizedAuthoringMetadataSchema.parse(normalized)
 }

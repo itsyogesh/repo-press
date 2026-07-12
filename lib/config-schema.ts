@@ -24,6 +24,7 @@ const rawComponentSchema = z
   .object({
     logicalId: logicalIdSchema.optional(),
     version: semanticVersionSchema.optional(),
+    exportName: mdxNameSchema.optional(),
     displayName: z.string().min(1).max(16_384).optional(),
     description: z.string().min(1).max(16_384).optional(),
     category: z.string().min(1).max(16_384).optional(),
@@ -33,6 +34,7 @@ const rawComponentSchema = z
     assets: z.array(authoringAssetSchema).max(128).optional(),
     slots: z.array(authoringSlotSchema).max(64).optional(),
     previewFixtures: z.array(relativePathSchema).max(128).optional(),
+    defaultFixture: relativePathSchema.optional(),
     import: z
       .object({ source: z.string().min(1).max(16_384), exportName: mdxNameSchema })
       .strict()
@@ -49,6 +51,13 @@ const rawComponentSchema = z
   .superRefine((value, context) => {
     if (value.frameworks && new Set(value.frameworks).size !== value.frameworks.length) {
       context.addIssue({ code: z.ZodIssueCode.custom, path: ["frameworks"], message: "Frameworks must be unique" })
+    }
+    if (value.defaultFixture && !value.previewFixtures?.includes(value.defaultFixture)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["defaultFixture"],
+        message: "Default fixture must be listed in preview fixtures",
+      })
     }
     try {
       assertDeclarative(value, "components override")

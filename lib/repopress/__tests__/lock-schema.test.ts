@@ -21,11 +21,14 @@ function validLock() {
           logicalId: "@repopress/icon",
           mdxName: "Icon",
           displayName: "Icon",
+          exportName: "Icon",
           runtime: "client",
+          schemaStatus: "complete",
           kind: "text",
           props: [],
           slots: [],
-          fixtures: [],
+          frameworks: ["next"],
+          previewFixtures: [],
           assets: [],
           provenance: { source: "registry", registryItem: "@repopress/icon", version: "1.0.0", integrity },
         },
@@ -44,11 +47,14 @@ function validLock() {
           logicalId: "@repopress/callout",
           mdxName: "Callout",
           displayName: "Callout",
+          exportName: "Callout",
           runtime: "client",
+          schemaStatus: "complete",
           kind: "flow",
           props: [],
           slots: [{ name: "children", accepts: "mdx" }],
-          fixtures: ["registry/repopress/callout/fixture.mdx"],
+          frameworks: ["next", "fumadocs"],
+          previewFixtures: ["registry/repopress/callout/fixture.mdx"],
           assets: [],
           provenance: { source: "registry", registryItem: "@repopress/callout", version: "1.0.0", integrity },
         },
@@ -160,5 +166,39 @@ describe("repoPressLockSchema", () => {
     const refMismatch = validLock()
     refMismatch.items["@repopress/callout"].resolved.sourceRef = "v2.0.0"
     expect(repoPressLockSchema.safeParse(refMismatch).success).toBe(false)
+  })
+
+  it("rejects nested authoring array accessors without invoking them", () => {
+    const lock = validLock()
+    const values: unknown[] = []
+    let calls = 0
+    Object.defineProperty(values, 0, {
+      enumerable: true,
+      get: () => {
+        calls += 1
+        return "unsafe"
+      },
+    })
+    ;(lock.items["@repopress/callout"].authoring.props as unknown[]) = [
+      { name: "data", type: "expression", default: values },
+    ]
+    expect(repoPressLockSchema.safeParse(lock).success).toBe(false)
+    expect(calls).toBe(0)
+  })
+
+  it("canonicalizes lock ordering independently of input insertion order", () => {
+    const firstInput = validLock()
+    firstInput.items["@repopress/callout"].targets.push({ path: "styles/callout.css", digest })
+    const secondInput = validLock()
+    secondInput.items["@repopress/callout"].targets.unshift({ path: "styles/callout.css", digest })
+    secondInput.items = {
+      "@repopress/callout": secondInput.items["@repopress/callout"],
+      "@repopress/icon": secondInput.items["@repopress/icon"],
+    }
+
+    const first = repoPressLockSchema.parse(firstInput)
+    const second = repoPressLockSchema.parse(secondInput)
+    expect(second).toStrictEqual(first)
+    expect(JSON.stringify(second)).toBe(JSON.stringify(first))
   })
 })

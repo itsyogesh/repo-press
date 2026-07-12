@@ -340,7 +340,7 @@ describe("Integration: full insert pipeline", () => {
         props: [],
         hasChildren: false,
         kind: "flow",
-        provenance: { source: "manual", version: "2" },
+        provenance: { source: "manual", version: "2.0.0" },
         displayName: "My Custom Component",
         description: "A custom component for testing.",
       },
@@ -349,7 +349,7 @@ describe("Integration: full insert pipeline", () => {
     const registry = buildComponentRegistry(null, config2)
     const def = registry.MyComponent
 
-    expect(def.provenance.version).toBe("2")
+    expect(def.provenance.version).toBe("2.0.0")
     expect(def.displayName).toBe("My Custom Component")
     expect(def.description).toBe("A custom component for testing.")
 

@@ -1,6 +1,7 @@
 import { z } from "zod"
 import {
   canonicalizeInstallTarget,
+  compareCodeUnits,
   installTargetSchema,
   integritySchema,
   jsonBoundary,
@@ -175,6 +176,24 @@ const rawLockSchema = z
     for (const itemName of itemNames) visit(itemName)
   })
 
-export const repoPressLockSchema = jsonBoundary(rawLockSchema)
+const canonicalLockSchema = rawLockSchema.transform((lock) => {
+  const items: Record<string, z.infer<typeof lockEntrySchema>> = Object.create(null)
+  for (const itemName of Object.keys(lock.items).sort(compareCodeUnits)) {
+    const item = lock.items[itemName]
+    items[itemName] = {
+      ...item,
+      dependencies: [...item.dependencies].sort(compareCodeUnits),
+      targets: [...item.targets].sort((left, right) => {
+        return (
+          compareCodeUnits(canonicalizeInstallTarget(left.path), canonicalizeInstallTarget(right.path)) ||
+          compareCodeUnits(left.digest, right.digest)
+        )
+      }),
+    }
+  }
+  return { lockfileVersion: lock.lockfileVersion, items }
+})
+
+export const repoPressLockSchema = jsonBoundary(canonicalLockSchema)
 export type RepoPressLock = z.infer<typeof repoPressLockSchema>
 export type RepoPressLockEntry = z.infer<typeof lockEntrySchema>

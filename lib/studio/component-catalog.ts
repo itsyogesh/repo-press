@@ -1,3 +1,4 @@
+import { compareCodeUnits } from "@/lib/repopress/registry-schema"
 import type { AuthoringCatalog, AuthoringComponent } from "./authoring-catalog"
 import { componentAcceptsChildren } from "./authoring-catalog"
 
@@ -12,7 +13,7 @@ export function buildComponentCatalog(
 ): CatalogEntry[] {
   const entries = Array.isArray(source) ? [...source] : Object.values(source)
   return entries.sort(
-    (a, b) => getComponentLabel(a).localeCompare(getComponentLabel(b)) || a.mdxName.localeCompare(b.mdxName),
+    (a, b) => compareCodeUnits(getComponentLabel(a), getComponentLabel(b)) || compareCodeUnits(a.mdxName, b.mdxName),
   )
 }
 

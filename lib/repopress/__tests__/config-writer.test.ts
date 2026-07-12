@@ -108,6 +108,7 @@ describe("updateProject", () => {
     const components = {
       Callout: {
         version: "1.2.0",
+        exportName: "Callout",
         displayName: "Callout box",
         description: "Highlights important content.",
         runtime: "client" as const,
@@ -124,6 +125,9 @@ describe("updateProject", () => {
         assets: [{ path: "components/callout.css", type: "style" as const }],
         slots: [{ name: "children", accepts: "mdx" as const, required: true }],
         previewFixtures: ["fixtures/callout.mdx"],
+        defaultFixture: "fixtures/callout.mdx",
+        frameworks: ["next" as const, "fumadocs" as const],
+        import: { source: "@/components/callout", exportName: "Callout" },
         provenance: {
           source: "registry" as const,
           registryItem: "@repopress/callout",
@@ -195,6 +199,24 @@ describe("updateProject", () => {
     const accessor = makeConfig()
     Object.defineProperty(accessor, "plugins", { enumerable: true, get: () => ({ bad: "value" }) })
     expect(() => removeProject(accessor, "docs")).toThrow("data property")
+  })
+
+  it("rejects nested array accessors without invoking them", () => {
+    const values: unknown[] = []
+    let calls = 0
+    Object.defineProperty(values, 0, {
+      enumerable: true,
+      get: () => {
+        calls += 1
+        return "unsafe"
+      },
+    })
+    expect(() =>
+      updateProject(makeConfig(), "docs", {
+        components: { Widget: { props: [{ name: "data", type: "expression", default: values }] } },
+      }),
+    ).toThrow("data descriptor")
+    expect(calls).toBe(0)
   })
 })
 

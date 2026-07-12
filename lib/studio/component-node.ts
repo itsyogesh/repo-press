@@ -7,6 +7,7 @@
 // ensuring a clean boundary between UI/form concerns and output generation.
 // ---------------------------------------------------------------------------
 
+import { compareCodeUnits } from "@/lib/repopress/registry-schema"
 import type { AuthoringComponent, AuthoringProp } from "./authoring-catalog"
 import { componentAcceptsChildren } from "./authoring-catalog"
 
@@ -89,7 +90,7 @@ export function toJsxProperties(
   const propTypes = new Map(def.props.map((p) => [p.name, p.type]))
   const result = Object.create(null) as Record<string, string | { type: "expression"; value: string }>
 
-  const sortedPropKeys = Object.keys(node.props).sort((a, b) => a.localeCompare(b))
+  const sortedPropKeys = Object.keys(node.props).sort(compareCodeUnits)
   for (const key of sortedPropKeys) {
     const value = node.props[key]
     if (value === undefined) continue
