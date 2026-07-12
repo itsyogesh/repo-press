@@ -29,8 +29,10 @@ import { DOCUMENT_STATUS_CONFIG, type DocumentStatus, isPublishableDocumentStatu
 import { getFrameworkAdapter } from "@/lib/framework-adapters"
 import { type FileTreeNode, findTreeNode } from "@/lib/github"
 import { usePreviewContext } from "@/lib/hooks/use-preview-context"
+import { CONTENT_PATH_REPRESENTATION, toRepoPath } from "@/lib/preview/path-policy"
 import { standardComponents } from "@/lib/repopress/standard-library"
 import { buildHistoryHref } from "@/lib/studio/history-link"
+import { resolveStudioCreatePaths, treePathToContentPath } from "@/lib/studio/path-adapters"
 import { getPublishLaneViewModel } from "@/lib/studio/publish-lane-view-model"
 import { cn } from "@/lib/utils"
 import { CommandPalette } from "./command-palette"
@@ -506,11 +508,10 @@ function StudioLayoutInner({
     fieldVariants,
   } = studioQueries
 
-  // Build a set of full repo-relative paths for documents with pending edits.
-  // doc.filePath is already the full tree path (set from selectedFile.path on save).
+  // The tree is repository-relative; document state is content-root-relative.
   const dirtyPaths = React.useMemo(() => {
-    return new Set((dirtyDocs ?? []).map((doc: any) => doc.filePath))
-  }, [dirtyDocs])
+    return new Set((dirtyDocs ?? []).map((doc: any) => toRepoPath(contentRoot, doc.filePath)))
+  }, [contentRoot, dirtyDocs])
 
   const publishLaneViewModel = React.useMemo(
     () =>
@@ -616,17 +617,8 @@ function StudioLayoutInner({
   const handleConfirmCreate = React.useCallback(
     async (fileName: string, parentPath: string, initialFrontmatter?: Record<string, unknown>) => {
       if (!projectId || !canMutateExplorer) return
-      const isAlreadyPrefixed = contentRoot && (parentPath === contentRoot || parentPath.startsWith(`${contentRoot}/`))
-      let filePath: string
-      if (isAlreadyPrefixed) {
-        filePath = parentPath ? `${parentPath}/${fileName}` : fileName
-      } else if (contentRoot) {
-        filePath = parentPath ? `${contentRoot}/${parentPath}/${fileName}` : `${contentRoot}/${fileName}`
-      } else {
-        filePath = parentPath ? `${parentPath}/${fileName}` : fileName
-      }
-      // For index-if-empty: the actual file is at filePath (e.g. slug/index.mdx)
-      // but it may include a newly created subfolder - keep filePath as-is.
+      const { contentPath, repoPath } = resolveStudioCreatePaths(contentRoot, parentPath, fileName)
+      // For index-if-empty, fileName may itself contain a subfolder (for example slug/index.mdx).
       try {
         const fm = initialFrontmatter ?? {}
         const title =
@@ -637,19 +629,20 @@ function StudioLayoutInner({
           projectId: projectId as Id<"projects">,
           userId,
           projectAccessToken,
-          filePath,
+          filePath: contentPath,
+          pathRepresentation: CONTENT_PATH_REPRESENTATION,
           title,
           initialBody: "",
           initialFrontmatter: { title, ...fm },
         })
-        primeFileSnapshot(filePath, {
+        primeFileSnapshot(repoPath, {
           content: "",
           frontmatter: { title, ...fm },
           sha: null,
         })
         const displayName = fileName.split("/").pop() ?? fileName
         toast.success(`Created ${displayName}`)
-        navigateToFile(filePath)
+        navigateToFile(repoPath)
       } catch (error: any) {
         console.error("Error creating file:", error)
         toast.error(error.message || "Failed to create file")
@@ -671,8 +664,9 @@ function StudioLayoutInner({
     async (filePath: string, fileSha: string) => {
       if (!projectId || !canMutateExplorer) return
       try {
+        const contentPath = treePathToContentPath(contentRoot, filePath)
         const pendingCreateOp = pendingOps?.find(
-          (op: any) => op.filePath === filePath && op.opType === "create" && op.status === "pending",
+          (op: any) => op.filePath === contentPath && op.opType === "create" && op.status === "pending",
         )
         if (pendingCreateOp) {
           await undoOp({ id: pendingCreateOp._id, userId, projectAccessToken })
@@ -685,7 +679,8 @@ function StudioLayoutInner({
           projectId: projectId as Id<"projects">,
           userId,
           projectAccessToken,
-          filePath,
+          filePath: contentPath,
+          pathRepresentation: CONTENT_PATH_REPRESENTATION,
           previousSha: fileSha || undefined,
         })
         toast("File staged for deletion", {
@@ -712,6 +707,7 @@ function StudioLayoutInner({
       userId,
       projectAccessToken,
       pendingOps,
+      contentRoot,
       undoOp,
       discardFileFromClientState,
       stageDelete,
@@ -721,7 +717,10 @@ function StudioLayoutInner({
   const handleUndoDelete = React.useCallback(
     async (filePath: string) => {
       if (!projectId || !canMutateExplorer || !pendingOps) return
-      const op = pendingOps.find((o: any) => o.filePath === filePath && o.opType === "delete" && o.status === "pending")
+      const contentPath = treePathToContentPath(contentRoot, filePath)
+      const op = pendingOps.find(
+        (o: any) => o.filePath === contentPath && o.opType === "delete" && o.status === "pending",
+      )
       if (!op) return
       try {
         await undoOp({ id: op._id, userId, projectAccessToken })
@@ -731,7 +730,7 @@ function StudioLayoutInner({
         toast.error(error.message || "Failed to undo")
       }
     },
-    [projectId, canMutateExplorer, userId, projectAccessToken, pendingOps, undoOp],
+    [projectId, canMutateExplorer, userId, projectAccessToken, pendingOps, undoOp, contentRoot],
   )
 
   const handleDiscardAll = React.useCallback(async () => {
@@ -776,10 +775,12 @@ function StudioLayoutInner({
       })
 
       for (const filePath of plan.filePathsToReset) {
+        const isMediaSourcePath = (pendingMediaOps ?? []).some((op: any) => op.sourceFilePath === filePath)
+        const repoPath = isMediaSourcePath ? filePath : toRepoPath(contentRoot, filePath)
         if (createdPaths.has(filePath)) {
-          discardFileFromClientState(filePath)
+          discardFileFromClientState(repoPath)
         } else {
-          reloadFileFromRemote(filePath)
+          reloadFileFromRemote(repoPath)
         }
       }
       toast.success("All pending changes discarded")
@@ -799,10 +800,12 @@ function StudioLayoutInner({
     discardAllPendingChanges,
     discardFileFromClientState,
     reloadFileFromRemote,
+    contentRoot,
   ])
 
   const resolveRelocatePayload = React.useCallback(
     async (oldPath: string) => {
+      const oldContentPath = treePathToContentPath(contentRoot, oldPath)
       const selectedPath = selectedFile?.path
       if (selectedPath === oldPath) {
         const currentFrontmatter = (frontmatter || {}) as Record<string, unknown>
@@ -822,7 +825,7 @@ function StudioLayoutInner({
       }
 
       const pendingCreateOp = pendingOps?.find(
-        (op: any) => op.filePath === oldPath && op.opType === "create" && op.status === "pending",
+        (op: any) => op.filePath === oldContentPath && op.opType === "create" && op.status === "pending",
       )
       if (pendingCreateOp) {
         const pendingFrontmatter = (pendingCreateOp.initialFrontmatter || {}) as Record<string, unknown>
@@ -873,7 +876,7 @@ function StudioLayoutInner({
         pendingCreateOpId: undefined as Id<"explorerOps"> | undefined,
       }
     },
-    [selectedFile?.path, frontmatter, content, sha, pendingOps, owner, repo, branch],
+    [selectedFile?.path, frontmatter, content, sha, pendingOps, owner, repo, branch, contentRoot],
   )
 
   const stageRelocateFile = React.useCallback(
@@ -886,12 +889,15 @@ function StudioLayoutInner({
       const newName = newPath.split("/").pop() || newPath
 
       try {
+        const oldContentPath = treePathToContentPath(contentRoot, oldPath)
+        const newContentPath = treePathToContentPath(contentRoot, newPath)
         const payload = await resolveRelocatePayload(oldPath)
         const createOpId = await stageCreate({
           projectId: projectId as Id<"projects">,
           userId,
           projectAccessToken,
-          filePath: newPath,
+          filePath: newContentPath,
+          pathRepresentation: CONTENT_PATH_REPRESENTATION,
           title: payload.title || inferTitleFromPath(newPath),
           initialBody: payload.body,
           initialFrontmatter: payload.frontmatter,
@@ -915,7 +921,8 @@ function StudioLayoutInner({
               projectId: projectId as Id<"projects">,
               userId,
               projectAccessToken,
-              filePath: oldPath,
+              filePath: oldContentPath,
+              pathRepresentation: CONTENT_PATH_REPRESENTATION,
               previousSha: oldNode?.sha || payload.previousSha,
             })
           } catch (error) {
@@ -968,6 +975,7 @@ function StudioLayoutInner({
       selectedFile?.path,
       primeFileSnapshot,
       navigateToFile,
+      contentRoot,
     ],
   )
 

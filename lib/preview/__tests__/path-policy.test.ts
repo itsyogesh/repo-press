@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
   assertContentPath,
   normalizeContentRoot,
+  resolveStoredRepoPath,
   toContentPath,
   toRepoPath,
   toRepoPathFromLegacyRepoPath,
@@ -33,6 +34,25 @@ describe("content path policy", () => {
       "outside content root",
     )
     expect(() => toRepoPathFromLegacyRepoPath("content/docs", "content/docs")).toThrow("document file")
+  })
+
+  it("resolves stored paths only from their explicit representation tag", () => {
+    expect(resolveStoredRepoPath("content/docs", "guides/start.mdx", "content_relative_v1")).toBe(
+      "content/docs/guides/start.mdx",
+    )
+    expect(resolveStoredRepoPath("content/docs", "content/docs/guides/start.mdx", "legacy_repo_v0")).toBe(
+      "content/docs/guides/start.mdx",
+    )
+    expect(resolveStoredRepoPath("content/docs", "content/docs/guides/start.mdx")).toBe("content/docs/guides/start.mdx")
+    expect(resolveStoredRepoPath("content/docs", "content/docs/guides/start.mdx", "content_relative_v1")).toBe(
+      "content/docs/content/docs/guides/start.mdx",
+    )
+  })
+
+  it("rejects unknown stored path representation tags", () => {
+    expect(() => resolveStoredRepoPath("content/docs", "guides/start.mdx", "guessed" as never)).toThrow(
+      "unknown path representation",
+    )
   })
 
   it.each([

@@ -20,7 +20,7 @@ vi.mock("@/convex/auth", () => ({
 
 import { restoreVersion as restoreDocumentHistoryVersion } from "@/convex/documentHistory"
 import { getOrCreateInternal, remove as removeDocument, saveDraft, transitionStatus } from "@/convex/documents"
-import { markCommitted as markExplorerOpsCommitted } from "@/convex/explorerOps"
+import { markCommitted as markExplorerOpsCommitted, stageDelete } from "@/convex/explorerOps"
 import { stage as stageMediaOp } from "@/convex/mediaOps"
 import { removeFull, remove as removeProject, update as updateProject } from "@/convex/projects"
 import {
@@ -309,6 +309,101 @@ describe("Convex ownership guards", () => {
     )
   })
 
+  it.each([
+    ["canonical", "guides/start.mdx", "content_relative_v1", "guides/start.mdx", "content_relative_v1"],
+    ["legacy", "content/docs/guides/start.mdx", undefined, "content/docs/guides/start.mdx", undefined],
+    [
+      "canonical operation for a legacy document",
+      "guides/start.mdx",
+      "content_relative_v1",
+      "content/docs/guides/start.mdx",
+      undefined,
+    ],
+    [
+      "NFC canonical operation for an NFD legacy document",
+      "guides/café.mdx",
+      "content_relative_v1",
+      "content/docs/guides/cafe\u0301.mdx",
+      undefined,
+    ],
+  ])("atomically clears the associated %s dirty document when a delete is committed", async (_label, opFilePath, opPathRepresentation, docFilePath, docPathRepresentation) => {
+    const patch = vi.fn()
+    const ctx = createCtx({
+      get: vi
+        .fn()
+        .mockResolvedValueOnce({
+          _id: "op_delete",
+          projectId: "project_1",
+          opType: "delete",
+          filePath: opFilePath,
+          pathRepresentation: opPathRepresentation,
+          status: "pending",
+        })
+        .mockResolvedValueOnce({ _id: "project_1", userId: "user_owner", contentRoot: "content/docs" })
+        .mockResolvedValueOnce({
+          _id: "doc_dirty",
+          projectId: "project_1",
+          filePath: docFilePath,
+          pathRepresentation: docPathRepresentation,
+          status: "draft",
+          body: "# Dirty",
+          frontmatter: { title: "Dirty" },
+          updatedAt: 100,
+        }),
+      patch,
+      queryResult: null,
+    })
+
+    await (markExplorerOpsCommitted as any).handler(ctx, {
+      ids: ["op_delete"],
+      deleteAssociations: [{ opId: "op_delete", documentId: "doc_dirty", expectedUpdatedAt: 100 }],
+      commitSha: "commit_1",
+      userId: "user_owner",
+    })
+
+    expect(patch).toHaveBeenCalledWith(
+      "doc_dirty",
+      expect.objectContaining({ body: undefined, frontmatter: undefined }),
+    )
+    expect(patch).toHaveBeenCalledWith("op_delete", expect.objectContaining({ status: "committed" }))
+  })
+
+  it("preserves a concurrently saved draft instead of committing its delete operation", async () => {
+    const patch = vi.fn()
+    const ctx = createCtx({
+      get: vi
+        .fn()
+        .mockResolvedValueOnce({
+          _id: "op_delete",
+          projectId: "project_1",
+          opType: "delete",
+          filePath: "guides/start.mdx",
+          pathRepresentation: "content_relative_v1",
+          status: "pending",
+        })
+        .mockResolvedValueOnce({ _id: "project_1", userId: "user_owner", contentRoot: "content/docs" })
+        .mockResolvedValueOnce({
+          _id: "doc_dirty",
+          projectId: "project_1",
+          filePath: "guides/start.mdx",
+          pathRepresentation: "content_relative_v1",
+          updatedAt: 101,
+        }),
+      patch,
+    })
+
+    await expect(
+      (markExplorerOpsCommitted as any).handler(ctx, {
+        ids: ["op_delete"],
+        deleteAssociations: [{ opId: "op_delete", documentId: "doc_dirty", expectedUpdatedAt: 100 }],
+        commitSha: "commit_1",
+        userId: "user_owner",
+      }),
+    ).rejects.toThrow("changed after the publish snapshot")
+
+    expect(patch).not.toHaveBeenCalled()
+  })
+
   it("allows history restore when PAT mode supplies a valid project access token", async () => {
     safeGetAuthUserMock.mockResolvedValue(null)
     const projectAccessToken = await mintProjectAccessToken({
@@ -363,6 +458,15 @@ describe("Convex ownership guards", () => {
           _id: "doc_existing",
           projectId: "project_1",
           filePath: "posts/hello.mdx",
+          pathRepresentation: "content_relative_v1",
+        }),
+        filter: () => ({
+          first: vi.fn().mockResolvedValue({
+            _id: "doc_existing",
+            projectId: "project_1",
+            filePath: "posts/hello.mdx",
+            pathRepresentation: "content_relative_v1",
+          }),
         }),
       }),
     }))
@@ -370,12 +474,58 @@ describe("Convex ownership guards", () => {
     const result = await (getOrCreateInternal as any).handler(ctx, {
       projectId: "project_1",
       filePath: "posts/hello.mdx",
+      pathRepresentation: "content_relative_v1",
       title: "Hello",
       githubSha: "sha_1",
     })
 
     expect(result).toBe("doc_existing")
     expect(insert).not.toHaveBeenCalled()
+  })
+
+  it("tags newly synchronized documents as content-relative", async () => {
+    const insert = vi.fn().mockResolvedValue("doc_new")
+    const ctx = createCtx({ insert, queryResult: null })
+
+    await (getOrCreateInternal as any).handler(ctx, {
+      projectId: "project_1",
+      filePath: "posts/hello.mdx",
+      pathRepresentation: "content_relative_v1",
+      title: "Hello",
+      githubSha: "sha_1",
+    })
+
+    expect(insert).toHaveBeenCalledWith(
+      "documents",
+      expect.objectContaining({ filePath: "posts/hello.mdx", pathRepresentation: "content_relative_v1" }),
+    )
+  })
+
+  it("tags newly staged explorer operations as content-relative", async () => {
+    const insert = vi.fn().mockResolvedValue("op_new")
+    const ctx = createCtx({
+      get: vi.fn().mockResolvedValue({
+        _id: "project_1",
+        userId: "user_owner",
+        repoOwner: "acme",
+        repoName: "docs-site",
+        branch: "main",
+      }),
+      insert,
+      queryResult: null,
+    })
+
+    await (stageDelete as any).handler(ctx, {
+      projectId: "project_1",
+      userId: "user_owner",
+      filePath: "posts/hello.mdx",
+      pathRepresentation: "content_relative_v1",
+    })
+
+    expect(insert).toHaveBeenCalledWith(
+      "explorerOps",
+      expect.objectContaining({ filePath: "posts/hello.mdx", pathRepresentation: "content_relative_v1" }),
+    )
   })
 
   it("allows PAT-driven status transition with a valid project access token", async () => {

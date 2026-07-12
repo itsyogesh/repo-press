@@ -12,6 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
 import { DOCUMENT_STATUS_CONFIG, type DocumentStatus } from "@/lib/document-status"
+import { resolveStoredRepoPath, type StoredPathRepresentation } from "@/lib/preview/path-policy"
 import { cn } from "@/lib/utils"
 import { useStudio } from "./studio-context"
 
@@ -22,7 +23,7 @@ interface DocumentListProps {
 }
 
 export function DocumentList({ projectId, selectedFilePath, onSelectDocument }: DocumentListProps) {
-  const { projectAccessToken } = useStudio()
+  const { projectAccessToken, contentRoot } = useStudio()
   const user = useQuery(api.auth.getCurrentUser)
   const userId = user?._id as string | undefined
 
@@ -108,6 +109,11 @@ export function DocumentList({ projectId, selectedFilePath, onSelectDocument }: 
           ) : (
             displayedDocs.map((doc) => {
               const statusInfo = DOCUMENT_STATUS_CONFIG[doc.status as DocumentStatus] || DOCUMENT_STATUS_CONFIG.draft
+              const repoPath = resolveStoredRepoPath(
+                contentRoot,
+                doc.filePath,
+                doc.pathRepresentation as StoredPathRepresentation | undefined,
+              )
               return (
                 <Button
                   key={doc._id}
@@ -115,9 +121,9 @@ export function DocumentList({ projectId, selectedFilePath, onSelectDocument }: 
                   size="sm"
                   className={cn(
                     "w-full justify-start gap-2 px-2 h-auto py-2 font-normal",
-                    selectedFilePath === doc.filePath && "bg-accent text-accent-foreground",
+                    selectedFilePath === repoPath && "bg-accent text-accent-foreground",
                   )}
-                  onClick={() => onSelectDocument(doc.filePath)}
+                  onClick={() => onSelectDocument(repoPath)}
                 >
                   <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
                   <div className="flex flex-col items-start gap-0.5 min-w-0">

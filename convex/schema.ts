@@ -159,6 +159,7 @@ export default defineSchema({
     projectId: v.id("projects"),
     collectionId: v.optional(v.id("collections")),
     filePath: v.string(), // relative to project contentRoot
+    pathRepresentation: v.optional(v.union(v.literal("legacy_repo_v0"), v.literal("content_relative_v1"))),
     title: v.string(),
     description: v.optional(v.string()),
     slug: v.optional(v.string()),
@@ -310,6 +311,7 @@ export default defineSchema({
     userId: v.string(),
     opType: v.union(v.literal("create"), v.literal("delete")),
     filePath: v.string(),
+    pathRepresentation: v.optional(v.union(v.literal("legacy_repo_v0"), v.literal("content_relative_v1"))),
     initialBody: v.optional(v.string()),
     initialFrontmatter: v.optional(v.any()),
     previousSha: v.optional(v.string()),

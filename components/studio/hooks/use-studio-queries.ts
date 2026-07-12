@@ -8,6 +8,13 @@ import { countPendingOps, type ExplorerOp, overlayOpsOnTree } from "@/lib/explor
 import type { FieldVariantMap } from "@/lib/framework-adapters"
 import { getFrameworkConfig } from "@/lib/framework-adapters"
 import type { FileTreeNode } from "@/lib/github"
+import {
+  CONTENT_PATH_REPRESENTATION,
+  resolveStoredContentPath,
+  type StoredPathRepresentation,
+  toRepoPath,
+} from "@/lib/preview/path-policy"
+import { treePathToContentPath } from "@/lib/studio/path-adapters"
 import { useStudio } from "../studio-context"
 
 type TitleSyncSnapshot = "idle" | "loading" | "done" | "error"
@@ -158,10 +165,33 @@ export function useStudioQueries(
 
   const project = useQuery(api.projects.get, projectId ? { id: projectId as Id<"projects">, ...queryAuth } : "skip")
 
-  const document = useQuery(
+  const selectedContentPath = React.useMemo(
+    () => (selectedFilePath ? treePathToContentPath(contentRoot, selectedFilePath) : undefined),
+    [contentRoot, selectedFilePath],
+  )
+  const shouldLookupLegacyDocument = Boolean(projectId && selectedFilePath)
+
+  const canonicalDocument = useQuery(
     api.documents.getByFilePath,
-    projectId && selectedFilePath
-      ? { projectId: projectId as Id<"projects">, filePath: selectedFilePath, ...queryAuth }
+    projectId && selectedContentPath
+      ? {
+          projectId: projectId as Id<"projects">,
+          filePath: selectedContentPath,
+          pathRepresentation: CONTENT_PATH_REPRESENTATION,
+          ...queryAuth,
+        }
+      : "skip",
+  )
+
+  const legacyDocument = useQuery(
+    api.documents.getByFilePath,
+    shouldLookupLegacyDocument && projectId && selectedFilePath
+      ? {
+          projectId: projectId as Id<"projects">,
+          filePath: selectedFilePath,
+          pathRepresentation: "legacy_repo_v0",
+          ...queryAuth,
+        }
       : "skip",
   )
 
@@ -170,7 +200,7 @@ export function useStudioQueries(
     projectId ? { projectId: projectId as Id<"projects">, ...queryAuth } : "skip",
   )
 
-  const pendingOps = useQuery(
+  const storedPendingOps = useQuery(
     api.explorerOps.listPending,
     projectId ? { projectId: projectId as Id<"projects">, ...queryAuth } : "skip",
   )
@@ -190,9 +220,53 @@ export function useStudioQueries(
     projectId ? { projectId: projectId as Id<"projects">, ...queryAuth } : "skip",
   )
 
-  const dirtyDocs = useQuery(
+  const storedDirtyDocs = useQuery(
     api.documents.listDirtyForProject,
     projectId ? { projectId: projectId as Id<"projects">, ...queryAuth } : "skip",
+  )
+
+  const document = React.useMemo(() => {
+    if (canonicalDocument === undefined) return undefined
+    if (!canonicalDocument && shouldLookupLegacyDocument && legacyDocument === undefined) return undefined
+    const storedDocument = canonicalDocument ?? legacyDocument
+    if (!storedDocument) return storedDocument
+    return {
+      ...storedDocument,
+      filePath: resolveStoredContentPath(
+        contentRoot,
+        storedDocument.filePath,
+        storedDocument.pathRepresentation as StoredPathRepresentation | undefined,
+      ),
+      pathRepresentation: CONTENT_PATH_REPRESENTATION,
+    }
+  }, [canonicalDocument, contentRoot, legacyDocument, shouldLookupLegacyDocument])
+
+  const pendingOps = React.useMemo(
+    () =>
+      storedPendingOps?.map((op) => ({
+        ...op,
+        filePath: resolveStoredContentPath(
+          contentRoot,
+          op.filePath,
+          op.pathRepresentation as StoredPathRepresentation | undefined,
+        ),
+        pathRepresentation: CONTENT_PATH_REPRESENTATION,
+      })),
+    [contentRoot, storedPendingOps],
+  )
+
+  const dirtyDocs = React.useMemo(
+    () =>
+      storedDirtyDocs?.map((doc) => ({
+        ...doc,
+        filePath: resolveStoredContentPath(
+          contentRoot,
+          doc.filePath,
+          doc.pathRepresentation as StoredPathRepresentation | undefined,
+        ),
+        pathRepresentation: CONTENT_PATH_REPRESENTATION,
+      })),
+    [contentRoot, storedDirtyDocs],
   )
 
   const treeFiles = React.useMemo(() => collectTreeFiles(tree), [tree])
@@ -230,10 +304,15 @@ export function useStudioQueries(
     if (!titleEntries) return {}
     const map: Record<string, string> = {}
     for (const entry of titleEntries) {
-      map[entry.filePath] = entry.title
+      const contentPath = resolveStoredContentPath(
+        contentRoot,
+        entry.filePath,
+        entry.pathRepresentation as StoredPathRepresentation | undefined,
+      )
+      map[toRepoPath(contentRoot, contentPath)] = entry.title
     }
     return map
-  }, [titleEntries])
+  }, [contentRoot, titleEntries])
 
   const overlayTree = React.useMemo(() => {
     if (!pendingOps || pendingOps.length === 0) return tree
@@ -241,6 +320,7 @@ export function useStudioQueries(
       opType: op.opType as any,
       filePath: op.filePath,
       status: op.status as any,
+      pathRepresentation: CONTENT_PATH_REPRESENTATION,
     }))
     return overlayOpsOnTree(tree, ops, contentRoot)
   }, [tree, pendingOps, contentRoot])
@@ -251,6 +331,7 @@ export function useStudioQueries(
       opType: op.opType as any,
       filePath: op.filePath,
       status: op.status as any,
+      pathRepresentation: CONTENT_PATH_REPRESENTATION,
     }))
     return countPendingOps(ops)
   }, [pendingOps])

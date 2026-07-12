@@ -94,11 +94,13 @@ function mockPublishQueries({
   existingBranchNames?: string[]
   refreshedPublishBranch?: Record<string, unknown>
 }) {
+  const taggedPendingOps = pendingOps.map((op) => ({ pathRepresentation: "content_relative_v1", ...op }))
+  const taggedDirtyDocs = dirtyDocs.map((doc) => ({ pathRepresentation: "content_relative_v1", ...doc }))
   convexQueryMock.mockReset()
   convexQueryMock
     .mockResolvedValueOnce(baseProject)
-    .mockResolvedValueOnce(pendingOps)
-    .mockResolvedValueOnce(dirtyDocs)
+    .mockResolvedValueOnce(taggedPendingOps)
+    .mockResolvedValueOnce(taggedDirtyDocs)
     .mockResolvedValueOnce(pendingMediaOps)
     .mockResolvedValueOnce(currentPublishBranch)
 
@@ -917,7 +919,7 @@ describe("POST /api/github/publish-ops", () => {
     )
   })
 
-  it("treats an ambiguous same-prefix document path as canonical content-relative input", async () => {
+  it("resolves a nested-root canonical document path exactly once", async () => {
     convexQueryMock.mockReset()
     convexQueryMock
       .mockResolvedValueOnce({ ...baseProject, contentRoot: "content/docs" })
@@ -925,7 +927,8 @@ describe("POST /api/github/publish-ops", () => {
       .mockResolvedValueOnce([
         {
           _id: "doc_nested_1",
-          filePath: "content/docs/guides/start.mdx",
+          filePath: "guides/start.mdx",
+          pathRepresentation: "content_relative_v1",
           body: "# Start",
           frontmatter: { title: "Start" },
         },
@@ -946,7 +949,7 @@ describe("POST /api/github/publish-ops", () => {
       "acme",
       "docs-site",
       "repopress/main/1234",
-      [expect.objectContaining({ path: "content/docs/content/docs/guides/start.mdx", action: "update" })],
+      [expect.objectContaining({ path: "content/docs/guides/start.mdx", action: "update" })],
       "chore(content): 1 updated via RepoPress",
     )
   })
@@ -969,6 +972,7 @@ describe("POST /api/github/publish-ops", () => {
           filePath: "guides/café.mdx",
           body: "# Draft",
           frontmatter: { title: "Draft" },
+          updatedAt: 100,
         },
       ],
     })
@@ -992,15 +996,185 @@ describe("POST /api/github/publish-ops", () => {
     )
   })
 
-  it("rejects mixed delete and document changes that resolve to the same repository path", async () => {
+  it("publishes untagged legacy document rows through explicit repository-relative compatibility", async () => {
+    convexQueryMock.mockReset()
+    convexQueryMock
+      .mockResolvedValueOnce({ ...baseProject, contentRoot: "content/docs" })
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          _id: "doc_legacy_1",
+          filePath: "content/docs/guides/legacy.mdx",
+          body: "# Legacy",
+          frontmatter: { title: "Legacy" },
+        },
+      ])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce({
+        _id: "publish_branch_1",
+        branchName: "repopress/main/1234",
+        prNumber: 42,
+        prUrl: "https://github.com/acme/docs-site/pull/42",
+      })
+
+    const response = await POST(buildRequest({ projectId: "project_123" }))
+
+    expect(response.status).toBe(200)
+    expect(batchCommit).toHaveBeenCalledWith(
+      "gh-token",
+      "acme",
+      "docs-site",
+      "repopress/main/1234",
+      [expect.objectContaining({ path: "content/docs/guides/legacy.mdx", action: "update" })],
+      "chore(content): 1 updated via RepoPress",
+    )
+  })
+
+  it("publishes a canonical delete operation without also updating its dirty document", async () => {
     mockPublishQueries({
-      pendingOps: [{ _id: "explorer_op_nfd", opType: "delete", filePath: "guides/cafe\u0301.mdx" }],
+      pendingOps: [{ _id: "explorer_op_delete", opType: "delete", filePath: "guides/start.mdx" }],
       dirtyDocs: [
         {
-          _id: "doc_nfc",
-          filePath: "guides/café.mdx",
+          _id: "doc_dirty",
+          filePath: "guides/start.mdx",
           body: "# Draft",
           frontmatter: { title: "Draft" },
+          updatedAt: 100,
+        },
+      ],
+    })
+
+    const response = await POST(buildRequest({ projectId: "project_123" }))
+    expect(response.status).toBe(200)
+    expect(batchCommit).toHaveBeenCalledWith(
+      "gh-token",
+      "acme",
+      "docs-site",
+      "repopress/main/1234",
+      [{ path: "content/guides/start.mdx", action: "delete" }],
+      "chore(content): 1 deleted via RepoPress",
+    )
+    expect(convexMutationMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        ids: ["explorer_op_delete"],
+        deleteAssociations: [{ opId: "explorer_op_delete", documentId: "doc_dirty", expectedUpdatedAt: 100 }],
+      }),
+    )
+  })
+
+  it("associates untagged legacy delete operations with legacy dirty documents", async () => {
+    convexQueryMock.mockReset()
+    convexQueryMock
+      .mockResolvedValueOnce({ ...baseProject, contentRoot: "content/docs" })
+      .mockResolvedValueOnce([
+        { _id: "explorer_op_legacy", opType: "delete", filePath: "content/docs/guides/legacy.mdx" },
+      ])
+      .mockResolvedValueOnce([
+        {
+          _id: "doc_legacy",
+          filePath: "content/docs/guides/legacy.mdx",
+          body: "# Legacy draft",
+          frontmatter: { title: "Legacy" },
+          updatedAt: 100,
+        },
+      ])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce({
+        _id: "publish_branch_1",
+        branchName: "repopress/main/1234",
+        prNumber: 42,
+        prUrl: "https://github.com/acme/docs-site/pull/42",
+      })
+
+    const response = await POST(buildRequest({ projectId: "project_123" }))
+
+    expect(response.status).toBe(200)
+    expect(batchCommit).toHaveBeenCalledWith(
+      "gh-token",
+      "acme",
+      "docs-site",
+      "repopress/main/1234",
+      [{ path: "content/docs/guides/legacy.mdx", action: "delete" }],
+      "chore(content): 1 deleted via RepoPress",
+    )
+    expect(convexMutationMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        ids: ["explorer_op_legacy"],
+        deleteAssociations: [{ opId: "explorer_op_legacy", documentId: "doc_legacy", expectedUpdatedAt: 100 }],
+      }),
+    )
+  })
+
+  it.each([
+    ["canonical", "guides/repeat.mdx", "content_relative_v1", "content/guides/repeat.mdx"],
+    ["legacy", "content/docs/guides/repeat.mdx", undefined, "content/docs/guides/repeat.mdx"],
+  ])("does not resurrect a %s deleted dirty document on the next publish", async (_label, filePath, pathRepresentation, expectedRepoPath) => {
+    const project = {
+      ...baseProject,
+      contentRoot: pathRepresentation ? "content" : "content/docs",
+    }
+    const op = { _id: "op_repeat", opType: "delete", filePath, pathRepresentation }
+    const doc = {
+      _id: "doc_repeat",
+      filePath,
+      pathRepresentation,
+      body: "# Dirty",
+      frontmatter: { title: "Dirty" },
+      updatedAt: 100,
+    }
+    const currentBranch = {
+      _id: "publish_branch_1",
+      branchName: "repopress/main/1234",
+      prNumber: 42,
+      prUrl: "https://github.com/acme/docs-site/pull/42",
+    }
+    convexQueryMock.mockReset()
+    convexQueryMock
+      .mockResolvedValueOnce(project)
+      .mockResolvedValueOnce([op])
+      .mockResolvedValueOnce([doc])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce(currentBranch)
+      .mockResolvedValueOnce(project)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+
+    const firstResponse = await POST(buildRequest({ projectId: "project_123" }))
+    const secondResponse = await POST(buildRequest({ projectId: "project_123" }))
+
+    expect(firstResponse.status).toBe(200)
+    expect(secondResponse.status).toBe(400)
+    expect(batchCommit).toHaveBeenCalledTimes(1)
+    expect(batchCommit).toHaveBeenCalledWith(
+      "gh-token",
+      "acme",
+      "docs-site",
+      "repopress/main/1234",
+      [{ path: expectedRepoPath, action: "delete" }],
+      "chore(content): 1 deleted via RepoPress",
+    )
+  })
+
+  it("rejects a delete when its dirty document was saved after the delete was staged", async () => {
+    mockPublishQueries({
+      pendingOps: [
+        {
+          _id: "op_stale_delete",
+          opType: "delete",
+          filePath: "guides/stale.mdx",
+          createdAt: 100,
+        },
+      ],
+      dirtyDocs: [
+        {
+          _id: "doc_newer",
+          filePath: "guides/stale.mdx",
+          body: "# Newer draft",
+          frontmatter: { title: "Newer" },
+          updatedAt: 101,
         },
       ],
     })
@@ -1010,9 +1184,8 @@ describe("POST /api/github/publish-ops", () => {
 
     expect(response.status).toBe(409)
     expect(payload.conflicts).toEqual([
-      expect.objectContaining({ path: "content/guides/café.mdx", reason: expect.stringContaining("collision") }),
+      expect.objectContaining({ path: "content/guides/stale.mdx", reason: expect.stringContaining("after delete") }),
     ])
-    expect(getFile).not.toHaveBeenCalled()
     expect(batchCommit).not.toHaveBeenCalled()
   })
 

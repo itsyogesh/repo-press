@@ -1,4 +1,6 @@
 export type PathPolicyErrorCode = "EMPTY_DOCUMENT_PATH" | "UNSAFE_RELATIVE_PATH" | "DOCUMENT_OUTSIDE_CONTENT_ROOT"
+export type StoredPathRepresentation = "legacy_repo_v0" | "content_relative_v1"
+export const CONTENT_PATH_REPRESENTATION = "content_relative_v1" as const
 
 export class PathPolicyError extends Error {
   readonly code: PathPolicyErrorCode
@@ -95,6 +97,32 @@ export function toRepoPath(contentRoot: string, contentPath: string): string {
 export function toRepoPathFromLegacyRepoPath(contentRoot: string, legacyRepoPath: string): string {
   const contentPath = toContentPath(contentRoot, legacyRepoPath)
   return toRepoPath(contentRoot, contentPath)
+}
+
+/** Resolve stored data using its explicit representation. Untagged rows are legacy v0. */
+export function resolveStoredRepoPath(
+  contentRoot: string,
+  storedPath: string,
+  representation?: StoredPathRepresentation,
+): string {
+  if (representation === CONTENT_PATH_REPRESENTATION) return toRepoPath(contentRoot, storedPath)
+  if (representation === undefined || representation === "legacy_repo_v0") {
+    return toRepoPathFromLegacyRepoPath(contentRoot, storedPath)
+  }
+  throw new PathPolicyError("UNSAFE_RELATIVE_PATH", "unknown path representation")
+}
+
+/** Convert stored data into canonical content-relative state without guessing. */
+export function resolveStoredContentPath(
+  contentRoot: string,
+  storedPath: string,
+  representation?: StoredPathRepresentation,
+): string {
+  if (representation === CONTENT_PATH_REPRESENTATION) return assertContentPath(storedPath)
+  if (representation === undefined || representation === "legacy_repo_v0") {
+    return toContentPath(contentRoot, storedPath)
+  }
+  throw new PathPolicyError("UNSAFE_RELATIVE_PATH", "unknown path representation")
 }
 
 /** Convert a repository-relative file path into the canonical stored form. */

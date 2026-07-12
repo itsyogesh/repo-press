@@ -1,5 +1,10 @@
 import type { FileTreeNode } from "./github"
-import { toRepoPath, toRepoPathFromLegacyRepoPath } from "./preview/path-policy"
+import {
+  resolveStoredRepoPath,
+  type StoredPathRepresentation,
+  toRepoPath,
+  toRepoPathFromLegacyRepoPath,
+} from "./preview/path-policy"
 
 export type OverlayTreeNode = FileTreeNode & {
   isNew?: boolean
@@ -10,6 +15,7 @@ export type ExplorerOp = {
   opType: "create" | "delete"
   filePath: string
   status: "pending" | "committed" | "undone"
+  pathRepresentation?: StoredPathRepresentation
 }
 
 /**
@@ -109,7 +115,10 @@ function ensureDir(tree: OverlayTreeNode[], dirPath: string, contentRoot: string
  */
 export function overlayOpsOnTree(tree: FileTreeNode[], ops: ExplorerOp[], contentRoot: string): OverlayTreeNode[] {
   const result = cloneTree(tree)
-  const repositoryOps = ops.map((op) => ({ ...op, repositoryPath: toRepoPath(contentRoot, op.filePath) }))
+  const repositoryOps = ops.map((op) => ({
+    ...op,
+    repositoryPath: resolveStoredRepoPath(contentRoot, op.filePath, op.pathRepresentation),
+  }))
 
   // Process delete ops
   for (const op of repositoryOps) {

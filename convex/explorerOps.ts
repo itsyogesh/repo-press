@@ -1,4 +1,5 @@
 import { v } from "convex/values"
+import { resolveStoredRepoPath, type StoredPathRepresentation } from "../lib/preview/path-policy"
 import { mutation, query } from "./_generated/server"
 import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
 
@@ -25,6 +26,7 @@ export const getByFilePath = query({
   args: {
     projectId: v.id("projects"),
     filePath: v.string(),
+    pathRepresentation: v.union(v.literal("legacy_repo_v0"), v.literal("content_relative_v1")),
     userId: v.optional(v.string()),
     projectAccessToken: v.optional(v.string()),
   },
@@ -32,9 +34,15 @@ export const getByFilePath = query({
     const access = await resolveProjectReader(ctx, args)
     if (!access) return null
 
-    return await ctx.db
+    const indexed = ctx.db
       .query("explorerOps")
       .withIndex("by_projectId_filePath", (q) => q.eq("projectId", args.projectId).eq("filePath", args.filePath))
+    return await indexed
+      .filter((q) =>
+        args.pathRepresentation === "content_relative_v1"
+          ? q.eq(q.field("pathRepresentation"), "content_relative_v1")
+          : q.or(q.eq(q.field("pathRepresentation"), "legacy_repo_v0"), q.eq(q.field("pathRepresentation"), undefined)),
+      )
       .first()
   },
 })
@@ -49,6 +57,7 @@ export const stageCreate = mutation({
     userId: v.optional(v.string()),
     projectAccessToken: v.optional(v.string()),
     filePath: v.string(),
+    pathRepresentation: v.literal("content_relative_v1"),
     title: v.string(),
     initialBody: v.optional(v.string()),
     initialFrontmatter: v.optional(v.any()),
@@ -60,7 +69,9 @@ export const stageCreate = mutation({
     const existingOp = await ctx.db
       .query("explorerOps")
       .withIndex("by_projectId_filePath", (q) => q.eq("projectId", args.projectId).eq("filePath", args.filePath))
-      .filter((q) => q.eq(q.field("status"), "pending"))
+      .filter((q) =>
+        q.and(q.eq(q.field("pathRepresentation"), args.pathRepresentation), q.eq(q.field("status"), "pending")),
+      )
       .first()
     if (existingOp) {
       throw new Error("File already staged for creation")
@@ -70,6 +81,7 @@ export const stageCreate = mutation({
     const existingDoc = await ctx.db
       .query("documents")
       .withIndex("by_projectId_filePath", (q) => q.eq("projectId", args.projectId).eq("filePath", args.filePath))
+      .filter((q) => q.eq(q.field("pathRepresentation"), args.pathRepresentation))
       .first()
 
     const now = Date.now()
@@ -79,6 +91,7 @@ export const stageCreate = mutation({
       if (existingDoc.status === "published" || existingDoc.status === "archived") {
         await ctx.db.patch(existingDoc._id, {
           status: "draft",
+          pathRepresentation: "content_relative_v1",
           githubSha: undefined,
           publishedAt: undefined,
           ...(args.title ? { title: args.title } : {}),
@@ -108,6 +121,7 @@ export const stageCreate = mutation({
       await ctx.db.insert("documents", {
         projectId: args.projectId,
         filePath: args.filePath,
+        pathRepresentation: args.pathRepresentation,
         title: args.title,
         status: "draft",
         body: args.initialBody,
@@ -123,6 +137,7 @@ export const stageCreate = mutation({
       userId,
       opType: "create",
       filePath: args.filePath,
+      pathRepresentation: args.pathRepresentation,
       initialBody: args.initialBody,
       initialFrontmatter: args.initialFrontmatter,
       status: "pending",
@@ -144,6 +159,7 @@ export const stageDelete = mutation({
     userId: v.optional(v.string()),
     projectAccessToken: v.optional(v.string()),
     filePath: v.string(),
+    pathRepresentation: v.literal("content_relative_v1"),
     previousSha: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -153,7 +169,9 @@ export const stageDelete = mutation({
     const existingOp = await ctx.db
       .query("explorerOps")
       .withIndex("by_projectId_filePath", (q) => q.eq("projectId", args.projectId).eq("filePath", args.filePath))
-      .filter((q) => q.eq(q.field("status"), "pending"))
+      .filter((q) =>
+        q.and(q.eq(q.field("pathRepresentation"), args.pathRepresentation), q.eq(q.field("status"), "pending")),
+      )
       .first()
     if (existingOp) {
       throw new Error("File already has a pending operation")
@@ -165,6 +183,7 @@ export const stageDelete = mutation({
       userId,
       opType: "delete",
       filePath: args.filePath,
+      pathRepresentation: args.pathRepresentation,
       previousSha: args.previousSha,
       status: "pending",
       createdAt: now,
@@ -209,6 +228,14 @@ export const undoOp = mutation({
       const doc = await ctx.db
         .query("documents")
         .withIndex("by_projectId_filePath", (q) => q.eq("projectId", op.projectId).eq("filePath", op.filePath))
+        .filter((q) =>
+          op.pathRepresentation === "content_relative_v1"
+            ? q.eq(q.field("pathRepresentation"), "content_relative_v1")
+            : q.or(
+                q.eq(q.field("pathRepresentation"), "legacy_repo_v0"),
+                q.eq(q.field("pathRepresentation"), undefined),
+              ),
+        )
         .first()
       if (doc && doc.status === "draft") {
         await ctx.db.delete(doc._id)
@@ -241,8 +268,10 @@ export const discardAll = mutation({
       .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", "pending"))
       .collect()
 
-    const pendingCreatePaths = new Set(
-      pendingOps.filter((op) => op.opType === "create" && op.status === "pending").map((op) => op.filePath),
+    const pendingCreateIdentities = new Set(
+      pendingOps
+        .filter((op) => op.opType === "create" && op.status === "pending")
+        .map((op) => `${op.pathRepresentation ?? "legacy_repo_v0"}\0${op.filePath}`),
     )
 
     for (const op of pendingOps) {
@@ -255,6 +284,14 @@ export const discardAll = mutation({
         const doc = await ctx.db
           .query("documents")
           .withIndex("by_projectId_filePath", (q) => q.eq("projectId", op.projectId).eq("filePath", op.filePath))
+          .filter((q) =>
+            op.pathRepresentation === "content_relative_v1"
+              ? q.eq(q.field("pathRepresentation"), "content_relative_v1")
+              : q.or(
+                  q.eq(q.field("pathRepresentation"), "legacy_repo_v0"),
+                  q.eq(q.field("pathRepresentation"), undefined),
+                ),
+          )
           .first()
 
         if (doc && doc.status === "draft") {
@@ -288,7 +325,9 @@ export const discardAll = mutation({
       .collect()
 
     const dirtyDocs = [...draftDocs, ...approvedDocs].filter(
-      (doc) => !pendingCreatePaths.has(doc.filePath) && (doc.body != null || doc.frontmatter != null),
+      (doc) =>
+        !pendingCreateIdentities.has(`${doc.pathRepresentation ?? "legacy_repo_v0"}\0${doc.filePath}`) &&
+        (doc.body != null || doc.frontmatter != null),
     )
 
     for (const doc of dirtyDocs) {
@@ -304,7 +343,7 @@ export const discardAll = mutation({
       discardedMediaOpIds: pendingMediaOps.map((op) => op._id),
       discardedDirtyDocIds: dirtyDocs.map((doc) => doc._id),
       discardedDirtyPaths: dirtyDocs.map((doc) => doc.filePath),
-      discardedCreatePaths: Array.from(pendingCreatePaths),
+      discardedCreatePaths: pendingOps.filter((op) => op.opType === "create").map((op) => op.filePath),
     }
   },
 })
@@ -315,6 +354,15 @@ export const discardAll = mutation({
 export const markCommitted = mutation({
   args: {
     ids: v.array(v.id("explorerOps")),
+    deleteAssociations: v.optional(
+      v.array(
+        v.object({
+          opId: v.id("explorerOps"),
+          documentId: v.id("documents"),
+          expectedUpdatedAt: v.number(),
+        }),
+      ),
+    ),
     commitSha: v.string(),
     publishBranchId: v.optional(v.id("publishBranches")),
     userId: v.optional(v.string()),
@@ -322,15 +370,47 @@ export const markCommitted = mutation({
   },
   handler: async (ctx, args) => {
     const now = Date.now()
+    const deletedDocumentByOpId = new Map(
+      (args.deleteAssociations ?? []).map((association) => [association.opId, association]),
+    )
     for (const id of args.ids) {
       const op = await ctx.db.get(id)
       // Only mark ops that are still pending (avoid overwriting concurrent undos)
       if (op && op.status === "pending") {
-        await resolveProjectAccess(
+        const access = await resolveProjectAccess(
           ctx,
           { projectId: op.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken },
           "editor",
         )
+
+        const deleteAssociation = deletedDocumentByOpId.get(id)
+        if (op.opType === "delete" && deleteAssociation) {
+          const associatedDocument = await ctx.db.get(deleteAssociation.documentId)
+          if (!associatedDocument || associatedDocument.projectId !== op.projectId) {
+            throw new Error("Delete association does not belong to the explorer operation project")
+          }
+          const opRepoPath = resolveStoredRepoPath(
+            access.project.contentRoot,
+            op.filePath,
+            op.pathRepresentation as StoredPathRepresentation | undefined,
+          )
+          const documentRepoPath = resolveStoredRepoPath(
+            access.project.contentRoot,
+            associatedDocument.filePath,
+            associatedDocument.pathRepresentation as StoredPathRepresentation | undefined,
+          )
+          if (opRepoPath !== documentRepoPath) {
+            throw new Error("Delete association path does not match the explorer operation")
+          }
+          if (associatedDocument.updatedAt !== deleteAssociation.expectedUpdatedAt) {
+            throw new Error("Associated document changed after the publish snapshot")
+          }
+          await ctx.db.patch(associatedDocument._id, {
+            body: undefined,
+            frontmatter: undefined,
+            updatedAt: now,
+          })
+        }
 
         await ctx.db.patch(id, {
           status: "committed",

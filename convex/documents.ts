@@ -1,5 +1,6 @@
 import { v } from "convex/values"
 import { DOCUMENT_ALLOWED_TRANSITIONS, isPublishableDocumentStatus } from "../lib/document-status"
+import { resolveStoredContentPath, type StoredPathRepresentation } from "../lib/preview/path-policy"
 import { internal } from "./_generated/api"
 import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server"
 import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
@@ -55,6 +56,7 @@ export const getByFilePath = query({
   args: {
     projectId: v.id("projects"),
     filePath: v.string(),
+    pathRepresentation: v.union(v.literal("legacy_repo_v0"), v.literal("content_relative_v1")),
     userId: v.optional(v.string()),
     projectAccessToken: v.optional(v.string()),
   },
@@ -62,9 +64,15 @@ export const getByFilePath = query({
     const access = await resolveProjectReader(ctx, args)
     if (!access) return null
 
-    return await ctx.db
+    const indexed = ctx.db
       .query("documents")
       .withIndex("by_projectId_filePath", (q) => q.eq("projectId", args.projectId).eq("filePath", args.filePath))
+    return await indexed
+      .filter((q) =>
+        args.pathRepresentation === "content_relative_v1"
+          ? q.eq(q.field("pathRepresentation"), "content_relative_v1")
+          : q.or(q.eq(q.field("pathRepresentation"), "legacy_repo_v0"), q.eq(q.field("pathRepresentation"), undefined)),
+      )
       .first()
   },
 })
@@ -122,6 +130,7 @@ export const create = internalMutation({
     const now = Date.now()
     return await ctx.db.insert("documents", {
       ...args,
+      pathRepresentation: "content_relative_v1",
       createdAt: now,
       updatedAt: now,
     })
@@ -134,6 +143,7 @@ export const getOrCreate = mutation({
   args: {
     projectId: v.id("projects"),
     filePath: v.string(),
+    pathRepresentation: v.literal("content_relative_v1"),
     title: v.string(),
     body: v.optional(v.string()),
     frontmatter: v.optional(v.any()),
@@ -147,6 +157,7 @@ export const getOrCreate = mutation({
     const existing = await ctx.db
       .query("documents")
       .withIndex("by_projectId_filePath", (q) => q.eq("projectId", args.projectId).eq("filePath", args.filePath))
+      .filter((q) => q.eq(q.field("pathRepresentation"), args.pathRepresentation))
       .first()
 
     if (existing) return existing._id
@@ -155,6 +166,7 @@ export const getOrCreate = mutation({
     return await ctx.db.insert("documents", {
       projectId: args.projectId,
       filePath: args.filePath,
+      pathRepresentation: args.pathRepresentation,
       title: args.title,
       status: "draft",
       body: args.body,
@@ -170,6 +182,7 @@ export const getOrCreateInternal = internalMutation({
   args: {
     projectId: v.id("projects"),
     filePath: v.string(),
+    pathRepresentation: v.literal("content_relative_v1"),
     title: v.string(),
     body: v.optional(v.string()),
     frontmatter: v.optional(v.any()),
@@ -179,6 +192,7 @@ export const getOrCreateInternal = internalMutation({
     const existing = await ctx.db
       .query("documents")
       .withIndex("by_projectId_filePath", (q) => q.eq("projectId", args.projectId).eq("filePath", args.filePath))
+      .filter((q) => q.eq(q.field("pathRepresentation"), args.pathRepresentation))
       .first()
 
     if (existing) return existing._id
@@ -187,6 +201,7 @@ export const getOrCreateInternal = internalMutation({
     return await ctx.db.insert("documents", {
       projectId: args.projectId,
       filePath: args.filePath,
+      pathRepresentation: args.pathRepresentation,
       title: args.title,
       status: "draft",
       body: args.body,
@@ -529,7 +544,11 @@ export const listTitlesForProject = query({
       .query("documents")
       .withIndex("by_projectId", (q) => q.eq("projectId", args.projectId))
       .collect()
-    return docs.map((d) => ({ filePath: d.filePath, title: d.title }))
+    return docs.map((d) => ({
+      filePath: d.filePath,
+      pathRepresentation: d.pathRepresentation,
+      title: d.title,
+    }))
   },
 })
 
@@ -568,7 +587,8 @@ export const syncTreeTitles = action({
     owner: v.string(),
     repo: v.string(),
     branch: v.string(),
-    files: v.array(v.object({ path: v.string(), sha: v.string() })),
+    contentRoot: v.string(),
+    files: v.array(v.object({ path: v.string(), repoPath: v.string(), sha: v.string() })),
     githubToken: v.string(),
   },
   handler: async (ctx, args) => {
@@ -576,7 +596,15 @@ export const syncTreeTitles = action({
     const existingDocs = await ctx.runQuery(internal.documents.listByProjectInternal, {
       projectId: args.projectId,
     })
-    const existingPaths = new Set(existingDocs.map((d) => d.filePath))
+    const existingPaths = new Set(
+      existingDocs.map((document) =>
+        resolveStoredContentPath(
+          args.contentRoot,
+          document.filePath,
+          document.pathRepresentation as StoredPathRepresentation | undefined,
+        ),
+      ),
+    )
 
     const missingFiles = args.files.filter((f) => !existingPaths.has(f.path))
     if (missingFiles.length === 0) return
@@ -589,7 +617,7 @@ export const syncTreeTitles = action({
         batch.map(async (file) => {
           try {
             const response = await fetch(
-              `https://api.github.com/repos/${args.owner}/${args.repo}/contents/${encodeURIComponent(file.path)}?ref=${args.branch}`,
+              `https://api.github.com/repos/${args.owner}/${args.repo}/contents/${encodeURIComponent(file.repoPath)}?ref=${args.branch}`,
               {
                 headers: {
                   Authorization: `token ${args.githubToken}`,
@@ -616,6 +644,7 @@ export const syncTreeTitles = action({
             await ctx.runMutation(internal.documents.getOrCreateInternal, {
               projectId: args.projectId,
               filePath: file.path,
+              pathRepresentation: "content_relative_v1",
               title,
               githubSha: file.sha,
             })

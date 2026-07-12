@@ -13,7 +13,7 @@ import {
   getFile,
   updatePullRequest,
 } from "@/lib/github"
-import { toRepoPath } from "@/lib/preview/path-policy"
+import { resolveStoredRepoPath, type StoredPathRepresentation } from "@/lib/preview/path-policy"
 import { mintServerQueryToken } from "@/lib/project-access-token"
 import { buildPublishBranchName, derivePublishBranchScope } from "@/lib/publish-branch-name"
 import { RouteAuthError, resolveRouteAuth } from "@/lib/route-auth"
@@ -81,21 +81,32 @@ export async function POST(request: Request) {
 
     const resolvedPendingOps = pendingOps.map((source) => ({
       source,
-      repoPath: toRepoPath(contentRoot, source.filePath),
+      repoPath: resolveStoredRepoPath(
+        contentRoot,
+        source.filePath,
+        source.pathRepresentation as StoredPathRepresentation | undefined,
+      ),
     }))
     const resolvedDirtyDocs = dirtyDocs.map((source) => ({
       source,
-      repoPath: toRepoPath(contentRoot, source.filePath),
+      repoPath: resolveStoredRepoPath(
+        contentRoot,
+        source.filePath,
+        source.pathRepresentation as StoredPathRepresentation | undefined,
+      ),
     }))
     const identityConflicts = findContentIdentityConflicts(resolvedPendingOps, resolvedDirtyDocs)
     if (identityConflicts.length > 0) {
       return NextResponse.json({ ok: false, conflicts: identityConflicts }, { status: 409 })
     }
 
-    const createOpPaths = new Set(
-      resolvedPendingOps.filter(({ source }) => source.opType === "create").map(({ repoPath }) => repoPath),
-    )
+    const contentOpPaths = new Set(resolvedPendingOps.map(({ repoPath }) => repoPath))
     const dirtyDocByRepoPath = new Map(resolvedDirtyDocs.map((resolved) => [resolved.repoPath, resolved.source]))
+    const deleteAssociations = resolvedPendingOps.flatMap(({ source, repoPath }) => {
+      if (source.opType !== "delete") return []
+      const document = dirtyDocByRepoPath.get(repoPath)
+      return document ? [{ opId: source._id, documentId: document._id, expectedUpdatedAt: document.updatedAt }] : []
+    })
     const pathsToFetch = new Map<string, string>()
 
     for (const { source: op, repoPath } of resolvedPendingOps) {
@@ -107,7 +118,7 @@ export async function POST(request: Request) {
     }
 
     for (const { source: doc, repoPath } of resolvedDirtyDocs) {
-      if (createOpPaths.has(repoPath)) continue
+      if (contentOpPaths.has(repoPath)) continue
       if (!doc.githubSha) continue
       pathsToFetch.set(`content:${repoPath}`, repoPath)
     }
@@ -173,7 +184,7 @@ export async function POST(request: Request) {
     }
 
     for (const { source: doc, repoPath } of resolvedDirtyDocs) {
-      if (createOpPaths.has(repoPath)) continue
+      if (contentOpPaths.has(repoPath)) continue
       if (doc.githubSha) {
         const existing = prefetchResults.get(`content:${repoPath}`)
         if (existing && existing.sha !== doc.githubSha) {
@@ -365,6 +376,7 @@ export async function POST(request: Request) {
     if (pendingOps.length > 0) {
       await convex.mutation(api.explorerOps.markCommitted, {
         ids: pendingOps.map((op) => op._id),
+        deleteAssociations,
         commitSha,
         publishBranchId: publishBranch._id,
         userId: actingUserId,
@@ -382,7 +394,7 @@ export async function POST(request: Request) {
       })
     }
 
-    const docsToUpdateSha = resolvedDirtyDocs.filter(({ repoPath }) => !createOpPaths.has(repoPath))
+    const docsToUpdateSha = resolvedDirtyDocs.filter(({ repoPath }) => !contentOpPaths.has(repoPath))
     const shaFetches = await Promise.all(
       docsToUpdateSha.map(async ({ source: doc, repoPath }) => {
         try {
@@ -429,8 +441,8 @@ export async function POST(request: Request) {
 }
 
 function findContentIdentityConflicts<
-  Pending extends { repoPath: string; source: { opType: string } },
-  Document extends { repoPath: string },
+  Pending extends { repoPath: string; source: { opType: string; createdAt?: number } },
+  Document extends { repoPath: string; source: { updatedAt?: number } },
 >(pendingOps: Pending[], dirtyDocs: Document[]): { path: string; reason: string }[] {
   const identities = new Map<string, { pendingOps: Pending[]; dirtyDocs: Document[] }>()
 
@@ -447,19 +459,25 @@ function findContentIdentityConflicts<
 
   const conflicts: { path: string; reason: string }[] = []
   for (const [path, identity] of identities) {
-    const isCreateWithDocument =
-      identity.pendingOps.length === 1 &&
-      identity.pendingOps[0].source.opType === "create" &&
-      identity.dirtyDocs.length === 1
+    const singlePendingOp = identity.pendingOps.length === 1 ? identity.pendingOps[0].source : undefined
+    const singleDirtyDoc = identity.dirtyDocs.length === 1 ? identity.dirtyDocs[0].source : undefined
+    const documentChangedAfterDelete =
+      singlePendingOp?.opType === "delete" &&
+      typeof singlePendingOp.createdAt === "number" &&
+      typeof singleDirtyDoc?.updatedAt === "number" &&
+      singleDirtyDoc.updatedAt > singlePendingOp.createdAt
+    const isSingleOperationWithDocument = Boolean(singlePendingOp && singleDirtyDoc && !documentChangedAfterDelete)
     const hasDuplicatePendingOps = identity.pendingOps.length > 1
     const hasDuplicateDirtyDocs = identity.dirtyDocs.length > 1
     const hasMixedSourceCollision =
-      identity.pendingOps.length > 0 && identity.dirtyDocs.length > 0 && !isCreateWithDocument
+      identity.pendingOps.length > 0 && identity.dirtyDocs.length > 0 && !isSingleOperationWithDocument
 
     if (hasDuplicatePendingOps || hasDuplicateDirtyDocs || hasMixedSourceCollision) {
       conflicts.push({
         path,
-        reason: "Resolved content path collision between pending changes",
+        reason: documentChangedAfterDelete
+          ? "Document changed after delete was staged"
+          : "Resolved content path collision between pending changes",
       })
     }
   }

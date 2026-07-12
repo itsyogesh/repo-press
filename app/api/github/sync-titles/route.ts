@@ -5,6 +5,7 @@ import type { Id } from "@/convex/_generated/dataModel"
 import { getGitHubToken } from "@/lib/auth-server"
 import { getRepoRole } from "@/lib/github-permissions"
 import { mintServerQueryToken } from "@/lib/project-access-token"
+import { prepareTitleSyncFiles } from "@/lib/studio/path-adapters"
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
 
@@ -48,7 +49,8 @@ export async function POST(request: Request) {
       owner,
       repo,
       branch,
-      files,
+      contentRoot: project.contentRoot,
+      files: prepareTitleSyncFiles(project.contentRoot, files),
       githubToken: token,
     })
 

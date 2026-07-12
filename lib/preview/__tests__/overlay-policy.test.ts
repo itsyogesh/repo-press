@@ -97,7 +97,14 @@ describe("explorer tree overlay path boundary", () => {
   it("converts a content-relative operation exactly once for a nested root", () => {
     const result = overlayOpsOnTree(
       [],
-      [{ opType: "create", filePath: "guides/start.mdx", status: "pending" }],
+      [
+        {
+          opType: "create",
+          filePath: "guides/start.mdx",
+          status: "pending",
+          pathRepresentation: "content_relative_v1",
+        },
+      ],
       "content/docs",
     )
 
@@ -123,7 +130,30 @@ describe("explorer tree overlay path boundary", () => {
 
   it("rejects unsafe explorer operations before modifying the tree", () => {
     expect(() =>
-      overlayOpsOnTree([], [{ opType: "create", filePath: "../outside.mdx", status: "pending" }], "content"),
+      overlayOpsOnTree(
+        [],
+        [
+          {
+            opType: "create",
+            filePath: "../outside.mdx",
+            status: "pending",
+            pathRepresentation: "content_relative_v1",
+          },
+        ],
+        "content",
+      ),
     ).toThrowError(expect.objectContaining({ name: "PathPolicyError" }))
+  })
+
+  it("adapts an untagged legacy explorer operation exactly once", () => {
+    const result = overlayOpsOnTree(
+      [],
+      [{ opType: "create", filePath: "content/docs/guides/legacy.mdx", status: "pending" }],
+      "content/docs",
+    )
+
+    expect(result[0]?.children?.[0]).toEqual(
+      expect.objectContaining({ path: "content/docs/guides/legacy.mdx", isNew: true }),
+    )
   })
 })
