@@ -153,4 +153,79 @@ export const token = readToken()
     expect(serialized).not.toContain("Still readable")
     expect(model.blocks).toContainEqual({ type: "component-placeholder", name: "Broken" })
   })
+
+  it("rejects oversized UTF-8 source without leaking it", () => {
+    const secret = "oversized-secret"
+    const model = buildGenericRenderModel(`${secret}${"界".repeat(175_000)}`)
+
+    expect(model).toEqual({
+      blocks: [
+        {
+          type: "diagnostic",
+          code: "SOURCE_BYTE_LIMIT",
+          message: "Generic preview is unavailable because this document exceeds the safe source-size limit.",
+        },
+      ],
+    })
+    expect(JSON.stringify(model)).not.toContain(secret)
+  })
+
+  it("rejects deeply nested syntax before recursive conversion", () => {
+    const secret = "deep-secret"
+    const model = buildGenericRenderModel(`${"> ".repeat(80)}${secret}`)
+
+    expect(model.blocks).toEqual([
+      {
+        type: "diagnostic",
+        code: "SYNTAX_DEPTH_LIMIT",
+        message: "Generic preview is unavailable because this document is nested too deeply.",
+      },
+    ])
+    expect(JSON.stringify(model)).not.toContain(secret)
+  })
+
+  it("rejects syntax-node exhaustion deterministically", () => {
+    const source = Array.from({ length: 5_100 }, (_, index) => `# heading-${index}`).join("\n")
+
+    const first = buildGenericRenderModel(source)
+    const second = buildGenericRenderModel(source)
+
+    expect(first).toEqual(second)
+    expect(first.blocks).toEqual([
+      {
+        type: "diagnostic",
+        code: "SYNTAX_NODE_LIMIT",
+        message: "Generic preview is unavailable because this document has too many syntax nodes.",
+      },
+    ])
+    expect(JSON.parse(JSON.stringify(first))).toEqual(first)
+  })
+
+  it("rejects output-text exhaustion without returning partial content", () => {
+    const secret = "output-secret"
+    const model = buildGenericRenderModel(`${secret}${"x".repeat(270_000)}`)
+
+    expect(model.blocks).toEqual([
+      {
+        type: "diagnostic",
+        code: "OUTPUT_BYTE_LIMIT",
+        message: "Generic preview is unavailable because the safe render output limit was exceeded.",
+      },
+    ])
+    expect(JSON.stringify(model)).not.toContain(secret)
+  })
+
+  it("applies output-node limits to malformed-MDX placeholder recovery", () => {
+    const source = Array.from({ length: 5_100 }, (_, index) => `<Broken${index} value={>`).join("\n")
+
+    const model = buildGenericRenderModel(source)
+
+    expect(model.blocks).toEqual([
+      {
+        type: "diagnostic",
+        code: "OUTPUT_NODE_LIMIT",
+        message: "Generic preview is unavailable because the safe render node limit was exceeded.",
+      },
+    ])
+  })
 })

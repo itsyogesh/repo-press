@@ -24,8 +24,29 @@ export type GenericBlock =
   | { type: "table"; align: Array<"left" | "right" | "center" | null>; rows: GenericTableCell[][] }
   | { type: "thematic-break" }
   | { type: "component-placeholder"; name: string }
+  | { type: "diagnostic"; code: GenericRenderDiagnosticCode; message: string }
 
 export type GenericRenderModel = { blocks: GenericBlock[] }
+
+export type GenericRenderDiagnosticCode =
+  | "SOURCE_BYTE_LIMIT"
+  | "SYNTAX_NODE_LIMIT"
+  | "SYNTAX_DEPTH_LIMIT"
+  | "OUTPUT_NODE_LIMIT"
+  | "OUTPUT_BYTE_LIMIT"
+  | "MODEL_NODE_LIMIT"
+  | "MODEL_DEPTH_LIMIT"
+  | "MODEL_BYTE_LIMIT"
+  | "INVALID_MODEL"
+
+export const GENERIC_RENDER_LIMITS = Object.freeze({
+  sourceBytes: 512 * 1024,
+  syntaxNodes: 10_000,
+  syntaxDepth: 64,
+  outputNodes: 5_000,
+  outputBytes: 256 * 1024,
+  outputDepth: 64,
+})
 
 type SyntaxNode = {
   type: string
@@ -51,8 +72,23 @@ const mdxParser = unified().use(remarkParse).use(remarkMdx).use(remarkGfm)
 const URL_SCHEME = /^([A-Za-z][A-Za-z\d+.-]*):/
 const SAFE_LINK_SCHEMES = new Set(["http", "https", "mailto", "tel"])
 const SAFE_IMAGE_SCHEMES = new Set(["http", "https"])
+const DIAGNOSTIC_CODES = new Set<GenericRenderDiagnosticCode>([
+  "SOURCE_BYTE_LIMIT",
+  "SYNTAX_NODE_LIMIT",
+  "SYNTAX_DEPTH_LIMIT",
+  "OUTPUT_NODE_LIMIT",
+  "OUTPUT_BYTE_LIMIT",
+  "MODEL_NODE_LIMIT",
+  "MODEL_DEPTH_LIMIT",
+  "MODEL_BYTE_LIMIT",
+  "INVALID_MODEL",
+])
 
 export function buildGenericRenderModel(source: string): GenericRenderModel {
+  if (utf8ByteLengthExceeds(source, GENERIC_RENDER_LIMITS.sourceBytes)) {
+    return diagnosticModel("SOURCE_BYTE_LIMIT")
+  }
+
   let root: SyntaxNode
   try {
     root = mdxParser.parse(source) as SyntaxNode
@@ -60,11 +96,264 @@ export function buildGenericRenderModel(source: string): GenericRenderModel {
     // Invalid MDX fails closed: parsing the whole document as Markdown would
     // preserve import and expression source as ordinary text. Keep only inert
     // tag names discovered by the quote-aware HTML scanner.
-    return { blocks: rawHtmlPlaceholders(source) }
+    return finalizeBuiltModel({ blocks: rawHtmlPlaceholders(source) })
   }
 
+  const syntaxBudgetFailure = inspectSyntaxBudget(root)
+  if (syntaxBudgetFailure) return diagnosticModel(syntaxBudgetFailure)
+
   const definitions = collectDefinitions(root.children ?? [])
-  return { blocks: toBlocks(root.children ?? [], definitions) }
+  return finalizeBuiltModel({ blocks: toBlocks(root.children ?? [], definitions) })
+}
+
+function finalizeBuiltModel(model: GenericRenderModel): GenericRenderModel {
+  const outputBudgetFailure = inspectRenderModel(model)
+  if (outputBudgetFailure === "MODEL_NODE_LIMIT") return diagnosticModel("OUTPUT_NODE_LIMIT")
+  if (outputBudgetFailure === "MODEL_BYTE_LIMIT") return diagnosticModel("OUTPUT_BYTE_LIMIT")
+  if (outputBudgetFailure) return diagnosticModel(outputBudgetFailure)
+  return model
+}
+
+export function ensureRendererSafeGenericRenderModel(model: unknown): GenericRenderModel {
+  const failure = inspectRenderModel(model)
+  return failure ? diagnosticModel(failure) : (model as GenericRenderModel)
+}
+
+function inspectSyntaxBudget(root: SyntaxNode): "SYNTAX_NODE_LIMIT" | "SYNTAX_DEPTH_LIMIT" | null {
+  const stack: Array<{ node: SyntaxNode; depth: number }> = [{ node: root, depth: 0 }]
+  let nodes = 0
+
+  while (stack.length > 0) {
+    const entry = stack.pop()
+    if (!entry) break
+    nodes += 1
+    if (nodes > GENERIC_RENDER_LIMITS.syntaxNodes) return "SYNTAX_NODE_LIMIT"
+    if (entry.depth > GENERIC_RENDER_LIMITS.syntaxDepth) return "SYNTAX_DEPTH_LIMIT"
+    if ((entry.node.children?.length ?? 0) > GENERIC_RENDER_LIMITS.syntaxNodes - stack.length) {
+      return "SYNTAX_NODE_LIMIT"
+    }
+    for (let index = (entry.node.children?.length ?? 0) - 1; index >= 0; index -= 1) {
+      const child = entry.node.children?.[index]
+      if (child) stack.push({ node: child, depth: entry.depth + 1 })
+    }
+  }
+
+  return null
+}
+
+type ModelBudgetFailure = "MODEL_NODE_LIMIT" | "MODEL_DEPTH_LIMIT" | "MODEL_BYTE_LIMIT" | "INVALID_MODEL"
+type ModelStackEntry = { kind: "block" | "inline" | "item" | "cell"; value: unknown; depth: number }
+
+function inspectRenderModel(model: unknown): ModelBudgetFailure | null {
+  if (!isRecord(model) || !Array.isArray(model.blocks)) return "INVALID_MODEL"
+
+  const stack: ModelStackEntry[] = []
+  if (!pushEntries(stack, "block", model.blocks, 1)) return "MODEL_NODE_LIMIT"
+
+  const seen = new WeakSet<object>()
+  let nodes = 0
+  let textBytes = 0
+  const addText = (value: string | null | undefined) => {
+    if (value === null || value === undefined) return true
+    const remaining = GENERIC_RENDER_LIMITS.outputBytes - textBytes
+    if (utf8ByteLengthExceeds(value, remaining)) return false
+    textBytes += utf8ByteLength(value)
+    return true
+  }
+
+  while (stack.length > 0) {
+    const entry = stack.pop()
+    if (!entry) break
+    if (!isRecord(entry.value) || seen.has(entry.value)) return "INVALID_MODEL"
+    seen.add(entry.value)
+    nodes += 1
+    if (nodes > GENERIC_RENDER_LIMITS.outputNodes) return "MODEL_NODE_LIMIT"
+    if (entry.depth > GENERIC_RENDER_LIMITS.outputDepth) return "MODEL_DEPTH_LIMIT"
+
+    if (entry.kind === "item") {
+      if (!Array.isArray(entry.value.blocks)) return "INVALID_MODEL"
+      if (entry.value.checked !== null && typeof entry.value.checked !== "boolean") return "INVALID_MODEL"
+      if (!pushEntries(stack, "block", entry.value.blocks, entry.depth + 1)) return "MODEL_NODE_LIMIT"
+      continue
+    }
+    if (entry.kind === "cell") {
+      if (!Array.isArray(entry.value.children)) return "INVALID_MODEL"
+      if (!pushEntries(stack, "inline", entry.value.children, entry.depth + 1)) return "MODEL_NODE_LIMIT"
+      continue
+    }
+
+    const type = entry.value.type
+    if (typeof type !== "string") return "INVALID_MODEL"
+    if (entry.kind === "inline") {
+      if (type === "text" || type === "inline-code") {
+        if (typeof entry.value.value !== "string") return "INVALID_MODEL"
+        if (!addText(entry.value.value)) return "MODEL_BYTE_LIMIT"
+      } else if (type === "strong" || type === "emphasis" || type === "delete") {
+        if (!Array.isArray(entry.value.children)) return "INVALID_MODEL"
+        if (!pushEntries(stack, "inline", entry.value.children, entry.depth + 1)) return "MODEL_NODE_LIMIT"
+      } else if (type === "link") {
+        if (
+          typeof entry.value.url !== "string" ||
+          safeUrl(entry.value.url, "link") !== entry.value.url ||
+          !isNullableString(entry.value.title)
+        ) {
+          return "INVALID_MODEL"
+        }
+        if (!addText(entry.value.url) || !addText(entry.value.title) || !Array.isArray(entry.value.children)) {
+          return Array.isArray(entry.value.children) ? "MODEL_BYTE_LIMIT" : "INVALID_MODEL"
+        }
+        if (!pushEntries(stack, "inline", entry.value.children, entry.depth + 1)) return "MODEL_NODE_LIMIT"
+      } else if (type === "image") {
+        if (
+          typeof entry.value.url !== "string" ||
+          safeUrl(entry.value.url, "image") !== entry.value.url ||
+          !isNullableString(entry.value.title) ||
+          typeof entry.value.alt !== "string"
+        ) {
+          return "INVALID_MODEL"
+        }
+        if (!addText(entry.value.url) || !addText(entry.value.title) || !addText(entry.value.alt)) {
+          return "MODEL_BYTE_LIMIT"
+        }
+      } else if (type === "component-placeholder") {
+        if (typeof entry.value.name !== "string" || safeComponentName(entry.value.name) !== entry.value.name) {
+          return "INVALID_MODEL"
+        }
+        if (!addText(entry.value.name)) return "MODEL_BYTE_LIMIT"
+      } else if (type !== "break") {
+        return "INVALID_MODEL"
+      }
+      continue
+    }
+
+    if (type === "heading") {
+      if (
+        !Number.isInteger(entry.value.depth) ||
+        (entry.value.depth as number) < 1 ||
+        (entry.value.depth as number) > 6 ||
+        typeof entry.value.text !== "string" ||
+        !Array.isArray(entry.value.children)
+      ) {
+        return "INVALID_MODEL"
+      }
+      if (!addText(entry.value.text) || !Array.isArray(entry.value.children)) return "MODEL_BYTE_LIMIT"
+      if (!pushEntries(stack, "inline", entry.value.children, entry.depth + 1)) return "MODEL_NODE_LIMIT"
+    } else if (type === "paragraph") {
+      if (!Array.isArray(entry.value.children)) return "INVALID_MODEL"
+      if (!pushEntries(stack, "inline", entry.value.children, entry.depth + 1)) return "MODEL_NODE_LIMIT"
+    } else if (type === "list") {
+      if (
+        typeof entry.value.ordered !== "boolean" ||
+        (entry.value.start !== null && (!Number.isInteger(entry.value.start) || (entry.value.start as number) < 1)) ||
+        !Array.isArray(entry.value.items)
+      ) {
+        return "INVALID_MODEL"
+      }
+      if (!pushEntries(stack, "item", entry.value.items, entry.depth + 1)) return "MODEL_NODE_LIMIT"
+    } else if (type === "blockquote") {
+      if (!Array.isArray(entry.value.blocks)) return "INVALID_MODEL"
+      if (!pushEntries(stack, "block", entry.value.blocks, entry.depth + 1)) return "MODEL_NODE_LIMIT"
+    } else if (type === "code") {
+      if (
+        !isNullableString(entry.value.language) ||
+        !isNullableString(entry.value.meta) ||
+        typeof entry.value.value !== "string"
+      ) {
+        return "INVALID_MODEL"
+      }
+      if (!addText(entry.value.language) || !addText(entry.value.meta) || !addText(entry.value.value)) {
+        return "MODEL_BYTE_LIMIT"
+      }
+    } else if (type === "table") {
+      if (
+        !Array.isArray(entry.value.align) ||
+        !entry.value.align.every(
+          (align) => align === null || align === "left" || align === "right" || align === "center",
+        ) ||
+        !Array.isArray(entry.value.rows)
+      ) {
+        return "INVALID_MODEL"
+      }
+      for (let rowIndex = entry.value.rows.length - 1; rowIndex >= 0; rowIndex -= 1) {
+        const row = entry.value.rows[rowIndex]
+        if (!Array.isArray(row)) return "INVALID_MODEL"
+        if (!pushEntries(stack, "cell", row, entry.depth + 1)) return "MODEL_NODE_LIMIT"
+      }
+    } else if (type === "component-placeholder") {
+      if (typeof entry.value.name !== "string" || safeComponentName(entry.value.name) !== entry.value.name) {
+        return "INVALID_MODEL"
+      }
+      if (!addText(entry.value.name)) return "MODEL_BYTE_LIMIT"
+    } else if (type === "diagnostic") {
+      if (
+        typeof entry.value.code !== "string" ||
+        !DIAGNOSTIC_CODES.has(entry.value.code as GenericRenderDiagnosticCode) ||
+        typeof entry.value.message !== "string"
+      ) {
+        return "INVALID_MODEL"
+      }
+      if (!addText(entry.value.code) || !addText(entry.value.message)) return "MODEL_BYTE_LIMIT"
+    } else if (type !== "thematic-break") {
+      return "INVALID_MODEL"
+    }
+  }
+
+  return null
+}
+
+function pushEntries(stack: ModelStackEntry[], kind: ModelStackEntry["kind"], values: unknown[], depth: number) {
+  if (values.length > GENERIC_RENDER_LIMITS.outputNodes - stack.length) return false
+  for (let index = values.length - 1; index >= 0; index -= 1) {
+    stack.push({ kind, value: values[index], depth })
+  }
+  return true
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === "string"
+}
+
+function diagnosticModel(code: GenericRenderDiagnosticCode): GenericRenderModel {
+  const messages: Record<GenericRenderDiagnosticCode, string> = {
+    SOURCE_BYTE_LIMIT: "Generic preview is unavailable because this document exceeds the safe source-size limit.",
+    SYNTAX_NODE_LIMIT: "Generic preview is unavailable because this document has too many syntax nodes.",
+    SYNTAX_DEPTH_LIMIT: "Generic preview is unavailable because this document is nested too deeply.",
+    OUTPUT_NODE_LIMIT: "Generic preview is unavailable because the safe render node limit was exceeded.",
+    OUTPUT_BYTE_LIMIT: "Generic preview is unavailable because the safe render output limit was exceeded.",
+    MODEL_NODE_LIMIT: "Generic preview was blocked because its render model has too many nodes.",
+    MODEL_DEPTH_LIMIT: "Generic preview was blocked because its render model is nested too deeply.",
+    MODEL_BYTE_LIMIT: "Generic preview was blocked because its render model is too large.",
+    INVALID_MODEL: "Generic preview was blocked because its render model is invalid.",
+  }
+  return { blocks: [{ type: "diagnostic", code, message: messages[code] }] }
+}
+
+function utf8ByteLengthExceeds(value: string, limit: number) {
+  return utf8ByteLength(value, limit) > limit
+}
+
+function utf8ByteLength(value: string, stopAfter = Number.POSITIVE_INFINITY) {
+  let bytes = 0
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index)
+    if (code <= 0x7f) bytes += 1
+    else if (code <= 0x7ff) bytes += 2
+    else if (
+      code >= 0xd800 &&
+      code <= 0xdbff &&
+      value.charCodeAt(index + 1) >= 0xdc00 &&
+      value.charCodeAt(index + 1) <= 0xdfff
+    ) {
+      bytes += 4
+      index += 1
+    } else bytes += 3
+    if (bytes > stopAfter) return bytes
+  }
+  return bytes
 }
 
 function toBlocks(nodes: SyntaxNode[], definitions: Map<string, Definition>): GenericBlock[] {

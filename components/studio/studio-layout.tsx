@@ -2,12 +2,11 @@
 
 import { useMutation } from "convex/react"
 import matter from "gray-matter"
-import { AlertCircle, Command, FileText, FolderOpen, History, Loader2, Search, Settings, X } from "lucide-react"
+import { Command, FileText, FolderOpen, History, Loader2, Search, Settings, X } from "lucide-react"
 import Link from "next/link"
 import * as React from "react"
 import { toast } from "sonner"
 import { syncProjectsFromConfigAction } from "@/app/dashboard/[owner]/[repo]/actions"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -60,6 +59,7 @@ import { StudioAdapterProvider } from "./studio-adapter-context"
 import { StudioProvider, useStudio } from "./studio-context"
 import { StudioFooter } from "./studio-footer"
 import { StudioHeader } from "./studio-header"
+import { resolveStudioPreviewPanelMode } from "./studio-preview-panel-mode"
 import { useViewMode, ViewModeProvider } from "./view-mode-context"
 
 // ── Insert Component Modal Context ──────────────────────────────────────
@@ -451,7 +451,6 @@ function StudioLayoutInner({
     owner,
     repo,
     branch,
-    adapter,
     adapterLoading,
     adapterError,
     adapterDiagnostics,
@@ -1254,6 +1253,14 @@ function StudioLayoutInner({
   const shouldShowProjectDataSkeleton =
     Boolean(projectId) && resolvedProjectDataId !== projectId && isProjectDataLoading
   const isSelectedDocumentLoading = isFileLoading
+  const previewPanelMode = resolveStudioPreviewPanelMode({
+    isSelectedDocumentLoading,
+    selectedFile: Boolean(selectedFile),
+    shouldShowProjectDataSkeleton,
+    adapterLoading,
+    adapterError,
+    adapterDiagnostics,
+  })
 
   const pendingSummary = React.useMemo(
     () =>
@@ -1727,23 +1734,11 @@ function StudioLayoutInner({
                   className="min-w-0"
                 >
                   <StudioPanelShell className="bg-studio-canvas">
-                    {isSelectedDocumentLoading || (!selectedFile && shouldShowProjectDataSkeleton) ? (
+                    {previewPanelMode === "loading" ? (
                       <StudioPreviewLoading />
-                    ) : adapterLoading && !adapter ? (
-                      <div className="h-full flex items-center justify-center">
-                        <div className="text-sm text-studio-fg-muted">Loading preview adapter...</div>
-                      </div>
-                    ) : adapterError && !adapter ? (
-                      <div className="h-full flex items-center justify-center p-4">
-                        <Alert variant="destructive">
-                          <AlertCircle className="h-4 w-4" />
-                          <AlertTitle>Adapter Error</AlertTitle>
-                          <AlertDescription>{adapterError}</AlertDescription>
-                        </Alert>
-                      </div>
-                    ) : !selectedFile ? (
+                    ) : previewPanelMode === "empty" ? (
                       <StudioNoSelectionPreviewState />
-                    ) : (
+                    ) : selectedFile ? (
                       <Preview
                         content={content}
                         frontmatter={frontmatter}
@@ -1755,10 +1750,8 @@ function StudioLayoutInner({
                         scrollContainerRef={previewScrollRef}
                         onScroll={handlePreviewScroll}
                         onCompilingChange={handlePreviewCompilingChange}
-                        adapter={adapter}
-                        adapterDiagnostics={adapterDiagnostics}
                       />
-                    )}
+                    ) : null}
                   </StudioPanelShell>
                 </ResizablePanel>
               </>

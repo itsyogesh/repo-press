@@ -1,5 +1,10 @@
 import { Fragment, type ReactNode } from "react"
-import type { GenericBlock, GenericInline, GenericRenderModel } from "@/lib/preview/generic-render-model"
+import {
+  ensureRendererSafeGenericRenderModel,
+  type GenericBlock,
+  type GenericInline,
+  type GenericRenderModel,
+} from "@/lib/preview/generic-render-model"
 
 export function GenericPreview({
   model,
@@ -8,7 +13,8 @@ export function GenericPreview({
   model: GenericRenderModel
   resolveAssetUrl?: (path: string) => string
 }) {
-  return model.blocks.map((block, index) => (
+  const safeModel = ensureRendererSafeGenericRenderModel(model)
+  return safeModel.blocks.map((block, index) => (
     <Fragment key={`${block.type}-${index}`}>{renderBlock(block, resolveAssetUrl)}</Fragment>
   ))
 }
@@ -68,7 +74,22 @@ function renderBlock(block: GenericBlock, resolveAssetUrl?: (path: string) => st
       return <hr />
     case "component-placeholder":
       return <ComponentPlaceholder name={block.name} />
+    case "diagnostic":
+      return <DiagnosticPlaceholder code={block.code} message={block.message} />
   }
+}
+
+function DiagnosticPlaceholder({ code, message }: { code: string; message: string }) {
+  return (
+    <div
+      className="not-typeset not-prose my-4 rounded-lg border border-dashed border-studio-attention/50 bg-studio-attention-muted/40 px-3 py-2 text-sm text-studio-fg"
+      data-not-typeset
+      data-preview-diagnostic={code}
+    >
+      <code className="font-mono text-xs">{code}</code>
+      <p className="mt-1 text-studio-fg-muted">{message}</p>
+    </div>
+  )
 }
 
 function renderTableRow(

@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/button"
 import type { FieldVariantMap } from "@/lib/framework-adapters"
 import { resolveFieldValue } from "@/lib/framework-adapters"
 import { buildGenericRenderModel } from "@/lib/preview/generic-render-model"
-import type { RepoPressPreviewAdapter } from "@/lib/repopress/evaluate-adapter"
 import { resolveStudioAssetUrl } from "@/lib/studio/media-resolve"
 import { cn } from "@/lib/utils"
 
@@ -75,8 +74,6 @@ interface PreviewProps {
   scrollContainerRef?: React.RefObject<HTMLDivElement | null>
   onScroll?: () => void
   onCompilingChange?: (isCompiling: boolean) => void
-  adapter?: RepoPressPreviewAdapter | null
-  adapterDiagnostics?: string[]
 }
 
 export function Preview({
@@ -89,22 +86,37 @@ export function Preview({
   contentRoot = "",
   scrollContainerRef,
   onScroll,
+  onCompilingChange,
 }: PreviewProps) {
   const [viewport, setViewport] = React.useState<Viewport>("desktop")
   const [isFullScreen, setIsFullScreen] = React.useState(false)
-  const isCompiling = false
+  const [isCompiling, setIsCompiling] = React.useState(false)
   const warnings = React.useMemo<string[]>(() => [], [])
 
   // Debounced content for preview (300ms delay)
   const [debouncedContent, setDebouncedContent] = React.useState(content)
   const genericRenderModel = React.useMemo(() => buildGenericRenderModel(debouncedContent), [debouncedContent])
+  const onCompilingChangeRef = React.useRef(onCompilingChange)
+  onCompilingChangeRef.current = onCompilingChange
+  const [compileStatusForwarder] = React.useState(() =>
+    createCompileStatusForwarder((isCompiling) => onCompilingChangeRef.current?.(isCompiling)),
+  )
+  const previousContentRef = React.useRef(content)
 
   React.useEffect(() => {
+    if (previousContentRef.current === content) return
+    previousContentRef.current = content
+    setIsCompiling(true)
+    compileStatusForwarder.update(true)
     const timer = setTimeout(() => {
       setDebouncedContent(content)
+      setIsCompiling(false)
+      compileStatusForwarder.update(false)
     }, 300)
     return () => clearTimeout(timer)
-  }, [content])
+  }, [compileStatusForwarder, content])
+
+  React.useEffect(() => () => compileStatusForwarder.cancel(), [compileStatusForwarder])
 
   const title = resolveFieldValue(frontmatter, "title", fieldVariants) as string | undefined
   const date = resolveFieldValue(frontmatter, "date", fieldVariants) as string | undefined
