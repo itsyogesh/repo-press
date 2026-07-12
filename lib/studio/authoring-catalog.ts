@@ -76,6 +76,11 @@ export const AUTHORING_CATALOG_LIMITS = Object.freeze({
   maxDepth: 32,
   maxNodes: 10_000,
   maxUtf8Bytes: 256 * 1024,
+  maxComponents: 512,
+  maxPropsPerComponent: 128,
+  maxOptionsPerProp: 256,
+  maxSlotsPerComponent: 64,
+  maxFixturesPerComponent: 128,
 })
 
 const PROP_TYPES: readonly AuthoringPropType[] = ["string", "number", "boolean", "expression", "image"]
@@ -86,6 +91,7 @@ const HAZARDOUS_NAMES = new Set(["__proto__", "prototype", "constructor", "toStr
 const MDX_NAME = /^[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)*$/
 const FIELD_NAME = /^[A-Za-z_$][A-Za-z0-9_$-]*$/
 const LOGICAL_ID = /^[A-Za-z0-9_$@][A-Za-z0-9_$@./:-]*$/
+const validatedCatalogs = new WeakSet<object>()
 
 function ownValue(object: object, key: string): unknown {
   const descriptor = Object.getOwnPropertyDescriptor(object, key)
@@ -152,6 +158,9 @@ function projectProps(metadata: Record<string, unknown>): AuthoringProp[] {
   const value = ownValue(metadata, "props")
   if (value === undefined) return []
   if (!Array.isArray(value)) throw new TypeError("Authoring props must be an array")
+  if (value.length > AUTHORING_CATALOG_LIMITS.maxPropsPerComponent) {
+    throw new TypeError("Authoring catalog exceeds prop count limit")
+  }
   const names = new Set<string>()
   return value.map((rawProp, index) => {
     const prop = requireDataObject(rawProp, `props[${index}]`)
@@ -161,7 +170,13 @@ function projectProps(metadata: Record<string, unknown>): AuthoringProp[] {
     names.add(name)
     const type = normalizePropType(requireString(ownValue(prop, "type"), `props[${index}].type`))
     const options = ownValue(prop, "options")
-    if (options !== undefined && (!Array.isArray(options) || options.some((item) => typeof item !== "string"))) {
+    if (options !== undefined && !Array.isArray(options)) {
+      throw new TypeError(`props[${index}].options must be a string array`)
+    }
+    if (Array.isArray(options) && options.length > AUTHORING_CATALOG_LIMITS.maxOptionsPerProp) {
+      throw new TypeError("Authoring catalog exceeds option count limit")
+    }
+    if (Array.isArray(options) && options.some((item) => typeof item !== "string")) {
       throw new TypeError(`props[${index}].options must be a string array`)
     }
     const required = ownValue(prop, "required")
@@ -197,6 +212,9 @@ function projectSlots(metadata: Record<string, unknown>): AuthoringSlot[] {
     return hasChildren === true ? [{ name: "children", accepts: "mdx" }] : []
   }
   if (!Array.isArray(value)) throw new TypeError("Authoring slots must be an array")
+  if (value.length > AUTHORING_CATALOG_LIMITS.maxSlotsPerComponent) {
+    throw new TypeError("Authoring catalog exceeds slot count limit")
+  }
   const names = new Set<string>()
   return value.map((rawSlot, index) => {
     const slot = requireDataObject(rawSlot, `slots[${index}]`)
@@ -234,6 +252,54 @@ function projectProvenance(metadata: Record<string, unknown>): AuthoringProvenan
 }
 
 type CloneState = { nodes: number; bytes: number; active: WeakSet<object> }
+
+function addUtf8Bytes(value: string, state: CloneState): void {
+  for (let index = 0; index < value.length; index += 1) {
+    const codePoint = value.codePointAt(index) ?? 0
+    state.bytes += codePoint <= 0x7f ? 1 : codePoint <= 0x7ff ? 2 : codePoint <= 0xffff ? 3 : 4
+    if (codePoint > 0xffff) index += 1
+    if (state.bytes > AUTHORING_CATALOG_LIMITS.maxUtf8Bytes) throw new TypeError("Authoring catalog exceeds byte limit")
+  }
+}
+
+function preflightJson(value: unknown, state: CloneState, depth = 0, path = "catalog"): void {
+  if (depth > AUTHORING_CATALOG_LIMITS.maxDepth) throw new TypeError("Authoring catalog exceeds depth limit")
+  state.nodes += 1
+  if (state.nodes > AUTHORING_CATALOG_LIMITS.maxNodes) throw new TypeError("Authoring catalog exceeds node limit")
+  if (value === undefined) throw new TypeError(`Authoring catalog contains undefined at ${path}`)
+  if (value === null || typeof value === "boolean") return
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) throw new TypeError(`Authoring catalog value at ${path} must be serializable`)
+    return
+  }
+  if (typeof value === "string") {
+    addUtf8Bytes(value, state)
+    return
+  }
+  if (typeof value !== "object") throw new TypeError(`Authoring catalog value at ${path} must be serializable`)
+  if (state.active.has(value)) throw new TypeError(`Authoring catalog contains a cycle at ${path}`)
+  state.active.add(value)
+  if (Array.isArray(value)) {
+    if (value.length > AUTHORING_CATALOG_LIMITS.maxNodes - state.nodes) {
+      throw new TypeError("Authoring catalog exceeds node limit")
+    }
+    for (let index = 0; index < value.length; index += 1) {
+      if (!Object.hasOwn(value, index)) throw new TypeError(`Authoring catalog contains undefined at ${path}[${index}]`)
+      preflightJson(value[index], state, depth + 1, `${path}[${index}]`)
+    }
+  } else {
+    const prototype = Object.getPrototypeOf(value)
+    if (prototype !== Object.prototype && prototype !== null) {
+      throw new TypeError(`Authoring catalog value at ${path} must be serializable`)
+    }
+    for (const key of Object.keys(value)) {
+      if (HAZARDOUS_NAMES.has(key)) throw new TypeError(`Unsafe object key at ${path}.${key}`)
+      addUtf8Bytes(key, state)
+      preflightJson(ownValue(value, key), state, depth + 1, `${path}.${key}`)
+    }
+  }
+  state.active.delete(value)
+}
 
 function cloneJson(value: unknown, state: CloneState, depth = 0, path = "catalog"): unknown {
   if (depth > AUTHORING_CATALOG_LIMITS.maxDepth) throw new TypeError("Authoring catalog exceeds depth limit")
@@ -280,7 +346,14 @@ function cloneJson(value: unknown, state: CloneState, depth = 0, path = "catalog
 }
 
 function cloneAndFreezeCatalog(catalog: AuthoringCatalog): AuthoringCatalog {
-  return cloneJson(catalog, { nodes: 0, bytes: 0, active: new WeakSet() }) as AuthoringCatalog
+  preflightJson(catalog, { nodes: 0, bytes: 0, active: new WeakSet() })
+  const result = cloneJson(catalog, { nodes: 0, bytes: 0, active: new WeakSet() }) as AuthoringCatalog
+  validatedCatalogs.add(result)
+  return result
+}
+
+export function isValidatedAuthoringCatalog(value: unknown): value is AuthoringCatalog {
+  return typeof value === "object" && value !== null && validatedCatalogs.has(value)
 }
 
 function metadataFor(
@@ -308,14 +381,28 @@ function schemaStatus(metadata: Record<string, unknown>): AuthoringComponent["sc
 
 export function buildAuthoringCatalog(input: BuildAuthoringCatalogInput): AuthoringCatalog {
   const metadataMap = input.metadata ?? {}
+  if (!Array.isArray(input.nativeComponentNames ?? [])) throw new TypeError("nativeComponentNames must be an array")
+  if ((input.nativeComponentNames?.length ?? 0) > AUTHORING_CATALOG_LIMITS.maxComponents) {
+    throw new TypeError("Authoring catalog exceeds component count limit")
+  }
+  requireDataObject(metadataMap, "metadata")
   const names = new Set<string>()
   for (const name of input.nativeComponentNames ?? []) {
     validateMdxName(name)
     names.add(name)
   }
-  for (const name of Object.keys(metadataMap)) {
+  let metadataCount = 0
+  for (const name in metadataMap) {
+    if (!Object.hasOwn(metadataMap, name)) continue
+    metadataCount += 1
+    if (metadataCount > AUTHORING_CATALOG_LIMITS.maxComponents) {
+      throw new TypeError("Authoring catalog exceeds component count limit")
+    }
     validateMdxName(name)
     names.add(name)
+  }
+  if (names.size > AUTHORING_CATALOG_LIMITS.maxComponents) {
+    throw new TypeError("Authoring catalog exceeds component count limit")
   }
 
   const logicalIds = new Set<string>()
@@ -348,9 +435,13 @@ export function buildAuthoringCatalog(input: BuildAuthoringCatalogInput): Author
     const kind = ownValue(metadata, "kind") ?? "flow"
     if (kind !== "flow" && kind !== "text") throw new TypeError(`Invalid authoring kind: ${String(kind)}`)
     const fixtures = ownValue(metadata, "previewFixtures") ?? []
-    if (!Array.isArray(fixtures) || fixtures.some((item) => typeof item !== "string")) {
+    if (!Array.isArray(fixtures)) {
       throw new TypeError("previewFixtures must be a string array")
     }
+    if (fixtures.length > AUTHORING_CATALOG_LIMITS.maxFixturesPerComponent) {
+      throw new TypeError("Authoring catalog exceeds fixture count limit")
+    }
+    if (fixtures.some((item) => typeof item !== "string")) throw new TypeError("previewFixtures must be a string array")
     return {
       logicalId,
       mdxName,
@@ -376,4 +467,33 @@ export function buildAuthoringCatalog(input: BuildAuthoringCatalogInput): Author
 
 export function componentAcceptsChildren(component: AuthoringComponent): boolean {
   return component.slots.some((slot) => slot.name === "children")
+}
+
+export function extendAuthoringCatalogWithNativeNames(
+  catalog: AuthoringCatalog,
+  nativeComponentNames: readonly string[],
+): AuthoringCatalog {
+  if (!isValidatedAuthoringCatalog(catalog)) throw new TypeError("Base authoring catalog must be validated")
+  if (nativeComponentNames.length > AUTHORING_CATALOG_LIMITS.maxComponents) {
+    throw new TypeError("Authoring catalog exceeds component count limit")
+  }
+  const existingNames = new Set(catalog.map((component) => component.mdxName))
+  const additions = buildAuthoringCatalog({
+    nativeComponentNames: nativeComponentNames.filter((name) => !existingNames.has(name)),
+  })
+  const logicalIds = new Set(catalog.map((component) => component.logicalId))
+  for (const component of additions) {
+    if (logicalIds.has(component.logicalId)) {
+      throw new TypeError(`Authoring catalog has duplicate logical ID: ${component.logicalId}`)
+    }
+    logicalIds.add(component.logicalId)
+  }
+  if (catalog.length + additions.length > AUTHORING_CATALOG_LIMITS.maxComponents) {
+    throw new TypeError("Authoring catalog exceeds component count limit")
+  }
+  return cloneAndFreezeCatalog(
+    [...catalog, ...additions].sort(
+      (a, b) => a.displayName.localeCompare(b.displayName) || a.mdxName.localeCompare(b.mdxName),
+    ),
+  )
 }

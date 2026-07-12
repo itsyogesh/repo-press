@@ -1908,14 +1908,18 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
       return createStudioAdapterState({
         authoringCatalog,
         nativeComponentNames: [],
-        detectedFramework: studioQueries.project?.detectedFramework as string | undefined,
+        ...(studioQueries.project?.detectedFramework
+          ? { detectedFramework: studioQueries.project.detectedFramework as string }
+          : {}),
         diagnostics: [],
       })
     } catch (error) {
       return createStudioAdapterState({
         authoringCatalog: buildAuthoringCatalog({}),
         nativeComponentNames: [],
-        detectedFramework: studioQueries.project?.detectedFramework as string | undefined,
+        ...(studioQueries.project?.detectedFramework
+          ? { detectedFramework: studioQueries.project.detectedFramework as string }
+          : {}),
         diagnostics: [error instanceof Error ? error.message : "Invalid authoring metadata"],
       })
     }

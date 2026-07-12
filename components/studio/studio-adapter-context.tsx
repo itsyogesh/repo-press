@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import type { AuthoringCatalog } from "@/lib/studio/authoring-catalog"
-import { assertSafeMdxName } from "@/lib/studio/authoring-catalog"
+import { assertSafeMdxName, isValidatedAuthoringCatalog } from "@/lib/studio/authoring-catalog"
 
 export type StudioAdapterContextValue = {
   authoringCatalog: AuthoringCatalog
@@ -23,6 +23,16 @@ function assertJsonValue(value: unknown, active = new WeakSet<object>()): void {
   if (typeof value !== "object") throw new TypeError("Studio adapter state must contain only serializable values")
   if (active.has(value)) throw new TypeError("Studio adapter state must not contain cycles")
   active.add(value)
+  if (Array.isArray(value)) {
+    for (let index = 0; index < value.length; index += 1) {
+      if (!Object.hasOwn(value, index)) throw new TypeError("Studio adapter state must not contain sparse arrays")
+    }
+  } else {
+    const prototype = Object.getPrototypeOf(value)
+    if (prototype !== Object.prototype && prototype !== null) {
+      throw new TypeError("Studio adapter state must contain only arrays and plain objects")
+    }
+  }
   for (const key of Object.keys(value)) {
     const descriptor = Object.getOwnPropertyDescriptor(value, key)
     if (!descriptor || !("value" in descriptor)) throw new TypeError("Studio adapter state must not contain accessors")
@@ -44,6 +54,9 @@ export function createStudioAdapterState(input: StudioAdapterStateInput): Studio
   }
   assertJsonValue(input)
   if (!Array.isArray(input.authoringCatalog)) throw new TypeError("authoringCatalog must be an array")
+  if (!isValidatedAuthoringCatalog(input.authoringCatalog)) {
+    throw new TypeError("authoringCatalog must come from canonical validation")
+  }
   assertDeepFrozen(input.authoringCatalog)
   if (
     !Array.isArray(input.nativeComponentNames) ||

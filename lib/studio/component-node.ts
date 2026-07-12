@@ -41,10 +41,10 @@ export type ComponentNode = {
  *    a non-empty string.
  */
 export function buildComponentNode(def: AuthoringComponent, formState: Record<string, unknown>): ComponentNode {
-  const props: Record<string, unknown> = {}
+  const props = Object.create(null) as Record<string, unknown>
 
   for (const propDef of def.props) {
-    const value = resolveValue(propDef, formState[propDef.name])
+    const value = resolveValue(propDef, Object.hasOwn(formState, propDef.name) ? formState[propDef.name] : undefined)
     if (value !== undefined) {
       props[propDef.name] = value
     }
@@ -58,7 +58,7 @@ export function buildComponentNode(def: AuthoringComponent, formState: Record<st
   }
 
   if (componentAcceptsChildren(def)) {
-    const raw = formState.children
+    const raw = Object.hasOwn(formState, "children") ? formState.children : undefined
     if (typeof raw === "string" && raw.length > 0) {
       node.children = raw
     }
@@ -87,7 +87,7 @@ export function toJsxProperties(
   def: AuthoringComponent,
 ): Record<string, string | { type: "expression"; value: string }> {
   const propTypes = new Map(def.props.map((p) => [p.name, p.type]))
-  const result: Record<string, string | { type: "expression"; value: string }> = {}
+  const result = Object.create(null) as Record<string, string | { type: "expression"; value: string }>
 
   const sortedPropKeys = Object.keys(node.props).sort((a, b) => a.localeCompare(b))
   for (const key of sortedPropKeys) {

@@ -376,4 +376,46 @@ describe("authoring catalog separation", () => {
     expect(Object.isFrozen(catalog[0].props[0].default)).toBe(true)
     expect(JSON.parse(JSON.stringify(catalog))).toStrictEqual(catalog)
   })
+
+  it("rejects oversized native-name collections before visiting entries", () => {
+    let visited = false
+    const names = Array(AUTHORING_CATALOG_LIMITS.maxComponents + 1).fill("Callout")
+    Object.defineProperty(names, AUTHORING_CATALOG_LIMITS.maxComponents, {
+      enumerable: true,
+      get() {
+        visited = true
+        return "NeverRead"
+      },
+    })
+    expect(() => buildAuthoringCatalog({ nativeComponentNames: names })).toThrow("component count")
+    expect(visited).toBe(false)
+  })
+
+  it("rejects oversized prop collections before visiting entries", () => {
+    let visited = false
+    const props = Array(AUTHORING_CATALOG_LIMITS.maxPropsPerComponent + 1).fill({ name: "safe", type: "string" })
+    Object.defineProperty(props, AUTHORING_CATALOG_LIMITS.maxPropsPerComponent, {
+      enumerable: true,
+      get() {
+        visited = true
+        return { name: "NeverRead", type: "string" }
+      },
+    })
+    expect(() => buildAuthoringCatalog({ metadata: { Widget: { props, hasChildren: false } } })).toThrow("prop count")
+    expect(visited).toBe(false)
+  })
+
+  it.each([
+    ["options", "maxOptionsPerProp"],
+    ["slots", "maxSlotsPerComponent"],
+    ["previewFixtures", "maxFixturesPerComponent"],
+  ] as const)("rejects oversized %s collections before projection", (field, limitKey) => {
+    const limit = AUTHORING_CATALOG_LIMITS[limitKey]
+    const value = Array(limit + 1).fill(field === "slots" ? { name: "children", accepts: "mdx" } : "value")
+    const metadata =
+      field === "options"
+        ? { props: [{ name: "tone", type: "string", options: value }], hasChildren: false }
+        : { props: [], hasChildren: false, [field]: value }
+    expect(() => buildAuthoringCatalog({ metadata: { Widget: metadata as never } })).toThrow("count")
+  })
 })

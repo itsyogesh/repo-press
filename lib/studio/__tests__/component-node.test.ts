@@ -119,6 +119,16 @@ describe("buildComponentNode - defaults", () => {
 
     expect(node.props.type).toBe("warning")
   })
+
+  it("uses a declared valueOf default instead of inherited Object.prototype.valueOf", () => {
+    const def = makeDef({
+      name: "Widget",
+      props: [{ name: "valueOf", type: "string", default: "declared" }],
+    })
+    const node = buildComponentNode(def, {})
+    expect(node.props.valueOf).toBe("declared")
+    expect(Object.getPrototypeOf(node.props)).toBeNull()
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -208,6 +218,12 @@ describe("buildComponentNode - children", () => {
 
     expect(node.children).toBeUndefined()
   })
+
+  it("ignores inherited children values", () => {
+    const def = makeDef({ name: "Callout", hasChildren: true })
+    const formState = Object.create({ children: "inherited" }) as Record<string, unknown>
+    expect(buildComponentNode(def, formState).children).toBeUndefined()
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -215,6 +231,10 @@ describe("buildComponentNode - children", () => {
 // ---------------------------------------------------------------------------
 
 describe("toJsxProperties", () => {
+  it("returns a null-prototype prop map", () => {
+    const def = makeDef({ name: "Widget", props: [{ name: "title", type: "string" }] })
+    expect(Object.getPrototypeOf(toJsxProperties(buildComponentNode(def, { title: "Hello" }), def))).toBeNull()
+  })
   it("converts string props to plain strings", () => {
     const def = makeDef({
       name: "Callout",
