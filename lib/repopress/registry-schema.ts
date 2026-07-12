@@ -1,4 +1,3 @@
-import { parse } from "acorn"
 import { z } from "zod"
 
 export const REGISTRY_LIMITS = Object.freeze({
@@ -105,20 +104,11 @@ export function assertDeclarative(value: unknown, path = "meta.repopress", field
     if (!field || !DECLARATIVE_TEXT_FIELDS.has(field)) return
     const source = value.trim()
     const explicitExecutableMarkup =
-      /^javascript\s*:/iu.test(source) || /^<script\b/iu.test(source) || /<[^>]+\son[A-Za-z]+\s*=/u.test(source)
-    let executableProgram = false
-    if (!explicitExecutableMarkup && source.length > 0) {
-      try {
-        const program = parse(source, { ecmaVersion: "latest", sourceType: "module" })
-        executableProgram = program.body.some((statement) => {
-          if (statement.type !== "ExpressionStatement") return statement.type !== "EmptyStatement"
-          return statement.expression.type !== "Literal" && statement.expression.type !== "Identifier"
-        })
-      } catch {
-        // Ordinary prose is not a complete JavaScript program and is allowed.
-      }
-    }
-    if (explicitExecutableMarkup || executableProgram) {
+      /^javascript\s*:/iu.test(source) ||
+      /^data\s*:\s*(?:text\/(?:html|javascript)|application\/javascript)/iu.test(source) ||
+      /<script\b/iu.test(source) ||
+      /<[^>]+\son[A-Za-z]+\s*=/u.test(source)
+    if (explicitExecutableMarkup) {
       throw new TypeError(`${path} must not contain standalone executable source`)
     }
     return
@@ -165,6 +155,13 @@ export function deepFreeze<T>(value: T): T {
 export function compareCodeUnits(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0
 }
+
+const frameworkSchema = z.enum(["next", "fumadocs", "astro"])
+export const frameworkSetSchema = z
+  .array(frameworkSchema)
+  .max(16)
+  .transform((frameworks) => Array.from(new Set(frameworks)).sort(compareCodeUnits))
+  .refine((frameworks) => frameworks.length <= 3, "Framework set exceeds supported framework count")
 
 const boundedString = z.string().min(1).max(REGISTRY_LIMITS.maxStringBytes)
 export const logicalIdSchema = boundedString.regex(SAFE_NAME, "Invalid registry name").refine((value) => {
@@ -311,10 +308,7 @@ const authoringFields = {
   version: semanticVersionSchema.optional(),
   exportName: mdxNameSchema.optional(),
   import: z.object({ source: boundedString, exportName: mdxNameSchema }).strict().optional(),
-  frameworks: z
-    .array(z.enum(["next", "fumadocs", "astro"]))
-    .max(3)
-    .optional(),
+  frameworks: frameworkSetSchema.optional(),
   runtime: z.enum(["client", "server", "astro"]).optional(),
   schemaStatus: z.enum(["complete", "incomplete"]).optional(),
   props: z.array(authoringPropSchema).max(REGISTRY_LIMITS.maxProps).optional(),
@@ -335,6 +329,8 @@ function validateAuthoringCollisions(
     previewFixtures?: string[]
     defaultFixture?: string
     frameworks?: string[]
+    exportName?: string
+    import?: { exportName: string }
   },
   context: z.RefinementCtx,
 ): void {
@@ -355,7 +351,13 @@ function validateAuthoringCollisions(
   check(value.slots?.map((slot) => slot.name) ?? [], "slots")
   check(value.assets?.map((asset) => asset.path) ?? [], "assets")
   check(value.previewFixtures ?? [], "previewFixtures")
-  check(value.frameworks ?? [], "frameworks")
+  if (value.import && value.exportName && value.import.exportName !== value.exportName) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["import", "exportName"],
+      message: "Import exportName must match canonical exportName",
+    })
+  }
   if (value.defaultFixture && !value.previewFixtures?.includes(value.defaultFixture)) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
@@ -396,7 +398,7 @@ export const normalizedAuthoringMetadataSchema = z
     props: z.array(authoringPropSchema).max(REGISTRY_LIMITS.maxProps),
     slots: z.array(authoringSlotSchema).max(REGISTRY_LIMITS.maxSlots),
     assets: z.array(authoringAssetSchema).max(REGISTRY_LIMITS.maxAssets),
-    frameworks: z.array(z.enum(["next", "fumadocs", "astro"])).max(3),
+    frameworks: frameworkSetSchema,
     previewFixtures: z.array(relativePathSchema).max(REGISTRY_LIMITS.maxFixtures),
     provenance: authoringProvenanceSchema,
     kind: z.enum(["flow", "text"]),
@@ -413,10 +415,7 @@ export const repoPressMetadataSchema = z
     logicalId: logicalIdSchema,
     mdxName: mdxNameSchema,
     exportName: mdxNameSchema,
-    frameworks: z
-      .array(z.enum(["next", "fumadocs", "astro"]))
-      .min(1)
-      .max(3),
+    frameworks: frameworkSetSchema.refine((frameworks) => frameworks.length > 0, "At least one framework is required"),
     preview: z
       .object({
         fixtures: z.array(relativePathSchema).max(REGISTRY_LIMITS.maxFixtures),
@@ -427,9 +426,6 @@ export const repoPressMetadataSchema = z
   })
   .strict()
   .superRefine((value, context) => {
-    if (new Set(value.frameworks).size !== value.frameworks.length) {
-      context.addIssue({ code: z.ZodIssueCode.custom, path: ["frameworks"], message: "Frameworks must be unique" })
-    }
     if (value.preview.defaultFixture && !value.preview.fixtures.includes(value.preview.defaultFixture)) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
@@ -446,6 +442,20 @@ export const repoPressMetadataSchema = z
     }
     if (value.authoring.mdxName && value.authoring.mdxName !== value.mdxName) {
       context.addIssue({ code: z.ZodIssueCode.custom, path: ["authoring", "mdxName"], message: "MDX names must match" })
+    }
+    if (value.authoring.exportName && value.authoring.exportName !== value.exportName) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["authoring", "exportName"],
+        message: "Authoring exportName must match canonical exportName",
+      })
+    }
+    if (value.authoring.import && value.authoring.import.exportName !== value.exportName) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["authoring", "import", "exportName"],
+        message: "Import exportName must match canonical exportName",
+      })
     }
     const provenance = value.authoring.provenance
     if (provenance?.source && provenance.source !== "registry") {

@@ -298,10 +298,9 @@ function projectFrameworks(metadata: Record<string, unknown>): AuthoringComponen
     if (framework !== "next" && framework !== "fumadocs" && framework !== "astro") {
       throw new TypeError(`Invalid authoring framework: ${String(framework)}`)
     }
-    if (frameworks.includes(framework)) throw new TypeError(`Duplicate authoring framework: ${framework}`)
-    frameworks.push(framework)
+    if (!frameworks.includes(framework)) frameworks.push(framework)
   }
-  return frameworks
+  return frameworks.sort(compareCodeUnits)
 }
 
 type CloneState = { nodes: number; bytes: number; active: WeakSet<object> }

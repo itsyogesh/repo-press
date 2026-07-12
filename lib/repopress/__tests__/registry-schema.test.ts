@@ -94,7 +94,7 @@ describe("registryItemSchema", () => {
       logicalId: "@repopress/callout",
       mdxName: "Callout",
       version: "1.2.0",
-      frameworks: ["next", "fumadocs"],
+      frameworks: ["fumadocs", "next"],
       previewFixtures: ["registry/repopress/callout/fixture.mdx"],
       defaultFixture: "registry/repopress/callout/fixture.mdx",
       exportName: "Callout",
@@ -223,31 +223,12 @@ describe("registryItemSchema", () => {
   })
 
   it.each([
-    'console.log("x")',
-    "alert(1)",
-    "class X {}",
-    "function run() {}",
-    "new Function('return 1')",
-    "eval('1')",
-    "value => value",
-    "import x from 'x'",
-    "export default 1",
     '<button onClick="run()">Go</button>',
     "<script>alert(1)</script>",
     "javascript:alert(1)",
-    "const x = 1",
-    "let x = 1",
-    "var x = 1",
-    "globalThis.eval('1')",
-    "window.alert(1)",
-    "(0, eval)('1')",
-    "async value => value",
-    "fetch('/api')",
-    "require('fs')",
-    "doWork()",
-    "while (true) {}",
-    "document.cookie = 'x'",
-  ])("rejects standalone executable declarative text: %s", (description) => {
+    "data:text/html,<script>alert(1)</script>",
+    "data:text/javascript,alert(1)",
+  ])("rejects explicit executable markup or schemes: %s", (description) => {
     const item = validItem()
     item.meta.repopress.authoring.description = description
     expect(registryItemSchema.safeParse(item).success).toBe(false)
@@ -261,10 +242,51 @@ describe("registryItemSchema", () => {
     "export controls determine package visibility.",
     "class names use PascalCase.",
     "const assertions preserve literal types.",
+    'console.log("x")',
+    "alert(1)",
+    "class X {}",
+    "value => value",
+    "fetch('/api')",
+    "forms/input",
+    "A-B",
+    "https://example.com",
+    "0-10",
   ])("allows inert explanatory prose: %s", (description) => {
     const item = validItem()
     item.meta.repopress.authoring.description = description
     expect(registryItemSchema.safeParse(item).success).toBe(true)
+  })
+
+  it("rejects unknown implementation fields while allowing code-looking prose", () => {
+    for (const field of ["implementation", "render"]) {
+      const item = validItem()
+      ;(item.meta.repopress.authoring as Record<string, unknown>)[field] = "doWork()"
+      expect(registryItemSchema.safeParse(item).success).toBe(false)
+    }
+  })
+
+  it("rejects import/export identity disagreement", () => {
+    const importMismatch = validItem()
+    ;(importMismatch.meta.repopress.authoring as Record<string, unknown>).import = {
+      source: "@/components/callout",
+      exportName: "Other",
+    }
+    expect(registryItemSchema.safeParse(importMismatch).success).toBe(false)
+
+    const authoringMismatch = validItem()
+    ;(authoringMismatch.meta.repopress.authoring as Record<string, unknown>).exportName = "Other"
+    expect(registryItemSchema.safeParse(authoringMismatch).success).toBe(false)
+  })
+
+  it("canonicalizes framework sets during normalization", () => {
+    const first = validItem()
+    first.meta.repopress.frameworks = ["fumadocs", "next", "next"]
+    ;(first.meta.repopress.authoring as Record<string, unknown>).frameworks = ["next", "fumadocs", "next"]
+    const second = validItem()
+    second.meta.repopress.frameworks = ["next", "fumadocs"]
+    ;(second.meta.repopress.authoring as Record<string, unknown>).frameworks = ["fumadocs", "next"]
+
+    expect(normalizeRegistryAuthoringMetadata(first)).toStrictEqual(normalizeRegistryAuthoringMetadata(second))
   })
 
   it("does not scan unrelated shadcn docs or vendor metadata as RepoPress executable truth", () => {

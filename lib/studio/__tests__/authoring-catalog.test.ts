@@ -24,7 +24,7 @@ describe("authoring catalog separation", () => {
       version: "1.2.0",
       assets: [{ path: "components/callout.css", type: "style" }],
       import: { source: "@/components/callout", exportName: "Callout" },
-      frameworks: ["next", "fumadocs"],
+      frameworks: ["fumadocs", "next"],
       previewFixtures: ["fixtures/callout.mdx"],
       runtime: "client",
       slots: [{ name: "children", accepts: "mdx" }],
@@ -67,14 +67,18 @@ describe("authoring catalog separation", () => {
 
   it("serializes identical catalogs deterministically across input order", () => {
     const metadata = {
-      Zed: { props: [], slots: [] },
+      Zed: { props: [], slots: [], frameworks: ["fumadocs" as const, "next" as const, "next" as const] },
       Alpha: { props: [], slots: [] },
       _Alpha: { props: [], slots: [] },
     }
     const first = buildAuthoringCatalog({ nativeComponentNames: ["Zed", "_Alpha", "Alpha"], metadata })
     const second = buildAuthoringCatalog({
       nativeComponentNames: ["Alpha", "Zed", "_Alpha"],
-      metadata: { _Alpha: metadata._Alpha, Alpha: metadata.Alpha, Zed: metadata.Zed },
+      metadata: {
+        _Alpha: metadata._Alpha,
+        Alpha: metadata.Alpha,
+        Zed: { ...metadata.Zed, frameworks: ["next" as const, "fumadocs" as const] },
+      },
     })
     expect(second).toStrictEqual(first)
     expect(JSON.stringify(second)).toBe(JSON.stringify(first))

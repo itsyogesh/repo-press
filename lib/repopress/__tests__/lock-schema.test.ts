@@ -21,6 +21,7 @@ function validLock() {
           logicalId: "@repopress/icon",
           mdxName: "Icon",
           displayName: "Icon",
+          version: "1.0.0",
           exportName: "Icon",
           runtime: "client",
           schemaStatus: "complete",
@@ -47,6 +48,7 @@ function validLock() {
           logicalId: "@repopress/callout",
           mdxName: "Callout",
           displayName: "Callout",
+          version: "1.0.0",
           exportName: "Callout",
           runtime: "client",
           schemaStatus: "complete",
@@ -163,6 +165,14 @@ describe("repoPressLockSchema", () => {
     versionMismatch.items["@repopress/callout"].authoring.provenance.version = "2.0.0"
     expect(repoPressLockSchema.safeParse(versionMismatch).success).toBe(false)
 
+    const authoringVersionMismatch = validLock()
+    authoringVersionMismatch.items["@repopress/callout"].authoring.version = "2.0.0"
+    expect(repoPressLockSchema.safeParse(authoringVersionMismatch).success).toBe(false)
+
+    const missingVersion = validLock()
+    delete (missingVersion.items["@repopress/callout"].authoring as { version?: string }).version
+    expect(repoPressLockSchema.safeParse(missingVersion).success).toBe(false)
+
     const refMismatch = validLock()
     refMismatch.items["@repopress/callout"].resolved.sourceRef = "v2.0.0"
     expect(repoPressLockSchema.safeParse(refMismatch).success).toBe(false)
@@ -191,6 +201,7 @@ describe("repoPressLockSchema", () => {
     firstInput.items["@repopress/callout"].targets.push({ path: "styles/callout.css", digest })
     const secondInput = validLock()
     secondInput.items["@repopress/callout"].targets.unshift({ path: "styles/callout.css", digest })
+    secondInput.items["@repopress/callout"].authoring.frameworks = ["fumadocs", "next", "next"]
     secondInput.items = {
       "@repopress/callout": secondInput.items["@repopress/callout"],
       "@repopress/icon": secondInput.items["@repopress/icon"],

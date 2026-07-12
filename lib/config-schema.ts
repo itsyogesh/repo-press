@@ -5,6 +5,7 @@ import {
   authoringPropSchema,
   authoringProvenanceSchema,
   authoringSlotSchema,
+  frameworkSetSchema,
   jsonBoundary,
   logicalIdSchema,
   mdxNameSchema,
@@ -39,19 +40,13 @@ const rawComponentSchema = z
       .object({ source: z.string().min(1).max(16_384), exportName: mdxNameSchema })
       .strict()
       .optional(),
-    frameworks: z
-      .array(z.enum(["next", "fumadocs", "astro"]))
-      .max(3)
-      .optional(),
+    frameworks: frameworkSetSchema.optional(),
     provenance: authoringProvenanceSchema.optional(),
     hasChildren: z.boolean().optional().default(true),
     kind: z.enum(["flow", "text"]).optional().default("flow"),
   })
   .strict()
   .superRefine((value, context) => {
-    if (value.frameworks && new Set(value.frameworks).size !== value.frameworks.length) {
-      context.addIssue({ code: z.ZodIssueCode.custom, path: ["frameworks"], message: "Frameworks must be unique" })
-    }
     if (value.defaultFixture && !value.previewFixtures?.includes(value.defaultFixture)) {
       context.addIssue({
         code: z.ZodIssueCode.custom,

@@ -108,6 +108,13 @@ const rawLockSchema = z
           message: "Locked registry provenance requires a semantic version",
         })
       }
+      if (!item.authoring.version || item.authoring.version !== version) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["items", itemName, "authoring", "version"],
+          message: "Locked authoring version must match provenance version",
+        })
+      }
       const sourceRef = item.resolved.sourceRef
       const sourceIsCommit = /^[a-f0-9]{40}$|^[a-f0-9]{64}$/u.test(sourceRef)
       const declaredVersion = sourceRef.replace(/^refs\/tags\//u, "").replace(/^v/u, "")

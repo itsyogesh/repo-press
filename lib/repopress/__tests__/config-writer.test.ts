@@ -126,7 +126,7 @@ describe("updateProject", () => {
         slots: [{ name: "children", accepts: "mdx" as const, required: true }],
         previewFixtures: ["fixtures/callout.mdx"],
         defaultFixture: "fixtures/callout.mdx",
-        frameworks: ["next" as const, "fumadocs" as const],
+        frameworks: ["fumadocs" as const, "next" as const],
         import: { source: "@/components/callout", exportName: "Callout" },
         provenance: {
           source: "registry" as const,
