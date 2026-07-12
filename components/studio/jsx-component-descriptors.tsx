@@ -36,7 +36,9 @@ function descriptorFromCatalog(component: AuthoringComponent): JsxComponentDescr
       name: prop.name,
       type: prop.type === "string" || prop.type === "image" ? "string" : "expression",
     })),
-    hasChildren: componentAcceptsChildren(component),
+    // Incomplete native metadata cannot prove a component is self-closing.
+    // Preserve possible nested source until a complete slot contract exists.
+    hasChildren: component.schemaStatus === "incomplete" || componentAcceptsChildren(component),
     Editor: GenericJsxEditor,
   }
 }

@@ -60,7 +60,7 @@ export const GENERIC_SOURCE_PREFLIGHT_LIMITS = Object.freeze({
   containerIndentColumns: 256,
 })
 
-type SyntaxNode = {
+export type RepoPressMdxSyntaxNode = {
   type: string
   value?: string
   depth?: number
@@ -75,8 +75,10 @@ type SyntaxNode = {
   start?: number | null
   checked?: boolean | null
   align?: Array<"left" | "right" | "center" | null>
-  children?: SyntaxNode[]
+  children?: RepoPressMdxSyntaxNode[]
 }
+
+type SyntaxNode = RepoPressMdxSyntaxNode
 
 type Definition = { url: string; title: string | null }
 
@@ -101,22 +103,15 @@ const DIAGNOSTIC_CODES = new Set<GenericRenderDiagnosticCode>([
 ])
 
 export function buildGenericRenderModel(source: string): GenericRenderModel {
-  const sourcePreflightFailure = inspectGenericSourcePreflight(source)
-  if (sourcePreflightFailure) return diagnosticModel(sourcePreflightFailure)
-
-  let root: SyntaxNode
-  try {
-    root = mdxParser.parse(source) as SyntaxNode
-  } catch {
+  const parsed = parseRepoPressMdxSyntax(source)
+  if (!parsed.ok) {
+    if (parsed.code !== "PARSE_ERROR") return diagnosticModel(parsed.code)
     // Invalid MDX fails closed: parsing the whole document as Markdown would
     // preserve import and expression source as ordinary text. Keep only inert
     // tag names discovered by the quote-aware HTML scanner.
     return finalizeBuiltModel({ blocks: rawHtmlPlaceholders(source) })
   }
-
-  const syntaxBudgetFailure = inspectSyntaxBudget(root)
-  if (syntaxBudgetFailure) return diagnosticModel(syntaxBudgetFailure)
-
+  const root = parsed.root
   const definitions = collectDefinitions(root.children ?? [])
   return finalizeBuiltModel({ blocks: toBlocks(root.children ?? [], definitions) })
 }
@@ -127,6 +122,30 @@ type SourcePreflightFailure =
   | "SOURCE_LINE_COUNT_LIMIT"
   | "SOURCE_CONTAINER_DEPTH_LIMIT"
   | "SOURCE_CONTAINER_INDENT_LIMIT"
+
+export type RepoPressMdxParseFailure =
+  | SourcePreflightFailure
+  | "SYNTAX_NODE_LIMIT"
+  | "SYNTAX_DEPTH_LIMIT"
+  | "PARSE_ERROR"
+
+export type RepoPressMdxParseResult =
+  | { ok: true; root: RepoPressMdxSyntaxNode }
+  | { ok: false; code: RepoPressMdxParseFailure }
+
+/** Parse MDX with RepoPress-owned plugins and the generic-preview budgets. */
+export function parseRepoPressMdxSyntax(source: string): RepoPressMdxParseResult {
+  const sourcePreflightFailure = inspectGenericSourcePreflight(source)
+  if (sourcePreflightFailure) return { ok: false, code: sourcePreflightFailure }
+  let root: RepoPressMdxSyntaxNode
+  try {
+    root = mdxParser.parse(source) as RepoPressMdxSyntaxNode
+  } catch {
+    return { ok: false, code: "PARSE_ERROR" }
+  }
+  const syntaxBudgetFailure = inspectSyntaxBudget(root)
+  return syntaxBudgetFailure ? { ok: false, code: syntaxBudgetFailure } : { ok: true, root }
+}
 
 export function inspectGenericSourcePreflight(source: string): SourcePreflightFailure | null {
   let totalBytes = 0

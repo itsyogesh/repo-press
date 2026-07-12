@@ -16,6 +16,7 @@ type StudioAdapterStateInput = Omit<StudioAdapterContextValue, "diagnostics"> & 
 }
 
 const ALLOWED_STATE_FIELDS = new Set(["authoringCatalog", "nativeComponentNames", "detectedFramework", "diagnostics"])
+const validatedStudioStates = new WeakSet<object>()
 
 function assertJsonValue(value: unknown, active = new WeakSet<object>()): void {
   if (value === null || typeof value === "string" || typeof value === "boolean") return
@@ -49,6 +50,7 @@ function assertDeepFrozen(value: unknown, seen = new WeakSet<object>()): void {
 }
 
 export function createStudioAdapterState(input: StudioAdapterStateInput): StudioAdapterContextValue {
+  if (validatedStudioStates.has(input)) return input as StudioAdapterContextValue
   for (const key of Object.keys(input)) {
     if (!ALLOWED_STATE_FIELDS.has(key)) throw new TypeError(`unknown Studio adapter state field: ${key}`)
   }
@@ -81,12 +83,14 @@ export function createStudioAdapterState(input: StudioAdapterStateInput): Studio
   ) {
     throw new TypeError("diagnostics must be a string array")
   }
-  return Object.freeze({
+  const state = Object.freeze({
     authoringCatalog: input.authoringCatalog,
     nativeComponentNames: Object.freeze([...input.nativeComponentNames]),
     ...(input.detectedFramework !== undefined ? { detectedFramework: input.detectedFramework } : {}),
     diagnostics: Object.freeze([...diagnostics]),
   })
+  validatedStudioStates.add(state)
+  return state
 }
 
 const StudioAdapterContext = React.createContext<StudioAdapterContextValue | null>(null)
@@ -98,9 +102,8 @@ export function StudioAdapterProvider({
   children: React.ReactNode
   value: StudioAdapterContextValue
 }) {
-  return (
-    <StudioAdapterContext.Provider value={createStudioAdapterState(value)}>{children}</StudioAdapterContext.Provider>
-  )
+  const safeValue = React.useMemo(() => createStudioAdapterState(value), [value])
+  return <StudioAdapterContext.Provider value={safeValue}>{children}</StudioAdapterContext.Provider>
 }
 
 export function useStudioAdapter() {

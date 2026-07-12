@@ -15,4 +15,16 @@ describe("JSX descriptor authoring boundary", () => {
       expect.objectContaining({ name: "Tabs.Item", hasChildren: true, Editor: GenericJsxEditor }),
     )
   })
+
+  it.each([
+    "<Unknown>keep me</Unknown>",
+    "<Unknown />",
+  ])("preserves possible children for incomplete components discovered from %s", (source) => {
+    const catalog = buildAuthoringCatalog({ nativeComponentNames: ["Unknown"] })
+    const descriptor = getJsxComponentDescriptors(catalog, ["Unknown"]).find(
+      (candidate) => candidate.name === "Unknown",
+    )
+    expect(source).toContain("Unknown")
+    expect(descriptor?.hasChildren).toBe(true)
+  })
 })

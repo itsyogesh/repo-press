@@ -150,6 +150,13 @@ function requireDataObject(value: unknown, path: string): Record<string, unknown
   return value as Record<string, unknown>
 }
 
+function arrayDataValue(array: readonly unknown[], index: number, path: string): unknown {
+  const descriptor = Object.getOwnPropertyDescriptor(array, String(index))
+  if (!descriptor || !("value" in descriptor)) throw new TypeError(`${path}[${index}] must be an own data descriptor`)
+  if (descriptor.value === undefined) throw new TypeError(`${path}[${index}] must not be undefined`)
+  return descriptor.value
+}
+
 function normalizePropType(type: string): AuthoringPropType {
   return PROP_TYPES.includes(type as AuthoringPropType) ? (type as AuthoringPropType) : "string"
 }
@@ -162,7 +169,9 @@ function projectProps(metadata: Record<string, unknown>): AuthoringProp[] {
     throw new TypeError("Authoring catalog exceeds prop count limit")
   }
   const names = new Set<string>()
-  return value.map((rawProp, index) => {
+  const result: AuthoringProp[] = []
+  for (let index = 0; index < value.length; index += 1) {
+    const rawProp = arrayDataValue(value, index, "props")
     const prop = requireDataObject(rawProp, `props[${index}]`)
     const name = requireString(ownValue(prop, "name"), `props[${index}].name`)
     validateFieldName(name, "prop name")
@@ -176,13 +185,18 @@ function projectProps(metadata: Record<string, unknown>): AuthoringProp[] {
     if (Array.isArray(options) && options.length > AUTHORING_CATALOG_LIMITS.maxOptionsPerProp) {
       throw new TypeError("Authoring catalog exceeds option count limit")
     }
-    if (Array.isArray(options) && options.some((item) => typeof item !== "string")) {
-      throw new TypeError(`props[${index}].options must be a string array`)
+    const projectedOptions: string[] = []
+    if (Array.isArray(options)) {
+      for (let optionIndex = 0; optionIndex < options.length; optionIndex += 1) {
+        const option = arrayDataValue(options, optionIndex, `props[${index}].options`)
+        if (typeof option !== "string") throw new TypeError(`props[${index}].options must be a string array`)
+        projectedOptions.push(option)
+      }
     }
     const required = ownValue(prop, "required")
     if (required !== undefined && typeof required !== "boolean")
       throw new TypeError(`props[${index}].required must be boolean`)
-    return {
+    result.push({
       name,
       type,
       ...(optionalString(prop, "label", `props[${index}].label`) !== undefined
@@ -195,12 +209,13 @@ function projectProps(metadata: Record<string, unknown>): AuthoringProp[] {
       ...(optionalString(prop, "description", `props[${index}].description`) !== undefined
         ? { description: optionalString(prop, "description", `props[${index}].description`) }
         : {}),
-      ...(options !== undefined ? { options: [...options] as string[] } : {}),
+      ...(options !== undefined ? { options: projectedOptions } : {}),
       ...(optionalString(prop, "placeholder", `props[${index}].placeholder`) !== undefined
         ? { placeholder: optionalString(prop, "placeholder", `props[${index}].placeholder`) }
         : {}),
-    }
-  })
+    })
+  }
+  return result
 }
 
 function projectSlots(metadata: Record<string, unknown>): AuthoringSlot[] {
@@ -216,7 +231,9 @@ function projectSlots(metadata: Record<string, unknown>): AuthoringSlot[] {
     throw new TypeError("Authoring catalog exceeds slot count limit")
   }
   const names = new Set<string>()
-  return value.map((rawSlot, index) => {
+  const result: AuthoringSlot[] = []
+  for (let index = 0; index < value.length; index += 1) {
+    const rawSlot = arrayDataValue(value, index, "slots")
     const slot = requireDataObject(rawSlot, `slots[${index}]`)
     const name = requireString(ownValue(slot, "name"), `slots[${index}].name`)
     validateFieldName(name, "slot name")
@@ -227,8 +244,9 @@ function projectSlots(metadata: Record<string, unknown>): AuthoringSlot[] {
     const required = ownValue(slot, "required")
     if (required !== undefined && typeof required !== "boolean")
       throw new TypeError(`slots[${index}].required must be boolean`)
-    return { name, accepts: accepts as AuthoringSlot["accepts"], ...(required !== undefined ? { required } : {}) }
-  })
+    result.push({ name, accepts: accepts as AuthoringSlot["accepts"], ...(required !== undefined ? { required } : {}) })
+  }
+  return result
 }
 
 function projectProvenance(metadata: Record<string, unknown>): AuthoringProvenance {
@@ -387,7 +405,10 @@ export function buildAuthoringCatalog(input: BuildAuthoringCatalogInput): Author
   }
   requireDataObject(metadataMap, "metadata")
   const names = new Set<string>()
-  for (const name of input.nativeComponentNames ?? []) {
+  const nativeComponentNames = input.nativeComponentNames ?? []
+  for (let index = 0; index < nativeComponentNames.length; index += 1) {
+    const name = arrayDataValue(nativeComponentNames, index, "nativeComponentNames")
+    if (typeof name !== "string") throw new TypeError(`nativeComponentNames[${index}] must be a string`)
     validateMdxName(name)
     names.add(name)
   }
@@ -441,7 +462,12 @@ export function buildAuthoringCatalog(input: BuildAuthoringCatalogInput): Author
     if (fixtures.length > AUTHORING_CATALOG_LIMITS.maxFixturesPerComponent) {
       throw new TypeError("Authoring catalog exceeds fixture count limit")
     }
-    if (fixtures.some((item) => typeof item !== "string")) throw new TypeError("previewFixtures must be a string array")
+    const projectedFixtures: string[] = []
+    for (let fixtureIndex = 0; fixtureIndex < fixtures.length; fixtureIndex += 1) {
+      const fixture = arrayDataValue(fixtures, fixtureIndex, "previewFixtures")
+      if (typeof fixture !== "string") throw new TypeError("previewFixtures must be a string array")
+      projectedFixtures.push(fixture)
+    }
     return {
       logicalId,
       mdxName,
@@ -456,12 +482,15 @@ export function buildAuthoringCatalog(input: BuildAuthoringCatalogInput): Author
       schemaStatus: schemaStatus(metadata),
       props: projectProps(metadata),
       slots: projectSlots(metadata),
-      previewFixtures: [...fixtures] as string[],
+      previewFixtures: projectedFixtures,
       provenance: projectProvenance(metadata),
       kind,
     }
-  }).sort((a, b) => a.displayName.localeCompare(b.displayName) || a.mdxName.localeCompare(b.mdxName))
+  })
 
+  // Reject hostile strings/defaults before locale sorting or clone allocation.
+  preflightJson(catalog, { nodes: 0, bytes: 0, active: new WeakSet() })
+  catalog.sort((a, b) => a.displayName.localeCompare(b.displayName) || a.mdxName.localeCompare(b.mdxName))
   return cloneAndFreezeCatalog(catalog)
 }
 

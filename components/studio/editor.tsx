@@ -25,7 +25,7 @@ import "@mdxeditor/editor/style.css"
 import "./mdxeditor-theme.css"
 
 import type { FieldVariantMap, FrontmatterFieldDef } from "@/lib/framework-adapters"
-import { buildCurrentDocumentAuthoringState } from "@/lib/studio/component-discovery"
+import { createCurrentDocumentAuthoringStateCache, discoverMdxComponents } from "@/lib/studio/component-discovery"
 import { getAuthoredImageValue } from "@/lib/studio/image-authoring"
 import { getSuggestedImagePath, resolveStudioAssetUrl } from "@/lib/studio/media-resolve"
 import { uploadMedia } from "@/lib/studio/media-upload"
@@ -35,7 +35,7 @@ import { ForwardRefEditor } from "./forward-ref-editor"
 import { FrontmatterPanel } from "./frontmatter-panel"
 import { getJsxComponentDescriptors } from "./jsx-component-descriptors"
 import { IMAGE_EXTENSIONS } from "./shared-constants"
-import { StudioAdapterProvider, useStudioAdapter } from "./studio-adapter-context"
+import { createStudioAdapterState, StudioAdapterProvider, useStudioAdapter } from "./studio-adapter-context"
 import { StudioToolbar } from "./studio-toolbar"
 
 // Error boundary for MDXEditor
@@ -135,16 +135,23 @@ export function Editor({
 }: EditorProps) {
   const outerAuthoringState = useStudioAdapter()
   const editorRef = React.useRef<MDXEditorMethods>(null)
-
-  const documentAuthoringState = React.useMemo(
+  const authoringStateCache = React.useRef(createCurrentDocumentAuthoringStateCache()).current
+  const componentDiscovery = React.useMemo(() => discoverMdxComponents(content), [content])
+  const documentAuthoringState = authoringStateCache.resolve(
+    outerAuthoringState.authoringCatalog,
+    componentDiscovery,
+    outerAuthoringState.nativeComponentNames,
+    outerAuthoringState.diagnostics,
+  )
+  const editorProviderState = React.useMemo(
     () =>
-      buildCurrentDocumentAuthoringState(
-        outerAuthoringState.authoringCatalog,
-        content,
-        outerAuthoringState.nativeComponentNames,
-        outerAuthoringState.diagnostics,
-      ),
-    [outerAuthoringState, content],
+      createStudioAdapterState({
+        ...documentAuthoringState,
+        ...(outerAuthoringState.detectedFramework !== undefined
+          ? { detectedFramework: outerAuthoringState.detectedFramework }
+          : {}),
+      }),
+    [documentAuthoringState, outerAuthoringState.detectedFramework],
   )
   const { authoringCatalog, nativeComponentNames: discoveredJsxComponentNames } = documentAuthoringState
 
@@ -309,14 +316,7 @@ export function Editor({
   }, [sanitizedContent])
 
   return (
-    <StudioAdapterProvider
-      value={{
-        ...documentAuthoringState,
-        ...(outerAuthoringState.detectedFramework !== undefined
-          ? { detectedFramework: outerAuthoringState.detectedFramework }
-          : {}),
-      }}
-    >
+    <StudioAdapterProvider value={editorProviderState}>
       <div className="h-full flex flex-col">
         <div ref={scrollContainerRef} onScroll={onScroll} className="flex-1 overflow-y-auto">
           <div className="space-y-0">

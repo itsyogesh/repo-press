@@ -418,4 +418,59 @@ describe("authoring catalog separation", () => {
         : { props: [], hasChildren: false, [field]: value }
     expect(() => buildAuthoringCatalog({ metadata: { Widget: metadata as never } })).toThrow("count")
   })
+
+  it.each([
+    "native names",
+    "props",
+    "options",
+    "slots",
+    "previewFixtures",
+  ])("rejects a within-limit accessor in %s without invoking it", (field) => {
+    let visited = false
+    const accessorArray: unknown[] = []
+    Object.defineProperty(accessorArray, 0, {
+      enumerable: true,
+      get() {
+        visited = true
+        return field === "props"
+          ? { name: "value", type: "string" }
+          : field === "slots"
+            ? { name: "children", accepts: "mdx" }
+            : "value"
+      },
+    })
+    const invoke = () => {
+      if (field === "native names") return buildAuthoringCatalog({ nativeComponentNames: accessorArray as string[] })
+      if (field === "props") {
+        return buildAuthoringCatalog({ metadata: { Widget: { props: accessorArray as never, hasChildren: false } } })
+      }
+      if (field === "options") {
+        return buildAuthoringCatalog({
+          metadata: { Widget: { props: [{ name: "value", type: "string", options: accessorArray as string[] }] } },
+        })
+      }
+      return buildAuthoringCatalog({
+        metadata: {
+          Widget: {
+            props: [],
+            hasChildren: false,
+            [field]: accessorArray,
+          } as never,
+        },
+      })
+    }
+    expect(invoke).toThrow("data descriptor")
+    expect(visited).toBe(false)
+  })
+
+  it("rejects a huge display label before catalog sorting", () => {
+    expect(() =>
+      buildAuthoringCatalog({
+        metadata: {
+          Alpha: { displayName: "a".repeat(AUTHORING_CATALOG_LIMITS.maxUtf8Bytes + 1) },
+          Beta: { displayName: "Beta" },
+        },
+      }),
+    ).toThrow("byte")
+  })
 })
