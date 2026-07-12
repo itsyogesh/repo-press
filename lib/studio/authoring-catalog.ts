@@ -36,7 +36,6 @@ export type AuthoringComponent = {
   slots: AuthoringSlot[]
   previewFixtures: string[]
   provenance: AuthoringProvenance
-  /** MDX editor placement metadata; declarative and framework-neutral. */
   kind: "flow" | "text"
 }
 
@@ -62,86 +61,269 @@ export type AuthoringComponentMetadata = {
   slots?: AuthoringSlot[]
   previewFixtures?: string[]
   provenance?: AuthoringProvenance
-  /** Legacy authoring metadata. Converted to a single MDX children slot. */
   hasChildren?: boolean
-  /** Legacy MDX editor placement metadata. */
   kind?: "flow" | "text"
 }
 
 export type BuildAuthoringCatalogInput = {
-  /** Names discovered by the native runtime. Values/bindings are forbidden. */
   nativeComponentNames?: readonly string[] | null
-  /** Serializable authoring metadata from config, registry, or manifests. */
   metadata?: Readonly<Record<string, AuthoringComponentMetadata>> | null
-  /** Accepted only to keep callers source-compatible; never used for guessing. */
+  /** Compatibility-only. Framework names never select authoring schemas. */
   framework?: string
 }
 
+export const AUTHORING_CATALOG_LIMITS = Object.freeze({
+  maxDepth: 32,
+  maxNodes: 10_000,
+  maxUtf8Bytes: 256 * 1024,
+})
+
 const PROP_TYPES: readonly AuthoringPropType[] = ["string", "number", "boolean", "expression", "image"]
+const RUNTIMES = new Set(["client", "server", "astro"])
+const SLOT_ACCEPTS = new Set(["text", "markdown", "mdx", "components"])
+const PROVENANCE_SOURCES = new Set(["native", "registry", "manual"])
+const HAZARDOUS_NAMES = new Set(["__proto__", "prototype", "constructor", "toString", "dangerouslySetInnerHTML"])
+const MDX_NAME = /^[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)*$/
+const FIELD_NAME = /^[A-Za-z_$][A-Za-z0-9_$-]*$/
+const LOGICAL_ID = /^[A-Za-z0-9_$@][A-Za-z0-9_$@./:-]*$/
+
+function ownValue(object: object, key: string): unknown {
+  const descriptor = Object.getOwnPropertyDescriptor(object, key)
+  if (!descriptor) return undefined
+  if (!("value" in descriptor)) throw new TypeError(`Authoring metadata field ${key} must not be an accessor`)
+  return descriptor.value
+}
+
+function hasOwn(object: object, key: string): boolean {
+  return Object.hasOwn(object, key)
+}
+
+function requireString(value: unknown, path: string): string {
+  if (typeof value !== "string") throw new TypeError(`${path} must be a string`)
+  return value
+}
+
+function optionalString(object: object, key: string, path: string): string | undefined {
+  const value = ownValue(object, key)
+  return value === undefined ? undefined : requireString(value, path)
+}
+
+function assertSafeSegments(value: string, label: string): void {
+  if (value.split(/[.:/]/).some((segment) => HAZARDOUS_NAMES.has(segment))) {
+    throw new TypeError(`Unsafe ${label}: ${value}`)
+  }
+}
+
+function validateMdxName(value: string): void {
+  if (!MDX_NAME.test(value)) throw new TypeError(`Invalid MDX name: ${value}`)
+  assertSafeSegments(value, "MDX name")
+}
+
+export function assertSafeMdxName(value: string): void {
+  validateMdxName(value)
+}
+
+function validateLogicalId(value: string): void {
+  if (!LOGICAL_ID.test(value)) throw new TypeError(`Invalid logical ID: ${value}`)
+  assertSafeSegments(value, "logical ID")
+}
+
+function validateFieldName(value: string, label: "prop name" | "slot name"): void {
+  if (!FIELD_NAME.test(value) || HAZARDOUS_NAMES.has(value)) throw new TypeError(`Invalid ${label}: ${value}`)
+}
+
+export function assertSafeAuthoringPropName(value: string): void {
+  validateFieldName(value, "prop name")
+}
+
+function requireDataObject(value: unknown, path: string): Record<string, unknown> {
+  if (value === null || typeof value !== "object" || Array.isArray(value))
+    throw new TypeError(`${path} must be an object`)
+  const prototype = Object.getPrototypeOf(value)
+  if (prototype !== Object.prototype && prototype !== null) throw new TypeError(`${path} must be a plain object`)
+  return value as Record<string, unknown>
+}
 
 function normalizePropType(type: string): AuthoringPropType {
   return PROP_TYPES.includes(type as AuthoringPropType) ? (type as AuthoringPropType) : "string"
 }
 
-function projectProps(props: AuthoringComponentMetadata["props"]): AuthoringProp[] {
-  return (props ?? []).map((prop) => ({
-    name: prop.name,
-    type: normalizePropType(prop.type),
-    ...(prop.label !== undefined ? { label: prop.label } : {}),
-    ...(prop.default !== undefined ? { default: prop.default } : {}),
-    ...(prop.required !== undefined ? { required: prop.required } : {}),
-    ...(prop.description !== undefined ? { description: prop.description } : {}),
-    ...(prop.options !== undefined ? { options: [...prop.options] } : {}),
-    ...(prop.placeholder !== undefined ? { placeholder: prop.placeholder } : {}),
-  }))
+function projectProps(metadata: Record<string, unknown>): AuthoringProp[] {
+  const value = ownValue(metadata, "props")
+  if (value === undefined) return []
+  if (!Array.isArray(value)) throw new TypeError("Authoring props must be an array")
+  const names = new Set<string>()
+  return value.map((rawProp, index) => {
+    const prop = requireDataObject(rawProp, `props[${index}]`)
+    const name = requireString(ownValue(prop, "name"), `props[${index}].name`)
+    validateFieldName(name, "prop name")
+    if (names.has(name)) throw new TypeError(`Authoring catalog has duplicate prop name: ${name}`)
+    names.add(name)
+    const type = normalizePropType(requireString(ownValue(prop, "type"), `props[${index}].type`))
+    const options = ownValue(prop, "options")
+    if (options !== undefined && (!Array.isArray(options) || options.some((item) => typeof item !== "string"))) {
+      throw new TypeError(`props[${index}].options must be a string array`)
+    }
+    const required = ownValue(prop, "required")
+    if (required !== undefined && typeof required !== "boolean")
+      throw new TypeError(`props[${index}].required must be boolean`)
+    return {
+      name,
+      type,
+      ...(optionalString(prop, "label", `props[${index}].label`) !== undefined
+        ? { label: optionalString(prop, "label", `props[${index}].label`) }
+        : {}),
+      ...(hasOwn(prop, "default") && ownValue(prop, "default") !== undefined
+        ? { default: ownValue(prop, "default") }
+        : {}),
+      ...(required !== undefined ? { required } : {}),
+      ...(optionalString(prop, "description", `props[${index}].description`) !== undefined
+        ? { description: optionalString(prop, "description", `props[${index}].description`) }
+        : {}),
+      ...(options !== undefined ? { options: [...options] as string[] } : {}),
+      ...(optionalString(prop, "placeholder", `props[${index}].placeholder`) !== undefined
+        ? { placeholder: optionalString(prop, "placeholder", `props[${index}].placeholder`) }
+        : {}),
+    }
+  })
 }
 
-function projectSlots(metadata: AuthoringComponentMetadata): AuthoringSlot[] {
-  if (metadata.slots) {
-    return metadata.slots.map((slot) => ({
-      name: slot.name,
-      accepts: slot.accepts,
-      ...(slot.required !== undefined ? { required: slot.required } : {}),
-    }))
+function projectSlots(metadata: Record<string, unknown>): AuthoringSlot[] {
+  const value = ownValue(metadata, "slots")
+  if (value === undefined) {
+    const hasChildren = ownValue(metadata, "hasChildren")
+    if (hasChildren !== undefined && typeof hasChildren !== "boolean")
+      throw new TypeError("hasChildren must be boolean")
+    return hasChildren === true ? [{ name: "children", accepts: "mdx" }] : []
   }
-  return metadata.hasChildren ? [{ name: "children", accepts: "mdx" }] : []
+  if (!Array.isArray(value)) throw new TypeError("Authoring slots must be an array")
+  const names = new Set<string>()
+  return value.map((rawSlot, index) => {
+    const slot = requireDataObject(rawSlot, `slots[${index}]`)
+    const name = requireString(ownValue(slot, "name"), `slots[${index}].name`)
+    validateFieldName(name, "slot name")
+    if (names.has(name)) throw new TypeError(`Authoring catalog has duplicate slot name: ${name}`)
+    names.add(name)
+    const accepts = requireString(ownValue(slot, "accepts"), `slots[${index}].accepts`)
+    if (!SLOT_ACCEPTS.has(accepts)) throw new TypeError(`Invalid slot acceptance: ${accepts}`)
+    const required = ownValue(slot, "required")
+    if (required !== undefined && typeof required !== "boolean")
+      throw new TypeError(`slots[${index}].required must be boolean`)
+    return { name, accepts: accepts as AuthoringSlot["accepts"], ...(required !== undefined ? { required } : {}) }
+  })
 }
 
-function projectProvenance(provenance: AuthoringProvenance): AuthoringProvenance {
+function projectProvenance(metadata: Record<string, unknown>): AuthoringProvenance {
+  const raw = ownValue(metadata, "provenance")
+  if (raw === undefined) return { source: "manual" }
+  const provenance = requireDataObject(raw, "provenance")
+  const source = requireString(ownValue(provenance, "source"), "provenance.source")
+  if (!PROVENANCE_SOURCES.has(source)) throw new TypeError(`Invalid provenance source: ${source}`)
   return {
-    source: provenance.source,
-    ...(provenance.registryItem !== undefined ? { registryItem: provenance.registryItem } : {}),
-    ...(provenance.version !== undefined ? { version: provenance.version } : {}),
-    ...(provenance.integrity !== undefined ? { integrity: provenance.integrity } : {}),
+    source: source as AuthoringProvenance["source"],
+    ...(optionalString(provenance, "registryItem", "provenance.registryItem") !== undefined
+      ? { registryItem: optionalString(provenance, "registryItem", "provenance.registryItem") }
+      : {}),
+    ...(optionalString(provenance, "version", "provenance.version") !== undefined
+      ? { version: optionalString(provenance, "version", "provenance.version") }
+      : {}),
+    ...(optionalString(provenance, "integrity", "provenance.integrity") !== undefined
+      ? { integrity: optionalString(provenance, "integrity", "provenance.integrity") }
+      : {}),
   }
 }
 
-function assertSerializable(value: unknown, path = "catalog"): void {
-  if (value === undefined) return
-  if (value === null || typeof value === "string" || typeof value === "boolean") return
-  if (typeof value === "number" && Number.isFinite(value)) return
+type CloneState = { nodes: number; bytes: number; active: WeakSet<object> }
+
+function cloneJson(value: unknown, state: CloneState, depth = 0, path = "catalog"): unknown {
+  if (depth > AUTHORING_CATALOG_LIMITS.maxDepth) throw new TypeError("Authoring catalog exceeds depth limit")
+  state.nodes += 1
+  if (state.nodes > AUTHORING_CATALOG_LIMITS.maxNodes) throw new TypeError("Authoring catalog exceeds node limit")
+  if (value === undefined) throw new TypeError(`Authoring catalog contains undefined at ${path}`)
+  if (value === null || typeof value === "boolean") return value
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) throw new TypeError(`Authoring catalog value at ${path} must be serializable`)
+    return value
+  }
+  if (typeof value === "string") {
+    state.bytes += new TextEncoder().encode(value).byteLength
+    if (state.bytes > AUTHORING_CATALOG_LIMITS.maxUtf8Bytes) throw new TypeError("Authoring catalog exceeds byte limit")
+    return value
+  }
+  if (typeof value !== "object") throw new TypeError(`Authoring catalog value at ${path} must be serializable`)
+  if (state.active.has(value)) throw new TypeError(`Authoring catalog contains a cycle at ${path}`)
+  state.active.add(value)
+  let clone: unknown
   if (Array.isArray(value)) {
-    value.forEach((item, index) => {
-      assertSerializable(item, `${path}[${index}]`)
+    clone = Array.from({ length: value.length }, (_, index) => {
+      if (!Object.hasOwn(value, index)) throw new TypeError(`Authoring catalog contains undefined at ${path}[${index}]`)
+      return cloneJson(value[index], state, depth + 1, `${path}[${index}]`)
     })
-    return
+  } else {
+    const prototype = Object.getPrototypeOf(value)
+    if (prototype !== Object.prototype && prototype !== null) {
+      throw new TypeError(`Authoring catalog value at ${path} must be serializable`)
+    }
+    const object = value as Record<string, unknown>
+    const result: Record<string, unknown> = {}
+    for (const key of Object.keys(object)) {
+      if (HAZARDOUS_NAMES.has(key)) throw new TypeError(`Unsafe object key at ${path}.${key}`)
+      state.bytes += new TextEncoder().encode(key).byteLength
+      if (state.bytes > AUTHORING_CATALOG_LIMITS.maxUtf8Bytes)
+        throw new TypeError("Authoring catalog exceeds byte limit")
+      result[key] = cloneJson(ownValue(object, key), state, depth + 1, `${path}.${key}`)
+    }
+    clone = result
   }
-  if (typeof value === "object" && Object.getPrototypeOf(value) === Object.prototype) {
-    for (const [key, item] of Object.entries(value)) assertSerializable(item, `${path}.${key}`)
-    return
-  }
-  throw new TypeError(`Authoring catalog metadata at ${path} must be serializable`)
+  state.active.delete(value)
+  return Object.freeze(clone)
 }
 
-/** Build Studio state exclusively from names and declarative metadata. */
-export function buildAuthoringCatalog(input: BuildAuthoringCatalogInput): AuthoringCatalog {
-  const nativeNames = new Set(input.nativeComponentNames ?? [])
-  const metadataNames = Object.keys(input.metadata ?? {})
-  const names = new Set([...nativeNames, ...metadataNames])
+function cloneAndFreezeCatalog(catalog: AuthoringCatalog): AuthoringCatalog {
+  return cloneJson(catalog, { nodes: 0, bytes: 0, active: new WeakSet() }) as AuthoringCatalog
+}
 
+function metadataFor(
+  map: Readonly<Record<string, AuthoringComponentMetadata>>,
+  name: string,
+): Record<string, unknown> | undefined {
+  const descriptor = Object.getOwnPropertyDescriptor(map, name)
+  if (!descriptor) return undefined
+  if (!("value" in descriptor)) throw new TypeError(`Authoring metadata for ${name} must not be an accessor`)
+  return requireDataObject(descriptor.value, `metadata.${name}`)
+}
+
+function schemaStatus(metadata: Record<string, unknown>): AuthoringComponent["schemaStatus"] {
+  const declaredStatus = ownValue(metadata, "schemaStatus")
+  if (declaredStatus !== undefined && declaredStatus !== "complete" && declaredStatus !== "incomplete") {
+    throw new TypeError(`Invalid schema status: ${String(declaredStatus)}`)
+  }
+  if (declaredStatus === "incomplete") return "incomplete"
+  const declaresProps = hasOwn(metadata, "props") && Array.isArray(ownValue(metadata, "props"))
+  const declaresSlots =
+    (hasOwn(metadata, "slots") && Array.isArray(ownValue(metadata, "slots"))) ||
+    (hasOwn(metadata, "hasChildren") && typeof ownValue(metadata, "hasChildren") === "boolean")
+  return declaresProps && declaresSlots ? "complete" : "incomplete"
+}
+
+export function buildAuthoringCatalog(input: BuildAuthoringCatalogInput): AuthoringCatalog {
+  const metadataMap = input.metadata ?? {}
+  const names = new Set<string>()
+  for (const name of input.nativeComponentNames ?? []) {
+    validateMdxName(name)
+    names.add(name)
+  }
+  for (const name of Object.keys(metadataMap)) {
+    validateMdxName(name)
+    names.add(name)
+  }
+
+  const logicalIds = new Set<string>()
   const catalog = Array.from(names, (mdxName): AuthoringComponent => {
-    const metadata = input.metadata?.[mdxName]
+    const metadata = metadataFor(metadataMap, mdxName)
     if (!metadata) {
+      if (logicalIds.has(mdxName)) throw new TypeError(`Authoring catalog has duplicate logical ID: ${mdxName}`)
+      logicalIds.add(mdxName)
       return {
         logicalId: mdxName,
         mdxName,
@@ -156,24 +338,40 @@ export function buildAuthoringCatalog(input: BuildAuthoringCatalogInput): Author
       }
     }
 
+    const logicalId = optionalString(metadata, "logicalId", "logical ID") ?? mdxName
+    validateLogicalId(logicalId)
+    if (logicalIds.has(logicalId)) throw new TypeError(`Authoring catalog has duplicate logical ID: ${logicalId}`)
+    logicalIds.add(logicalId)
+    const runtime = ownValue(metadata, "runtime") ?? "client"
+    if (typeof runtime !== "string" || !RUNTIMES.has(runtime))
+      throw new TypeError(`Invalid authoring runtime: ${String(runtime)}`)
+    const kind = ownValue(metadata, "kind") ?? "flow"
+    if (kind !== "flow" && kind !== "text") throw new TypeError(`Invalid authoring kind: ${String(kind)}`)
+    const fixtures = ownValue(metadata, "previewFixtures") ?? []
+    if (!Array.isArray(fixtures) || fixtures.some((item) => typeof item !== "string")) {
+      throw new TypeError("previewFixtures must be a string array")
+    }
     return {
-      logicalId: metadata.logicalId ?? mdxName,
+      logicalId,
       mdxName,
-      displayName: metadata.displayName ?? mdxName,
-      ...(metadata.description !== undefined ? { description: metadata.description } : {}),
-      ...(metadata.category !== undefined ? { category: metadata.category } : {}),
-      runtime: metadata.runtime ?? "client",
-      schemaStatus: metadata.schemaStatus ?? "complete",
-      props: projectProps(metadata.props),
+      displayName: optionalString(metadata, "displayName", "displayName") ?? mdxName,
+      ...(optionalString(metadata, "description", "description") !== undefined
+        ? { description: optionalString(metadata, "description", "description") }
+        : {}),
+      ...(optionalString(metadata, "category", "category") !== undefined
+        ? { category: optionalString(metadata, "category", "category") }
+        : {}),
+      runtime: runtime as AuthoringComponent["runtime"],
+      schemaStatus: schemaStatus(metadata),
+      props: projectProps(metadata),
       slots: projectSlots(metadata),
-      previewFixtures: [...(metadata.previewFixtures ?? [])],
-      provenance: metadata.provenance ? projectProvenance(metadata.provenance) : { source: "manual" },
-      kind: metadata.kind ?? "flow",
+      previewFixtures: [...fixtures] as string[],
+      provenance: projectProvenance(metadata),
+      kind,
     }
   }).sort((a, b) => a.displayName.localeCompare(b.displayName) || a.mdxName.localeCompare(b.mdxName))
 
-  assertSerializable(catalog)
-  return catalog
+  return cloneAndFreezeCatalog(catalog)
 }
 
 export function componentAcceptsChildren(component: AuthoringComponent): boolean {

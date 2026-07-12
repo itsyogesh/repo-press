@@ -52,5 +52,8 @@ export function buildComponentRegistry(
     metadata: projectComponents,
     framework,
   })
-  return Object.fromEntries(catalog.map((component) => [component.mdxName, component]))
+  return Object.assign(
+    Object.create(null) as Record<string, AuthoringComponent>,
+    Object.fromEntries(catalog.map((component) => [component.mdxName, component])),
+  )
 }

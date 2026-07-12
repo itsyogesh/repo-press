@@ -132,7 +132,7 @@ export function Editor({
   contentRoot = "",
   tree = [],
 }: EditorProps) {
-  const { adapter, components: componentSchema, resolvedComponents } = useStudioAdapter()
+  const { authoringCatalog } = useStudioAdapter()
   const editorRef = React.useRef<MDXEditorMethods>(null)
 
   const discoveredJsxComponentNames = React.useMemo(() => {
@@ -149,12 +149,7 @@ export function Editor({
   }, [content])
 
   const hasConfiguredMediaComponent = React.useMemo(() => {
-    // Use resolvedComponents (contentRoot-filtered) so blog context doesn't
-    // treat docs-only media components as available for inline inserts.
-    const configuredNames = new Set([
-      ...Object.keys(resolvedComponents || adapter?.components || {}),
-      ...Object.keys(componentSchema || {}),
-    ])
+    const configuredNames = new Set(authoringCatalog.map((component) => component.mdxName))
 
     return (
       configuredNames.has("DocsImage") ||
@@ -162,7 +157,7 @@ export function Editor({
       configuredNames.has("DocsVideo") ||
       configuredNames.has("Video")
     )
-  }, [resolvedComponents, adapter, componentSchema])
+  }, [authoringCatalog])
 
   // Image upload handler - Blob-first with GitHub fallback
   const handleImageUpload = React.useCallback(
@@ -255,11 +250,7 @@ export function Editor({
         directiveDescriptors: [AdmonitionDirectiveDescriptor, YouTubeDirectiveDescriptor],
       }),
       jsxPlugin({
-        jsxComponentDescriptors: getJsxComponentDescriptors(
-          adapter?.components,
-          componentSchema,
-          discoveredJsxComponentNames,
-        ),
+        jsxComponentDescriptors: getJsxComponentDescriptors(authoringCatalog, discoveredJsxComponentNames),
       }),
       diffSourcePlugin({
         diffMarkdown: "",
@@ -283,8 +274,7 @@ export function Editor({
       handleImageUpload,
       imageAutocompleteSuggestions,
       handleImagePreview,
-      adapter,
-      componentSchema,
+      authoringCatalog,
       discoveredJsxComponentNames,
       owner,
       repo,

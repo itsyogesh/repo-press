@@ -8,8 +8,8 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
+  type AuthoringCatalog,
   type AuthoringComponent,
-  buildAuthoringCatalog,
   componentAcceptsChildren,
 } from "@/lib/studio/authoring-catalog"
 import {
@@ -155,12 +155,8 @@ function addRecentComponent(name: string): void {
 interface ComponentInsertModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  /** Names discovered by the native runtime. Executable bindings stay isolated. */
-  nativeComponentNames?: readonly string[] | null
-  /** Project config components (from repopress.config.json). */
-  projectComponents?: Record<string, any> | null
-  /** Detected framework (e.g. "fumadocs", "nextra", "astro") - used for fallback component schemas. */
-  framework?: string
+  /** Serializable authoring metadata prepared at the Studio boundary. */
+  authoringCatalog: AuthoringCatalog
   /** Optional repo context for image uploads in prop form. */
   repoContext?: {
     projectId: string
@@ -198,17 +194,11 @@ type ModalStep = "pick" | "configure"
 export function ComponentInsertModal({
   open,
   onOpenChange,
-  nativeComponentNames,
-  projectComponents,
-  framework,
+  authoringCatalog,
   repoContext,
   onInsert,
 }: ComponentInsertModalProps) {
   // -- Registry & catalog (recomputed when inputs change) --
-  const authoringCatalog = React.useMemo(
-    () => buildAuthoringCatalog({ nativeComponentNames, metadata: projectComponents, framework }),
-    [nativeComponentNames, projectComponents, framework],
-  )
   const catalog = React.useMemo(() => buildComponentCatalog(authoringCatalog), [authoringCatalog])
 
   // -- Modal state --

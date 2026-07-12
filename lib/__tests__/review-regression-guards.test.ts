@@ -22,7 +22,6 @@ const rawColorFiles = [
   "components/studio/studio-layout.tsx",
   "components/studio/component-insert-modal.tsx",
   "components/studio/image-field.tsx",
-  "components/studio/repo-jsx-bridge.tsx",
   "lib/repopress/standard-library.tsx",
 ]
 

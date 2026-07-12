@@ -10,12 +10,14 @@
 //   5. Value formatting follows strict type rules.
 // ---------------------------------------------------------------------------
 
+import { assertSafeAuthoringPropName, assertSafeMdxName } from "./authoring-catalog"
 import type { ComponentNode } from "./component-node"
 
 /**
  * Serialize a `ComponentNode` into a JSX string suitable for MDX insertion.
  */
 export function serializeComponentNode(node: ComponentNode): string {
+  assertSafeMdxName(node.name)
   const propsStr = serializeProps(node.props)
   const tag = node.name
 
@@ -48,6 +50,7 @@ function serializeProps(props: Record<string, unknown>): string {
   const parts: string[] = []
 
   for (const key of keys) {
+    assertSafeAuthoringPropName(key)
     const value = props[key]
     if (value === undefined) continue
     const formatted = formatPropValue(value)

@@ -27,9 +27,8 @@ import type { Id } from "@/convex/_generated/dataModel"
 import { DOCUMENT_STATUS_CONFIG, type DocumentStatus, isPublishableDocumentStatus } from "@/lib/document-status"
 import { getFrameworkAdapter } from "@/lib/framework-adapters"
 import { type FileTreeNode, findTreeNode } from "@/lib/github"
-import { usePreviewContext } from "@/lib/hooks/use-preview-context"
 import { CONTENT_PATH_REPRESENTATION, toRepoPath } from "@/lib/preview/path-policy"
-import { standardComponents } from "@/lib/repopress/standard-library"
+import { buildAuthoringCatalog } from "@/lib/studio/authoring-catalog"
 import { buildHistoryHref } from "@/lib/studio/history-link"
 import { resolveStudioCreatePaths, treePathToContentPath } from "@/lib/studio/path-adapters"
 import { getPublishLaneViewModel } from "@/lib/studio/publish-lane-view-model"
@@ -55,7 +54,7 @@ import {
 } from "./scroll-sync"
 import { SmartCreateFileDialog } from "./smart-create-file-dialog"
 import { StatusActions } from "./status-actions"
-import { StudioAdapterProvider } from "./studio-adapter-context"
+import { createStudioAdapterState, StudioAdapterProvider, useStudioAdapter } from "./studio-adapter-context"
 import { StudioProvider, useStudio } from "./studio-context"
 import { StudioFooter } from "./studio-footer"
 import { StudioHeader } from "./studio-header"
@@ -444,17 +443,8 @@ function StudioLayoutInner({
   studioFile: ReturnType<typeof useStudioFile>
   studioQueries: ReturnType<typeof useStudioQueries>
 }) {
-  const {
-    projectId,
-    projectAccessToken,
-    contentRoot,
-    owner,
-    repo,
-    branch,
-    adapterLoading,
-    adapterError,
-    adapterDiagnostics,
-  } = useStudio()
+  const { projectId, projectAccessToken, contentRoot, owner, repo, branch } = useStudio()
+  const { diagnostics: authoringDiagnostics } = useStudioAdapter()
 
   // Framework adapter for file naming / frontmatter - uses the project's detectedFramework string
   const frameworkAdapter = React.useMemo(() => {
@@ -1257,9 +1247,9 @@ function StudioLayoutInner({
     isSelectedDocumentLoading,
     selectedFile: Boolean(selectedFile),
     shouldShowProjectDataSkeleton,
-    adapterLoading,
-    adapterError,
-    adapterDiagnostics,
+    adapterLoading: false,
+    adapterError: null,
+    adapterDiagnostics: [...authoringDiagnostics],
   })
 
   const pendingSummary = React.useMemo(
@@ -1887,14 +1877,7 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
   // 2. Queries hook - pass the local tree state so overlayTree uses the async-fetched
   // tree rather than the outer StudioProvider's empty initialTree.
   const studioQueries = useStudioQueries(selectedFile?.path, { tree })
-  const {
-    previewEntry,
-    enabledPlugins,
-    pluginRegistry,
-    currentPublishLane,
-    userId,
-    components: componentSchema,
-  } = studioQueries
+  const { currentPublishLane, userId, components: componentSchema } = studioQueries
 
   // Verify the active publish lane's PR is still open on GitHub.
   // Corrects state drift when the closed/merged webhook was never delivered.
@@ -1908,16 +1891,6 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
     projectAccessToken: projectAccessToken ?? undefined,
   })
 
-  // 3. Preview Context hook
-  const previewContext = usePreviewContext({
-    owner,
-    repo,
-    branch: currentPublishLane?.branchName ?? branch,
-    adapterPath: previewEntry,
-    enabledPlugins,
-    pluginRegistry,
-  })
-
   // 3. Auto-sync config logic
   React.useEffect(() => {
     if (!owner || !repo || !branch) return
@@ -1926,7 +1899,29 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
     })
   }, [owner, repo, branch])
 
-  // 4. Memoize Context Value
+  const authoringState = React.useMemo(() => {
+    try {
+      const authoringCatalog = buildAuthoringCatalog({
+        metadata: componentSchema,
+        framework: studioQueries.project?.detectedFramework as string | undefined,
+      })
+      return createStudioAdapterState({
+        authoringCatalog,
+        nativeComponentNames: [],
+        detectedFramework: studioQueries.project?.detectedFramework as string | undefined,
+        diagnostics: [],
+      })
+    } catch (error) {
+      return createStudioAdapterState({
+        authoringCatalog: buildAuthoringCatalog({}),
+        nativeComponentNames: [],
+        detectedFramework: studioQueries.project?.detectedFramework as string | undefined,
+        diagnostics: [error instanceof Error ? error.message : "Invalid authoring metadata"],
+      })
+    }
+  }, [componentSchema, studioQueries.project?.detectedFramework])
+
+  // 4. Memoize serializable Studio Context Value
   const contextValue = React.useMemo(
     () => ({
       owner,
@@ -1939,46 +1934,13 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
       contentRoot,
       tree,
       role,
-      adapter: previewContext.context,
-      adapterLoading: previewContext.loading,
-      adapterError: previewContext.error,
-      adapterDiagnostics: previewContext.diagnostics,
-      components: componentSchema,
-      // Resolve insert-picker components by contentRoot:
-      //  1. If the adapter declares componentsByContext for this root, use that (fully context-aware).
-      //  2. Otherwise fall back to standardComponents - the universal safe set that never includes
-      //     docs-only components like DocsImage/DocsVideo that come from the adapter layer.
-      //     The full previewContext.context.components (adapter-augmented) is still used for
-      //     *rendering* existing MDX; we deliberately exclude adapter additions from the insert picker
-      //     when no explicit context split is declared.
-      resolvedComponents:
-        contentRoot && previewContext.context?.componentsByContext?.[contentRoot]
-          ? previewContext.context.componentsByContext[contentRoot]
-          : previewContext.context
-            ? standardComponents
-            : undefined,
-      detectedFramework: studioQueries.project?.detectedFramework as string | undefined,
     }),
-    [
-      owner,
-      repo,
-      branch,
-      projectId,
-      projectAccessToken,
-      userId,
-      selectedFile?.path,
-      contentRoot,
-      tree,
-      role,
-      previewContext,
-      componentSchema,
-      studioQueries.project?.detectedFramework,
-    ],
+    [owner, repo, branch, projectId, projectAccessToken, userId, selectedFile?.path, contentRoot, tree, role],
   )
 
   return (
     <StudioProvider value={contextValue}>
-      <StudioAdapterProvider value={contextValue}>
+      <StudioAdapterProvider value={authoringState}>
         <StudioLayoutInner studioFile={studioFile} studioQueries={studioQueries} />
       </StudioAdapterProvider>
     </StudioProvider>
@@ -2000,12 +1962,6 @@ export function StudioLayout(props: StudioLayoutProps) {
       contentRoot,
       tree,
       role,
-      adapter: null,
-      adapterLoading: false,
-      adapterError: null,
-      adapterDiagnostics: [],
-      components: undefined,
-      resolvedComponents: undefined,
     }),
     [owner, repo, branch, projectId, projectAccessToken, contentRoot, tree, role],
   )

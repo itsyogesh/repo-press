@@ -1,17 +1,8 @@
 import type { JsxComponentDescriptor } from "@mdxeditor/editor"
-import { RepoJsxBridge } from "./repo-jsx-bridge"
+import type { AuthoringCatalog, AuthoringComponent } from "@/lib/studio/authoring-catalog"
+import { componentAcceptsChildren } from "@/lib/studio/authoring-catalog"
 
-/**
- * JSX component descriptors for common MDX components.
- * These render as labeled editor boxes in WYSIWYG mode,
- * showing the component name, editable props, and rich-text children.
- */
-
-/**
- * Generic placeholder editor for JSX components without specialized rendering.
- * Shows a labeled box with the component name.
- */
-export function GenericJsxEditor({ descriptor }: { mdastNode: any; descriptor: JsxComponentDescriptor }) {
+export function GenericJsxEditor({ descriptor }: { mdastNode: unknown; descriptor: JsxComponentDescriptor }) {
   return (
     <div
       style={{
@@ -37,210 +28,35 @@ export function GenericJsxEditor({ descriptor }: { mdastNode: any; descriptor: J
   )
 }
 
+function descriptorFromCatalog(component: AuthoringComponent): JsxComponentDescriptor {
+  return {
+    name: component.mdxName,
+    kind: component.kind,
+    props: component.props.map((prop) => ({
+      name: prop.name,
+      type: prop.type === "string" || prop.type === "image" ? "string" : "expression",
+    })),
+    hasChildren: componentAcceptsChildren(component),
+    Editor: GenericJsxEditor,
+  }
+}
+
+/**
+ * Build generic rich-editor descriptors from serializable authoring metadata.
+ * Unknown names found in an existing document get a children-preserving
+ * placeholder, but never an executable renderer or invented prop schema.
+ */
 export function getJsxComponentDescriptors(
-  adapterComponents?: Record<string, any>,
-  componentSchema?: Record<string, any>,
-  discoveredComponentNames: string[] = [],
+  authoringCatalog: AuthoringCatalog,
+  discoveredComponentNames: readonly string[] = [],
 ): JsxComponentDescriptor[] {
-  // 1. Built-in descriptors
-  const baseDescriptors: JsxComponentDescriptor[] = [
-    {
-      name: "DocsImage",
-      kind: "flow",
-      props: [
-        { name: "src", type: "expression" },
-        { name: "alt", type: "string" },
-        { name: "caption", type: "string" },
-      ],
-      hasChildren: false,
-      Editor: RepoJsxBridge,
-    },
-    {
-      name: "DocsVideo",
-      kind: "flow",
-      props: [
-        { name: "src", type: "expression" },
-        { name: "title", type: "string" },
-      ],
-      hasChildren: false,
-      Editor: RepoJsxBridge,
-    },
-    {
-      name: "Callout",
-      kind: "flow",
-      props: [
-        { name: "type", type: "string" },
-        { name: "title", type: "string" },
-      ],
-      hasChildren: true,
-      Editor: RepoJsxBridge,
-    },
-    {
-      name: "Card",
-      kind: "flow",
-      props: [
-        { name: "title", type: "string" },
-        { name: "href", type: "string" },
-        { name: "icon", type: "string" },
-      ],
-      hasChildren: true,
-      Editor: RepoJsxBridge,
-    },
-    {
-      name: "Tabs",
-      kind: "flow",
-      props: [
-        { name: "items", type: "expression" },
-        { name: "defaultValue", type: "string" },
-      ],
-      hasChildren: true,
-      Editor: RepoJsxBridge,
-    },
-    {
-      name: "Steps",
-      kind: "flow",
-      props: [],
-      hasChildren: true,
-      Editor: RepoJsxBridge,
-    },
-    {
-      name: "CopyIpsButton",
-      kind: "flow",
-      props: [],
-      hasChildren: false,
-      Editor: RepoJsxBridge,
-    },
-    {
-      name: "Badge",
-      kind: "text",
-      props: [{ name: "variant", type: "string" }],
-      hasChildren: true,
-      Editor: RepoJsxBridge,
-    },
-    {
-      name: "Button",
-      kind: "text",
-      props: [
-        { name: "variant", type: "string" },
-        { name: "size", type: "string" },
-      ],
-      hasChildren: true,
-      Editor: RepoJsxBridge,
-    },
-  ]
-
-  // 2. Add dynamic descriptors from schema or adapter discovery
-  const dynamicNames = new Set([
-    ...Object.keys(adapterComponents || {}),
-    ...Object.keys(componentSchema || {}),
-    ...discoveredComponentNames,
-  ])
-
-  const dynamicDescriptors: JsxComponentDescriptor[] = []
-
-  dynamicNames.forEach((name) => {
-    // Skip if already in base
-    if (baseDescriptors.some((d) => d.name === name)) return
-
-    const schema = componentSchema?.[name]
-    dynamicDescriptors.push({
-      name,
-      kind: (schema?.kind as any) || "flow",
-      props: schema?.props || [],
-      hasChildren: schema?.hasChildren ?? true,
-      Editor: RepoJsxBridge,
-    })
-  })
-
-  // Add standard HTML tags often used with JSX syntax in MDX
-  const htmlTags: JsxComponentDescriptor[] = [
-    {
-      name: "section",
-      kind: "flow",
-      props: [{ name: "className", type: "string" }],
-      hasChildren: true,
-      Editor: RepoJsxBridge,
-    },
-    {
-      name: "h1",
-      kind: "flow",
-      props: [],
-      hasChildren: true,
-      Editor: RepoJsxBridge,
-    },
-    {
-      name: "h2",
-      kind: "flow",
-      props: [],
-      hasChildren: true,
-      Editor: RepoJsxBridge,
-    },
-    {
-      name: "h3",
-      kind: "flow",
-      props: [],
-      hasChildren: true,
-      Editor: RepoJsxBridge,
-    },
-    {
-      name: "a",
-      kind: "text",
-      props: [
-        { name: "href", type: "expression" },
-        { name: "className", type: "string" },
-      ],
-      hasChildren: true,
-      Editor: RepoJsxBridge,
-    },
-    {
-      name: "Note",
-      kind: "flow",
-      props: [{ name: "title", type: "string" }],
-      hasChildren: true,
-      Editor: RepoJsxBridge,
-    },
-    {
-      name: "Warning",
-      kind: "flow",
-      props: [{ name: "title", type: "string" }],
-      hasChildren: true,
-      Editor: RepoJsxBridge,
-    },
-    {
-      name: "Tip",
-      kind: "flow",
-      props: [{ name: "title", type: "string" }],
-      hasChildren: true,
-      Editor: RepoJsxBridge,
-    },
-    {
-      name: "Info",
-      kind: "flow",
-      props: [{ name: "title", type: "string" }],
-      hasChildren: true,
-      Editor: RepoJsxBridge,
-    },
-    {
-      name: "Tab",
-      kind: "flow",
-      props: [{ name: "label", type: "string" }],
-      hasChildren: true,
-      Editor: RepoJsxBridge,
-    },
-    {
-      name: "Step",
-      kind: "flow",
-      props: [{ name: "title", type: "string" }],
-      hasChildren: true,
-      Editor: RepoJsxBridge,
-    },
-  ]
-
-  htmlTags.forEach((tag) => {
-    if (!baseDescriptors.some((d) => d.name === tag.name)) {
-      baseDescriptors.push(tag)
+  const descriptors = new Map(
+    authoringCatalog.map((component) => [component.mdxName, descriptorFromCatalog(component)]),
+  )
+  for (const name of discoveredComponentNames) {
+    if (!descriptors.has(name)) {
+      descriptors.set(name, { name, kind: "flow", props: [], hasChildren: true, Editor: GenericJsxEditor })
     }
-  })
-
-  return [...baseDescriptors, ...dynamicDescriptors]
+  }
+  return Array.from(descriptors.values()).sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""))
 }

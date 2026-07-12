@@ -283,3 +283,19 @@ describe("serializeComponentNode - determinism", () => {
     expect(unique.size).toBe(1)
   })
 })
+
+describe("serializeComponentNode - safe identifiers", () => {
+  it("serializes a validated dotted MDX member name", () => {
+    expect(serializeComponentNode(makeNode({ name: "Tabs.Item" }))).toBe("<Tabs.Item />")
+  })
+
+  it("rejects an invalid MDX tag name", () => {
+    expect(() => serializeComponentNode(makeNode({ name: "Callout onClick={run}" }))).toThrow("MDX name")
+  })
+
+  it("rejects a dangerous JSX prop name", () => {
+    expect(() => serializeComponentNode(makeNode({ name: "Callout", props: { constructor: "unsafe" } }))).toThrow(
+      "prop name",
+    )
+  })
+})

@@ -66,7 +66,7 @@ describe("buildComponentRegistry deprecated wrapper", () => {
   it("keeps every native name when metadata configures one component", () => {
     const registry = buildComponentRegistry(
       { Callout: () => null, Steps: () => null },
-      { Callout: { props: [{ name: "tone", type: "string" }] } },
+      { Callout: { props: [{ name: "tone", type: "string" }], hasChildren: false } },
     )
 
     expect(Object.keys(registry).sort()).toEqual(["Callout", "Steps"])
@@ -77,6 +77,11 @@ describe("buildComponentRegistry deprecated wrapper", () => {
   it("is deterministic and handles empty inputs", () => {
     expect(buildComponentRegistry(null, null)).toEqual({})
     expect(buildComponentRegistry({ B: 1, A: 2 }, null)).toEqual(buildComponentRegistry({ B: 3, A: 4 }, null))
+  })
+
+  it("returns a null-prototype compatibility map for user-controlled keys", () => {
+    const registry = buildComponentRegistry(null, { Callout: { props: [], hasChildren: false } })
+    expect(Object.getPrototypeOf(registry)).toBeNull()
   })
 
   it("does not provide framework-name fallback schemas", () => {

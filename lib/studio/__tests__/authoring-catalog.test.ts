@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { createRenderBindings, getRenderBindingNames } from "../../preview/render-bindings"
-import { buildAuthoringCatalog } from "../authoring-catalog"
+import { AUTHORING_CATALOG_LIMITS, buildAuthoringCatalog } from "../authoring-catalog"
 
 describe("authoring catalog separation", () => {
   it("keeps executable render bindings outside the serializable catalog", () => {
@@ -215,5 +215,165 @@ describe("authoring catalog separation", () => {
     expect(() =>
       buildAuthoringCatalog({ metadata: { Widget: { props: [{ name: "value", type: "string", default: value }] } } }),
     ).toThrow("serializable")
+  })
+
+  it("keeps display-only metadata incomplete", () => {
+    const [component] = buildAuthoringCatalog({ metadata: { Callout: { displayName: "Notice" } } })
+    expect(component.schemaStatus).toBe("incomplete")
+  })
+
+  it("keeps empty metadata incomplete", () => {
+    const [component] = buildAuthoringCatalog({ metadata: { Callout: {} } })
+    expect(component.schemaStatus).toBe("incomplete")
+  })
+
+  it("marks an explicit prop and slot contract complete", () => {
+    const [component] = buildAuthoringCatalog({ metadata: { Callout: { props: [], hasChildren: false } } })
+    expect(component.schemaStatus).toBe("complete")
+  })
+
+  it("does not let an unbacked complete claim fabricate schema completeness", () => {
+    const [component] = buildAuthoringCatalog({
+      metadata: { Callout: { schemaStatus: "complete", displayName: "Notice" } },
+    })
+    expect(component.schemaStatus).toBe("incomplete")
+  })
+
+  it.each([
+    "__proto__",
+    "prototype",
+    "constructor",
+    "toString",
+    "not valid",
+    "Callout..Title",
+  ])("rejects unsafe MDX name %s", (mdxName) => {
+    expect(() => buildAuthoringCatalog({ nativeComponentNames: [mdxName] })).toThrow("MDX name")
+  })
+
+  it("accepts a safe dotted MDX member reference", () => {
+    expect(buildAuthoringCatalog({ nativeComponentNames: ["Tabs.Item"] })[0].mdxName).toBe("Tabs.Item")
+  })
+
+  it.each(["__proto__", "constructor", "toString", "bad name"])("rejects unsafe logical ID %s", (logicalId) => {
+    expect(() => buildAuthoringCatalog({ metadata: { Callout: { logicalId } } })).toThrow("logical ID")
+  })
+
+  it.each(["__proto__", "constructor", "toString", "bad name"])("rejects unsafe prop name %s", (name) => {
+    expect(() =>
+      buildAuthoringCatalog({ metadata: { Callout: { props: [{ name, type: "string" }], hasChildren: false } } }),
+    ).toThrow("prop name")
+  })
+
+  it("rejects duplicate prop names", () => {
+    expect(() =>
+      buildAuthoringCatalog({
+        metadata: {
+          Callout: {
+            props: [
+              { name: "tone", type: "string" },
+              { name: "tone", type: "string" },
+            ],
+            hasChildren: false,
+          },
+        },
+      }),
+    ).toThrow("duplicate prop")
+  })
+
+  it("rejects duplicate slot names", () => {
+    expect(() =>
+      buildAuthoringCatalog({
+        metadata: {
+          Tabs: {
+            props: [],
+            slots: [
+              { name: "children", accepts: "mdx" },
+              { name: "children", accepts: "components" },
+            ],
+          },
+        },
+      }),
+    ).toThrow("duplicate slot")
+  })
+
+  it("rejects duplicate logical IDs across different MDX names", () => {
+    expect(() =>
+      buildAuthoringCatalog({
+        metadata: {
+          Callout: { logicalId: "shared", props: [], hasChildren: false },
+          Notice: { logicalId: "shared", props: [], hasChildren: false },
+        },
+      }),
+    ).toThrow("duplicate logical ID")
+  })
+
+  it("rejects nested undefined values", () => {
+    expect(() =>
+      buildAuthoringCatalog({
+        metadata: { Widget: { props: [{ name: "value", type: "string", default: { nested: undefined } }] } },
+      }),
+    ).toThrow("undefined")
+  })
+
+  it("rejects sparse arrays that would change during JSON serialization", () => {
+    const sparse = Array(2)
+    sparse[1] = "value"
+    expect(() =>
+      buildAuthoringCatalog({
+        metadata: { Widget: { props: [{ name: "value", type: "expression", default: sparse }] } },
+      }),
+    ).toThrow("undefined")
+  })
+
+  it("rejects an invalid explicit schema status", () => {
+    expect(() =>
+      buildAuthoringCatalog({
+        metadata: { Widget: { schemaStatus: "trusted-ish", props: [], hasChildren: false } as never },
+      }),
+    ).toThrow("schema status")
+  })
+
+  it("rejects cyclic defaults without overflowing", () => {
+    const cyclic: Record<string, unknown> = {}
+    cyclic.self = cyclic
+    expect(() =>
+      buildAuthoringCatalog({
+        metadata: { Widget: { props: [{ name: "value", type: "string", default: cyclic }] } },
+      }),
+    ).toThrow("cycle")
+  })
+
+  it("rejects defaults beyond the depth limit", () => {
+    let value: Record<string, unknown> = {}
+    for (let index = 0; index <= AUTHORING_CATALOG_LIMITS.maxDepth; index += 1) value = { nested: value }
+    expect(() =>
+      buildAuthoringCatalog({ metadata: { Widget: { props: [{ name: "value", type: "string", default: value }] } } }),
+    ).toThrow("depth")
+  })
+
+  it("rejects defaults beyond the node limit", () => {
+    const value = Array.from({ length: AUTHORING_CATALOG_LIMITS.maxNodes + 1 }, () => null)
+    expect(() =>
+      buildAuthoringCatalog({ metadata: { Widget: { props: [{ name: "value", type: "string", default: value }] } } }),
+    ).toThrow("node")
+  })
+
+  it("rejects catalog strings beyond the UTF-8 byte limit", () => {
+    const displayName = "é".repeat(AUTHORING_CATALOG_LIMITS.maxUtf8Bytes)
+    expect(() => buildAuthoringCatalog({ metadata: { Widget: { displayName } } })).toThrow("byte")
+  })
+
+  it("deep clones and freezes recognized metadata", () => {
+    const defaultValue = { nested: ["before"] }
+    const metadata = {
+      Widget: { props: [{ name: "value", type: "expression", default: defaultValue }], hasChildren: false },
+    }
+    const catalog = buildAuthoringCatalog({ metadata })
+    defaultValue.nested[0] = "after"
+
+    expect(catalog[0].props[0].default).toStrictEqual({ nested: ["before"] })
+    expect(Object.isFrozen(catalog)).toBe(true)
+    expect(Object.isFrozen(catalog[0].props[0].default)).toBe(true)
+    expect(JSON.parse(JSON.stringify(catalog))).toStrictEqual(catalog)
   })
 })
