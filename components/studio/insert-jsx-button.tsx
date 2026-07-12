@@ -6,9 +6,9 @@ import * as React from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import type { AuthoringComponent } from "@/lib/studio/authoring-catalog"
 import { buildEditorInsertOperation } from "@/lib/studio/component-insert-operation"
 import type { ComponentNode } from "@/lib/studio/component-node"
-import type { RepoComponentDef } from "@/lib/studio/component-registry"
 import { ComponentInsertModal } from "./component-insert-modal"
 import { useStudioAdapter } from "./studio-adapter-context"
 import { useInsertComponentModal } from "./studio-layout"
@@ -44,11 +44,11 @@ export function InsertJsxButton({ owner, repo, branch, projectId, userId, select
 
   if (!hasComponents) return null
 
-  const handleInsert = (_jsx: string, def: RepoComponentDef, node: ComponentNode) => {
+  const handleInsert = (_jsx: string, def: AuthoringComponent, node: ComponentNode) => {
     try {
       const operation = buildEditorInsertOperation(def, node)
       insertJsx(operation.payload)
-      toast.success(`${def.displayName ?? def.name} inserted`)
+      toast.success(`${def.displayName} inserted`)
     } catch (error) {
       console.error("Error inserting JSX:", error)
       toast.error("Failed to insert component")
@@ -79,7 +79,7 @@ export function InsertJsxButton({ owner, repo, branch, projectId, userId, select
       <ComponentInsertModal
         open={effectiveOpen}
         onOpenChange={handleOpenChange}
-        adapterComponents={resolvedComponents}
+        nativeComponentNames={Object.keys(resolvedComponents ?? {})}
         projectComponents={schema}
         framework={detectedFramework}
         repoContext={projectId ? { projectId, userId, owner, repo, branch, selectedFilePath } : undefined}

@@ -6,7 +6,8 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
-import type { RepoComponentDef, RepoComponentPropDef } from "@/lib/studio/component-registry"
+import type { AuthoringComponent, AuthoringProp } from "@/lib/studio/authoring-catalog"
+import { componentAcceptsChildren } from "@/lib/studio/authoring-catalog"
 import { cn } from "@/lib/utils"
 import { ImageFieldControl } from "./image-field-control"
 
@@ -17,12 +18,12 @@ import { ImageFieldControl } from "./image-field-control"
 export type PropFormState = Record<string, unknown>
 
 /** Returns names of props marked as required. */
-export function getRequiredProps(props: RepoComponentPropDef[]): string[] {
+export function getRequiredProps(props: AuthoringProp[]): string[] {
   return props.filter((p) => p.required).map((p) => p.name)
 }
 
 /** Validates form state against required props. Returns map of field name → error message. */
-export function validateFormState(props: RepoComponentPropDef[], state: PropFormState): Record<string, string> {
+export function validateFormState(props: AuthoringProp[], state: PropFormState): Record<string, string> {
   const errors: Record<string, string> = {}
   for (const prop of props) {
     if (!prop.required) continue
@@ -36,7 +37,7 @@ export function validateFormState(props: RepoComponentPropDef[], state: PropForm
 }
 
 interface ComponentPropFormProps {
-  def: RepoComponentDef
+  def: AuthoringComponent
   formState: PropFormState
   onFormChange: (next: PropFormState) => void
   /** Optional repo context for image uploads. */
@@ -57,7 +58,7 @@ interface ComponentPropFormProps {
 // ---------------------------------------------------------------------------
 
 /**
- * Dynamic typed prop form rendered from a `RepoComponentDef`.
+ * Dynamic typed prop form rendered from an `AuthoringComponent`.
  *
  * Renders one control per prop definition:
  * - `string`     → text input
@@ -66,7 +67,7 @@ interface ComponentPropFormProps {
  * - `expression` → text input (monospace, curly-brace hint)
  * - `image`      → rich image picker with preview (ImageFieldControl)
  *
- * If `def.hasChildren` is true, an additional textarea is rendered
+ * If the component declares a children slot, an additional textarea is rendered
  * for children content.
  */
 export function ComponentPropForm({ def, formState, onFormChange, repoContext, errors = {} }: ComponentPropFormProps) {
@@ -90,7 +91,7 @@ export function ComponentPropForm({ def, formState, onFormChange, repoContext, e
         />
       ))}
 
-      {def.hasChildren && (
+      {componentAcceptsChildren(def) && (
         <div className="space-y-1.5">
           <Label htmlFor="__children">Children</Label>
           <Textarea
@@ -118,7 +119,7 @@ function PropField({
   repoContext,
   error,
 }: {
-  propDef: RepoComponentPropDef
+  propDef: AuthoringProp
   value: unknown
   onChange: (v: unknown) => void
   repoContext?: {

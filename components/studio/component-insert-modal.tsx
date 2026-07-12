@@ -8,6 +8,11 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
+  type AuthoringComponent,
+  buildAuthoringCatalog,
+  componentAcceptsChildren,
+} from "@/lib/studio/authoring-catalog"
+import {
   ALL_CATEGORIES,
   buildComponentCatalog,
   type ComponentCategory,
@@ -15,8 +20,6 @@ import {
   getComponentLabel,
 } from "@/lib/studio/component-catalog"
 import { buildComponentNode, type ComponentNode } from "@/lib/studio/component-node"
-import type { RepoComponentDef } from "@/lib/studio/component-registry"
-import { buildComponentRegistry } from "@/lib/studio/component-registry"
 import { serializeComponentNode } from "@/lib/studio/component-serializer"
 import { resolveStudioAssetUrl } from "@/lib/studio/media-resolve"
 import { cn } from "@/lib/utils"
@@ -29,9 +32,9 @@ import { VideoPreview as StudioVideoPreview } from "./video-preview"
 // LiveConfigurePreview - reacts to formState for known component types
 // ---------------------------------------------------------------------------
 
-function LiveConfigurePreview({ def, formState }: { def: RepoComponentDef; formState: PropFormState }) {
+function LiveConfigurePreview({ def, formState }: { def: AuthoringComponent; formState: PropFormState }) {
   const studio = useStudio()
-  const normalizedName = def.name.replace(/Adapter$/i, "").toLowerCase()
+  const normalizedName = def.mdxName.replace(/Adapter$/i, "").toLowerCase()
 
   // DocsImage / image component - show actual image when src is provided
   if (
@@ -115,7 +118,7 @@ function LiveConfigurePreview({ def, formState }: { def: RepoComponentDef; formS
   }
 
   // Default fallback - static wireframe preview
-  return <ComponentPreview name={def.name} className="shadow-none border-none bg-transparent" />
+  return <ComponentPreview name={def.mdxName} className="shadow-none border-none bg-transparent" />
 }
 
 // ---------------------------------------------------------------------------
@@ -152,8 +155,8 @@ function addRecentComponent(name: string): void {
 interface ComponentInsertModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  /** Adapter-discovered components. */
-  adapterComponents?: Record<string, any> | null
+  /** Names discovered by the native runtime. Executable bindings stay isolated. */
+  nativeComponentNames?: readonly string[] | null
   /** Project config components (from repopress.config.json). */
   projectComponents?: Record<string, any> | null
   /** Detected framework (e.g. "fumadocs", "nextra", "astro") - used for fallback component schemas. */
@@ -168,7 +171,7 @@ interface ComponentInsertModalProps {
     selectedFilePath?: string
   }
   /** Called with serialized JSX, component metadata, and the resolved node when user confirms insert. */
-  onInsert: (jsx: string, def: RepoComponentDef, node: ComponentNode) => void
+  onInsert: (jsx: string, def: AuthoringComponent, node: ComponentNode) => void
 }
 
 // ---------------------------------------------------------------------------
@@ -186,8 +189,8 @@ type ModalStep = "pick" | "configure"
  * 1. **Pick** - choose a component from the catalog.
  * 2. **Configure** - fill in props (and optional children), then insert.
  *
- * The registry is built on each open from adapter + project components
- * (single source of truth). Catalog is a read-only projection.
+ * The catalog is built from native component names and serializable project
+ * metadata. Executable bindings never enter modal state.
  *
  * Insert flow:
  *   form state → ComponentNode → serializer → onInsert callback
@@ -195,25 +198,22 @@ type ModalStep = "pick" | "configure"
 export function ComponentInsertModal({
   open,
   onOpenChange,
-  adapterComponents,
+  nativeComponentNames,
   projectComponents,
   framework,
   repoContext,
   onInsert,
 }: ComponentInsertModalProps) {
   // -- Registry & catalog (recomputed when inputs change) --
-  const registry = React.useMemo(
-    () => buildComponentRegistry(adapterComponents, projectComponents, framework),
-    [adapterComponents, projectComponents, framework],
+  const authoringCatalog = React.useMemo(
+    () => buildAuthoringCatalog({ nativeComponentNames, metadata: projectComponents, framework }),
+    [nativeComponentNames, projectComponents, framework],
   )
-  const catalog = React.useMemo(() => {
-    const hasProjectComponents = !!projectComponents && Object.keys(projectComponents).length > 0
-    return buildComponentCatalog(registry, { hasProjectComponents })
-  }, [registry, projectComponents])
+  const catalog = React.useMemo(() => buildComponentCatalog(authoringCatalog), [authoringCatalog])
 
   // -- Modal state --
   const [step, setStep] = React.useState<ModalStep>("pick")
-  const [selectedDef, setSelectedDef] = React.useState<RepoComponentDef | null>(null)
+  const [selectedDef, setSelectedDef] = React.useState<AuthoringComponent | null>(null)
   const [formState, setFormState] = React.useState<PropFormState>({})
   const [searchQuery, setSearchQuery] = React.useState("")
   const [activeCategory, setActiveCategory] = React.useState<ComponentCategory | "All">("All")
@@ -224,8 +224,8 @@ export function ComponentInsertModal({
   const recentCatalog = React.useMemo(() => {
     if (!catalog) return []
     return recentNames
-      .map((name) => catalog.find((c) => c.name === name))
-      .filter((c): c is RepoComponentDef => c !== undefined)
+      .map((name) => catalog.find((c) => c.mdxName === name))
+      .filter((c): c is AuthoringComponent => c !== undefined)
   }, [recentNames, catalog])
 
   // Real-time validation for the configure step
@@ -259,7 +259,7 @@ export function ComponentInsertModal({
       result = result.filter(
         (def) =>
           getComponentLabel(def).toLowerCase().includes(q) ||
-          def.name.toLowerCase().includes(q) ||
+          def.mdxName.toLowerCase().includes(q) ||
           def.description?.toLowerCase().includes(q),
       )
     }
@@ -272,8 +272,8 @@ export function ComponentInsertModal({
     if (recentCatalog.length === 0 || searchQuery || activeCategory !== "All") {
       return filteredCatalog
     }
-    const recentNameSet = new Set(recentCatalog.map((c) => c.name))
-    return filteredCatalog.filter((c) => !recentNameSet.has(c.name))
+    const recentNameSet = new Set(recentCatalog.map((c) => c.mdxName))
+    return filteredCatalog.filter((c) => !recentNameSet.has(c.mdxName))
   }, [filteredCatalog, recentCatalog, searchQuery, activeCategory])
 
   // Reset state when modal opens/closes
@@ -291,7 +291,7 @@ export function ComponentInsertModal({
 
   // -- Handlers --
   const handleSelectComponent = React.useCallback(
-    (def: RepoComponentDef) => {
+    (def: AuthoringComponent) => {
       setSelectedDef(def)
       // Pre-populate with defaults
       const defaults: PropFormState = {}
@@ -303,10 +303,10 @@ export function ComponentInsertModal({
       setFormState(defaults)
 
       // If no configurable props and no children, insert immediately
-      if (def.props.length === 0 && !def.hasChildren) {
+      if (def.props.length === 0 && !componentAcceptsChildren(def)) {
         const node = buildComponentNode(def, defaults)
         const jsx = serializeComponentNode(node)
-        addRecentComponent(def.name)
+        addRecentComponent(def.mdxName)
         onInsert(jsx, def, node)
         onOpenChange(false)
         return
@@ -325,7 +325,7 @@ export function ComponentInsertModal({
     try {
       const node = buildComponentNode(selectedDef, formState)
       const jsx = serializeComponentNode(node)
-      addRecentComponent(selectedDef.name)
+      addRecentComponent(selectedDef.mdxName)
       onInsert(jsx, selectedDef, node)
       onOpenChange(false)
     } catch (error) {
@@ -488,7 +488,7 @@ export function ComponentInsertModal({
                   <div className="relative z-10 w-full max-w-xs flex items-center justify-center">
                     {selectedDef && (
                       <motion.div
-                        key={selectedDef.name}
+                        key={selectedDef.mdxName}
                         initial={{ opacity: 0, scale: 0.94 }}
                         animate={{ opacity: 1, scale: 1 }}
                         transition={{ duration: 0.18, ease: "easeOut" }}
@@ -611,7 +611,7 @@ const categoryStyles = {
   },
 } as const
 
-function ComponentCard({ def, onSelect }: { def: RepoComponentDef; onSelect: (def: RepoComponentDef) => void }) {
+function ComponentCard({ def, onSelect }: { def: AuthoringComponent; onSelect: (def: AuthoringComponent) => void }) {
   const category = deriveCategory(def)
   const label = getComponentLabel(def)
   const style = categoryStyles[category]
@@ -648,8 +648,8 @@ function CatalogGallery({
   catalog,
   onSelect,
 }: {
-  catalog: RepoComponentDef[]
-  onSelect: (def: RepoComponentDef) => void
+  catalog: AuthoringComponent[]
+  onSelect: (def: AuthoringComponent) => void
 }) {
   if (catalog.length === 0) {
     return (
@@ -664,7 +664,7 @@ function CatalogGallery({
   return (
     <div className="space-y-0.5">
       {catalog.map((def) => (
-        <ComponentCard key={def.name} def={def} onSelect={onSelect} />
+        <ComponentCard key={def.mdxName} def={def} onSelect={onSelect} />
       ))}
     </div>
   )

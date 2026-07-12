@@ -1,15 +1,22 @@
 import { describe, expect, it } from "vitest"
+import type { AuthoringComponent } from "../authoring-catalog"
 import { buildEditorInsertOperation } from "../component-insert-operation"
 import { buildComponentNode } from "../component-node"
-import type { RepoComponentDef } from "../component-registry"
 
-function makeDef(overrides: Partial<RepoComponentDef> & { name: string }): RepoComponentDef {
+function makeDef(overrides: Partial<AuthoringComponent> & { name: string; hasChildren?: boolean }): AuthoringComponent {
+  const { name, hasChildren = false, ...metadata } = overrides
   return {
+    logicalId: name,
+    mdxName: name,
+    displayName: name,
+    runtime: "client",
+    schemaStatus: "complete",
     props: [],
-    hasChildren: false,
+    slots: hasChildren ? [{ name: "children", accepts: "mdx" }] : [],
+    previewFixtures: [],
+    provenance: { source: "manual" },
     kind: "flow",
-    source: "config",
-    ...overrides,
+    ...metadata,
   }
 }
 

@@ -75,14 +75,16 @@ describe("Integration: full insert pipeline", () => {
     },
   })
 
-  it("builds registry with correct source tracking", () => {
+  it("builds authoring metadata with explicit provenance and schema status", () => {
     const registry = buildComponentRegistry(adapter, config)
 
-    expect(registry.DocsImage.source).toBe("merged")
-    expect(registry.DocsVideo.source).toBe("config")
-    expect(registry.Callout.source).toBe("config")
-    expect(registry.Badge.source).toBe("config")
-    expect(registry.Steps.source).toBe("adapter")
+    expect(registry.DocsImage.provenance.source).toBe("manual")
+    expect(registry.DocsVideo.provenance.source).toBe("manual")
+    expect(registry.Callout.schemaStatus).toBe("complete")
+    expect(registry.Badge.schemaStatus).toBe("complete")
+    expect(registry.Steps).toEqual(
+      expect.objectContaining({ provenance: { source: "native" }, schemaStatus: "incomplete" }),
+    )
   })
 
   it("config props win over adapter props for merged entries", () => {
@@ -108,7 +110,7 @@ describe("Integration: full insert pipeline", () => {
     const registry = buildComponentRegistry(adapter, config)
     const catalog = buildComponentCatalog(registry)
 
-    const docsImageEntry = catalog.find((c) => c.name === "DocsImage")
+    const docsImageEntry = catalog.find((c) => c.mdxName === "DocsImage")
     expect(getComponentLabel(docsImageEntry!)).toBe("Documentation Image")
   })
 
@@ -188,7 +190,7 @@ describe("Integration: full insert pipeline", () => {
     expect(jsx).toBe("<Badge>\nNew\n</Badge>")
   })
 
-  it("full round-trip: Steps (adapter-only, no props, with children)", () => {
+  it("does not invent children support for an incomplete native component", () => {
     const registry = buildComponentRegistry(adapter, config)
     const def = registry.Steps
 
@@ -199,7 +201,7 @@ describe("Integration: full insert pipeline", () => {
     const node = buildComponentNode(def, formState)
     const jsx = serializeComponentNode(node)
 
-    expect(jsx).toBe("<Steps>\nStep content here\n</Steps>")
+    expect(jsx).toBe("<Steps />")
   })
 
   it("full round-trip: component with no props and no children inserts self-closing", () => {
@@ -241,21 +243,13 @@ describe("Integration: full insert pipeline", () => {
     )
   })
 
-  it("capability flags are correctly derived", () => {
+  it("keeps authoring capabilities declarative", () => {
     const registry = buildComponentRegistry(adapter, config)
 
-    // DocsImage has an image prop → media: true
-    expect(registry.DocsImage.capabilities?.media).toBe(true)
-    expect(registry.DocsImage.capabilities?.configurable).toBe(true)
-    expect(registry.DocsImage.capabilities?.inline).toBe(false)
-
-    // Badge is kind: "text" → inline: true
-    expect(registry.Badge.capabilities?.inline).toBe(true)
-    expect(registry.Badge.capabilities?.configurable).toBe(false)
-
-    // Steps (adapter-only) has no props → configurable: false
-    expect(registry.Steps.capabilities?.configurable).toBe(false)
-    expect(registry.Steps.capabilities?.media).toBe(false)
+    expect(registry.DocsImage.props.some((prop) => prop.type === "image")).toBe(true)
+    expect(registry.Badge.kind).toBe("text")
+    expect(registry.Steps.props).toEqual([])
+    expect(registry.Steps.slots).toEqual([])
   })
 
   it("handles number and boolean prop types in round-trip", () => {
@@ -346,7 +340,7 @@ describe("Integration: full insert pipeline", () => {
         props: [],
         hasChildren: false,
         kind: "flow",
-        version: 2,
+        provenance: { source: "manual", version: "2" },
         displayName: "My Custom Component",
         description: "A custom component for testing.",
       },
@@ -355,7 +349,7 @@ describe("Integration: full insert pipeline", () => {
     const registry = buildComponentRegistry(null, config2)
     const def = registry.MyComponent
 
-    expect(def.version).toBe(2)
+    expect(def.provenance.version).toBe("2")
     expect(def.displayName).toBe("My Custom Component")
     expect(def.description).toBe("A custom component for testing.")
 
