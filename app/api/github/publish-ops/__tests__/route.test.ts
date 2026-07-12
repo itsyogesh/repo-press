@@ -916,4 +916,38 @@ describe("POST /api/github/publish-ops", () => {
       "chore(content): 1 media created via RepoPress",
     )
   })
+
+  it("does not double-prefix legacy document paths under a nested content root", async () => {
+    convexQueryMock.mockReset()
+    convexQueryMock
+      .mockResolvedValueOnce({ ...baseProject, contentRoot: "content/docs" })
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          _id: "doc_nested_1",
+          filePath: "content/docs/guides/start.mdx",
+          body: "# Start",
+          frontmatter: { title: "Start" },
+        },
+      ])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce({
+        _id: "publish_branch_1",
+        branchName: "repopress/main/1234",
+        prNumber: 42,
+        prUrl: "https://github.com/acme/docs-site/pull/42",
+      })
+
+    const response = await POST(buildRequest({ projectId: "project_123" }))
+
+    expect(response.status).toBe(200)
+    expect(batchCommit).toHaveBeenCalledWith(
+      "gh-token",
+      "acme",
+      "docs-site",
+      "repopress/main/1234",
+      [expect.objectContaining({ path: "content/docs/guides/start.mdx", action: "update" })],
+      "chore(content): 1 updated via RepoPress",
+    )
+  })
 })

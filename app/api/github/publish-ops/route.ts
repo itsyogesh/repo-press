@@ -3,7 +3,6 @@ import matter from "gray-matter"
 import { NextResponse } from "next/server"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
-import { prefixContentRoot } from "@/lib/explorer-tree-overlay"
 import type { BatchOperation } from "@/lib/github"
 import {
   batchCommit,
@@ -14,6 +13,7 @@ import {
   getFile,
   updatePullRequest,
 } from "@/lib/github"
+import { toRepoPath } from "@/lib/preview/path-policy"
 import { mintServerQueryToken } from "@/lib/project-access-token"
 import { buildPublishBranchName, derivePublishBranchScope } from "@/lib/publish-branch-name"
 import { RouteAuthError, resolveRouteAuth } from "@/lib/route-auth"
@@ -83,7 +83,7 @@ export async function POST(request: Request) {
     const pathsToFetch: { key: string; fullPath: string }[] = []
 
     for (const op of pendingOps) {
-      const fullPath = prefixContentRoot(op.filePath, contentRoot)
+      const fullPath = toRepoPath(contentRoot, op.filePath)
       if (op.opType === "create") {
         pathsToFetch.push({ key: `op:${op.filePath}`, fullPath })
       } else if (op.opType === "delete" && op.previousSha) {
@@ -94,7 +94,7 @@ export async function POST(request: Request) {
     for (const doc of dirtyDocs) {
       if (createOpPaths.has(doc.filePath)) continue
       if (!doc.githubSha) continue
-      const fullPath = prefixContentRoot(doc.filePath, contentRoot)
+      const fullPath = toRepoPath(contentRoot, doc.filePath)
       pathsToFetch.push({ key: `doc:${doc.filePath}`, fullPath })
     }
 
@@ -121,7 +121,7 @@ export async function POST(request: Request) {
     const conflicts: { path: string; reason: string }[] = []
 
     for (const op of pendingOps) {
-      const fullPath = prefixContentRoot(op.filePath, contentRoot)
+      const fullPath = toRepoPath(contentRoot, op.filePath)
 
       if (op.opType === "create") {
         const existing = prefetchResults.get(`op:${op.filePath}`)
@@ -165,7 +165,7 @@ export async function POST(request: Request) {
 
     for (const doc of dirtyDocs) {
       if (createOpPaths.has(doc.filePath)) continue
-      const fullPath = prefixContentRoot(doc.filePath, contentRoot)
+      const fullPath = toRepoPath(contentRoot, doc.filePath)
 
       if (doc.githubSha) {
         const existing = prefetchResults.get(`doc:${doc.filePath}`)
@@ -378,7 +378,7 @@ export async function POST(request: Request) {
     const docsToUpdateSha = dirtyDocs.filter((d) => !createOpPaths.has(d.filePath))
     const shaFetches = await Promise.all(
       docsToUpdateSha.map(async (doc) => {
-        const fullPath = prefixContentRoot(doc.filePath, contentRoot)
+        const fullPath = toRepoPath(contentRoot, doc.filePath)
         try {
           const fileOnBranch = await getFile(token, owner, repo, fullPath, branchName)
           return { doc, sha: fileOnBranch?.sha ?? null }

@@ -1,4 +1,5 @@
 import type { FileTreeNode } from "./github"
+import { toRepoPath } from "./preview/path-policy"
 
 export type OverlayTreeNode = FileTreeNode & {
   isNew?: boolean
@@ -12,17 +13,10 @@ export type ExplorerOp = {
 }
 
 /**
- * Build full repo path from contentRoot-relative path.
- * If contentRoot is empty, returns filePath as-is.
- * If filePath already starts with contentRoot, returns as-is (no double-prefixing).
+ * @deprecated Use toRepoPath(contentRoot, filePath) at Git/repository boundaries.
  */
 export function prefixContentRoot(filePath: string, contentRoot: string): string {
-  if (!contentRoot) return filePath
-  // Don't double-prefix if already prefixed
-  if (filePath.startsWith(`${contentRoot}/`) || filePath === contentRoot) {
-    return filePath
-  }
-  return `${contentRoot}/${filePath}`
+  return toRepoPath(contentRoot, filePath)
 }
 
 /**
@@ -112,11 +106,12 @@ function ensureDir(tree: OverlayTreeNode[], dirPath: string, contentRoot: string
  */
 export function overlayOpsOnTree(tree: FileTreeNode[], ops: ExplorerOp[], contentRoot: string): OverlayTreeNode[] {
   const result = cloneTree(tree)
+  const repositoryOps = ops.map((op) => ({ ...op, repositoryPath: toRepoPath(contentRoot, op.filePath) }))
 
   // Process delete ops
-  for (const op of ops) {
+  for (const op of repositoryOps) {
     if (op.opType !== "delete" || op.status !== "pending") continue
-    const fullPath = prefixContentRoot(op.filePath, contentRoot)
+    const fullPath = op.repositoryPath
     const node = findNode(result, fullPath)
     if (node) {
       node.isDeleted = true
@@ -124,9 +119,9 @@ export function overlayOpsOnTree(tree: FileTreeNode[], ops: ExplorerOp[], conten
   }
 
   // Process create ops
-  for (const op of ops) {
+  for (const op of repositoryOps) {
     if (op.opType !== "create" || op.status !== "pending") continue
-    const fullPath = prefixContentRoot(op.filePath, contentRoot)
+    const fullPath = op.repositoryPath
 
     // Don't create if a node already exists at this path
     if (findNode(result, fullPath)) continue
