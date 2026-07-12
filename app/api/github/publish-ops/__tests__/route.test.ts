@@ -917,7 +917,7 @@ describe("POST /api/github/publish-ops", () => {
     )
   })
 
-  it("does not double-prefix legacy document paths under a nested content root", async () => {
+  it("treats an ambiguous same-prefix document path as canonical content-relative input", async () => {
     convexQueryMock.mockReset()
     convexQueryMock
       .mockResolvedValueOnce({ ...baseProject, contentRoot: "content/docs" })
@@ -946,8 +946,89 @@ describe("POST /api/github/publish-ops", () => {
       "acme",
       "docs-site",
       "repopress/main/1234",
-      [expect.objectContaining({ path: "content/docs/guides/start.mdx", action: "update" })],
+      [expect.objectContaining({ path: "content/docs/content/docs/guides/start.mdx", action: "update" })],
       "chore(content): 1 updated via RepoPress",
     )
+  })
+
+  it("associates create operations and dirty documents by their normalized repository identity", async () => {
+    vi.mocked(getFile).mockResolvedValue(null as never)
+    mockPublishQueries({
+      pendingOps: [
+        {
+          _id: "explorer_op_nfd",
+          opType: "create",
+          filePath: "guides/cafe\u0301.mdx",
+          initialBody: "# Initial",
+          initialFrontmatter: { title: "Initial" },
+        },
+      ],
+      dirtyDocs: [
+        {
+          _id: "doc_nfc",
+          filePath: "guides/café.mdx",
+          body: "# Draft",
+          frontmatter: { title: "Draft" },
+        },
+      ],
+    })
+
+    const response = await POST(buildRequest({ projectId: "project_123" }))
+
+    expect(response.status).toBe(200)
+    expect(batchCommit).toHaveBeenCalledWith(
+      "gh-token",
+      "acme",
+      "docs-site",
+      "repopress/main/1234",
+      [
+        expect.objectContaining({
+          path: "content/guides/café.mdx",
+          action: "create",
+          content: expect.stringContaining("# Draft"),
+        }),
+      ],
+      "chore(content): 1 created via RepoPress",
+    )
+  })
+
+  it("rejects mixed delete and document changes that resolve to the same repository path", async () => {
+    mockPublishQueries({
+      pendingOps: [{ _id: "explorer_op_nfd", opType: "delete", filePath: "guides/cafe\u0301.mdx" }],
+      dirtyDocs: [
+        {
+          _id: "doc_nfc",
+          filePath: "guides/café.mdx",
+          body: "# Draft",
+          frontmatter: { title: "Draft" },
+        },
+      ],
+    })
+
+    const response = await POST(buildRequest({ projectId: "project_123" }))
+    const payload = await response.json()
+
+    expect(response.status).toBe(409)
+    expect(payload.conflicts).toEqual([
+      expect.objectContaining({ path: "content/guides/café.mdx", reason: expect.stringContaining("collision") }),
+    ])
+    expect(getFile).not.toHaveBeenCalled()
+    expect(batchCommit).not.toHaveBeenCalled()
+  })
+
+  it("rejects duplicate pending operations for the same normalized repository path", async () => {
+    mockPublishQueries({
+      pendingOps: [
+        { _id: "explorer_op_nfd", opType: "delete", filePath: "guides/cafe\u0301.mdx" },
+        { _id: "explorer_op_nfc", opType: "delete", filePath: "guides/café.mdx" },
+      ],
+      dirtyDocs: [],
+    })
+
+    const response = await POST(buildRequest({ projectId: "project_123" }))
+
+    expect(response.status).toBe(409)
+    expect(getFile).not.toHaveBeenCalled()
+    expect(batchCommit).not.toHaveBeenCalled()
   })
 })

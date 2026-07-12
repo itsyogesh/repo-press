@@ -1,5 +1,5 @@
 import type { FileTreeNode } from "./github"
-import { toRepoPath } from "./preview/path-policy"
+import { toRepoPath, toRepoPathFromLegacyRepoPath } from "./preview/path-policy"
 
 export type OverlayTreeNode = FileTreeNode & {
   isNew?: boolean
@@ -13,10 +13,13 @@ export type ExplorerOp = {
 }
 
 /**
- * @deprecated Use toRepoPath(contentRoot, filePath) at Git/repository boundaries.
+ * @deprecated Compatibility for callers whose value is explicitly known to be
+ * repository-relative already. Canonical content-relative paths must use
+ * toRepoPath(contentRoot, filePath) instead.
  */
 export function prefixContentRoot(filePath: string, contentRoot: string): string {
-  return toRepoPath(contentRoot, filePath)
+  if (!contentRoot) return toRepoPath(contentRoot, filePath)
+  return toRepoPathFromLegacyRepoPath(contentRoot, filePath)
 }
 
 /**

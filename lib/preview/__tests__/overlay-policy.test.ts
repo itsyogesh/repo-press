@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest"
 import { overlayOpsOnTree } from "../../explorer-tree-overlay"
 import type { FileOverlayOperation } from "../contracts"
-import { MAX_OVERLAY_CONTENT_BYTES, MAX_OVERLAY_OPERATIONS, validateOverlayOperations } from "../overlay-policy"
+import {
+  MAX_OVERLAY_CONTENT_BYTES,
+  MAX_OVERLAY_OPERATIONS,
+  MAX_OVERLAY_PATH_BYTES,
+  MAX_OVERLAY_TOTAL_PATH_BYTES,
+  validateOverlayOperations,
+} from "../overlay-policy"
 
 describe("overlay operation policy", () => {
   it("returns normalized immutable copies", () => {
@@ -65,6 +71,25 @@ describe("overlay operation policy", () => {
     expect(() => validateOverlayOperations([{ operation: "write", path: "guide.mdx", content }])).toThrow(
       "overlay content exceeds",
     )
+  })
+
+  it.each(["write", "delete"] as const)("enforces the per-path UTF-8 byte limit for %s operations", (operation) => {
+    const path = `${"é".repeat(Math.ceil(MAX_OVERLAY_PATH_BYTES / 2))}.mdx`
+    const candidate = operation === "write" ? { operation, path, content: "x" } : { operation, path }
+
+    expect(() => validateOverlayOperations([candidate])).toThrow("overlay path exceeds")
+  })
+
+  it("enforces the cumulative path-byte limit across write and delete operations", () => {
+    const bytesPerPath = MAX_OVERLAY_PATH_BYTES
+    const operationCount = Math.floor(MAX_OVERLAY_TOTAL_PATH_BYTES / bytesPerPath) + 1
+    const operations = Array.from({ length: operationCount }, (_, index): FileOverlayOperation => {
+      const prefix = `${index}/`
+      const path = `${prefix}${"x".repeat(bytesPerPath - prefix.length)}`
+      return index % 2 === 0 ? { operation: "write", path, content: "" } : { operation: "delete", path }
+    })
+
+    expect(() => validateOverlayOperations(operations)).toThrow("overlay paths exceed")
   })
 })
 

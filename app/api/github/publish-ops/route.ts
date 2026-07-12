@@ -79,36 +79,47 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No pending changes to publish" }, { status: 400 })
     }
 
-    const createOpPaths = new Set(pendingOps.filter((op) => op.opType === "create").map((op) => op.filePath))
-    const pathsToFetch: { key: string; fullPath: string }[] = []
+    const resolvedPendingOps = pendingOps.map((source) => ({
+      source,
+      repoPath: toRepoPath(contentRoot, source.filePath),
+    }))
+    const resolvedDirtyDocs = dirtyDocs.map((source) => ({
+      source,
+      repoPath: toRepoPath(contentRoot, source.filePath),
+    }))
+    const identityConflicts = findContentIdentityConflicts(resolvedPendingOps, resolvedDirtyDocs)
+    if (identityConflicts.length > 0) {
+      return NextResponse.json({ ok: false, conflicts: identityConflicts }, { status: 409 })
+    }
 
-    for (const op of pendingOps) {
-      const fullPath = toRepoPath(contentRoot, op.filePath)
+    const createOpPaths = new Set(
+      resolvedPendingOps.filter(({ source }) => source.opType === "create").map(({ repoPath }) => repoPath),
+    )
+    const dirtyDocByRepoPath = new Map(resolvedDirtyDocs.map((resolved) => [resolved.repoPath, resolved.source]))
+    const pathsToFetch = new Map<string, string>()
+
+    for (const { source: op, repoPath } of resolvedPendingOps) {
       if (op.opType === "create") {
-        pathsToFetch.push({ key: `op:${op.filePath}`, fullPath })
+        pathsToFetch.set(`content:${repoPath}`, repoPath)
       } else if (op.opType === "delete" && op.previousSha) {
-        pathsToFetch.push({ key: `op:${op.filePath}`, fullPath })
+        pathsToFetch.set(`content:${repoPath}`, repoPath)
       }
     }
 
-    for (const doc of dirtyDocs) {
-      if (createOpPaths.has(doc.filePath)) continue
+    for (const { source: doc, repoPath } of resolvedDirtyDocs) {
+      if (createOpPaths.has(repoPath)) continue
       if (!doc.githubSha) continue
-      const fullPath = toRepoPath(contentRoot, doc.filePath)
-      pathsToFetch.push({ key: `doc:${doc.filePath}`, fullPath })
+      pathsToFetch.set(`content:${repoPath}`, repoPath)
     }
 
     for (const mediaOp of pendingMediaOps) {
       const normalizedPath = normalizeMediaPath(mediaOp.repoPath)
-      pathsToFetch.push({
-        key: `media:${normalizedPath}`,
-        fullPath: normalizedPath,
-      })
+      pathsToFetch.set(`media:${normalizedPath}`, normalizedPath)
     }
 
     const prefetchResults = new Map<string, Awaited<ReturnType<typeof getFile>>>()
     const fetchResults = await Promise.all(
-      pathsToFetch.map(async ({ key, fullPath }) => {
+      Array.from(pathsToFetch, async ([key, fullPath]) => {
         const result = await getFile(token, owner, repo, fullPath, baseBranch)
         return { key, result }
       }),
@@ -120,26 +131,24 @@ export async function POST(request: Request) {
     const operations: BatchOperation[] = []
     const conflicts: { path: string; reason: string }[] = []
 
-    for (const op of pendingOps) {
-      const fullPath = toRepoPath(contentRoot, op.filePath)
-
+    for (const { source: op, repoPath } of resolvedPendingOps) {
       if (op.opType === "create") {
-        const existing = prefetchResults.get(`op:${op.filePath}`)
+        const existing = prefetchResults.get(`content:${repoPath}`)
         if (existing) {
           conflicts.push({
-            path: op.filePath,
+            path: repoPath,
             reason: `File already exists on ${baseBranch} (sha: ${existing.sha})`,
           })
           continue
         }
 
-        const doc = dirtyDocs.find((d) => d.filePath === op.filePath)
+        const doc = dirtyDocByRepoPath.get(repoPath)
         const rawFrontmatter = doc ? doc.frontmatter || {} : op.initialFrontmatter || {}
         const rawBody = doc ? doc.body || "" : op.initialBody || ""
         const fileContent = matter.stringify(rawBody, rewriteProxyUrls(rawFrontmatter))
 
         operations.push({
-          path: fullPath,
+          path: repoPath,
           content: fileContent,
           contentEncoding: "utf-8",
           action: "create",
@@ -149,29 +158,27 @@ export async function POST(request: Request) {
 
       if (op.opType === "delete") {
         if (op.previousSha) {
-          const existing = prefetchResults.get(`op:${op.filePath}`)
+          const existing = prefetchResults.get(`content:${repoPath}`)
           if (existing && existing.sha !== op.previousSha) {
             conflicts.push({
-              path: op.filePath,
+              path: repoPath,
               reason: `File has been modified since staging deletion (expected sha: ${op.previousSha}, current: ${existing.sha})`,
             })
             continue
           }
         }
 
-        operations.push({ path: fullPath, action: "delete" })
+        operations.push({ path: repoPath, action: "delete" })
       }
     }
 
-    for (const doc of dirtyDocs) {
-      if (createOpPaths.has(doc.filePath)) continue
-      const fullPath = toRepoPath(contentRoot, doc.filePath)
-
+    for (const { source: doc, repoPath } of resolvedDirtyDocs) {
+      if (createOpPaths.has(repoPath)) continue
       if (doc.githubSha) {
-        const existing = prefetchResults.get(`doc:${doc.filePath}`)
+        const existing = prefetchResults.get(`content:${repoPath}`)
         if (existing && existing.sha !== doc.githubSha) {
           conflicts.push({
-            path: doc.filePath,
+            path: repoPath,
             reason: `File has been modified on GitHub since last sync (expected sha: ${doc.githubSha}, current: ${existing.sha})`,
           })
           continue
@@ -180,7 +187,7 @@ export async function POST(request: Request) {
 
       const fileContent = matter.stringify(doc.body || "", rewriteProxyUrls(doc.frontmatter || {}))
       operations.push({
-        path: fullPath,
+        path: repoPath,
         content: fileContent,
         contentEncoding: "utf-8",
         action: "update",
@@ -375,12 +382,11 @@ export async function POST(request: Request) {
       })
     }
 
-    const docsToUpdateSha = dirtyDocs.filter((d) => !createOpPaths.has(d.filePath))
+    const docsToUpdateSha = resolvedDirtyDocs.filter(({ repoPath }) => !createOpPaths.has(repoPath))
     const shaFetches = await Promise.all(
-      docsToUpdateSha.map(async (doc) => {
-        const fullPath = toRepoPath(contentRoot, doc.filePath)
+      docsToUpdateSha.map(async ({ source: doc, repoPath }) => {
         try {
-          const fileOnBranch = await getFile(token, owner, repo, fullPath, branchName)
+          const fileOnBranch = await getFile(token, owner, repo, repoPath, branchName)
           return { doc, sha: fileOnBranch?.sha ?? null }
         } catch {
           return { doc, sha: null }
@@ -420,6 +426,44 @@ export async function POST(request: Request) {
     console.error("Error in publish-ops:", error)
     return NextResponse.json({ error: message }, { status: 500 })
   }
+}
+
+function findContentIdentityConflicts<
+  Pending extends { repoPath: string; source: { opType: string } },
+  Document extends { repoPath: string },
+>(pendingOps: Pending[], dirtyDocs: Document[]): { path: string; reason: string }[] {
+  const identities = new Map<string, { pendingOps: Pending[]; dirtyDocs: Document[] }>()
+
+  for (const pendingOp of pendingOps) {
+    const identity = identities.get(pendingOp.repoPath) ?? { pendingOps: [], dirtyDocs: [] }
+    identity.pendingOps.push(pendingOp)
+    identities.set(pendingOp.repoPath, identity)
+  }
+  for (const dirtyDoc of dirtyDocs) {
+    const identity = identities.get(dirtyDoc.repoPath) ?? { pendingOps: [], dirtyDocs: [] }
+    identity.dirtyDocs.push(dirtyDoc)
+    identities.set(dirtyDoc.repoPath, identity)
+  }
+
+  const conflicts: { path: string; reason: string }[] = []
+  for (const [path, identity] of identities) {
+    const isCreateWithDocument =
+      identity.pendingOps.length === 1 &&
+      identity.pendingOps[0].source.opType === "create" &&
+      identity.dirtyDocs.length === 1
+    const hasDuplicatePendingOps = identity.pendingOps.length > 1
+    const hasDuplicateDirtyDocs = identity.dirtyDocs.length > 1
+    const hasMixedSourceCollision =
+      identity.pendingOps.length > 0 && identity.dirtyDocs.length > 0 && !isCreateWithDocument
+
+    if (hasDuplicatePendingOps || hasDuplicateDirtyDocs || hasMixedSourceCollision) {
+      conflicts.push({
+        path,
+        reason: "Resolved content path collision between pending changes",
+      })
+    }
+  }
+  return conflicts
 }
 
 function isActivePublishBranchConflict(error: unknown) {

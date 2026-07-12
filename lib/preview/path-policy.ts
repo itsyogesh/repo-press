@@ -11,6 +11,7 @@ export class PathPolicyError extends Error {
 }
 
 const SCHEME_PATTERN = /^[a-z][a-z\d+.-]*:/i
+const FORMAT_CHARACTER_PATTERN = /\p{Cf}/u
 
 function hasControlCharacter(value: string): boolean {
   return Array.from(value).some((character) => {
@@ -36,17 +37,25 @@ function assertSafeRelativePath(path: string, kind: "content path" | "content ro
   if (hasControlCharacter(path)) {
     throw new PathPolicyError("UNSAFE_RELATIVE_PATH", `${kind} contains a control character`)
   }
-  if (SCHEME_PATTERN.test(path)) {
+  if (FORMAT_CHARACTER_PATTERN.test(path)) {
+    throw new PathPolicyError("UNSAFE_RELATIVE_PATH", `${kind} contains a Unicode format control`)
+  }
+
+  const normalizedPath = path
+    .split("/")
+    .map((segment) => segment.normalize("NFC"))
+    .join("/")
+  if (SCHEME_PATTERN.test(normalizedPath)) {
     throw new PathPolicyError("UNSAFE_RELATIVE_PATH", `${kind} must not be URL- or scheme-like`)
   }
-  if (path.includes("//")) {
+  if (normalizedPath.includes("//")) {
     throw new PathPolicyError("UNSAFE_RELATIVE_PATH", `${kind} contains duplicate separators`)
   }
-  if (path.endsWith("/")) {
+  if (normalizedPath.endsWith("/")) {
     throw new PathPolicyError("UNSAFE_RELATIVE_PATH", `${kind} must not have a trailing separator`)
   }
 
-  const segments = path.split("/")
+  const segments = normalizedPath.split("/")
   if (segments.includes("..")) {
     throw new PathPolicyError("UNSAFE_RELATIVE_PATH", `${kind} escapes content root`)
   }
@@ -54,7 +63,7 @@ function assertSafeRelativePath(path: string, kind: "content path" | "content ro
     throw new PathPolicyError("UNSAFE_RELATIVE_PATH", `${kind} contains a dot segment`)
   }
 
-  return path
+  return normalizedPath
 }
 
 /** Validate the canonical POSIX path stored for a document or explorer operation. */
@@ -68,19 +77,24 @@ export function normalizeContentRoot(root: string): string {
 }
 
 /**
- * Convert a stored content-relative file path at a Git/repository boundary.
- * Exact already-prefixed legacy values are accepted here only, so old records
- * remain publishable while new stored paths stay content-root-relative.
+ * Convert a canonical stored content-relative file path at a Git/repository
+ * boundary. This function never guesses whether the input is already prefixed.
  */
 export function toRepoPath(contentRoot: string, contentPath: string): string {
   const root = normalizeContentRoot(contentRoot)
   const path = assertContentPath(contentPath)
   if (!root) return path
-  if (path === root) {
-    throw new PathPolicyError("EMPTY_DOCUMENT_PATH", "content path must identify a document file below content root")
-  }
-  if (path.startsWith(`${root}/`)) return path
   return `${root}/${path}`
+}
+
+/**
+ * Convert an explicitly repository-relative legacy value after proving that it
+ * is a file below the configured content root. Never use this for canonical
+ * document/explorer paths.
+ */
+export function toRepoPathFromLegacyRepoPath(contentRoot: string, legacyRepoPath: string): string {
+  const contentPath = toContentPath(contentRoot, legacyRepoPath)
+  return toRepoPath(contentRoot, contentPath)
 }
 
 /** Convert a repository-relative file path into the canonical stored form. */
