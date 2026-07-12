@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import type { AuthoringComponent } from "../authoring-catalog"
-import { buildEditorInsertOperation } from "../component-insert-operation"
+import { buildEditorInsertOperation, buildEditorSourceEditOperation } from "../component-insert-operation"
 import { buildComponentNode } from "../component-node"
 
 function makeDef(overrides: Partial<AuthoringComponent> & { name: string; hasChildren?: boolean }): AuthoringComponent {
@@ -107,6 +107,24 @@ describe("buildEditorInsertOperation", () => {
         props: {},
         children: [{ type: "text", value: "Inline badge" }],
       },
+    })
+  })
+})
+
+describe("buildEditorSourceEditOperation", () => {
+  it("keeps source edits separate from full-document AST serialization", () => {
+    const source = '<Callout title="Before" />'
+    const operation = buildEditorSourceEditOperation(source, "Callout", 0, { title: "After" })
+
+    expect(operation).toEqual({ mode: "source-edit", source: '<Callout title="After" />' })
+  })
+
+  it("returns the fail-closed result when a source target cannot be selected", () => {
+    const source = "<Callout {...props} />"
+    expect(buildEditorSourceEditOperation(source, "Callout", 0, { title: "After" })).toEqual({
+      mode: "source-edit-refused",
+      source,
+      code: "UNSAFE_TO_PRESERVE",
     })
   })
 })
