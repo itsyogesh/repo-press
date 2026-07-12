@@ -137,4 +137,42 @@ describe("preview provider selection", () => {
       downgradeReasons: [],
     })
   })
+
+  it("reports when a capable compatible provider is unavailable", () => {
+    expect(
+      selectPreviewProvider(
+        facts({
+          nativeCandidates: [],
+          browserBundle: {
+            available: false,
+            executableDigestTrusted: true,
+            capabilitySupported: true,
+          },
+        }),
+      ),
+    ).toEqual({
+      provider: "generic-typeset",
+      fidelity: "generic",
+      downgradeReasons: ["NATIVE_UNAVAILABLE", "COMPATIBLE_UNAVAILABLE"],
+    })
+  })
+
+  it("distinguishes compatible unavailability from unsupported capability", () => {
+    expect(
+      selectPreviewProvider(
+        facts({
+          nativeCandidates: [],
+          browserBundle: {
+            available: false,
+            executableDigestTrusted: true,
+            capabilitySupported: false,
+          },
+        }),
+      ),
+    ).toEqual({
+      provider: "generic-typeset",
+      fidelity: "generic",
+      downgradeReasons: ["NATIVE_UNAVAILABLE", "COMPATIBLE_UNAVAILABLE", "BROWSER_CAPABILITY_UNSUPPORTED"],
+    })
+  })
 })

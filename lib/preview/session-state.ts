@@ -9,14 +9,19 @@ import {
   previewSessionStatusSchema,
 } from "./contracts"
 
+function isHttpsUrl(value: string): boolean {
+  try {
+    return new URL(value).protocol === "https:"
+  } catch {
+    return false
+  }
+}
+
 const targetSchema = z.discriminatedUnion("kind", [
   z
     .object({
       kind: z.literal("sandboxed-iframe"),
-      url: z
-        .string()
-        .url()
-        .refine((url) => new URL(url).protocol === "https:"),
+      url: z.string().url().refine(isHttpsUrl),
     })
     .strict(),
   z
@@ -107,18 +112,11 @@ export function reducePreviewEvent(state: PreviewSessionState, input: unknown): 
 
   const event = parseAppliedEvent(input)
   if (!event) return state
+  if (state.sessionId !== null && event.sessionId !== state.sessionId) return state
   if (event.snapshotVersion < state.snapshotVersion) return state
   if (event.snapshotVersion === state.snapshotVersion && event.sequence <= state.sequence) {
     return state
   }
-  if (
-    state.sessionId !== null &&
-    event.snapshotVersion === state.snapshotVersion &&
-    event.sessionId !== state.sessionId
-  ) {
-    return state
-  }
-
   const next: PreviewSessionState = {
     ...state,
     sessionId: event.sessionId,

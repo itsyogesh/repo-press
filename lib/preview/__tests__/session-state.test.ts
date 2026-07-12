@@ -97,4 +97,44 @@ describe("preview session state", () => {
     expect(reducePreviewEvent(state, event({ type: "status", payload: "unknown" }))).toBe(state)
     expect(reducePreviewEvent(state, event({ type: "target", payload: { kind: "unsafe" } }))).toBe(state)
   })
+
+  it("rejects a malformed iframe URL without throwing", () => {
+    const state = createPreviewSessionState({ editorRevision: "local" })
+    const malformedTarget = event({
+      type: "target",
+      payload: { kind: "sandboxed-iframe", url: "not a url" },
+    })
+
+    expect(() => reducePreviewEvent(state, malformedTarget)).not.toThrow()
+    expect(reducePreviewEvent(state, malformedTarget)).toBe(state)
+  })
+
+  it("rejects a foreign session even at a higher snapshot version", () => {
+    const bound = reducePreviewEvent(
+      createPreviewSessionState({ editorRevision: "local" }),
+      event({ sessionId: "session-a" }),
+    )
+
+    expect(reducePreviewEvent(bound, event({ sessionId: "session-b", snapshotVersion: 3, sequence: 1 }))).toBe(bound)
+  })
+
+  it("rejects foreign higher-snapshot expiration", () => {
+    const bound = reducePreviewEvent(
+      createPreviewSessionState({ editorRevision: "local" }),
+      event({ sessionId: "session-a" }),
+    )
+
+    expect(
+      reducePreviewEvent(
+        bound,
+        event({
+          sessionId: "session-b",
+          snapshotVersion: 3,
+          sequence: 1,
+          type: "expired",
+          payload: null,
+        }),
+      ),
+    ).toBe(bound)
+  })
 })

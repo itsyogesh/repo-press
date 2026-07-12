@@ -6,6 +6,7 @@ export type PreviewProviderKind = NativeProviderKind | "browser-compatible" | "g
 export type PreviewDowngradeReason =
   | "NATIVE_UNAVAILABLE"
   | "EXECUTABLE_DIGEST_UNTRUSTED"
+  | "COMPATIBLE_UNAVAILABLE"
   | "BROWSER_CAPABILITY_UNSUPPORTED"
 
 export type ServerResolvedProviderFacts = {
@@ -31,6 +32,7 @@ const nativeProviderOrder: NativeProviderKind[] = ["managed-native", "external-b
 const downgradeReasonOrder: PreviewDowngradeReason[] = [
   "NATIVE_UNAVAILABLE",
   "EXECUTABLE_DIGEST_UNTRUSTED",
+  "COMPATIBLE_UNAVAILABLE",
   "BROWSER_CAPABILITY_UNSUPPORTED",
 ]
 
@@ -55,6 +57,9 @@ export function selectPreviewProvider(facts: ServerResolvedProviderFacts): Previ
   if (hasUntrustedAvailableNative) reasons.add("EXECUTABLE_DIGEST_UNTRUSTED")
 
   const browser = facts.browserBundle
+  if (!browser.available) {
+    reasons.add("COMPATIBLE_UNAVAILABLE")
+  }
   if (!browser.capabilitySupported) {
     reasons.add("BROWSER_CAPABILITY_UNSUPPORTED")
   }
