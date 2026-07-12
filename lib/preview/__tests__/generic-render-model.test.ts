@@ -69,6 +69,19 @@ const answer = 42
     expect(JSON.parse(JSON.stringify(model))).toEqual(model)
   })
 
+  it("does not allow callers to replace the RepoPress-owned parser at runtime", () => {
+    const injectedParser = { parse: vi.fn(() => ({ type: "root", children: [] })) }
+    const callWithExtraRuntimeArgument = buildGenericRenderModel as unknown as (
+      source: string,
+      parser: typeof injectedParser,
+    ) => ReturnType<typeof buildGenericRenderModel>
+
+    const model = callWithExtraRuntimeArgument("# Owned parser", injectedParser)
+
+    expect(injectedParser.parse).not.toHaveBeenCalled()
+    expect(model.blocks).toContainEqual(expect.objectContaining({ type: "heading", text: "Owned parser" }))
+  })
+
   it("turns JSX into inert placeholders and discards executable MDX source", () => {
     const source = `import Secret from "./secret"
 export const token = readToken()
@@ -268,12 +281,10 @@ export const token = readToken()
       source: "x".repeat(70_000),
       code: "SOURCE_LINE_LIMIT",
     },
-  ])("rejects $name before invoking the MDX parser", ({ source, code }) => {
-    const parser = { parse: vi.fn(() => ({ type: "root", children: [] })) }
+  ])("rejects $name in source preflight", ({ source, code }) => {
+    expect(inspectGenericSourcePreflight(source)).toBe(code)
+    const model = buildGenericRenderModel(source)
 
-    const model = buildGenericRenderModel(source, parser)
-
-    expect(parser.parse).not.toHaveBeenCalled()
     expect(model.blocks).toEqual([
       expect.objectContaining({
         type: "diagnostic",
@@ -294,5 +305,28 @@ export const token = readToken()
     expect(inspectGenericSourcePreflight(codeWithFenceLikeContent)).toBeNull()
     expect(inspectGenericSourcePreflight(moderateContainers)).toBeNull()
     expect(GENERIC_SOURCE_PREFLIGHT_LIMITS.lineBytes).toBeGreaterThan(60_000)
+  })
+
+  it.each([
+    "\n",
+    "\r",
+    "\r\n",
+  ])("does not let invalid backtick fence info hide container floods with %j line endings", (lineEnding) => {
+    const flood = Array.from({ length: 1_500 }, () => "> ".repeat(65)).join(lineEnding)
+    const source = `\`\`\`foo\`\`\`${lineEnding}${flood}`
+
+    expect(inspectGenericSourcePreflight(source)).toBe("SOURCE_CONTAINER_DEPTH_LIMIT")
+    expect(buildGenericRenderModel(source).blocks).toEqual([
+      expect.objectContaining({ type: "diagnostic", code: "SOURCE_CONTAINER_DEPTH_LIMIT" }),
+    ])
+  })
+
+  it("keeps valid backtick and tilde fences out of container-prefix scanning", () => {
+    const markerLikeCode = "> ".repeat(100)
+    const validBacktickFence = `\`\`\`txt\n${markerLikeCode}\n\`\`\``
+    const validTildeFence = `~~~info-with-\`backticks\`\n${markerLikeCode}\n~~~`
+
+    expect(inspectGenericSourcePreflight(validBacktickFence)).toBeNull()
+    expect(inspectGenericSourcePreflight(validTildeFence)).toBeNull()
   })
 })

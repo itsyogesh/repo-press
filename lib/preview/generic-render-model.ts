@@ -100,15 +100,13 @@ const DIAGNOSTIC_CODES = new Set<GenericRenderDiagnosticCode>([
   "INVALID_MODEL",
 ])
 
-type GenericMdxParser = { parse: (source: string) => unknown }
-
-export function buildGenericRenderModel(source: string, parser: GenericMdxParser = mdxParser): GenericRenderModel {
+export function buildGenericRenderModel(source: string): GenericRenderModel {
   const sourcePreflightFailure = inspectGenericSourcePreflight(source)
   if (sourcePreflightFailure) return diagnosticModel(sourcePreflightFailure)
 
   let root: SyntaxNode
   try {
-    root = parser.parse(source) as SyntaxNode
+    root = mdxParser.parse(source) as SyntaxNode
   } catch {
     // Invalid MDX fails closed: parsing the whole document as Markdown would
     // preserve import and expression source as ordinary text. Keep only inert
@@ -141,7 +139,7 @@ export function inspectGenericSourcePreflight(source: string): SourcePreflightFa
     const boundary = getFenceBoundary(source, lineStart, lineEnd)
     if (fence) {
       if (boundary?.canClose && boundary.marker === fence.marker && boundary.length >= fence.length) fence = null
-    } else if (boundary) {
+    } else if (boundary?.canOpen) {
       fence = boundary
     } else {
       const containerFailure = inspectContainerPrefix(source, lineStart, lineEnd)
@@ -266,11 +264,18 @@ function getFenceBoundary(source: string, start: number, end: number) {
   const length = cursor - markerStart
   if (length < 3) return null
   let canClose = true
+  let containsBacktick = false
   while (cursor < end) {
     if (source[cursor] !== " " && source[cursor] !== "\t") canClose = false
+    if (source[cursor] === "`") containsBacktick = true
     cursor += 1
   }
-  return { marker, length, canClose }
+  return {
+    marker,
+    length,
+    canClose,
+    canOpen: marker === "~" || !containsBacktick,
+  }
 }
 
 function finalizeBuiltModel(model: GenericRenderModel): GenericRenderModel {
