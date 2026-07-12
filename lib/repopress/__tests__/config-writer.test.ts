@@ -102,6 +102,72 @@ describe("updateProject", () => {
     expect(result.projects[0].name).toBe("Updated A")
     expect(result.projects[1].name).toBe("B")
   })
+
+  it("preserves full declarative authoring overrides without accepting executable truth", () => {
+    const config = makeConfig()
+    const components = {
+      Callout: {
+        version: "1.2.0",
+        displayName: "Callout box",
+        description: "Highlights important content.",
+        runtime: "client" as const,
+        props: [
+          {
+            name: "variant",
+            type: "string" as const,
+            required: true,
+            description: "Visual emphasis",
+            options: ["info", "warning"],
+            placeholder: "Choose a variant",
+          },
+        ],
+        assets: [{ path: "components/callout.css", type: "style" as const }],
+        slots: [{ name: "children", accepts: "mdx" as const, required: true }],
+        fixtures: ["fixtures/callout.mdx"],
+        provenance: {
+          source: "registry" as const,
+          registryItem: "@repopress/callout",
+          version: "1.2.0",
+          integrity: "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        },
+        hasChildren: true,
+        kind: "flow" as const,
+      },
+    }
+
+    const result = updateProject(config, "docs", { components })
+    expect(result.projects[0].components?.Callout).toMatchObject(components.Callout)
+    expect(result.projects[0].components?.Callout).toMatchObject({ hasChildren: true, kind: "flow" })
+
+    expect(() =>
+      updateProject(config, "docs", {
+        components: {
+          Callout: { ...components.Callout, implementation: "() => null" } as never,
+        },
+      }),
+    ).toThrow()
+
+    expect(() =>
+      updateProject(config, "docs", {
+        components: {
+          Callout: { ...components.Callout, description: "javascript:alert(1)" },
+        },
+      }),
+    ).toThrow("executable source")
+
+    const dangerousDefault = Object.create(null) as Record<string, unknown>
+    Object.defineProperty(dangerousDefault, "constructor", { value: "poison", enumerable: true })
+    expect(() =>
+      updateProject(config, "docs", {
+        components: {
+          Callout: {
+            ...components.Callout,
+            props: [{ name: "data", type: "expression", default: dangerousDefault }],
+          },
+        },
+      }),
+    ).toThrow("dangerous key")
+  })
 })
 
 describe("removeProject", () => {

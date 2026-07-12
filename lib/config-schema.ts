@@ -1,4 +1,12 @@
 import { z } from "zod"
+import {
+  assertDeclarative,
+  authoringAssetSchema,
+  authoringPropSchema,
+  authoringProvenanceSchema,
+  authoringSlotSchema,
+  jsonBoundary,
+} from "@/lib/repopress/registry-schema"
 
 export const previewConfigSchema = z.object({
   entry: z.string().optional(),
@@ -6,18 +14,38 @@ export const previewConfigSchema = z.object({
   allowImports: z.array(z.string()).optional(),
 })
 
-export const componentPropSchema = z.object({
-  name: z.string(),
-  type: z.enum(["string", "number", "boolean", "expression", "image"]),
-  label: z.string().optional(),
-  default: z.any().optional(),
-})
+export const componentPropSchema = authoringPropSchema
 
-export const componentSchema = z.object({
-  props: z.array(componentPropSchema).optional(),
-  hasChildren: z.boolean().optional().default(true),
-  kind: z.enum(["flow", "text"]).optional().default("flow"),
-})
+const rawComponentSchema = z
+  .object({
+    logicalId: z.string().min(1).max(256).optional(),
+    version: z.string().min(1).max(256).optional(),
+    displayName: z.string().min(1).max(16_384).optional(),
+    description: z.string().min(1).max(16_384).optional(),
+    category: z.string().min(1).max(16_384).optional(),
+    runtime: z.enum(["client", "server", "astro"]).optional(),
+    schemaStatus: z.enum(["complete", "incomplete"]).optional(),
+    props: z.array(componentPropSchema).max(128).optional(),
+    assets: z.array(authoringAssetSchema).max(128).optional(),
+    slots: z.array(authoringSlotSchema).max(64).optional(),
+    fixtures: z.array(z.string().min(1).max(16_384)).max(128).optional(),
+    provenance: authoringProvenanceSchema.optional(),
+    hasChildren: z.boolean().optional().default(true),
+    kind: z.enum(["flow", "text"]).optional().default("flow"),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    try {
+      assertDeclarative(value, "components override")
+    } catch (error) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: error instanceof Error ? error.message : "Component override must be declarative",
+      })
+    }
+  })
+
+export const componentSchema = jsonBoundary(rawComponentSchema)
 
 export const projectConfigSchema = z.object({
   id: z.string().min(1),
