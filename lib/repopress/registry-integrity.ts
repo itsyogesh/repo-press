@@ -1,5 +1,5 @@
 import { createHash, type Hash } from "node:crypto"
-import { compareCodeUnits, type RegistryItem, registryItemSchema, relativePathSchema } from "./registry-schema"
+import { compareCodeUnits, type RegistryItem, registryItemSchema } from "./registry-schema"
 
 const INTEGRITY_DOMAIN = "repopress-registry-item-integrity-v1"
 const MAX_REFERENCED_BYTES = 16 * 1024 * 1024
@@ -28,21 +28,21 @@ function canonicalJson(value: unknown): string {
   return `{${entries.join(",")}}`
 }
 
-function withoutDeclaredIntegrity(item: RegistryItem): RegistryItem {
+function canonicalManifest(item: RegistryItem): RegistryItem {
   const repoPress = item.meta.repopress
   const provenance = repoPress.authoring.provenance
-  if (!provenance?.integrity) return item
-
-  const { integrity: _integrity, ...provenanceWithoutIntegrity } = provenance
+  const provenanceWithoutIntegrity = provenance ? (({ integrity: _integrity, ...rest }) => rest)(provenance) : undefined
+  const files = item.files?.map(({ content: _content, ...file }) => file)
   return {
     ...item,
+    ...(files ? { files } : {}),
     meta: {
       ...item.meta,
       repopress: {
         ...repoPress,
         authoring: {
           ...repoPress.authoring,
-          provenance: provenanceWithoutIntegrity,
+          ...(provenanceWithoutIntegrity ? { provenance: provenanceWithoutIntegrity } : {}),
         },
       },
     },
@@ -68,19 +68,36 @@ function addFrame(hash: Hash, bytes: Buffer): void {
   hash.update(bytes)
 }
 
-function indexFiles(files: readonly RegistryIntegrityFile[]): Map<string, Buffer> {
+function dataProperty(object: object, key: string, label: string): unknown {
+  const descriptor = Object.getOwnPropertyDescriptor(object, key)
+  if (!descriptor || !("value" in descriptor)) throw new TypeError(`${label} must be an own data property`)
+  return descriptor.value
+}
+
+function indexFiles(files: readonly RegistryIntegrityFile[], expectedPaths: ReadonlySet<string>): Map<string, Buffer> {
   if (!Array.isArray(files)) throw new TypeError("Registry integrity files must be an array")
+  if (files.length < expectedPaths.size) {
+    throw new TypeError("Missing referenced bytes: Referenced file count does not match manifest")
+  }
+  if (files.length > expectedPaths.size) {
+    throw new TypeError("Unexpected referenced bytes: Referenced file count does not match manifest")
+  }
   const indexed = new Map<string, Buffer>()
   let totalBytes = 0
 
-  for (const file of files) {
+  for (let index = 0; index < files.length; index += 1) {
+    const file = dataProperty(files, String(index), `Registry integrity files[${index}]`)
     if (!file || typeof file !== "object" || Array.isArray(file)) {
       throw new TypeError("Registry integrity file must be an object")
     }
-    const path = relativePathSchema.parse(file.path)
-    if (typeof file.content !== "string") throw new TypeError(`Referenced bytes for ${path} must be a string`)
+    const path = dataProperty(file, "path", `Registry integrity files[${index}].path`)
+    if (typeof path !== "string" || !expectedPaths.has(path)) {
+      throw new TypeError(`Unexpected referenced bytes for ${String(path)}`)
+    }
     if (indexed.has(path)) throw new TypeError(`Duplicate referenced bytes for ${path}`)
-    const content = Buffer.from(file.content, "utf8")
+    const rawContent = dataProperty(file, "content", `Registry integrity files[${index}].content`)
+    if (typeof rawContent !== "string") throw new TypeError(`Referenced bytes for ${path} must be a string`)
+    const content = Buffer.from(rawContent, "utf8")
     totalBytes += content.byteLength
     if (totalBytes > MAX_REFERENCED_BYTES) throw new TypeError("Registry integrity referenced bytes exceed limit")
     indexed.set(path, content)
@@ -99,18 +116,21 @@ function indexFiles(files: readonly RegistryIntegrityFile[]): Map<string, Buffer
 export function computeRegistryItemIntegrity({ item: inputItem, files }: ComputeRegistryItemIntegrityInput): string {
   const item = registryItemSchema.parse(inputItem)
   const paths = referencedPaths(item)
-  const indexedFiles = indexFiles(files)
+  const expectedPaths = new Set(paths)
+  const indexedFiles = indexFiles(files, expectedPaths)
 
   for (const path of paths) {
     if (!indexedFiles.has(path)) throw new TypeError(`Missing referenced bytes for ${path}`)
   }
-  for (const path of indexedFiles.keys()) {
-    if (!paths.includes(path)) throw new TypeError(`Unexpected referenced bytes for ${path}`)
+  for (const file of item.files ?? []) {
+    if (file.content !== undefined && !indexedFiles.get(file.path)?.equals(Buffer.from(file.content, "utf8"))) {
+      throw new TypeError(`Embedded content does not match referenced bytes for ${file.path}`)
+    }
   }
 
   const hash = createHash("sha256")
   addFrame(hash, Buffer.from(INTEGRITY_DOMAIN, "utf8"))
-  addFrame(hash, Buffer.from(canonicalJson(withoutDeclaredIntegrity(item)), "utf8"))
+  addFrame(hash, Buffer.from(canonicalJson(canonicalManifest(item)), "utf8"))
   for (const path of paths) {
     addFrame(hash, Buffer.from(path, "utf8"))
     addFrame(hash, indexedFiles.get(path) as Buffer)

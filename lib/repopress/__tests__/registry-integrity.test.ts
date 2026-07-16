@@ -100,13 +100,51 @@ describe("computeRegistryItemIntegrity", () => {
     )
   })
 
+  it("gives source and built shadcn items the same digest when embedded install bytes match", () => {
+    const sourceItem = registryItem()
+    const builtItem = clone(sourceItem)
+    builtItem.files[0].content = referencedFiles()[0].content
+
+    expect(computeRegistryItemIntegrity({ item: builtItem, files: referencedFiles() })).toBe(
+      computeRegistryItemIntegrity({ item: sourceItem, files: referencedFiles() }),
+    )
+  })
+
+  it("fails closed when built shadcn content disagrees with separately resolved bytes", () => {
+    const builtItem = registryItem()
+    builtItem.files[0].content = "different built content"
+
+    expect(() => computeRegistryItemIntegrity({ item: builtItem, files: referencedFiles() })).toThrow(
+      "Embedded content does not match referenced bytes",
+    )
+  })
+
+  it("rejects the wrong supplied-file count before visiting any entry", () => {
+    const files: RegistryIntegrityFile[] = []
+    files.length = 3
+    let visited = false
+    Object.defineProperty(files, 0, {
+      enumerable: true,
+      get: () => {
+        visited = true
+        throw new Error("must not visit")
+      },
+    })
+
+    expect(() => computeRegistryItemIntegrity({ item: registryItem(), files })).toThrow(
+      "Referenced file count does not match manifest",
+    )
+    expect(visited).toBe(false)
+  })
+
   it("fails closed on missing, duplicate, extra, and unsupported inputs", () => {
     expect(() => computeRegistryItemIntegrity({ item: registryItem(), files: referencedFiles().slice(0, 1) })).toThrow(
       "Missing referenced bytes",
     )
-    expect(() =>
-      computeRegistryItemIntegrity({ item: registryItem(), files: [...referencedFiles(), referencedFiles()[0]] }),
-    ).toThrow("Duplicate referenced bytes")
+    expect(() => {
+      const [source] = referencedFiles()
+      computeRegistryItemIntegrity({ item: registryItem(), files: [source, source] })
+    }).toThrow("Duplicate referenced bytes")
     expect(() =>
       computeRegistryItemIntegrity({
         item: registryItem(),
