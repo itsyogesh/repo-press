@@ -154,8 +154,10 @@ describe("review regression guards", () => {
     const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), "repopress-host-scan-"))
     const productionFiles = [
       "app/page.tsx",
+      "app/test/runtime.ts",
       "app/runtime.mts",
       "components/card.jsx",
+      "components/generated/runtime.ts",
       "convex/runtime.cts",
       "hooks/runtime.cts",
       "lib/runtime.ts",
@@ -174,6 +176,8 @@ describe("review regression guards", () => {
       "root-widget.jsx",
       "root-worker.cjs",
       "root-worker.cts",
+      "remotion/runtime.tsx",
+      "packages/future/runtime.cts",
     ]
     const excludedFiles = [
       "app/__tests__/page.test.tsx",
@@ -181,6 +185,11 @@ describe("review regression guards", () => {
       "lib/types.d.mts",
       "lib/types.d.cts",
       "convex/_generated/api.js",
+      "node_modules/dependency/runtime.js",
+      ".git/worktrees/linked/runtime.ts",
+      ".agents/cache/runtime.ts",
+      ".claude/cache/runtime.ts",
+      ".codex/cache/runtime.ts",
       "components/preview-sandbox/compatible-worker.ts",
       ".next/server/app.js",
       "dist/runtime.js",
@@ -210,7 +219,8 @@ describe("review regression guards", () => {
     const violations = findHostExecutionViolationsInSource(
       "lib/adapter-map-probe.ts",
       `
-        const adapterAlias = repositoryAdapter
+        const adapterSource = usePreviewContext().adapter
+        const adapterAlias = adapterSource
         const componentKey = "compo" + "nents"
         const contextKey = "components" + "ByContext"
         const bindingsKey = "Render" + "Bindings"
@@ -231,6 +241,72 @@ describe("review regression guards", () => {
     expect(violations).toEqual(expect.arrayContaining([expect.stringContaining("executable adapter component-map")]))
   })
 
+  it("detects semantic adapter values returned by host context APIs", () => {
+    const violations = findHostExecutionViolationsInSource(
+      "components/studio/adapter-context-probe.tsx",
+      `
+        const { adapter: runtime } = usePreviewContext()
+        const directRuntime = usePreviewContext().adapter
+        const componentMap = runtime.components
+        const aliasedMap = componentMap
+        aliasedMap.Hero({})
+        directRuntime["componentsByContext"].docs.Callout({})
+      `,
+    )
+
+    expect(violations).toEqual(expect.arrayContaining([expect.stringContaining("executable adapter component-map")]))
+  })
+
+  it("forbids every runtime import path into the preview sandbox outside its route entry", () => {
+    const staticViolations = findHostExecutionViolationsInSource(
+      "components/studio/host-probe.tsx",
+      `
+        import { createCompatibleWorkerRenderer } from "@/components/preview-sandbox/compatible-worker"
+        export { SandboxRuntime } from "@/components/preview-sandbox/SandboxRuntime"
+        createCompatibleWorkerRenderer()
+      `,
+    )
+    const dynamicViolations = findHostExecutionViolationsInSource(
+      "lib/host-probe.ts",
+      `
+        const sandboxModule = "@/components/preview-" + "sandbox/compatible-diagnostics"
+        import(sandboxModule)
+        require("@/components/preview-sandbox/compatible-render-tree")
+      `,
+    )
+
+    expect(staticViolations).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("host import of preview sandbox module"),
+        expect.stringContaining("forbidden execution identifier createCompatibleWorkerRenderer"),
+      ]),
+    )
+    expect(dynamicViolations).toEqual(
+      expect.arrayContaining([expect.stringContaining("dynamic host import of preview sandbox module")]),
+    )
+  })
+
+  it("allows only the inert type edge and the exact sandbox route runtime entry", () => {
+    expect(
+      findHostExecutionViolationsInSource(
+        "lib/type-probe.ts",
+        `import type { CompatibleRenderTree } from "@/components/preview-sandbox/compatible-render-tree"`,
+      ),
+    ).toEqual([])
+    expect(
+      findHostExecutionViolationsInSource(
+        "app/preview/sandbox/page.tsx",
+        `import { SandboxRuntime } from "@/components/preview-sandbox/SandboxRuntime"`,
+      ),
+    ).toEqual([])
+    expect(
+      findHostExecutionViolationsInSource(
+        "app/preview/sandbox/page.tsx",
+        `export { SandboxRuntime } from "@/components/preview-sandbox/SandboxRuntime"`,
+      ),
+    ).toEqual(expect.arrayContaining([expect.stringContaining("host import of preview sandbox module")]))
+  })
+
   it("does not taint generated Convex component imports or ordinary adapter config metadata", () => {
     expect(
       findHostExecutionViolationsInSource(
@@ -239,7 +315,9 @@ describe("review regression guards", () => {
           import { components } from "./_generated/api"
           const adapterConfig = { components: ["metadata-only"] }
           const metadataComponents = adapterConfig.components
-          export default { components, metadataComponents }
+          const metadataAdapter = { components: ["also-metadata-only"] }
+          const metadataAdapterComponents = metadataAdapter.components
+          export default { components, metadataComponents, metadataAdapterComponents }
         `,
       ),
     ).toEqual([])

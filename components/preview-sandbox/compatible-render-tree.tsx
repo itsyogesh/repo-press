@@ -1,5 +1,5 @@
 import * as React from "react"
-import { type CompatibleFidelityLossCode, mergeCompatibleFidelityLosses } from "./compatible-diagnostics"
+import { type CompatibleFidelityLossCode, mergeCompatibleFidelityLosses } from "@/lib/preview/compatible-diagnostics"
 
 export const COMPATIBLE_RENDER_MAX_NODES = 2_048
 export const COMPATIBLE_RENDER_MAX_DEPTH = 32

@@ -5,12 +5,6 @@ import * as React from "react"
 import { CompatiblePreviewFrame } from "@/components/mdx-runtime/CompatiblePreviewFrame"
 import { GenericPreview } from "@/components/mdx-runtime/GenericPreview"
 import { PreviewStatus } from "@/components/mdx-runtime/PreviewStatus"
-import {
-  COMPATIBLE_FAILURE_MESSAGES,
-  COMPATIBLE_FIDELITY_LOSS_MESSAGES,
-  isCompatibleFailureCode,
-  isCompatibleFidelityLossCode,
-} from "@/components/preview-sandbox/compatible-diagnostics"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import type { FieldVariantMap } from "@/lib/framework-adapters"
@@ -22,6 +16,12 @@ import {
   type VerifiedCompatiblePreviewResolution,
   verifySignedCompatiblePreviewResolution,
 } from "@/lib/preview/compatible-artifact"
+import {
+  COMPATIBLE_FAILURE_MESSAGES,
+  COMPATIBLE_FIDELITY_LOSS_MESSAGES,
+  isCompatibleFailureCode,
+  isCompatibleFidelityLossCode,
+} from "@/lib/preview/compatible-diagnostics"
 import { buildGenericRenderModel } from "@/lib/preview/generic-render-model"
 import type { SandboxMessage } from "@/lib/preview/sandbox-protocol"
 import { resolveStudioAssetUrl } from "@/lib/studio/media-resolve"

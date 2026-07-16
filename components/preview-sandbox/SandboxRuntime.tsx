@@ -11,13 +11,13 @@ import {
   sha256Hex,
   verifyCompatibleExecutableDigest,
 } from "@/lib/preview/compatible-artifact"
-import type { PreviewDiagnostic } from "@/lib/preview/contracts"
-import { serializeSandboxMessage } from "@/lib/preview/sandbox-protocol"
 import {
   COMPATIBLE_FAILURE_MESSAGES,
   COMPATIBLE_FIDELITY_LOSS_MESSAGES,
   type CompatibleFailureCode,
-} from "./compatible-diagnostics"
+} from "@/lib/preview/compatible-diagnostics"
+import type { PreviewDiagnostic } from "@/lib/preview/contracts"
+import { serializeSandboxMessage } from "@/lib/preview/sandbox-protocol"
 import { type CompatibleRenderTree, CompatibleRenderTreeView } from "./compatible-render-tree"
 import {
   CompatibleWorkerPipelineError,

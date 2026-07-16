@@ -2,23 +2,30 @@ import fs from "node:fs"
 import path from "node:path"
 import ts from "typescript"
 
-const PRODUCTION_DIRECTORIES = ["app", "components", "lib", "hooks", "convex"] as const
 const PRODUCTION_EXTENSIONS = new Set([".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".mts", ".cts"])
 const EXCLUDED_DIRECTORIES = new Set([
+  ".agents",
+  ".claude",
+  ".codex",
+  ".git",
   ".next",
+  ".turbo",
+  ".vercel",
+  ".worktrees",
   "__tests__",
-  "_generated",
   "build",
   "coverage",
   "dist",
-  "generated",
   "node_modules",
   "out",
-  "test",
-  "tests",
+  "playwright-report",
+  "test-results",
 ])
 const SANDBOX_ALLOWLIST = path.join("components", "preview-sandbox")
+const CONVEX_GENERATED_OUTPUT = path.join("convex", "_generated")
 const COMPONENT_MAP_PROPERTIES = new Set(["components", "componentsByContext", "RenderBindings"])
+const SANDBOX_ROUTE_ENTRY = path.join("app", "preview", "sandbox", "page.tsx")
+const SANDBOX_ROUTE_MODULE = "@/components/preview-sandbox/SandboxRuntime"
 
 const forbiddenExecutionIdentifiers = new Set([
   "Function",
@@ -30,8 +37,10 @@ const forbiddenExecutionIdentifiers = new Set([
   "RenderBindings",
   "createRenderBindings",
   "componentsByContext",
+  "createCompatibleWorkerRenderer",
 ])
 const forbiddenExecutionModule = /(?:evaluateMdx|evaluate-adapter|esbuild-browser|execution-guard)(?:\.[cm]?[jt]sx?)?$/
+const previewSandboxModule = /(?:^|\/)(?:components\/)?preview-sandbox(?:\/|$)/
 
 type ExecutionTarget = "adapter" | "component-map" | "eval" | "function" | "global" | "import" | "require"
 
@@ -41,11 +50,7 @@ interface ResolvedValue {
 }
 
 function isExcludedProductionFile(fileName: string): boolean {
-  return (
-    /\.d\.[cm]?ts$/.test(fileName) ||
-    /(?:^|[.-])(?:test|spec)\.[^.]+$/.test(fileName) ||
-    /(?:^|[.-])generated\.[^.]+$/.test(fileName)
-  )
+  return /\.d\.[cm]?ts$/.test(fileName) || /(?:^|[.-])(?:test|spec)\.[^.]+$/.test(fileName)
 }
 
 function isProductionSourceFile(fileName: string): boolean {
@@ -59,7 +64,13 @@ function listDirectorySources(root: string, directory: string): string[] {
   return fs.readdirSync(absoluteDirectory, { withFileTypes: true }).flatMap((entry) => {
     const relativePath = path.join(directory, entry.name)
     if (entry.isDirectory()) {
-      if (EXCLUDED_DIRECTORIES.has(entry.name) || relativePath === SANDBOX_ALLOWLIST) return []
+      if (
+        EXCLUDED_DIRECTORIES.has(entry.name) ||
+        relativePath === CONVEX_GENERATED_OUTPUT ||
+        relativePath === SANDBOX_ALLOWLIST
+      ) {
+        return []
+      }
       return listDirectorySources(root, relativePath)
     }
     return entry.isFile() && isProductionSourceFile(entry.name) ? [relativePath] : []
@@ -67,12 +78,7 @@ function listDirectorySources(root: string, directory: string): string[] {
 }
 
 export function listHostProductionFiles(root = process.cwd()): string[] {
-  const nestedSources = PRODUCTION_DIRECTORIES.flatMap((directory) => listDirectorySources(root, directory))
-  const rootSources = fs
-    .readdirSync(root, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && isProductionSourceFile(entry.name))
-    .map((entry) => entry.name)
-  return [...nestedSources, ...rootSources]
+  return listDirectorySources(root, "")
 }
 
 function scriptKindFor(relativePath: string): ts.ScriptKind {
@@ -123,7 +129,6 @@ export function findHostExecutionViolationsInSource(relativePath: string, source
       if (expression.text === "componentsByContext" || expression.text === "RenderBindings") {
         return { target: "component-map" }
       }
-      if (/adapter(?:alias)?$/i.test(expression.text)) return { target: "adapter" }
       return undefined
     }
     if (expression.kind === ts.SyntaxKind.ImportKeyword) return { target: "import" }
@@ -154,6 +159,7 @@ export function findHostExecutionViolationsInSource(relativePath: string, source
       const base = resolve(expression.expression, resolving)
       if (propertyName === "constructor" || propertyName === "Function") return { target: "function" }
       if (propertyName === "eval") return { target: "eval" }
+      if (propertyName === "adapter") return { target: "adapter" }
       if (base?.target === "global" && propertyName === "require") return { target: "require" }
       if (propertyName && COMPONENT_MAP_PROPERTIES.has(propertyName) && base?.target === "adapter") {
         return { target: "component-map" }
@@ -202,11 +208,15 @@ export function findHostExecutionViolationsInSource(relativePath: string, source
 
   const assignObjectBindingAliases = (pattern: ts.ObjectBindingPattern, initializer: ts.Expression): boolean => {
     const sourceTarget = resolve(initializer)?.target
-    if (sourceTarget !== "adapter" && sourceTarget !== "global" && sourceTarget !== "component-map") return false
     let changed = false
     for (const element of pattern.elements) {
       if (!ts.isIdentifier(element.name)) continue
       const propertyName = propertyNameText(element.propertyName) ?? element.name.text
+      if (propertyName === "adapter") {
+        changed = assignAlias(element.name.text, { target: "adapter" }) || changed
+        continue
+      }
+      if (sourceTarget !== "adapter" && sourceTarget !== "global" && sourceTarget !== "component-map") continue
       const target =
         sourceTarget === "global"
           ? propertyName === "Function"
@@ -224,17 +234,23 @@ export function findHostExecutionViolationsInSource(relativePath: string, source
 
   const assignObjectLiteralAliases = (pattern: ts.ObjectLiteralExpression, initializer: ts.Expression): boolean => {
     const sourceTarget = resolve(initializer)?.target
-    if (sourceTarget !== "adapter" && sourceTarget !== "component-map") return false
     let changed = false
     for (const property of pattern.properties) {
       const propertyName = propertyNameText(property.name)
-      if (!propertyName || (!COMPONENT_MAP_PROPERTIES.has(propertyName) && sourceTarget !== "component-map")) continue
       const assignedName = ts.isShorthandPropertyAssignment(property)
         ? property.name.text
         : ts.isPropertyAssignment(property) && ts.isIdentifier(unwrapExpression(property.initializer))
           ? (unwrapExpression(property.initializer) as ts.Identifier).text
           : undefined
-      if (assignedName) changed = assignAlias(assignedName, { target: "component-map" }) || changed
+      if (!propertyName || !assignedName) continue
+      if (propertyName === "adapter") {
+        changed = assignAlias(assignedName, { target: "adapter" }) || changed
+      } else if (
+        (sourceTarget === "adapter" || sourceTarget === "component-map") &&
+        (COMPONENT_MAP_PROPERTIES.has(propertyName) || sourceTarget === "component-map")
+      ) {
+        changed = assignAlias(assignedName, { target: "component-map" }) || changed
+      }
     }
     return changed
   }
@@ -281,6 +297,36 @@ export function findHostExecutionViolationsInSource(relativePath: string, source
     }
   }
   const moduleText = (node: ts.Expression | undefined) => node && resolve(node)?.stringValue
+  const isTypeOnlyModuleEdge = (node: ts.ImportDeclaration | ts.ExportDeclaration): boolean => {
+    if (ts.isExportDeclaration(node)) return node.isTypeOnly
+    const clause = node.importClause
+    if (!clause) return false
+    if (clause.isTypeOnly) return true
+    return (
+      !clause.name &&
+      clause.namedBindings !== undefined &&
+      ts.isNamedImports(clause.namedBindings) &&
+      clause.namedBindings.elements.length > 0 &&
+      clause.namedBindings.elements.every((element) => element.isTypeOnly)
+    )
+  }
+  const isSandboxRouteEntry = (node: ts.ImportDeclaration | ts.ExportDeclaration, specifier: string): boolean => {
+    if (relativePath !== SANDBOX_ROUTE_ENTRY || specifier !== SANDBOX_ROUTE_MODULE || !ts.isImportDeclaration(node)) {
+      return false
+    }
+    const clause = node.importClause
+    return (
+      clause !== undefined &&
+      !clause.isTypeOnly &&
+      !clause.name &&
+      clause.namedBindings !== undefined &&
+      ts.isNamedImports(clause.namedBindings) &&
+      clause.namedBindings.elements.length === 1 &&
+      !clause.namedBindings.elements[0].isTypeOnly &&
+      !clause.namedBindings.elements[0].propertyName &&
+      clause.namedBindings.elements[0].name.text === "SandboxRuntime"
+    )
+  }
 
   const visit = (node: ts.Node) => {
     if (ts.isIdentifier(node) && forbiddenExecutionIdentifiers.has(node.text)) {
@@ -308,6 +354,14 @@ export function findHostExecutionViolationsInSource(relativePath: string, source
     if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
       const specifier =
         node.moduleSpecifier && ts.isStringLiteralLike(node.moduleSpecifier) ? node.moduleSpecifier.text : null
+      if (
+        specifier &&
+        previewSandboxModule.test(specifier) &&
+        !isTypeOnlyModuleEdge(node) &&
+        !isSandboxRouteEntry(node, specifier)
+      ) {
+        report(node, "host import of preview sandbox module")
+      }
       if (specifier && forbiddenExecutionModule.test(specifier)) report(node, "host import of sandbox execution module")
     }
     if (ts.isCallExpression(node) || ts.isNewExpression(node)) {
@@ -322,6 +376,13 @@ export function findHostExecutionViolationsInSource(relativePath: string, source
         (target?.target === "import" || target?.target === "require")
       ) {
         report(node, "dynamic host import of sandbox execution module")
+      }
+      if (
+        specifier &&
+        previewSandboxModule.test(specifier) &&
+        (target?.target === "import" || target?.target === "require")
+      ) {
+        report(node, "dynamic host import of preview sandbox module")
       }
     }
     ts.forEachChild(node, visit)

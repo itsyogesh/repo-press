@@ -4,7 +4,7 @@ import {
   type CompatibleFidelityLossCode,
   mergeCompatibleFidelityLosses,
   parseCompatibleFidelityLosses,
-} from "./compatible-diagnostics"
+} from "@/lib/preview/compatible-diagnostics"
 import { type CompatibleRenderTree, sanitizeCompatibleRenderTreeWithDiagnostics } from "./compatible-render-tree"
 import { compileMdx } from "./compileMdx"
 import { transpileAdapter } from "./esbuild-browser"
