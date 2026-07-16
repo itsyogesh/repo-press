@@ -207,15 +207,27 @@ describe("compatible worker containment", () => {
             try { Array.prototype[Symbol.iterator] = function* () {} } catch {}
             try { Object.keys = () => [] } catch {}
             try { Object.entries = () => [] } catch {}
+            try { String = () => "" } catch {}
+            try { Boolean = () => false } catch {}
             try { React.useEffect = () => undefined } catch {}
             try { React.useState = () => [0, () => undefined] } catch {}
             function Poisoned() {
               React.useEffect(() => undefined, [])
               React.useState(0)
+              React.Children.count([["nested", "children"]])
+              const validElement = React.isValidElement(<span>probe</span>)
+              const firstId = React.useId()
+              const secondId = React.useId()
               return <article
                 onClick={() => undefined}
                 style={{ color: "red" }}
-              ><h2>Poison resistant</h2><a href="https://evil.test">Link</a></article>
+              >
+                <h2>Poison resistant</h2>
+                <p>VISIBLE</p>
+                <p>{validElement ? "VALID_REACT_NODE" : "REJECTED_REACT_NODE"}</p>
+                <p>{firstId === secondId ? "DUPLICATE_IDS" : "UNIQUE_IDS"}</p>
+                <a href="https://evil.test">Link</a>
+              </article>
             }
             export default { components: { Poisoned } }
           `,
@@ -258,9 +270,16 @@ describe("compatible worker containment", () => {
         "STATIC_INERT_EVENT",
         "STATIC_INERT_STYLE",
         "STATIC_INERT_LINK",
+        "STATIC_INERT_UNSUPPORTED_COMPONENT",
       ]),
       tree: expect.arrayContaining([expect.objectContaining({ kind: "element", tag: "article" })]),
     })
-    expect(JSON.stringify(sent[0])).not.toContain("evil.test")
+    const serialized = JSON.stringify(sent[0])
+    expect(serialized).toContain("VISIBLE")
+    expect(serialized).toContain("VALID_REACT_NODE")
+    expect(serialized).not.toContain("REJECTED_REACT_NODE")
+    expect(serialized).toContain("UNIQUE_IDS")
+    expect(serialized).not.toContain("DUPLICATE_IDS")
+    expect(serialized).not.toContain("evil.test")
   })
 })

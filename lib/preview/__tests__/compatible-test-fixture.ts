@@ -11,7 +11,39 @@ function base64Url(bytes: Uint8Array) {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "")
 }
 
+const P256_ORDER = BigInt("0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551")
+const BIGINT_ZERO = BigInt(0)
+const BIGINT_TWO = BigInt(2)
+const BIGINT_EIGHT = BigInt(8)
+const BIGINT_BYTE_MASK = BigInt(255)
+
+function readScalar(bytes: Uint8Array, offset: number): bigint {
+  let value = BIGINT_ZERO
+  for (let index = offset; index < offset + 32; index += 1) {
+    value = (value << BIGINT_EIGHT) | BigInt(bytes[index])
+  }
+  return value
+}
+
+function writeScalar(bytes: Uint8Array, offset: number, value: bigint): void {
+  let remaining = value
+  for (let index = offset + 31; index >= offset; index -= 1) {
+    bytes[index] = Number(remaining & BIGINT_BYTE_MASK)
+    remaining >>= BIGINT_EIGHT
+  }
+}
+
+function canonicalizeP256Signature(input: ArrayBuffer): Uint8Array {
+  const signature = new Uint8Array(input)
+  if (signature.length !== 64) throw new Error("Expected a raw P-256 signature")
+  const s = readScalar(signature, 32)
+  if (s > P256_ORDER / BIGINT_TWO) writeScalar(signature, 32, P256_ORDER - s)
+  return signature
+}
+
 export async function createSignedCompatibleFixture(options?: {
+  keyId?: string
+  approvalId?: string
   tenantId?: string
   projectId?: string
   baseCommit?: string
@@ -20,6 +52,8 @@ export async function createSignedCompatibleFixture(options?: {
   documentSource?: string
   adapter?: CompatibleSourceArtifact["adapter"]
   rendererProfile?: "static-inert-v1" | "unsupported-profile" | null
+  issuedAt?: number
+  expiresAt?: number
   keyPair?: CryptoKeyPair
 }) {
   const keyPair =
@@ -34,21 +68,21 @@ export async function createSignedCompatibleFixture(options?: {
     documentSource: options?.documentSource ?? "# Isolated",
     adapter: options?.adapter ?? null,
   }
-  const now = Date.now()
+  const issuedAt = options?.issuedAt ?? Date.now()
   const rendererProfile = options?.rendererProfile === undefined ? "static-inert-v1" : options.rendererProfile
   const authorityWithoutSignature = {
     kind: "signed-preview-resolution" as const,
     algorithm: "ECDSA-P256-SHA256" as const,
-    keyId: "test-key",
-    approvalId: "approval-1",
+    keyId: options?.keyId ?? "test-key",
+    approvalId: options?.approvalId ?? "approval-1",
     tenantId: options?.tenantId ?? "tenant-1",
     projectId: options?.projectId ?? "project-1",
     baseCommit: options?.baseCommit ?? "abc123",
     sessionId: options?.sessionId ?? "session-1",
     snapshotVersion: options?.snapshotVersion ?? 1,
     ...(rendererProfile === null ? {} : { rendererProfile }),
-    issuedAt: now,
-    expiresAt: now + 60_000,
+    issuedAt,
+    expiresAt: options?.expiresAt ?? issuedAt + 60_000,
     executableDigest: await computeCompatibleExecutableDigest(artifact),
   }
   const signature = await crypto.subtle.sign(
@@ -57,7 +91,7 @@ export async function createSignedCompatibleFixture(options?: {
     createCompatibleApprovalPayload({ authority: authorityWithoutSignature as never, artifact }) as BufferSource,
   )
   const resolution = {
-    authority: { ...authorityWithoutSignature, signature: base64Url(new Uint8Array(signature)) },
+    authority: { ...authorityWithoutSignature, signature: base64Url(canonicalizeP256Signature(signature)) },
     artifact,
   } as unknown as SignedCompatiblePreviewResolution
   return {

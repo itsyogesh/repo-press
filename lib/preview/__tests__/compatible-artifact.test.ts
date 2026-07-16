@@ -7,6 +7,43 @@ import {
 } from "../compatible-artifact"
 import { createSignedCompatibleFixture } from "./compatible-test-fixture"
 
+const P256_ORDER = BigInt("0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551")
+const BIGINT_ZERO = BigInt(0)
+const BIGINT_ONE = BigInt(1)
+const BIGINT_TWO = BigInt(2)
+const BIGINT_EIGHT = BigInt(8)
+const BIGINT_BYTE_MASK = BigInt(255)
+
+function base64Url(bytes: Uint8Array): string {
+  let binary = ""
+  for (const byte of bytes) binary += String.fromCharCode(byte)
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "")
+}
+
+function decodeBase64Url(value: string): Uint8Array {
+  const padded = value
+    .replace(/-/g, "+")
+    .replace(/_/g, "/")
+    .padEnd(Math.ceil(value.length / 4) * 4, "=")
+  return Uint8Array.from(atob(padded), (character) => character.charCodeAt(0))
+}
+
+function readScalar(bytes: Uint8Array, offset: number): bigint {
+  let value = BIGINT_ZERO
+  for (let index = offset; index < offset + 32; index += 1) {
+    value = (value << BIGINT_EIGHT) | BigInt(bytes[index])
+  }
+  return value
+}
+
+function writeScalar(bytes: Uint8Array, offset: number, value: bigint): void {
+  let remaining = value
+  for (let index = offset + 31; index >= offset; index -= 1) {
+    bytes[index] = Number(remaining & BIGINT_BYTE_MASK)
+    remaining >>= BIGINT_EIGHT
+  }
+}
+
 describe("compatible artifact transport", () => {
   const expectedAuthority = {
     tenantId: "tenant-1",
@@ -73,6 +110,70 @@ describe("compatible artifact transport", () => {
         expectedAuthority,
       }),
     ).toBeNull()
+  })
+
+  it("rejects the constructed high-S twin of an otherwise valid raw P-256 signature before Web Crypto", async () => {
+    const fixture = await createSignedCompatibleFixture()
+    await expect(
+      verifySignedCompatiblePreviewResolution(fixture.wire, {
+        publicKey: fixture.publicKey,
+        expectedAuthority,
+      }),
+    ).resolves.not.toBeNull()
+
+    const twinSignature = decodeBase64Url(fixture.resolution.authority.signature)
+    const lowS = readScalar(twinSignature, 32)
+    expect(lowS).toBeGreaterThan(BIGINT_ZERO)
+    expect(lowS).toBeLessThanOrEqual(P256_ORDER / BIGINT_TWO)
+    writeScalar(twinSignature, 32, P256_ORDER - lowS)
+    const twin = {
+      ...fixture.resolution,
+      authority: { ...fixture.resolution.authority, signature: base64Url(twinSignature) },
+    }
+    const verify = vi.spyOn(crypto.subtle, "verify")
+    verify.mockClear()
+
+    await expect(
+      verifySignedCompatiblePreviewResolution(JSON.stringify(twin), {
+        publicKey: fixture.publicKey,
+        expectedAuthority,
+      }),
+    ).resolves.toBeNull()
+    expect(verify).not.toHaveBeenCalled()
+  })
+
+  it("rejects malformed raw P-256 scalar encodings before Web Crypto", async () => {
+    const fixture = await createSignedCompatibleFixture()
+    const scalarSignature = (r: bigint, s: bigint) => {
+      const bytes = new Uint8Array(64)
+      writeScalar(bytes, 0, r)
+      writeScalar(bytes, 32, s)
+      return base64Url(bytes)
+    }
+    const invalidSignatures = [
+      base64Url(new Uint8Array(63)),
+      base64Url(new Uint8Array(65)),
+      scalarSignature(BIGINT_ZERO, BIGINT_ONE),
+      scalarSignature(P256_ORDER, BIGINT_ONE),
+      scalarSignature(BIGINT_ONE, BIGINT_ZERO),
+      scalarSignature(BIGINT_ONE, P256_ORDER),
+    ]
+    const verify = vi.spyOn(crypto.subtle, "verify")
+    verify.mockClear()
+
+    for (const signature of invalidSignatures) {
+      const invalid = {
+        ...fixture.resolution,
+        authority: { ...fixture.resolution.authority, signature },
+      }
+      await expect(
+        verifySignedCompatiblePreviewResolution(JSON.stringify(invalid), {
+          publicKey: fixture.publicKey,
+          expectedAuthority,
+        }),
+      ).resolves.toBeNull()
+    }
+    expect(verify).not.toHaveBeenCalled()
   })
 
   it("recomputes the executable digest and rejects source swapped under old approval metadata", async () => {

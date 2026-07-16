@@ -1,7 +1,13 @@
 import fs from "node:fs"
+import os from "node:os"
 import path from "node:path"
 import ts from "typescript"
 import { describe, expect, it } from "vitest"
+import {
+  findHostExecutionViolations,
+  findHostExecutionViolationsInSource,
+  listHostProductionFiles,
+} from "../host-execution-guard"
 
 const ROOT = process.cwd()
 
@@ -36,22 +42,6 @@ function read(relativePath: string) {
   return fs.readFileSync(path.join(ROOT, relativePath), "utf8")
 }
 
-const hostExecutionRoots = ["app", "components", "lib"]
-const hostExecutionExtensions = new Set([".js", ".jsx", ".ts", ".tsx"])
-
-const forbiddenExecutionIdentifiers = new Set([
-  "Function",
-  "eval",
-  "evaluateMdx",
-  "evaluateAdapter",
-  "transpileAdapter",
-  "RepoPressPreviewAdapter",
-  "RenderBindings",
-  "createRenderBindings",
-  "componentsByContext",
-])
-const forbiddenExecutionModule = /(?:evaluateMdx|evaluate-adapter|esbuild-browser|execution-guard)(?:\.[jt]sx?)?$/
-
 const removedHostExecutionPaths = [
   "app/dashboard/[owner]/[repo]/adapter-actions.ts",
   "app/dashboard/[owner]/[repo]/plugin-actions.ts",
@@ -71,93 +61,26 @@ const removedHostExecutionPaths = [
   "lib/preview/render-bindings.ts",
 ]
 
-function listHostExecutionFiles(directory: string): string[] {
+function listSandboxSourceFiles(directory: string): string[] {
   const absoluteDirectory = path.join(ROOT, directory)
   if (!fs.existsSync(absoluteDirectory)) return []
 
   return fs.readdirSync(absoluteDirectory, { withFileTypes: true }).flatMap((entry) => {
     const relativePath = path.join(directory, entry.name)
     if (entry.isDirectory()) {
-      if (
-        entry.name === "__tests__" ||
-        entry.name === "node_modules" ||
-        relativePath === path.join("components", "preview-sandbox")
-      ) {
-        return []
-      }
-      return listHostExecutionFiles(relativePath)
+      if (entry.name === "__tests__" || entry.name === "node_modules") return []
+      return listSandboxSourceFiles(relativePath)
     }
 
-    return entry.isFile() && hostExecutionExtensions.has(path.extname(entry.name)) ? [relativePath] : []
-  })
-}
-
-function findHostExecutionViolations(): string[] {
-  return hostExecutionRoots.flatMap(listHostExecutionFiles).flatMap((relativePath) => {
-    const source = read(relativePath)
-    const sourceFile = ts.createSourceFile(
-      relativePath,
-      source,
-      ts.ScriptTarget.Latest,
-      true,
-      relativePath.endsWith("x") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
-    )
-    const violations: string[] = []
-    const report = (node: ts.Node, label: string) => {
-      const position = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile))
-      violations.push(`${relativePath}:${position.line + 1}: ${label}`)
-    }
-    const moduleText = (node: ts.Expression | undefined) => (node && ts.isStringLiteralLike(node) ? node.text : null)
-    const visit = (node: ts.Node) => {
-      if (ts.isIdentifier(node) && forbiddenExecutionIdentifiers.has(node.text)) {
-        report(node, `forbidden execution identifier ${node.text}`)
-      }
-      if (
-        (ts.isPropertyAccessExpression(node) && ["constructor", "Function"].includes(node.name.text)) ||
-        (ts.isElementAccessExpression(node) &&
-          ["constructor", "Function"].includes(moduleText(node.argumentExpression) ?? ""))
-      ) {
-        report(node, "dynamic constructor access")
-      }
-      if (
-        (ts.isPropertyAccessExpression(node) && node.name.text === "eval") ||
-        (ts.isElementAccessExpression(node) && moduleText(node.argumentExpression) === "eval")
-      ) {
-        report(node, "computed eval access")
-      }
-      if (
-        ts.isPropertyAccessExpression(node) &&
-        node.name.text === "components" &&
-        /adapter/i.test(node.expression.getText(sourceFile))
-      ) {
-        report(node, "executable adapter component-map access")
-      }
-      if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
-        const specifier = node.moduleSpecifier && moduleText(node.moduleSpecifier)
-        if (specifier && forbiddenExecutionModule.test(specifier))
-          report(node, "host import of sandbox execution module")
-      }
-      if (ts.isCallExpression(node)) {
-        const specifier = node.arguments.length === 1 ? moduleText(node.arguments[0]) : null
-        if (
-          specifier &&
-          forbiddenExecutionModule.test(specifier) &&
-          (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
-            (ts.isIdentifier(node.expression) && node.expression.text === "require"))
-        ) {
-          report(node, "dynamic host import of sandbox execution module")
-        }
-      }
-      ts.forEachChild(node, visit)
-    }
-    visit(sourceFile)
-    return violations
+    return entry.isFile() && new Set([".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"]).has(path.extname(entry.name))
+      ? [relativePath]
+      : []
   })
 }
 
 function findNavigableSandboxExecutionViolations(): string[] {
   const allowedWorkerSource = path.join("components", "preview-sandbox", "compatible-worker.ts")
-  return listHostExecutionFiles(path.join("components", "preview-sandbox")).flatMap((relativePath) => {
+  return listSandboxSourceFiles(path.join("components", "preview-sandbox")).flatMap((relativePath) => {
     if (relativePath === allowedWorkerSource) return []
     const sourceFile = ts.createSourceFile(
       relativePath,
@@ -185,6 +108,92 @@ function findNavigableSandboxExecutionViolations(): string[] {
 }
 
 describe("review regression guards", () => {
+  it("detects computed and aliased host execution primitives", () => {
+    const violations = findHostExecutionViolationsInSource(
+      "app/adversarial.ts",
+      `
+        const host = globalThis
+        const functionName = "Fun" + "ction"
+        const compile = host[functionName]
+        compile("return 1")()
+
+        const directCompile = Function
+        directCompile("return 3")()
+
+        const indirectEval = (0, eval)
+        indirectEval("globalThis.compromised = true")
+
+        const constructorName = "con" + "structor"
+        const nestedCompile = []["filter"][constructorName]
+        nestedCompile("return 2")()
+
+        const loader = require
+        const guardedModule = "@/components/preview-sandbox/" + "execution-guard"
+        loader(guardedModule)
+
+        const importedModule = "./evaluate-" + "adapter"
+        import(importedModule)
+
+        const importLater = (specifier) => import(specifier)
+        importLater(guardedModule)
+      `,
+    )
+
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("dynamic Function execution"),
+        expect.stringContaining("indirect eval execution"),
+        expect.stringContaining("dynamic constructor access"),
+        expect.stringContaining("dynamic host import of sandbox execution module"),
+      ]),
+    )
+  })
+
+  it("scans every production source surface while excluding non-production code and the sandbox", () => {
+    const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), "repopress-host-scan-"))
+    const productionFiles = [
+      "app/page.tsx",
+      "components/card.jsx",
+      "lib/runtime.ts",
+      "hooks/use-runtime.js",
+      "convex/runtime.cjs",
+      "proxy.ts",
+      "instrumentation.mjs",
+      "root-component.tsx",
+      "root-runtime.js",
+      "root-widget.jsx",
+      "root-worker.cjs",
+    ]
+    const excludedFiles = [
+      "app/__tests__/page.test.tsx",
+      "lib/runtime.spec.ts",
+      "lib/config/runtime.ts",
+      "convex/_generated/api.js",
+      "components/preview-sandbox/compatible-worker.ts",
+      ".next/server/app.js",
+      "dist/runtime.js",
+      "next.config.mjs",
+    ]
+
+    try {
+      for (const relativePath of [...productionFiles, ...excludedFiles]) {
+        const absolutePath = path.join(fixtureRoot, relativePath)
+        fs.mkdirSync(path.dirname(absolutePath), { recursive: true })
+        fs.writeFileSync(
+          absolutePath,
+          relativePath === "next.config.mjs"
+            ? `export default { headers: "script-src 'self' 'unsafe-eval'" }\n`
+            : "export const value = 1\n",
+        )
+      }
+
+      const discovered = listHostProductionFiles(fixtureRoot).sort()
+      expect(discovered).toEqual([...productionFiles].sort())
+    } finally {
+      fs.rmSync(fixtureRoot, { recursive: true, force: true })
+    }
+  })
+
   it("keeps repository and MDX execution out of the host realm", () => {
     expect(findHostExecutionViolations()).toEqual([])
     for (const relativePath of removedHostExecutionPaths) {

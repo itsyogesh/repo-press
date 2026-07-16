@@ -1,5 +1,5 @@
 import { createRequire } from "node:module"
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { StrictMode } from "react"
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { Preview } from "@/components/studio/preview"
@@ -60,6 +60,7 @@ const authorityContext: CompatiblePreviewAuthorityContext = {
 }
 let serverResolution: VerifiedCompatiblePreviewResolution
 let serverWire: string
+let reissuedServerWire: string
 let changedServerWire: string
 let secondSessionResolution: VerifiedCompatiblePreviewResolution
 let secondSessionAuthority: CompatiblePreviewAuthorityContext
@@ -78,6 +79,16 @@ beforeAll(async () => {
   })
   if (!verified) throw new Error("Expected signed fixture to verify")
   serverResolution = verified
+  const reissued = await createSignedCompatibleFixture({
+    keyPair: fixture.keyPair,
+    keyId: "same-trust-key-new-label",
+    approvalId: "approval-2",
+    issuedAt: fixture.resolution.authority.issuedAt + 1,
+    expiresAt: fixture.resolution.authority.expiresAt + 1,
+  })
+  expect(reissued.resolution.authority.executableDigest).toBe(fixture.resolution.authority.executableDigest)
+  expect(reissued.resolution.authority.signature).not.toBe(fixture.resolution.authority.signature)
+  reissuedServerWire = reissued.wire
   changedServerWire = (await createSignedCompatibleFixture({ documentSource: "# Changed", keyPair: fixture.keyPair }))
     .wire
   const secondSession = await createSignedCompatibleFixture({ sessionId: "session-2", keyPair: fixture.keyPair })
@@ -622,7 +633,7 @@ describe("CompatiblePreviewFrame", () => {
     expect(await screen.findByTitle("Compatible component preview")).toBeInTheDocument()
   })
 
-  it("downgrades through the authenticated frame channel, blocks the same attempt, and retries a changed approval", async () => {
+  it("keeps reissued equivalent content suppressed and retries a changed executable digest", async () => {
     vi.stubEnv("NEXT_PUBLIC_PREVIEW_ORIGIN", "https://preview.repopress.test")
     const channels: FakeMessageChannel[] = []
     vi.stubGlobal(
@@ -682,6 +693,25 @@ describe("CompatiblePreviewFrame", () => {
 
     rerender(<Preview {...props} compatibleAuthority={{ ...authorityContext }} />)
     await waitFor(() => expect(screen.queryByTitle("Compatible component preview")).not.toBeInTheDocument())
+    expect(channels).toHaveLength(1)
+
+    let releaseVerification = () => {}
+    const verificationGate = new Promise<void>((resolve) => {
+      releaseVerification = resolve
+    })
+    const originalVerify = crypto.subtle.verify.bind(crypto.subtle)
+    const verify = vi.spyOn(crypto.subtle, "verify").mockImplementation(async (algorithm, key, signature, data) => {
+      await verificationGate
+      return originalVerify(algorithm, key, signature, data)
+    })
+    rerender(
+      <Preview {...props} compatibleResolution={reissuedServerWire} compatibleAuthority={{ ...authorityContext }} />,
+    )
+    await waitFor(() => expect(verify).toHaveBeenCalledTimes(1))
+    expect(screen.queryByText("Links are unavailable in static-inert-v1.")).not.toBeInTheDocument()
+    await act(async () => releaseVerification())
+    expect(await screen.findByText("Links are unavailable in static-inert-v1.")).toBeInTheDocument()
+    expect(screen.queryByTitle("Compatible component preview")).not.toBeInTheDocument()
     expect(channels).toHaveLength(1)
 
     rerender(

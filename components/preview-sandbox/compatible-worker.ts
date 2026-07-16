@@ -129,7 +129,10 @@ function createRequestId(): string {
 /** This function is stringified. It must remain completely self-contained. */
 function compatibleWorkerMain() {
   const root = globalThis as any
+  const SafeError = Error
   const UnsafeFunction = Function
+  const booleanFrom = Boolean
+  const stringFrom = String
   const uncurryThis = (fn: any) => Function.prototype.call.bind(fn)
   const arrayPush = uncurryThis(Array.prototype.push)
   const arrayIsArray = Array.isArray
@@ -291,11 +294,16 @@ function compatibleWorkerMain() {
     context.Consumer = ({ children }: any) => children(context._currentValue)
     return context
   }
+  let staticIdCounter = 0
   const React = {
     Fragment,
     Children: {
-      count: (children: any) => (arrayIsArray(children) ? children.length : children == null ? 0 : 1),
+      count: (children: any) => {
+        recordFidelityLoss("STATIC_INERT_UNSUPPORTED_COMPONENT")
+        return arrayIsArray(children) ? children.length : children == null ? 0 : 1
+      },
       map: (children: any, callback: any) => {
+        recordFidelityLoss("STATIC_INERT_UNSUPPORTED_COMPONENT")
         const source = arrayIsArray(children) ? children : children == null ? [] : [children]
         const output: any[] = []
         for (let index = 0; index < source.length; index += 1) {
@@ -303,18 +311,23 @@ function compatibleWorkerMain() {
         }
         return output
       },
-      toArray: (children: any) => (arrayIsArray(children) ? copyArray(children) : children == null ? [] : [children]),
+      toArray: (children: any) => {
+        recordFidelityLoss("STATIC_INERT_UNSUPPORTED_COMPONENT")
+        return arrayIsArray(children) ? copyArray(children) : children == null ? [] : [children]
+      },
     },
-    cloneElement: (value: any, props: any, ...children: any[]) =>
-      element(
+    cloneElement: (value: any, props: any, ...children: any[]) => {
+      recordFidelityLoss("STATIC_INERT_UNSUPPORTED_COMPONENT")
+      return element(
         value.type,
         objectAssign(objectCreate(null), value.props || {}, props || {}),
         children.length ? children : undefined,
-      ),
+      )
+    },
     createContext,
     createElement,
     forwardRef,
-    isValidElement: (value: any) => Boolean(value && value.__repopressElement === 1),
+    isValidElement: (value: any) => booleanFrom(value && value.__repopressElement === 1),
     memo: (component: any) => {
       recordFidelityLoss("STATIC_INERT_UNSUPPORTED_COMPONENT")
       return component
@@ -325,7 +338,10 @@ function compatibleWorkerMain() {
       return context?._currentValue
     },
     useEffect: () => recordFidelityLoss("STATIC_INERT_EFFECT"),
-    useId: () => "repopress-static-id",
+    useId: () => {
+      staticIdCounter += 1
+      return `:repopress-static-${staticIdCounter}:`
+    },
     useInsertionEffect: () => recordFidelityLoss("STATIC_INERT_INSERTION_EFFECT"),
     useLayoutEffect: () => recordFidelityLoss("STATIC_INERT_LAYOUT_EFFECT"),
     useMemo: (factory: any) => factory(),
@@ -379,7 +395,7 @@ function compatibleWorkerMain() {
       if (name === "react") return React
       if (name === "react/jsx-runtime" || name === "react/jsx-dev-runtime") return jsxRuntime
       if (objectHasOwn(shimModules, name)) return shimModules[name]
-      throw new Error(`Module ${name} is unavailable in compatible preview`)
+      throw new SafeError(`Module ${name} is unavailable in compatible preview`)
     }
     const parameters = ["exports", "module", "require", "React"]
     appendArray(parameters, blockedNames)
@@ -406,7 +422,7 @@ function compatibleWorkerMain() {
         ? objectAssign(objectCreate(null), adapter.scope)
         : objectCreate(null)
     const allowed = adapter.allowImports && typeof adapter.allowImports === "object" ? adapter.allowImports : {}
-    if (!arrayIsArray(job.imports) || job.imports.length > 128) throw new Error("Too many compatible imports")
+    if (!arrayIsArray(job.imports) || job.imports.length > 128) throw new SafeError("Too many compatible imports")
     for (let index = 0; index < job.imports.length; index += 1) {
       const imported = job.imports[index]
       if (
@@ -416,11 +432,11 @@ function compatibleWorkerMain() {
         typeof imported.local !== "string" ||
         !regexpTest(/^[A-Za-z_$][A-Za-z0-9_$]*$/, imported.local)
       ) {
-        throw new Error("Invalid compatible import binding")
+        throw new SafeError("Invalid compatible import binding")
       }
       const moduleValue = allowed[imported.source]
       if (!moduleValue || !objectHasOwn(moduleValue, imported.imported)) {
-        throw new Error(`Import ${imported.imported} from ${imported.source} is unavailable`)
+        throw new SafeError(`Import ${imported.imported} from ${imported.source} is unavailable`)
       }
       scope[imported.local] = moduleValue[imported.imported]
     }
@@ -468,7 +484,8 @@ function compatibleWorkerMain() {
     arrayPush(parameters, job.mdxCode)
     const execute = reflectApply(UnsafeFunction, undefined, parameters)
     const moduleValue = reflectApply(execute, undefined, values)
-    if (!moduleValue || typeof moduleValue.default !== "function") throw new Error("Compatible MDX has no component")
+    if (!moduleValue || typeof moduleValue.default !== "function")
+      throw new SafeError("Compatible MDX has no component")
     return moduleValue.default({ components })
   }
 
@@ -609,10 +626,10 @@ function compatibleWorkerMain() {
   function renderTree(value: any) {
     const budget = { nodes: 0, text: 0 }
     const visit = (node: any, depth: number): any[] => {
-      if (depth > 32) throw new Error("Compatible render depth exceeded")
+      if (depth > 32) throw new SafeError("Compatible render depth exceeded")
       if (node === null || node === undefined || typeof node === "boolean") return []
       if (arrayIsArray(node)) {
-        if (node.length > 128) throw new Error("Compatible child count exceeded")
+        if (node.length > 128) throw new SafeError("Compatible child count exceeded")
         const children: any[] = []
         for (let index = 0; index < node.length; index += 1) {
           appendArray(children, visit(node[index], depth + 1))
@@ -620,15 +637,17 @@ function compatibleWorkerMain() {
         return children
       }
       if (typeof node === "string" || typeof node === "number" || typeof node === "bigint") {
-        const text = String(node)
+        const text = stringFrom(node)
         budget.nodes += 1
         budget.text += text.length
-        if (budget.nodes > 2_048 || budget.text > 192 * 1_024) throw new Error("Compatible render budget exceeded")
+        if (budget.nodes > 2_048 || budget.text > 192 * 1_024) {
+          throw new SafeError("Compatible render budget exceeded")
+        }
         return [{ kind: "text", value: text }]
       }
-      if (!node || node.__repopressElement !== 1) throw new Error("Unsupported compatible render value")
+      if (!node || node.__repopressElement !== 1) throw new SafeError("Unsupported compatible render value")
       budget.nodes += 1
-      if (budget.nodes > 2_048) throw new Error("Compatible render node budget exceeded")
+      if (budget.nodes > 2_048) throw new SafeError("Compatible render node budget exceeded")
       const props = node.props && typeof node.props === "object" ? node.props : {}
       if (node.type === Fragment) return visit(props.children, depth + 1)
       if (typeof node.type === "function") {
@@ -640,7 +659,7 @@ function compatibleWorkerMain() {
         } else output = node.type(props)
         return visit(output, depth + 1)
       }
-      if (typeof node.type !== "string") throw new Error("Unsupported compatible component type")
+      if (typeof node.type !== "string") throw new SafeError("Unsupported compatible component type")
       const tag = stringToLowerCase(node.type)
       recordTagLoss(tag)
       const sanitizedProps = safeProps(props)

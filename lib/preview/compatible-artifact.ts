@@ -395,7 +395,23 @@ export function parseConfiguredPreviewApprovalKey(input: string | undefined): Js
 
 function decodeSignature(input: string): Uint8Array | null {
   const decoded = decodeCompatibleArtifactChunk(input)
-  return decoded?.length === 64 ? decoded : null
+  if (decoded?.length !== 64) return null
+
+  const zero = BigInt(0)
+  const two = BigInt(2)
+  const eight = BigInt(8)
+  const readScalar = (offset: number) => {
+    let value = zero
+    for (let index = offset; index < offset + 32; index += 1) {
+      value = (value << eight) | BigInt(decoded[index] ?? 0)
+    }
+    return value
+  }
+  const order = BigInt("0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551")
+  const r = readScalar(0)
+  const s = readScalar(32)
+  if (r === zero || r >= order || s === zero || s >= order || s > order / two) return null
+  return decoded
 }
 
 export async function verifySignedCompatiblePreviewResolution(

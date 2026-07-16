@@ -104,16 +104,10 @@ function compatibleAttemptKey(resolution: VerifiedCompatiblePreviewResolution): 
     authority.tenantId,
     authority.projectId,
     authority.baseCommit,
-    authority.keyId,
-    authority.approvalId,
-    authority.executableDigest,
-    authority.signature,
     authority.sessionId,
     authority.snapshotVersion,
-    authority.issuedAt,
-    authority.expiresAt,
     authority.rendererProfile,
-    resolution.artifact.artifactId,
+    authority.executableDigest,
   ])
 }
 
