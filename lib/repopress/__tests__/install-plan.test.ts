@@ -111,6 +111,19 @@ function filesFromPlan(result: ReturnType<typeof planRegistryInstall>) {
   return result.fileChanges.map((change) => ({ path: change.path, content: change.after }))
 }
 
+function lockEntryDigest(entry: {
+  targets: Array<{ path: string; digest: string }>
+  managedCss: Array<{ path: string; digest: string }>
+}): string {
+  const targets = [...entry.targets]
+    .sort((left, right) => left.path.localeCompare(right.path))
+    .map((target) => `${target.path}\0${target.digest}\n`)
+  const css = [...entry.managedCss]
+    .sort((left, right) => left.path.localeCompare(right.path))
+    .map((record) => `css\0${record.path}\0${record.digest}\n`)
+  return sha([...targets, ...css].join(""))
+}
+
 describe("planRegistryInstall", () => {
   it.each([
     ["root", "components", "@/components", "components/repopress/callout.tsx", "@/components/repopress/callout"],
@@ -645,6 +658,143 @@ describe("planRegistryInstall", () => {
     })
     expect(result.conflicts).toContainEqual(expect.objectContaining({ code: "UNSUPPORTED_CSS" }))
     expect(result.cssChanges).toEqual([])
+  })
+
+  it("blocks package and CSS outputs that grow beyond their accepted input limits", () => {
+    const packageItem = registrySource({ id: "@example/package-output-limit", packages: ["tiny-package@1.0.0"] })
+    const packageShell = '{"dependencies":{}}\n'
+    const nearPackageLimit = `${" ".repeat(1024 * 1024 - packageShell.length - 8)}${packageShell}`
+    const packageResult = plan([packageItem], {
+      currentFiles: [
+        { path: "mdx-components.tsx", content: runtimeSource },
+        { path: "package.json", content: nearPackageLimit },
+      ],
+    })
+    expect(packageResult.conflicts).toContainEqual(
+      expect.objectContaining({ code: "OUTPUT_LIMIT_EXCEEDED", path: "package.json" }),
+    )
+    expect(packageResult.packageChanges).toEqual([])
+    expect(packageResult.fileChanges.find((change) => change.kind === "package")).toBeUndefined()
+
+    const cssItem = registrySource({
+      id: "@example/css-output-limit",
+      cssVars: { light: { accent: "oklch(0.5 0.1 250)" } },
+    })
+    const nearCssLimit = "x".repeat(1024 * 1024 - 32)
+    const cssResult = plan([cssItem], {
+      currentFiles: [
+        { path: "mdx-components.tsx", content: runtimeSource },
+        { path: "app/globals.css", content: nearCssLimit },
+      ],
+    })
+    expect(cssResult.conflicts).toContainEqual(
+      expect.objectContaining({ code: "OUTPUT_LIMIT_EXCEEDED", path: "app/globals.css" }),
+    )
+    expect(cssResult.cssChanges).toEqual([])
+    expect(cssResult.fileChanges.find((change) => change.kind === "css")).toBeUndefined()
+    expect(cssResult.lockSnapshot.items["@example/css-output-limit"].managedCss).toEqual([])
+  })
+
+  it("bounds aggregate package requests without emitting a partial package edit", () => {
+    const sources = Array.from({ length: 5 }, (_, itemIndex) =>
+      registrySource({
+        id: `@example/package-limit-${itemIndex}`,
+        packages: Array.from({ length: 256 }, (_, packageIndex) => `package-${itemIndex}-${packageIndex}@1.0.0`),
+      }),
+    )
+    const resolved = resolveRegistryItems({
+      requested: sources.map((source) => source.reference),
+      sources,
+      framework: "next",
+    })
+    const result = planRegistryInstall({
+      resolved,
+      layout: layout(),
+      currentFiles: [
+        { path: "mdx-components.tsx", content: "export const components = {}\n" },
+        { path: "package.json", content: "{}\n" },
+      ],
+      currentLock: null,
+    })
+    expect(result.conflicts).toContainEqual(
+      expect.objectContaining({ code: "OUTPUT_LIMIT_EXCEEDED", path: "package.json" }),
+    )
+    expect(result.packageChanges).toEqual([])
+    expect(result.fileChanges.find((change) => change.kind === "package")).toBeUndefined()
+  })
+
+  it("keeps emitted near-limit package and CSS outputs acceptable on the next plan", () => {
+    const item = registrySource({
+      id: "@example/repeat-output",
+      packages: ["tiny-package@1.0.0"],
+      cssVars: { light: { accent: "oklch(0.5 0.1 250)" } },
+    })
+    const packageShell = '{"dependencies":{}}\n'
+    const packageContent = `${" ".repeat(1024 * 1024 - packageShell.length - 16 * 1024)}${packageShell}`
+    const initial = plan([item], {
+      currentFiles: [
+        { path: "mdx-components.tsx", content: runtimeSource },
+        { path: "package.json", content: packageContent },
+        { path: "app/globals.css", content: "x".repeat(1024 * 1024 - 16 * 1024) },
+      ],
+    })
+    expect(initial.conflicts).toEqual([])
+    const repeated = plan([item], { currentFiles: filesFromPlan(initial), currentLock: initial.lockSnapshot })
+    expect(repeated.conflicts).toEqual([])
+    expect(repeated.fileChanges.find((change) => ["package", "css"].includes(change.kind))).toBeUndefined()
+  })
+
+  it.each(["crossed", "nested"])("rejects %s managed CSS intervals globally when updating one item", (shape) => {
+    const first = registrySource({ id: "@example/interval-a", cssVars: { light: { first: "one" } } })
+    const second = registrySource({ id: "@example/interval-b", cssVars: { light: { second: "two" } } })
+    const initialResolved = resolveRegistryItems({
+      requested: [first.reference, second.reference],
+      sources: [first, second],
+      framework: "next",
+    })
+    const initial = planRegistryInstall({
+      resolved: initialResolved,
+      layout: layout(),
+      currentFiles: [
+        { path: "mdx-components.tsx", content: "export const components = {}\n" },
+        { path: "app/globals.css", content: "@import 'tailwindcss';\n" },
+      ],
+      currentLock: null,
+    })
+    const crossed =
+      "/* repopress:@example/interval-a:start */\n:root { --first: one; }\n/* repopress:@example/interval-b:start */\n:root { --second: two; }\n/* repopress:@example/interval-a:end */\n/* repopress:@example/interval-b:end */\n"
+    const nested =
+      "/* repopress:@example/interval-a:start */\n:root { --first: one; }\n/* repopress:@example/interval-b:start */\n:root { --second: two; }\n/* repopress:@example/interval-b:end */\n/* repopress:@example/interval-a:end */\n"
+    const css = shape === "crossed" ? crossed : nested
+    const lock = JSON.parse(JSON.stringify(initial.lockSnapshot))
+    for (const itemId of ["@example/interval-a", "@example/interval-b"] as const) {
+      const start = css.indexOf(`/* repopress:${itemId}:start */`)
+      const endMarker = `/* repopress:${itemId}:end */`
+      const end = css.indexOf(endMarker) + endMarker.length
+      lock.items[itemId].managedCss[0].digest = sha(css.slice(start, end))
+      lock.items[itemId].localModificationDigest = lockEntryDigest(lock.items[itemId])
+    }
+    const currentFiles = filesFromPlan(initial).map((file) => {
+      if (file.path === "app/globals.css") return { ...file, content: css }
+      if (file.path === "repopress.lock.json") return { ...file, content: `${JSON.stringify(lock, null, 2)}\n` }
+      return file
+    })
+    const onlyFirst = resolveRegistryItems({
+      requested: [first.reference],
+      sources: [first, second],
+      framework: "next",
+    })
+    const result = planRegistryInstall({
+      resolved: onlyFirst,
+      layout: layout(),
+      currentFiles,
+      currentLock: lock,
+    })
+    expect(result.conflicts).toContainEqual(
+      expect.objectContaining({ code: "MANAGED_CSS_MODIFIED", path: "app/globals.css" }),
+    )
+    expect(result.cssChanges).toEqual([])
+    expect(result.fileChanges.find((change) => change.kind === "css")).toBeUndefined()
   })
 
   it("patches package dependencies without reserializing unrelated bytes and is idempotent", () => {

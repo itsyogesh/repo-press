@@ -19,6 +19,8 @@ const MAX_PACKAGE_JSON_PROPERTIES = 10_000
 const MAX_PACKAGE_JSON_STRING_BYTES = 512 * 1024
 const MAX_PLANNED_CSS_DECLARATIONS = 2_048
 const MAX_PLANNED_CSS_BYTES = 512 * 1024
+const MAX_PACKAGE_REQUESTS = 1_024
+const MAX_PACKAGE_ADDITION_BYTES = 256 * 1024
 const SAFE_ALIAS = /^@[A-Za-z0-9._-]+$/u
 const SAFE_IMPORT_PREFIX =
   /^(?:@\/[A-Za-z0-9._~/-]+|@?[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._~/-]+)*|[.]{1,2}\/[A-Za-z0-9._~/-]+)$/u
@@ -60,6 +62,7 @@ export interface InstallConflict {
     | "LOCK_DIGEST_MISMATCH"
     | "STALE_TARGET"
     | "MANAGED_CSS_MODIFIED"
+    | "OUTPUT_LIMIT_EXCEEDED"
   path: string
   message: string
 }
@@ -293,7 +296,9 @@ type ParsedPackageDocument = {
 
 function lineIndent(source: string, position: number): string {
   const lineStart = source.lastIndexOf("\n", Math.max(0, position - 1)) + 1
-  return source.slice(lineStart, position).match(/^[\t ]*/u)?.[0] ?? ""
+  let start = position
+  while (start > lineStart && (source[start - 1] === " " || source[start - 1] === "\t")) start -= 1
+  return source.slice(start, position)
 }
 
 function parsePackageDocument(source: string): ParsedPackageDocument {
@@ -395,8 +400,16 @@ function appendObjectMembers(
   const memberIndent = first ? lineIndent(body, first.getStart(sourceFile)) : fallbackIndent
   const last = object.properties.at(-1)
   if (!last) {
+    const open = object.getStart(sourceFile) + 1
+    if (!body.slice(open, close).includes("\n")) {
+      return {
+        start: open + bomOffset,
+        end: close + bomOffset,
+        text: rawMembers.join(", "),
+      }
+    }
     return {
-      start: object.getStart(sourceFile) + 1 + bomOffset,
+      start: open + bomOffset,
       end: close + bomOffset,
       text: `${newline}${memberIndent}${rawMembers.join(`,${newline}${memberIndent}`)}${newline}${lineIndent(body, close)}`,
     }
@@ -593,6 +606,18 @@ function indexManagedCssBlocks(source: string): Map<string, LocatedCssBlock | "i
   return blocks
 }
 
+function managedCssIntervalsOverlap(blocks: ReadonlyMap<string, LocatedCssBlock | "invalid">): boolean {
+  const intervals = [...blocks.values()]
+    .filter((block): block is LocatedCssBlock => block !== "invalid")
+    .sort((left, right) => left.start - right.start || left.end - right.end)
+  let previousEnd = -1
+  for (const interval of intervals) {
+    if (interval.start < previousEnd) return true
+    previousEnd = Math.max(previousEnd, interval.end)
+  }
+  return false
+}
+
 function plannedCssBudget(items: readonly ResolvedRegistryItem[]): InstallConflict | null {
   let declarations = 0
   let bytes = 0
@@ -729,6 +754,8 @@ export function planRegistryInstall(input: PlanRegistryInstallInput): RegistryIn
   const warnings: InstallWarning[] = []
   const fileChanges: InstallFileChange[] = []
   const packageRequests = new Map<string, { kind: "dependency" | "devDependency"; spec: string | null }>()
+  let packageRequestBytes = 0
+  let packageRequestLimitExceeded = false
   const targetOwners = new Map<string, string>()
   for (const path of [layout.runtimeMapPath, layout.packageJsonPath, layout.cssTarget, layout.lockPath]) {
     targetOwners.set(canonicalizeInstallTarget(path), "@repopress/system")
@@ -869,6 +896,7 @@ export function planRegistryInstall(input: PlanRegistryInstallInput): RegistryIn
       ["devDependency", item.item.devDependencies ?? []],
     ] as const) {
       for (const raw of dependencies) {
+        if (packageRequestLimitExceeded) continue
         const parsed = packageSpec(raw)
         const existing = packageRequests.get(parsed.name)
         if (
@@ -880,9 +908,29 @@ export function planRegistryInstall(input: PlanRegistryInstallInput): RegistryIn
             path: parsed.name,
             message: `Registry items request incompatible versions of ${parsed.name}`,
           })
-        } else packageRequests.set(parsed.name, { kind, spec: existing?.spec ?? parsed.spec })
+        } else {
+          const nextSpec = existing?.spec ?? parsed.spec
+          const previousBytes = existing
+            ? new TextEncoder().encode(`${parsed.name}@${existing.spec ?? ""}`).byteLength
+            : 0
+          const nextBytes = new TextEncoder().encode(`${parsed.name}@${nextSpec ?? ""}`).byteLength
+          const nextTotal = packageRequestBytes - previousBytes + nextBytes
+          if ((!existing && packageRequests.size >= MAX_PACKAGE_REQUESTS) || nextTotal > MAX_PACKAGE_ADDITION_BYTES) {
+            packageRequestLimitExceeded = true
+          } else {
+            packageRequestBytes = nextTotal
+            packageRequests.set(parsed.name, { kind, spec: nextSpec })
+          }
+        }
       }
     }
+  }
+  if (packageRequestLimitExceeded) {
+    conflicts.push({
+      code: "OUTPUT_LIMIT_EXCEEDED",
+      path: layout.packageJsonPath,
+      message: "Aggregate package requests exceed the supported output bound",
+    })
   }
 
   const runtimeSnapshot = snapshots.get(canonicalizeInstallTarget(layout.runtimeMapPath))
@@ -912,7 +960,7 @@ export function planRegistryInstall(input: PlanRegistryInstallInput): RegistryIn
 
   const packageSnapshot = snapshots.get(canonicalizeInstallTarget(layout.packageJsonPath))
   const packageChanges: PackageChange[] = []
-  if (packageRequests.size > 0) {
+  if (packageRequests.size > 0 && !packageRequestLimitExceeded) {
     if (!packageSnapshot) {
       conflicts.push({
         code: "MISSING_PACKAGE_JSON",
@@ -977,14 +1025,23 @@ export function planRegistryInstall(input: PlanRegistryInstallInput): RegistryIn
       }
       if (packageChanges.length > 0) {
         const after = patchPackageDocument(document, additions)
-        fileChanges.push({
-          kind: "package",
-          owner: "@repopress/system",
-          path: layout.packageJsonPath,
-          before: packageSnapshot.content,
-          after,
-          digest: sha256(after),
-        })
+        if (new TextEncoder().encode(after).byteLength > MAX_PACKAGE_JSON_BYTES) {
+          conflicts.push({
+            code: "OUTPUT_LIMIT_EXCEEDED",
+            path: layout.packageJsonPath,
+            message: "Planned package.json output exceeds the supported byte limit",
+          })
+          packageChanges.length = 0
+        } else {
+          fileChanges.push({
+            kind: "package",
+            owner: "@repopress/system",
+            path: layout.packageJsonPath,
+            before: packageSnapshot.content,
+            after,
+            digest: sha256(after),
+          })
+        }
       }
     }
   }
@@ -999,8 +1056,17 @@ export function planRegistryInstall(input: PlanRegistryInstallInput): RegistryIn
   const cssBudgetConflict = plannedCssBudget(resolvedItems)
   const acceptedRemovals: LocatedCssBlock[] = []
   const plannedBlocks: string[] = []
-  if (cssBudgetConflict) {
-    conflicts.push({ ...cssBudgetConflict, path: layout.cssTarget })
+  const overlappingManagedBlocks = managedCssIntervalsOverlap(managedBlockIndex)
+  if (cssBudgetConflict || overlappingManagedBlocks) {
+    conflicts.push(
+      cssBudgetConflict
+        ? { ...cssBudgetConflict, path: layout.cssTarget }
+        : {
+            code: "MANAGED_CSS_MODIFIED",
+            path: layout.cssTarget,
+            message: "Managed CSS blocks overlap or nest and cannot be updated safely",
+          },
+    )
     for (const item of resolvedItems) {
       managedCssByItem.set(item.logicalId, [...(currentLock?.items[item.logicalId]?.managedCss ?? [])])
     }
@@ -1055,6 +1121,18 @@ export function planRegistryInstall(input: PlanRegistryInstallInput): RegistryIn
     for (const block of plannedBlocks) {
       cssAfter = cssAfter.trimEnd()
       cssAfter = `${cssAfter}${cssAfter ? "\n\n" : ""}${block}\n`
+    }
+  }
+  if (new TextEncoder().encode(cssAfter).byteLength > MAX_CSS_BYTES) {
+    conflicts.push({
+      code: "OUTPUT_LIMIT_EXCEEDED",
+      path: layout.cssTarget,
+      message: "Planned CSS output exceeds the supported byte limit",
+    })
+    cssAfter = cssSource
+    cssChanges.length = 0
+    for (const item of resolvedItems) {
+      managedCssByItem.set(item.logicalId, [...(currentLock?.items[item.logicalId]?.managedCss ?? [])])
     }
   }
   if (cssAfter !== cssSource) {
