@@ -2,6 +2,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { createSignedCompatibleFixture } from "@/lib/preview/__tests__/compatible-test-fixture"
 import type { CompatiblePreviewAuthorityContext } from "@/lib/preview/compatible-artifact"
+import type { PreviewResult } from "@/lib/preview/contracts"
+import { buildGenericRenderModel } from "@/lib/preview/generic-render-model"
 import type { SandboxMessage } from "@/lib/preview/sandbox-protocol"
 
 const frameHarness = vi.hoisted(() => ({ mounts: 0, errorCode: "COMPATIBLE_WORKER_TIMEOUT" }))
@@ -93,11 +95,31 @@ afterEach(() => {
 })
 
 function renderCompatible(wire = firstWire) {
+  const previewResult: PreviewResult = {
+    fidelity: "compatible",
+    sessionId: authority.sessionId,
+    snapshotVersion: authority.snapshotVersion,
+    status: "ready",
+    target: { kind: "sandboxed-iframe", url: "https://preview.repopress.test/preview/sandbox" },
+    diagnostics: [],
+    downgradeReasons: [],
+    cache: { hit: false },
+  }
+  const fallbackResult: PreviewResult = {
+    fidelity: "generic",
+    sessionId: "generic-session",
+    snapshotVersion: 1,
+    status: "ready",
+    target: { kind: "safe-fallback", renderModel: buildGenericRenderModel("# Generic fallback") },
+    diagnostics: [],
+    downgradeReasons: [],
+    cache: { hit: false },
+  }
   return render(
     <Preview
-      content="# Generic fallback"
+      previewResult={previewResult}
+      fallbackResult={fallbackResult}
       frontmatter={{ title: "Document" }}
-      previewFidelity="compatible"
       compatibleResolution={wire}
       compatibleAuthority={authority}
     />,
@@ -124,9 +146,27 @@ describe("Studio compatible downgrade", () => {
 
     rerender(
       <Preview
-        content="# Generic fallback"
+        previewResult={{
+          fidelity: "compatible",
+          sessionId: authority.sessionId,
+          snapshotVersion: authority.snapshotVersion,
+          status: "ready",
+          target: { kind: "sandboxed-iframe", url: "https://preview.repopress.test/preview/sandbox" },
+          diagnostics: [],
+          downgradeReasons: [],
+          cache: { hit: false },
+        }}
+        fallbackResult={{
+          fidelity: "generic",
+          sessionId: "generic-session",
+          snapshotVersion: 1,
+          status: "ready",
+          target: { kind: "safe-fallback", renderModel: buildGenericRenderModel("# Generic fallback") },
+          diagnostics: [],
+          downgradeReasons: [],
+          cache: { hit: false },
+        }}
         frontmatter={{ title: "Document" }}
-        previewFidelity="compatible"
         compatibleResolution={firstWire}
         compatibleAuthority={{ ...authority }}
       />,
@@ -136,9 +176,27 @@ describe("Studio compatible downgrade", () => {
 
     rerender(
       <Preview
-        content="# Generic fallback"
+        previewResult={{
+          fidelity: "compatible",
+          sessionId: authority.sessionId,
+          snapshotVersion: authority.snapshotVersion,
+          status: "ready",
+          target: { kind: "sandboxed-iframe", url: "https://preview.repopress.test/preview/sandbox" },
+          diagnostics: [],
+          downgradeReasons: [],
+          cache: { hit: false },
+        }}
+        fallbackResult={{
+          fidelity: "generic",
+          sessionId: "generic-session",
+          snapshotVersion: 1,
+          status: "ready",
+          target: { kind: "safe-fallback", renderModel: buildGenericRenderModel("# Generic fallback") },
+          diagnostics: [],
+          downgradeReasons: [],
+          cache: { hit: false },
+        }}
         frontmatter={{ title: "Document" }}
-        previewFidelity="compatible"
         compatibleResolution={changedWire}
         compatibleAuthority={{ ...authority }}
       />,

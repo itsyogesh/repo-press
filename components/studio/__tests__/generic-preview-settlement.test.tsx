@@ -1,24 +1,45 @@
 import { act, render } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
+import type { PreviewResult } from "@/lib/preview/contracts"
+import { buildGenericRenderModel } from "@/lib/preview/generic-render-model"
 import { Preview } from "../preview"
+
+function result(source: string, status: PreviewResult["status"]): PreviewResult {
+  return {
+    fidelity: "generic",
+    sessionId: `generic-${source}`,
+    snapshotVersion: 1,
+    status,
+    target: { kind: "safe-fallback", renderModel: buildGenericRenderModel(source) },
+    diagnostics: [],
+    downgradeReasons: [],
+    cache: { hit: false },
+  }
+}
 
 describe("generic Preview settlement", () => {
   afterEach(() => {
     vi.useRealTimers()
   })
 
-  it("signals compiling through the debounced model update and settled layout", () => {
+  it("signals compiling from declarative provider status and settles the callback", () => {
     vi.useFakeTimers()
     const onCompilingChange = vi.fn()
-    const view = render(<Preview content="# One" frontmatter={{}} onCompilingChange={onCompilingChange} />)
+    const view = render(
+      <Preview previewResult={result("# One", "ready")} frontmatter={{}} onCompilingChange={onCompilingChange} />,
+    )
 
     expect(onCompilingChange).not.toHaveBeenCalled()
 
-    view.rerender(<Preview content="# Two" frontmatter={{}} onCompilingChange={onCompilingChange} />)
+    view.rerender(
+      <Preview previewResult={result("# One", "building")} frontmatter={{}} onCompilingChange={onCompilingChange} />,
+    )
     expect(onCompilingChange.mock.calls).toEqual([[true]])
     expect(view.getByText("Compiling")).toBeTruthy()
 
-    act(() => vi.advanceTimersByTime(300))
+    view.rerender(
+      <Preview previewResult={result("# Two", "ready")} frontmatter={{}} onCompilingChange={onCompilingChange} />,
+    )
     expect(view.getByRole("heading", { name: "Two" })).toBeTruthy()
     expect(view.queryByText("Compiling")).toBeNull()
     expect(onCompilingChange.mock.calls).toEqual([[true]])

@@ -89,24 +89,20 @@ function LiveConfigurePreview({ def, formState }: { def: AuthoringComponent; for
 
   // Callout - show a styled live callout preview
   if (normalizedName === "callout") {
-    const type = typeof formState.type === "string" ? formState.type : "info"
+    const variant = formState.variant === "accent" ? "accent" : "default"
     const title = typeof formState.title === "string" ? formState.title : ""
-
-    const typeStyles: Record<string, { bg: string; border: string; icon: string }> = {
-      info: { bg: "bg-studio-accent/5", border: "border-studio-accent/20", icon: "ℹ" },
-      warning: { bg: "bg-studio-attention/5", border: "border-studio-attention/20", icon: "⚠" },
-      error: { bg: "bg-studio-danger/5", border: "border-studio-danger/20", icon: "✕" },
-      tip: { bg: "bg-studio-success/5", border: "border-studio-success/20", icon: "✓" },
-    }
-    const s = typeStyles[type] ?? typeStyles.info
+    const style =
+      variant === "accent"
+        ? { background: "bg-studio-accent/5", border: "border-studio-accent/20" }
+        : { background: "bg-studio-canvas-inset", border: "border-studio-border" }
 
     return (
-      <div className={cn("w-full max-w-sm rounded-xl border p-4 space-y-2", s.bg, s.border)}>
+      <div className={cn("w-full max-w-sm rounded-xl border p-4 space-y-2", style.background, style.border)}>
         <div className="flex items-center gap-2">
-          <span className="text-sm">{s.icon}</span>
-          <p className="text-xs font-semibold text-studio-fg">
-            {title || type.charAt(0).toUpperCase() + type.slice(1)}
-          </p>
+          <span aria-hidden="true" className="text-sm">
+            ℹ
+          </span>
+          <p className="text-xs font-semibold text-studio-fg">{title || "Callout"}</p>
         </div>
         <div className="space-y-1.5 pl-5">
           <div className="w-full h-1.5 rounded-full bg-studio-fg/10" />
@@ -221,7 +217,7 @@ export function ComponentInsertModal({
   // Real-time validation for the configure step
   const formErrors = React.useMemo(() => {
     if (!selectedDef) return {}
-    return validateFormState(selectedDef.props, formState)
+    return validateFormState(selectedDef, formState)
   }, [selectedDef, formState])
   const hasErrors = Object.keys(formErrors).length > 0
 
@@ -312,6 +308,7 @@ export function ComponentInsertModal({
       console.warn("handleInsert called but no selectedDef")
       return
     }
+    if (Object.keys(validateFormState(selectedDef, formState)).length > 0) return
     try {
       const node = buildComponentNode(selectedDef, formState)
       const jsx = serializeComponentNode(node)

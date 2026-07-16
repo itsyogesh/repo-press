@@ -9,6 +9,8 @@ import {
   type VerifiedCompatiblePreviewResolution,
   verifySignedCompatiblePreviewResolution,
 } from "@/lib/preview/compatible-artifact"
+import type { PreviewResult } from "@/lib/preview/contracts"
+import { buildGenericRenderModel } from "@/lib/preview/generic-render-model"
 import { SANDBOX_MAX_MESSAGE_BYTES, SANDBOX_RATE_BURST, serializeSandboxMessage } from "@/lib/preview/sandbox-protocol"
 import { createPreviewSandboxHeaders, nextConfig } from "../../../next.config.mjs"
 import {
@@ -57,6 +59,32 @@ const authorityContext: CompatiblePreviewAuthorityContext = {
   baseCommit: "abc123",
   sessionId: "session-1",
   snapshotVersion: 1,
+}
+
+function genericPreviewResult(source = "# Safe"): PreviewResult {
+  return {
+    fidelity: "generic",
+    sessionId: "generic-session",
+    snapshotVersion: 1,
+    status: "ready",
+    target: { kind: "safe-fallback", renderModel: buildGenericRenderModel(source) },
+    diagnostics: [],
+    downgradeReasons: [],
+    cache: { hit: false },
+  }
+}
+
+function compatiblePreviewResult(authority: CompatiblePreviewAuthorityContext = authorityContext): PreviewResult {
+  return {
+    fidelity: "compatible",
+    sessionId: authority.sessionId,
+    snapshotVersion: authority.snapshotVersion,
+    status: "ready",
+    target: { kind: "sandboxed-iframe", url: "https://preview.repopress.test/preview/sandbox" },
+    diagnostics: [],
+    downgradeReasons: [],
+    cache: { hit: false },
+  }
 }
 let serverResolution: VerifiedCompatiblePreviewResolution
 let serverWire: string
@@ -587,20 +615,27 @@ describe("CompatiblePreviewFrame", () => {
 
   it("keeps the safe generic Studio preview active until a signed compatible resolution verifies", async () => {
     vi.stubEnv("NEXT_PUBLIC_PREVIEW_ORIGIN", "https://preview.repopress.test")
-    const { rerender } = render(<Preview content="# Safe" frontmatter={{ title: "Safe" }} />)
+    const fallbackResult = genericPreviewResult()
+    const { rerender } = render(<Preview previewResult={fallbackResult} frontmatter={{ title: "Safe" }} />)
 
-    expect(screen.queryByTitle("Compatible component preview")).not.toBeInTheDocument()
-    expect(screen.getAllByRole("heading", { name: "Safe" })).toHaveLength(2)
-
-    rerender(<Preview content="# Safe" frontmatter={{ title: "Safe" }} previewFidelity="compatible" />)
     expect(screen.queryByTitle("Compatible component preview")).not.toBeInTheDocument()
     expect(screen.getAllByRole("heading", { name: "Safe" })).toHaveLength(2)
 
     rerender(
       <Preview
-        content="# Safe"
+        previewResult={compatiblePreviewResult()}
+        fallbackResult={fallbackResult}
         frontmatter={{ title: "Safe" }}
-        previewFidelity="compatible"
+      />,
+    )
+    expect(screen.queryByTitle("Compatible component preview")).not.toBeInTheDocument()
+    expect(screen.getAllByRole("heading", { name: "Safe" })).toHaveLength(2)
+
+    rerender(
+      <Preview
+        previewResult={compatiblePreviewResult()}
+        fallbackResult={fallbackResult}
+        frontmatter={{ title: "Safe" }}
         compatibleResolution={forgedWire}
         compatibleAuthority={authorityContext}
       />,
@@ -611,9 +646,9 @@ describe("CompatiblePreviewFrame", () => {
     for (const mismatch of [{ tenantId: "tenant-2" }, { projectId: "project-2" }, { baseCommit: "def456" }]) {
       rerender(
         <Preview
-          content="# Safe"
+          previewResult={compatiblePreviewResult()}
+          fallbackResult={fallbackResult}
           frontmatter={{ title: "Safe" }}
-          previewFidelity="compatible"
           compatibleResolution={serverWire}
           compatibleAuthority={{ ...authorityContext, ...mismatch }}
         />,
@@ -623,9 +658,9 @@ describe("CompatiblePreviewFrame", () => {
 
     rerender(
       <Preview
-        content="# Safe"
+        previewResult={compatiblePreviewResult()}
+        fallbackResult={fallbackResult}
         frontmatter={{ title: "Safe" }}
-        previewFidelity="compatible"
         compatibleResolution={serverWire}
         compatibleAuthority={authorityContext}
       />,
@@ -646,9 +681,9 @@ describe("CompatiblePreviewFrame", () => {
       },
     )
     const props = {
-      content: "# Generic fallback",
+      previewResult: compatiblePreviewResult(),
+      fallbackResult: genericPreviewResult("# Generic fallback"),
       frontmatter: { title: "Document" },
-      previewFidelity: "compatible" as const,
       compatibleResolution: serverWire,
       compatibleAuthority: authorityContext,
     }
@@ -724,9 +759,9 @@ describe("CompatiblePreviewFrame", () => {
     vi.stubEnv("NEXT_PUBLIC_PREVIEW_APPROVAL_PUBLIC_KEY_JWK", "")
     render(
       <Preview
-        content="# Safe"
+        previewResult={compatiblePreviewResult()}
+        fallbackResult={genericPreviewResult()}
         frontmatter={{ title: "Safe" }}
-        previewFidelity="compatible"
         compatibleResolution={serverWire}
         compatibleAuthority={authorityContext}
       />,

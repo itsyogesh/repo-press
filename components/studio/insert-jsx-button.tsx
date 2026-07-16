@@ -36,11 +36,7 @@ export function InsertJsxButton({ owner, repo, branch, projectId, userId, select
     insertComponentModalCtx?.setOpen(open)
   }
 
-  const hasComponents = React.useMemo(() => {
-    return authoringCatalog.length > 0
-  }, [authoringCatalog])
-
-  if (!hasComponents) return null
+  if (authoringCatalog.length === 0) return null
 
   const handleInsert = (_jsx: string, def: AuthoringComponent, node: ComponentNode) => {
     try {

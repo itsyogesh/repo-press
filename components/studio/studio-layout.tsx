@@ -27,6 +27,8 @@ import type { Id } from "@/convex/_generated/dataModel"
 import { DOCUMENT_STATUS_CONFIG, type DocumentStatus, isPublishableDocumentStatus } from "@/lib/document-status"
 import { getFrameworkAdapter } from "@/lib/framework-adapters"
 import { type FileTreeNode, findTreeNode } from "@/lib/github"
+import type { PreviewResult } from "@/lib/preview/contracts"
+import { buildGenericRenderModel } from "@/lib/preview/generic-render-model"
 import { CONTENT_PATH_REPRESENTATION, toRepoPath } from "@/lib/preview/path-policy"
 import { buildAuthoringCatalog } from "@/lib/studio/authoring-catalog"
 import { buildHistoryHref } from "@/lib/studio/history-link"
@@ -109,6 +111,22 @@ function findTreeNodeByPath(nodes: FileTreeNode[], path: string): FileTreeNode |
 function inferTitleFromPath(path: string) {
   const fileName = path.split("/").pop() || path
   return fileName.replace(/\.(mdx?|markdown)$/i, "")
+}
+
+function freezePreviewData<T>(value: T): T {
+  if (value === null || typeof value !== "object" || Object.isFrozen(value)) return value
+  for (const key of Object.keys(value)) freezePreviewData(Object.getOwnPropertyDescriptor(value, key)?.value)
+  return Object.freeze(value)
+}
+
+function genericPreviewSessionId(filePath: string, content: string): string {
+  let hash = 2_166_136_261
+  const source = `${filePath}\0${content}`
+  for (let index = 0; index < source.length; index += 1) {
+    hash ^= source.charCodeAt(index)
+    hash = Math.imul(hash, 16_777_619)
+  }
+  return `studio-generic-${(hash >>> 0).toString(16)}`
 }
 
 type FlatFileEntry = {
@@ -496,6 +514,21 @@ function StudioLayoutInner({
     frontmatterSchema,
     fieldVariants,
   } = studioQueries
+
+  const deferredPreviewContent = React.useDeferredValue(content)
+  const genericPreviewResult = React.useMemo<PreviewResult>(() => {
+    const filePath = selectedFile?.path ?? "untitled.mdx"
+    return freezePreviewData({
+      fidelity: "generic",
+      sessionId: genericPreviewSessionId(filePath, deferredPreviewContent),
+      snapshotVersion: 1,
+      status: deferredPreviewContent === content ? "ready" : "building",
+      target: { kind: "safe-fallback", renderModel: buildGenericRenderModel(deferredPreviewContent) },
+      diagnostics: [],
+      downgradeReasons: ["NATIVE_UNAVAILABLE", "COMPATIBLE_UNAVAILABLE"],
+      cache: { hit: false },
+    })
+  }, [content, deferredPreviewContent, selectedFile?.path])
 
   // The tree is repository-relative; document state is content-root-relative.
   const dirtyPaths = React.useMemo(() => {
@@ -1730,7 +1763,7 @@ function StudioLayoutInner({
                       <StudioNoSelectionPreviewState />
                     ) : selectedFile ? (
                       <Preview
-                        content={content}
+                        previewResult={genericPreviewResult}
                         frontmatter={frontmatter}
                         fieldVariants={fieldVariants}
                         projectId={projectId}

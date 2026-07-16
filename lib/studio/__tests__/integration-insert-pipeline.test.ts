@@ -7,17 +7,17 @@
 // ---------------------------------------------------------------------------
 
 import { describe, expect, it } from "vitest"
+import { type AuthoringComponentMetadata, buildAuthoringCatalog } from "../authoring-catalog"
 import { buildComponentCatalog, getComponentLabel } from "../component-catalog"
+import { buildEditorInsertOperation, buildEditorSourceEditOperation } from "../component-insert-operation"
 import { buildComponentNode } from "../component-node"
-import type { ConfigComponentEntry } from "../component-registry"
-import { buildComponentRegistry } from "../component-registry"
 import { serializeComponentNode } from "../component-serializer"
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeConfig(entries: Record<string, ConfigComponentEntry>) {
+function makeConfig(entries: Record<string, AuthoringComponentMetadata>) {
   return entries
 }
 
@@ -25,6 +25,18 @@ function makeAdapter(
   entries: Record<string, { props?: Array<{ name: string; type: string }>; hasChildren?: boolean }>,
 ) {
   return entries
+}
+
+function buildCatalogRecord(
+  native: Readonly<Record<string, unknown>> | null,
+  metadata: Readonly<Record<string, AuthoringComponentMetadata>> | null,
+) {
+  return Object.fromEntries(
+    buildAuthoringCatalog({ nativeComponentNames: Object.keys(native ?? {}), metadata }).map((component) => [
+      component.mdxName,
+      component,
+    ]),
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -76,7 +88,7 @@ describe("Integration: full insert pipeline", () => {
   })
 
   it("builds authoring metadata with explicit provenance and schema status", () => {
-    const registry = buildComponentRegistry(adapter, config)
+    const registry = buildCatalogRecord(adapter, config)
 
     expect(registry.DocsImage.provenance.source).toBe("manual")
     expect(registry.DocsVideo.provenance.source).toBe("manual")
@@ -88,7 +100,7 @@ describe("Integration: full insert pipeline", () => {
   })
 
   it("config props win over adapter props for merged entries", () => {
-    const registry = buildComponentRegistry(adapter, config)
+    const registry = buildCatalogRecord(adapter, config)
     const docsImage = registry.DocsImage
 
     // Config has 3 props (src, alt, caption), adapter has 1 (src)
@@ -98,7 +110,7 @@ describe("Integration: full insert pipeline", () => {
   })
 
   it("catalog is sorted alphabetically by display label", () => {
-    const registry = buildComponentRegistry(adapter, config)
+    const registry = buildCatalogRecord(adapter, config)
     const catalog = buildComponentCatalog(registry)
 
     const labels = catalog.map(getComponentLabel)
@@ -107,7 +119,7 @@ describe("Integration: full insert pipeline", () => {
   })
 
   it("catalog uses displayName when available", () => {
-    const registry = buildComponentRegistry(adapter, config)
+    const registry = buildCatalogRecord(adapter, config)
     const catalog = buildComponentCatalog(registry)
 
     const docsImageEntry = catalog.find((c) => c.mdxName === "DocsImage")
@@ -115,7 +127,7 @@ describe("Integration: full insert pipeline", () => {
   })
 
   it("full round-trip: DocsImage with all props filled", () => {
-    const registry = buildComponentRegistry(adapter, config)
+    const registry = buildCatalogRecord(adapter, config)
     const def = registry.DocsImage
 
     const formState = {
@@ -133,7 +145,7 @@ describe("Integration: full insert pipeline", () => {
   })
 
   it("full round-trip: DocsImage with partial props", () => {
-    const registry = buildComponentRegistry(adapter, config)
+    const registry = buildCatalogRecord(adapter, config)
     const def = registry.DocsImage
 
     const formState = {
@@ -147,7 +159,7 @@ describe("Integration: full insert pipeline", () => {
   })
 
   it("full round-trip: Callout with default + children", () => {
-    const registry = buildComponentRegistry(adapter, config)
+    const registry = buildCatalogRecord(adapter, config)
     const def = registry.Callout
 
     const formState = {
@@ -157,12 +169,22 @@ describe("Integration: full insert pipeline", () => {
 
     const node = buildComponentNode(def, formState)
     const jsx = serializeComponentNode(node)
+    const editorOperation = buildEditorInsertOperation(def, node)
 
     expect(jsx).toBe('<Callout type="info">\nThis is an important note!\n</Callout>')
+    expect(editorOperation).toEqual({
+      mode: "jsx",
+      payload: {
+        kind: "flow",
+        name: "Callout",
+        props: { type: "info" },
+        children: [{ type: "paragraph", children: [{ type: "text", value: "This is an important note!" }] }],
+      },
+    })
   })
 
   it("full round-trip: Callout with explicit type override", () => {
-    const registry = buildComponentRegistry(adapter, config)
+    const registry = buildCatalogRecord(adapter, config)
     const def = registry.Callout
 
     const formState = {
@@ -177,7 +199,7 @@ describe("Integration: full insert pipeline", () => {
   })
 
   it("full round-trip: Badge (inline, no props, with children)", () => {
-    const registry = buildComponentRegistry(adapter, config)
+    const registry = buildCatalogRecord(adapter, config)
     const def = registry.Badge
 
     const formState = {
@@ -191,7 +213,7 @@ describe("Integration: full insert pipeline", () => {
   })
 
   it("does not invent children support for an incomplete native component", () => {
-    const registry = buildComponentRegistry(adapter, config)
+    const registry = buildCatalogRecord(adapter, config)
     const def = registry.Steps
 
     const formState = {
@@ -205,7 +227,7 @@ describe("Integration: full insert pipeline", () => {
   })
 
   it("full round-trip: component with no props and no children inserts self-closing", () => {
-    const registry = buildComponentRegistry(adapter, config)
+    const registry = buildCatalogRecord(adapter, config)
     const def = registry.Steps
 
     // Steps hasChildren=true, but if no children provided
@@ -219,7 +241,7 @@ describe("Integration: full insert pipeline", () => {
   })
 
   it("serializer output is deterministic across multiple calls", () => {
-    const registry = buildComponentRegistry(adapter, config)
+    const registry = buildCatalogRecord(adapter, config)
     const def = registry.DocsImage
 
     const formState = {
@@ -244,7 +266,7 @@ describe("Integration: full insert pipeline", () => {
   })
 
   it("keeps authoring capabilities declarative", () => {
-    const registry = buildComponentRegistry(adapter, config)
+    const registry = buildCatalogRecord(adapter, config)
 
     expect(registry.DocsImage.props.some((prop) => prop.type === "image")).toBe(true)
     expect(registry.Badge.kind).toBe("text")
@@ -265,7 +287,7 @@ describe("Integration: full insert pipeline", () => {
       },
     })
 
-    const registry = buildComponentRegistry(null, config2)
+    const registry = buildCatalogRecord(null, config2)
     const def = registry.Widget
 
     const formState = {
@@ -292,7 +314,7 @@ describe("Integration: full insert pipeline", () => {
       },
     })
 
-    const registry = buildComponentRegistry(null, config2)
+    const registry = buildCatalogRecord(null, config2)
     const def = registry.DataView
 
     const formState = {
@@ -315,7 +337,7 @@ describe("Integration: full insert pipeline", () => {
       },
     })
 
-    const registry = buildComponentRegistry(null, config2)
+    const registry = buildCatalogRecord(null, config2)
     const def = registry.Alert
 
     const formState = {
@@ -329,7 +351,7 @@ describe("Integration: full insert pipeline", () => {
   })
 
   it("empty registry produces empty catalog", () => {
-    const registry = buildComponentRegistry(null, null)
+    const registry = buildCatalogRecord(null, null)
     const catalog = buildComponentCatalog(registry)
     expect(catalog).toEqual([])
   })
@@ -346,7 +368,7 @@ describe("Integration: full insert pipeline", () => {
       },
     })
 
-    const registry = buildComponentRegistry(null, config2)
+    const registry = buildCatalogRecord(null, config2)
     const def = registry.MyComponent
 
     expect(def.provenance.version).toBe("2.0.0")
@@ -356,5 +378,33 @@ describe("Integration: full insert pipeline", () => {
     const catalog = buildComponentCatalog(registry)
     const entry = catalog[0]
     expect(getComponentLabel(entry)).toBe("My Custom Component")
+  })
+
+  it("surgically edits one Callout prop without changing surrounding MDX", () => {
+    const source = [
+      'import { Keep } from "./keep"',
+      "",
+      "{/* preserve this comment */}",
+      '<Callout title="Migration" variant="accent" data-extra={keepValue}>',
+      "  Keep **spacing** and {expressions}.",
+      "</Callout>",
+      "",
+      "export const untouched = true",
+    ].join("\n")
+
+    const operation = buildEditorSourceEditOperation(source, "Callout", 0, { variant: "default" })
+    expect(operation).toEqual({
+      mode: "source-edit",
+      source: source.replace('variant="accent"', 'variant="default"'),
+    })
+  })
+
+  it("fails a surgical Callout edit closed when preservation is ambiguous", () => {
+    const source = '<Callout {...props} variant="accent">Keep me</Callout>'
+    expect(buildEditorSourceEditOperation(source, "Callout", 0, { variant: "default" })).toEqual({
+      mode: "source-edit-refused",
+      source,
+      code: "UNSAFE_TO_PRESERVE",
+    })
   })
 })
