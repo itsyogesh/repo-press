@@ -157,7 +157,7 @@ function importedBinding(
   sourceFile: ts.SourceFile,
   binding: RuntimeMapBinding,
 ): { exact: boolean; collision: boolean } {
-  let exact = false
+  let exactCount = 0
   let collision = false
   for (const statement of sourceFile.statements) {
     if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue
@@ -176,7 +176,7 @@ function importedBinding(
         if (element.name.text === binding.mdxName) {
           const importedName = element.propertyName?.text ?? element.name.text
           if (statement.moduleSpecifier.text === binding.importSource && importedName === binding.exportName)
-            exact = true
+            exactCount += 1
           else collision = true
         } else if (statement.moduleSpecifier.text === binding.importSource) {
           collision = true
@@ -184,7 +184,7 @@ function importedBinding(
       }
     }
   }
-  return { exact, collision }
+  return { exact: exactCount === 1, collision: collision || exactCount > 1 }
 }
 
 function topLevelNameCollision(sourceFile: ts.SourceFile, name: string): boolean {
@@ -248,6 +248,42 @@ function canonicalCallerParameter(target: ts.ObjectLiteralExpression): string | 
     current = current.parent
   }
   return null
+}
+
+function enclosingFunctionBindings(target: ts.ObjectLiteralExpression): Set<string> {
+  const names = new Set<string>()
+  const addBinding = (binding: ts.BindingName): void => {
+    if (ts.isIdentifier(binding)) {
+      names.add(binding.text)
+      return
+    }
+    for (const element of binding.elements) {
+      if (!ts.isOmittedExpression(element)) addBinding(element.name)
+    }
+  }
+  let current: ts.Node | undefined = target.parent
+  while (current) {
+    if (ts.isFunctionDeclaration(current)) {
+      for (const parameter of current.parameters) addBinding(parameter.name)
+      if (current.body) {
+        for (const statement of current.body.statements) {
+          if (ts.isVariableStatement(statement)) {
+            for (const declaration of statement.declarationList.declarations) addBinding(declaration.name)
+          } else if (
+            (ts.isFunctionDeclaration(statement) ||
+              ts.isClassDeclaration(statement) ||
+              ts.isEnumDeclaration(statement)) &&
+            statement.name
+          ) {
+            names.add(statement.name.text)
+          }
+        }
+      }
+      break
+    }
+    current = current.parent
+  }
+  return names
 }
 
 function inspectStaticSpreadClosure(
@@ -431,6 +467,7 @@ export function adaptRuntimeMap({ source, bindings: inputBindings }: AdaptRuntim
   const target = targets[0]
   const staticObjects = topLevelConstObjects(sourceFile)
   const callerParameter = canonicalCallerParameter(target)
+  const functionBindings = enclosingFunctionBindings(target)
   const managedNames = new Set(bindings.map((binding) => binding.mdxName))
   let callerSpreadIndex = -1
   let lastStaticSpreadIndex = -1
@@ -443,6 +480,9 @@ export function adaptRuntimeMap({ source, bindings: inputBindings }: AdaptRuntim
         }
         callerSpreadIndex = index
         continue
+      }
+      if (ts.isIdentifier(property.expression) && functionBindings.has(property.expression.text)) {
+        return refuse(source, "UNSUPPORTED_SOURCE", "A function-local binding shadows a top-level static component map")
       }
       if (!ts.isIdentifier(property.expression) || !staticObjects.has(property.expression.text)) {
         return refuse(

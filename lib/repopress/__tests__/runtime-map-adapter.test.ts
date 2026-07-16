@@ -85,6 +85,16 @@ describe("adaptRuntimeMap", () => {
     }
   })
 
+  it("rejects duplicate exact imports for the managed local binding", () => {
+    const source =
+      'import { Callout } from "@/components/repopress/callout"\nimport { Callout } from "@/components/repopress/callout"\nexport const components = { Callout }\n'
+    expect(adaptRuntimeMap({ source, bindings: [binding] })).toMatchObject({
+      ok: false,
+      source,
+      code: "BINDING_COLLISION",
+    })
+  })
+
   it("requires an existing map property to reference the exact imported binding", () => {
     const exactImport = 'import { Callout } from "@/components/repopress/callout"\n'
     for (const property of [
@@ -144,6 +154,20 @@ describe("adaptRuntimeMap", () => {
       'const key = "strong"\nconst base = { [key]: "strong" }\nconst defaults = { ...base }\nexport const components = { ...defaults }\n',
       "const first = { ...second }\nconst second = { ...first }\nexport const components = { ...first }\n",
       "const defaults = { strong: 'strong' }\nexport function useMDXComponents(components) { return { ...components, ...defaults } }\n",
+    ]) {
+      expect(adaptRuntimeMap({ source, bindings: [binding] })).toMatchObject({
+        ok: false,
+        source,
+        code: "UNSUPPORTED_SOURCE",
+      })
+    }
+  })
+
+  it("rejects top-level static-object names shadowed by function parameters", () => {
+    for (const source of [
+      "const defaults = { strong: 'strong' }\nexport function useMDXComponents(defaults) { return { ...defaults } }\n",
+      "const defaults = { strong: 'strong' }\nexport function getMDXComponents({ defaults }) { return { ...defaults } }\n",
+      "const base = { strong: 'strong' }\nconst defaults = { ...base }\nexport function getMDXComponents(defaults) { return { ...defaults } }\n",
     ]) {
       expect(adaptRuntimeMap({ source, bindings: [binding] })).toMatchObject({
         ok: false,

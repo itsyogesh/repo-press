@@ -276,6 +276,41 @@ describe("planRegistryInstall", () => {
     expect(dryRunInstallPlan(first)).toBe(first)
   })
 
+  it("re-canonicalizes forged authoring and dependency authority from registry source bytes", () => {
+    const dependency = registrySource({ id: "@example/authority-dependency", ref: "dependency" })
+    const root = registrySource({ id: "@example/authority-root", ref: "root", deps: ["dependency"] })
+    const resolved = resolveRegistryItems({ requested: ["root"], sources: [root, dependency], framework: "next" })
+    const forged = resolved.map((entry) =>
+      entry.logicalId === "@example/authority-root"
+        ? {
+            ...entry,
+            dependencies: [],
+            authoring: {
+              ...entry.authoring,
+              mdxName: "ForgedWidget",
+              exportName: "ForgedExport",
+              displayName: "Forged display",
+              runtime: "server" as const,
+              props: [{ name: "forged", type: "string" as const, required: true }],
+            },
+          }
+        : entry,
+    )
+
+    const result = planRegistryInstall({
+      resolved: forged,
+      layout: layout(),
+      currentFiles: [{ path: "mdx-components.tsx", content: "export const components = {}\n" }],
+      currentLock: null,
+    })
+    const rootLock = result.lockSnapshot.items["@example/authority-root"]
+    expect(result.runtimeMapEdit.after).not.toContain("ForgedWidget")
+    expect(rootLock.authoring).toEqual(
+      resolved.find((entry) => entry.logicalId === "@example/authority-root")?.authoring,
+    )
+    expect(rootLock.dependencies).toEqual(["@example/authority-dependency"])
+  })
+
   it("fails closed for unresolved aliases, environment requests, and unsupported or networked CSS", () => {
     const unknownAlias = plan([registrySource({ id: "@example/alias", target: "@unknown/value.tsx" })])
     expect(unknownAlias.conflicts).toContainEqual(expect.objectContaining({ code: "UNKNOWN_TARGET_ALIAS" }))
@@ -524,6 +559,127 @@ describe("planRegistryInstall", () => {
     }
   })
 
+  it("bounds package, CSS, and lock system snapshots before expensive processing", () => {
+    const item = registrySource({ id: "@example/system-limits", packages: ["tiny-package@1.0.0"] })
+    const oversizedPackage = `{"padding":"${"x".repeat(1024 * 1024)}"}`
+    expect(() =>
+      plan([item], {
+        currentFiles: [
+          { path: "mdx-components.tsx", content: runtimeSource },
+          { path: "package.json", content: oversizedPackage },
+        ],
+      }),
+    ).toThrow(/package\.json.*byte limit/iu)
+
+    expect(() =>
+      plan([item], {
+        currentFiles: [
+          { path: "mdx-components.tsx", content: runtimeSource },
+          { path: "package.json", content: "{}\n" },
+          { path: "app/globals.css", content: "x".repeat(1024 * 1024 + 1) },
+        ],
+      }),
+    ).toThrow(/CSS.*byte limit/iu)
+
+    expect(() =>
+      plan([item], {
+        currentFiles: [
+          { path: "mdx-components.tsx", content: runtimeSource },
+          { path: "package.json", content: "{}\n" },
+          { path: "repopress.lock.json", content: "x".repeat(2 * 1024 * 1024 + 1) },
+        ],
+      }),
+    ).toThrow(/lock.*byte limit/iu)
+  })
+
+  it("bounds parsed package structure and rejects duplicate root keys", () => {
+    const item = registrySource({ id: "@example/package-structure", packages: ["tiny-package@1.0.0"] })
+    let nested = '"leaf"'
+    for (let index = 0; index < 80; index += 1) nested = `{"level":${nested}}`
+    expect(() =>
+      plan([item], {
+        currentFiles: [
+          { path: "mdx-components.tsx", content: runtimeSource },
+          { path: "package.json", content: `{"meta":${nested}}` },
+        ],
+      }),
+    ).toThrow(/package\.json.*depth limit/iu)
+
+    expect(() =>
+      plan([item], {
+        currentFiles: [
+          { path: "mdx-components.tsx", content: runtimeSource },
+          { path: "package.json", content: '{"dependencies":{},"dependencies":{}}\n' },
+        ],
+      }),
+    ).toThrow(/package\.json.*duplicate key/iu)
+  })
+
+  it("bounds aggregate planned CSS declarations", () => {
+    const sources = Array.from({ length: 3 }, (_, itemIndex) =>
+      registrySource({
+        id: `@example/css-limit-${itemIndex}`,
+        cssVars: {
+          light: Object.fromEntries(
+            Array.from({ length: 800 }, (_, variableIndex) => [
+              `value-${itemIndex}-${variableIndex}`,
+              `oklch(0.${itemIndex + 1} 0.1 ${variableIndex % 360})`,
+            ]),
+          ),
+        },
+      }),
+    )
+    const resolved = resolveRegistryItems({
+      requested: sources.map((source) => source.reference),
+      sources,
+      framework: "next",
+    })
+    const result = planRegistryInstall({
+      resolved,
+      layout: layout(),
+      currentFiles: [
+        { path: "mdx-components.tsx", content: "export const components = {}\n" },
+        { path: "app/globals.css", content: "@import 'tailwindcss';\n" },
+      ],
+      currentLock: null,
+    })
+    expect(result.conflicts).toContainEqual(expect.objectContaining({ code: "UNSUPPORTED_CSS" }))
+    expect(result.cssChanges).toEqual([])
+  })
+
+  it("patches package dependencies without reserializing unrelated bytes and is idempotent", () => {
+    const item = registrySource({ id: "@example/surgical-package", packages: ["tiny-package@1.0.0"] })
+    const before =
+      '\uFEFF{\r\n\t"name": "preserve-me",\r\n\t"scripts": { "test": "vitest --run" },\r\n\t"dependencies": {\r\n\t\t"react": "19.2.0"\r\n\t},\r\n\t"custom": [3, 2, 1]\r\n}\r\n'
+    const expected = before.replace('\t\t"react": "19.2.0"', '\t\t"react": "19.2.0",\r\n\t\t"tiny-package": "1.0.0"')
+    const initial = plan([item], {
+      currentFiles: [
+        { path: "mdx-components.tsx", content: runtimeSource },
+        { path: "package.json", content: before },
+      ],
+    })
+    const packageEdit = initial.fileChanges.find((change) => change.kind === "package")
+    expect(packageEdit?.after).toBe(expected)
+
+    const repeated = plan([item], { currentFiles: filesFromPlan(initial), currentLock: initial.lockSnapshot })
+    expect(repeated.packageChanges).toEqual([])
+    expect(repeated.fileChanges.find((change) => change.kind === "package")).toBeUndefined()
+  })
+
+  it("inserts a missing dependency section without changing existing root members", () => {
+    const item = registrySource({ id: "@example/insert-package-section", packages: ["tiny-package@1.0.0"] })
+    const before = '{\n  "name": "preserve-me",\n  "scripts": { "test": "vitest --run" }\n}\n'
+    const result = plan([item], {
+      currentFiles: [
+        { path: "mdx-components.tsx", content: runtimeSource },
+        { path: "package.json", content: before },
+      ],
+    })
+    expect(result.fileChanges.find((change) => change.kind === "package")?.after).toBe(
+      '{\n  "name": "preserve-me",\n  "scripts": { "test": "vitest --run" },\n  "dependencies": {\n    "tiny-package": "1.0.0"\n  }\n}\n',
+    )
+  })
+
   it("canonicalizes a directly shuffled resolved graph and rejects forged graph structure", () => {
     const a = registrySource({ id: "@example/a", ref: "a" })
     const b = registrySource({ id: "@example/b", ref: "b", deps: ["a"] })
@@ -540,25 +696,27 @@ describe("planRegistryInstall", () => {
 
     expect(() =>
       planRegistryInstall({ resolved: [resolved[0], resolved[0]], layout: layout(), currentFiles, currentLock: null }),
-    ).toThrow("Duplicate resolved logical identity")
-    expect(() =>
-      planRegistryInstall({
-        resolved: [{ ...resolved[1], dependencies: ["@example/missing"] }],
-        layout: layout(),
-        currentFiles,
-        currentLock: null,
-      }),
-    ).toThrow("Missing resolved dependency")
-    expect(() =>
+    ).toThrow("Duplicate registry logical identity")
+    const forgedGraph = planRegistryInstall({
+      resolved: [
+        { ...resolved[0], dependencies: [resolved[1].logicalId] },
+        { ...resolved[1], dependencies: ["@example/missing", resolved[0].logicalId] },
+      ],
+      layout: layout(),
+      currentFiles,
+      currentLock: null,
+    })
+    expect(JSON.stringify(forgedGraph)).toBe(JSON.stringify(canonical))
+    expect(
       planRegistryInstall({
         resolved: [
-          { ...resolved[0], dependencies: [resolved[1].logicalId] },
-          { ...resolved[1], dependencies: [resolved[0].logicalId] },
+          { ...resolved[0], logicalId: "@forged/a" },
+          { ...resolved[1], logicalId: "@forged/b" },
         ],
         layout: layout(),
         currentFiles,
         currentLock: null,
-      }),
-    ).toThrow("Resolved dependency cycle")
+      }).lockSnapshot,
+    ).toEqual(canonical.lockSnapshot)
   })
 })

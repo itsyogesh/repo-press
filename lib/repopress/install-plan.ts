@@ -1,13 +1,24 @@
 import { createHash } from "node:crypto"
 import { posix } from "node:path"
+import ts from "typescript"
 import { type RepoPressLock, repoPressLockSchema } from "./lock-schema"
-import { computeRegistryItemIntegrity, type RegistryIntegrityFile } from "./registry-integrity"
-import type { ResolvedRegistryItem } from "./registry-resolver"
+import type { RegistryIntegrityFile } from "./registry-integrity"
+import { type ResolvedRegistryItem, resolveRegistryItems } from "./registry-resolver"
 import { canonicalizeInstallTarget, compareCodeUnits, deepFreeze, installTargetSchema } from "./registry-schema"
 import { adaptRuntimeMap, type RuntimeMapBinding } from "./runtime-map-adapter"
 
 const MAX_SNAPSHOT_FILES = 8_192
 const MAX_SNAPSHOT_BYTES = 64 * 1024 * 1024
+const MAX_PACKAGE_JSON_BYTES = 1024 * 1024
+const MAX_CSS_BYTES = 1024 * 1024
+const MAX_LOCK_BYTES = 2 * 1024 * 1024
+const MAX_RUNTIME_MAP_BYTES = 2 * 1024 * 1024
+const MAX_PACKAGE_JSON_DEPTH = 64
+const MAX_PACKAGE_JSON_NODES = 20_000
+const MAX_PACKAGE_JSON_PROPERTIES = 10_000
+const MAX_PACKAGE_JSON_STRING_BYTES = 512 * 1024
+const MAX_PLANNED_CSS_DECLARATIONS = 2_048
+const MAX_PLANNED_CSS_BYTES = 512 * 1024
 const SAFE_ALIAS = /^@[A-Za-z0-9._-]+$/u
 const SAFE_IMPORT_PREFIX =
   /^(?:@\/[A-Za-z0-9._~/-]+|@?[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._~/-]+)*|[.]{1,2}\/[A-Za-z0-9._~/-]+)$/u
@@ -187,6 +198,18 @@ function snapshotIndex(files: readonly RepositoryFileSnapshot[]): Map<string, Re
   return result
 }
 
+function assertSystemSnapshotLimit(
+  snapshots: ReadonlyMap<string, RepositoryFileSnapshot>,
+  path: string,
+  label: string,
+  maximum: number,
+): void {
+  const snapshot = snapshots.get(canonicalizeInstallTarget(path))
+  if (snapshot && new TextEncoder().encode(snapshot.content).byteLength > maximum) {
+    throw new TypeError(`${label} exceeds byte limit`)
+  }
+}
+
 function resolveTarget(
   target: string,
   layout: ValidatedLayout,
@@ -254,6 +277,183 @@ function plainRecord(value: unknown): Record<string, unknown> | null {
     : null
 }
 
+type PackageSectionName = "dependencies" | "devDependencies"
+type TextEdit = { start: number; end: number; text: string }
+type ParsedPackageDocument = {
+  source: string
+  body: string
+  bomOffset: number
+  sourceFile: ts.JsonSourceFile
+  root: ts.ObjectLiteralExpression
+  rootProperties: ReadonlyMap<string, ts.PropertyAssignment>
+  manifest: Record<string, unknown>
+  newline: "\n" | "\r\n"
+  rootIndent: string
+}
+
+function lineIndent(source: string, position: number): string {
+  const lineStart = source.lastIndexOf("\n", Math.max(0, position - 1)) + 1
+  return source.slice(lineStart, position).match(/^[\t ]*/u)?.[0] ?? ""
+}
+
+function parsePackageDocument(source: string): ParsedPackageDocument {
+  const bomOffset = source.startsWith("\uFEFF") ? 1 : 0
+  const body = source.slice(bomOffset)
+  const sourceFile = ts.parseJsonText("package.json", body)
+  const diagnostics = (sourceFile as ts.JsonSourceFile & { parseDiagnostics: readonly ts.Diagnostic[] })
+    .parseDiagnostics
+  if (diagnostics.length > 0) {
+    throw new TypeError(
+      `package.json syntax error: ${ts.flattenDiagnosticMessageText(diagnostics[0].messageText, " ")}`,
+    )
+  }
+  const statement = sourceFile.statements[0]
+  if (
+    sourceFile.statements.length !== 1 ||
+    !statement ||
+    !ts.isExpressionStatement(statement) ||
+    !ts.isObjectLiteralExpression(statement.expression)
+  ) {
+    throw new TypeError("package.json root must be an object")
+  }
+  const root = statement.expression
+  const stack: Array<{ node: ts.Expression; depth: number }> = [{ node: root, depth: 0 }]
+  let nodes = 0
+  let properties = 0
+  let stringBytes = 0
+  const rootProperties = new Map<string, ts.PropertyAssignment>()
+  while (stack.length > 0) {
+    const current = stack.pop() as { node: ts.Expression; depth: number }
+    if (current.depth > MAX_PACKAGE_JSON_DEPTH) throw new TypeError("package.json exceeds depth limit")
+    nodes += 1
+    if (nodes > MAX_PACKAGE_JSON_NODES) throw new TypeError("package.json exceeds node limit")
+    if (ts.isStringLiteralLike(current.node)) {
+      stringBytes += new TextEncoder().encode(current.node.text).byteLength
+      if (stringBytes > MAX_PACKAGE_JSON_STRING_BYTES) throw new TypeError("package.json exceeds string byte limit")
+    }
+    if (ts.isObjectLiteralExpression(current.node)) {
+      const seen = new Set<string>()
+      for (const property of current.node.properties) {
+        properties += 1
+        if (properties > MAX_PACKAGE_JSON_PROPERTIES) throw new TypeError("package.json exceeds property limit")
+        if (!ts.isPropertyAssignment(property) || !ts.isStringLiteralLike(property.name)) {
+          throw new TypeError("package.json contains an unsupported property")
+        }
+        const name = property.name.text
+        stringBytes += new TextEncoder().encode(name).byteLength
+        if (stringBytes > MAX_PACKAGE_JSON_STRING_BYTES) throw new TypeError("package.json exceeds string byte limit")
+        if (seen.has(name)) throw new TypeError(`package.json contains duplicate key ${name}`)
+        seen.add(name)
+        if (current.node === root) rootProperties.set(name, property)
+        stack.push({ node: property.initializer, depth: current.depth + 1 })
+      }
+      continue
+    }
+    if (ts.isArrayLiteralExpression(current.node)) {
+      for (const element of current.node.elements) {
+        if (ts.isSpreadElement(element)) throw new TypeError("package.json contains an unsupported array element")
+        stack.push({ node: element, depth: current.depth + 1 })
+      }
+      continue
+    }
+    if (ts.isPrefixUnaryExpression(current.node)) {
+      if (!ts.isNumericLiteral(current.node.operand)) throw new TypeError("package.json contains an unsupported value")
+      stack.push({ node: current.node.operand, depth: current.depth + 1 })
+      continue
+    }
+    if (
+      !ts.isStringLiteralLike(current.node) &&
+      !ts.isNumericLiteral(current.node) &&
+      ![ts.SyntaxKind.TrueKeyword, ts.SyntaxKind.FalseKeyword, ts.SyntaxKind.NullKeyword].includes(current.node.kind)
+    ) {
+      throw new TypeError("package.json contains an unsupported value")
+    }
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(body) as unknown
+  } catch (error) {
+    throw new TypeError(`package.json is not strict JSON: ${error instanceof Error ? error.message : "parse error"}`)
+  }
+  const manifest = plainRecord(parsed)
+  if (!manifest) throw new TypeError("package.json root must be an object")
+  const newline = body.includes("\r\n") ? "\r\n" : "\n"
+  const firstRootProperty = root.properties[0]
+  const rootIndent = firstRootProperty ? lineIndent(body, firstRootProperty.getStart(sourceFile)) : "  "
+  return { source, body, bomOffset, sourceFile, root, rootProperties, manifest, newline, rootIndent }
+}
+
+function appendObjectMembers(
+  document: ParsedPackageDocument,
+  object: ts.ObjectLiteralExpression,
+  rawMembers: readonly string[],
+  fallbackIndent: string,
+): TextEdit {
+  const { body, bomOffset, newline, sourceFile } = document
+  const close = object.end - 1
+  const first = object.properties[0]
+  const memberIndent = first ? lineIndent(body, first.getStart(sourceFile)) : fallbackIndent
+  const last = object.properties.at(-1)
+  if (!last) {
+    return {
+      start: object.getStart(sourceFile) + 1 + bomOffset,
+      end: close + bomOffset,
+      text: `${newline}${memberIndent}${rawMembers.join(`,${newline}${memberIndent}`)}${newline}${lineIndent(body, close)}`,
+    }
+  }
+  const multiline = body.slice(object.getStart(sourceFile), close).includes("\n")
+  return multiline
+    ? {
+        start: last.end + bomOffset,
+        end: last.end + bomOffset,
+        text: `,${newline}${memberIndent}${rawMembers.join(`,${newline}${memberIndent}`)}`,
+      }
+    : {
+        start: last.end + bomOffset,
+        end: last.end + bomOffset,
+        text: `, ${rawMembers.join(", ")}`,
+      }
+}
+
+function patchPackageDocument(
+  document: ParsedPackageDocument,
+  additions: ReadonlyMap<PackageSectionName, ReadonlyMap<string, string>>,
+): string {
+  const edits: TextEdit[] = []
+  const missingSections: string[] = []
+  const indentationUnit = document.rootIndent || "  "
+  for (const section of ["dependencies", "devDependencies"] as const) {
+    const entries = additions.get(section)
+    if (!entries || entries.size === 0) continue
+    const rawMembers = [...entries.entries()]
+      .sort(([left], [right]) => compareCodeUnits(left, right))
+      .map(([name, value]) => `${JSON.stringify(name)}: ${JSON.stringify(value)}`)
+    const property = document.rootProperties.get(section)
+    if (property) {
+      if (!ts.isObjectLiteralExpression(property.initializer)) {
+        throw new TypeError(`package.json ${section} section is not surgically editable`)
+      }
+      const fallback = `${lineIndent(document.body, property.getStart(document.sourceFile))}${indentationUnit}`
+      edits.push(appendObjectMembers(document, property.initializer, rawMembers, fallback))
+    } else {
+      const innerIndent = `${document.rootIndent}${indentationUnit}`
+      missingSections.push(
+        `${JSON.stringify(section)}: {${document.newline}${innerIndent}${rawMembers.join(
+          `,${document.newline}${innerIndent}`,
+        )}${document.newline}${document.rootIndent}}`,
+      )
+    }
+  }
+  if (missingSections.length > 0) {
+    edits.push(appendObjectMembers(document, document.root, missingSections, document.rootIndent))
+  }
+  let result = document.source
+  for (const edit of edits.sort((left, right) => right.start - left.start)) {
+    result = `${result.slice(0, edit.start)}${edit.text}${result.slice(edit.end)}`
+  }
+  return result
+}
+
 function safeCssValue(value: unknown): value is string {
   return (
     typeof value === "string" &&
@@ -266,7 +466,7 @@ function safeCssValue(value: unknown): value is string {
 
 function cssVariables(
   item: ResolvedRegistryItem,
-  current: string,
+  currentVariables: ReadonlyMap<string, string>,
 ): { changes: CssChange[]; block: string; conflict?: InstallConflict } {
   if (item.item.css !== undefined || item.item.tailwind !== undefined) {
     return {
@@ -334,14 +534,11 @@ function cssVariables(
         }
       }
       const property = `--${name}`
-      const match = current.match(
-        new RegExp(`${property.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}\\s*:\\s*([^;]+)`, "u"),
-      )
       changes.push({
         itemId: item.logicalId,
         selector,
         name: property,
-        before: match?.[1]?.trim() ?? null,
+        before: currentVariables.get(property) ?? null,
         after: value,
       })
       declarations.push(`  ${property}: ${value};`)
@@ -357,26 +554,68 @@ function cssVariables(
 
 type LocatedCssBlock = { start: number; end: number; block: string }
 
-function locateManagedCssBlock(source: string, itemId: string): LocatedCssBlock | null | "invalid" {
-  const startMarker = `/* repopress:${itemId}:start */`
-  const endMarker = `/* repopress:${itemId}:end */`
-  const indexes = (marker: string): number[] => {
-    const found: number[] = []
-    let offset = 0
-    while (offset <= source.length) {
-      const index = source.indexOf(marker, offset)
-      if (index < 0) break
-      found.push(index)
-      offset = index + marker.length
-    }
-    return found
+function indexCssVariables(source: string): Map<string, string> {
+  const variables = new Map<string, string>()
+  const declaration = /(--[A-Za-z_][A-Za-z0-9_-]{0,127})\s*:\s*([^;{}]+);/gu
+  for (const match of source.matchAll(declaration)) {
+    if (!variables.has(match[1])) variables.set(match[1], match[2].trim())
   }
-  const starts = indexes(startMarker)
-  const ends = indexes(endMarker)
-  if (starts.length === 0 && ends.length === 0) return null
-  if (starts.length !== 1 || ends.length !== 1 || ends[0] < starts[0]) return "invalid"
-  const end = ends[0] + endMarker.length
-  return { start: starts[0], end, block: source.slice(starts[0], end) }
+  return variables
+}
+
+function indexManagedCssBlocks(source: string): Map<string, LocatedCssBlock | "invalid"> {
+  const markers = new Map<
+    string,
+    { starts: Array<{ start: number; end: number }>; ends: Array<{ start: number; end: number }> }
+  >()
+  const marker = /\/\* repopress:(.+?):(start|end) \*\//gu
+  for (const match of source.matchAll(marker)) {
+    const itemId = match[1]
+    const record = markers.get(itemId) ?? { starts: [], ends: [] }
+    record[match[2] === "start" ? "starts" : "ends"].push({
+      start: match.index,
+      end: match.index + match[0].length,
+    })
+    markers.set(itemId, record)
+  }
+  const blocks = new Map<string, LocatedCssBlock | "invalid">()
+  for (const [itemId, record] of markers) {
+    if (record.starts.length !== 1 || record.ends.length !== 1 || record.ends[0].start < record.starts[0].start) {
+      blocks.set(itemId, "invalid")
+      continue
+    }
+    blocks.set(itemId, {
+      start: record.starts[0].start,
+      end: record.ends[0].end,
+      block: source.slice(record.starts[0].start, record.ends[0].end),
+    })
+  }
+  return blocks
+}
+
+function plannedCssBudget(items: readonly ResolvedRegistryItem[]): InstallConflict | null {
+  let declarations = 0
+  let bytes = 0
+  for (const item of items) {
+    const themes = plainRecord(item.item.cssVars)
+    if (!themes) continue
+    for (const value of Object.values(themes)) {
+      const variables = plainRecord(value)
+      if (!variables) continue
+      for (const [name, declarationValue] of Object.entries(variables)) {
+        declarations += 1
+        bytes += new TextEncoder().encode(`${name}:${String(declarationValue)}\n`).byteLength
+        if (declarations > MAX_PLANNED_CSS_DECLARATIONS || bytes > MAX_PLANNED_CSS_BYTES) {
+          return {
+            code: "UNSUPPORTED_CSS",
+            path: "cssVars",
+            message: "Aggregate planned CSS declarations exceed the supported bound",
+          }
+        }
+      }
+    }
+  }
+  return null
 }
 
 function removeLocatedCssBlock(source: string, located: LocatedCssBlock): string {
@@ -424,7 +663,12 @@ function canonicalResolvedItems(
   if (!Array.isArray(items) || items.length === 0 || items.length > 512) {
     throw new TypeError("Resolved registry items must be a non-empty bounded array")
   }
-  const byId = new Map<string, ResolvedRegistryItem>()
+  const sources: Array<{
+    reference: string
+    item: unknown
+    files: readonly RegistryIntegrityFile[]
+    resolved: { address: string; sourceRef: string; resolvedRef: string }
+  }> = []
   for (let index = 0; index < items.length; index += 1) {
     const descriptor = Object.getOwnPropertyDescriptor(items, String(index))
     if (!descriptor || !("value" in descriptor))
@@ -432,54 +676,36 @@ function canonicalResolvedItems(
     const item = descriptor.value
     if (!item || typeof item !== "object" || Array.isArray(item))
       throw new TypeError(`Resolved item ${index} must be an object`)
-    if (byId.has(item.logicalId)) throw new TypeError(`Duplicate resolved logical identity ${item.logicalId}`)
-    if (item.item.meta.repopress.logicalId !== item.logicalId || item.authoring.logicalId !== item.logicalId) {
-      throw new TypeError(`Resolved logical identity mismatch for ${item.logicalId}`)
+    const read = (key: string): unknown => {
+      const field = Object.getOwnPropertyDescriptor(item, key)
+      if (!field || !("value" in field))
+        throw new TypeError(`Resolved item ${index}.${key} must be an own data property`)
+      return field.value
     }
-    if (!item.item.meta.repopress.frameworks.includes(framework)) {
-      throw new TypeError(`Resolved item ${item.logicalId} does not support ${framework}`)
-    }
-    const integrity = computeRegistryItemIntegrity({ item: item.item, files: item.files })
-    if (integrity !== item.integrity || integrity !== item.authoring.provenance.integrity) {
-      throw new TypeError(`Registry integrity mismatch for resolved item ${item.logicalId}`)
-    }
-    if (!Array.isArray(item.dependencies) || item.dependencies.length > 256) {
-      throw new TypeError(`Resolved dependencies for ${item.logicalId} exceed the supported bound`)
-    }
-    byId.set(item.logicalId, item)
+    sources.push({
+      reference: read("reference") as string,
+      item: read("item"),
+      files: read("files") as readonly RegistryIntegrityFile[],
+      resolved: read("resolved") as { address: string; sourceRef: string; resolvedRef: string },
+    })
   }
-  for (const item of byId.values()) {
-    const seen = new Set<string>()
-    for (const dependency of item.dependencies) {
-      if (!byId.has(dependency)) throw new TypeError(`Missing resolved dependency ${dependency} for ${item.logicalId}`)
-      if (seen.has(dependency)) throw new TypeError(`Duplicate resolved dependency ${dependency} for ${item.logicalId}`)
-      seen.add(dependency)
-    }
-  }
-  const visiting: string[] = []
-  const visited = new Set<string>()
-  const ordered: ResolvedRegistryItem[] = []
-  const visit = (logicalId: string): void => {
-    const cycleIndex = visiting.indexOf(logicalId)
-    if (cycleIndex >= 0) {
-      throw new TypeError(`Resolved dependency cycle: ${[...visiting.slice(cycleIndex), logicalId].join(" -> ")}`)
-    }
-    if (visited.has(logicalId)) return
-    visiting.push(logicalId)
-    const item = byId.get(logicalId) as ResolvedRegistryItem
-    for (const dependency of [...item.dependencies].sort(compareCodeUnits)) visit(dependency)
-    visiting.pop()
-    visited.add(logicalId)
-    ordered.push(item)
-  }
-  for (const logicalId of [...byId.keys()].sort(compareCodeUnits)) visit(logicalId)
-  return ordered
+  return [
+    ...resolveRegistryItems({
+      requested: sources.map((source) => source.reference),
+      sources,
+      framework,
+    }),
+  ]
 }
 
 export function planRegistryInstall(input: PlanRegistryInstallInput): RegistryInstallPlan {
   const layout = validateLayout(input.layout)
   const resolvedItems = canonicalResolvedItems(input.resolved, layout.framework)
   const snapshots = snapshotIndex(input.currentFiles)
+  assertSystemSnapshotLimit(snapshots, layout.packageJsonPath, "package.json", MAX_PACKAGE_JSON_BYTES)
+  assertSystemSnapshotLimit(snapshots, layout.cssTarget, "CSS snapshot", MAX_CSS_BYTES)
+  assertSystemSnapshotLimit(snapshots, layout.lockPath, "lock snapshot", MAX_LOCK_BYTES)
+  assertSystemSnapshotLimit(snapshots, layout.runtimeMapPath, "runtime map", MAX_RUNTIME_MAP_BYTES)
   const conflicts: InstallConflict[] = []
   const lockFile = snapshots.get(canonicalizeInstallTarget(layout.lockPath))
   let currentLock: RepoPressLock | null = null
@@ -694,19 +920,18 @@ export function planRegistryInstall(input: PlanRegistryInstallInput): RegistryIn
         message: "The configured package.json does not exist",
       })
     } else {
-      let manifest: Record<string, unknown>
+      let document: ParsedPackageDocument
       try {
-        const parsed = JSON.parse(packageSnapshot.content) as unknown
-        const record = plainRecord(parsed)
-        if (!record) throw new TypeError("package.json root must be an object")
-        manifest = record
+        document = parsePackageDocument(packageSnapshot.content)
       } catch (error) {
         throw new TypeError(`Invalid package.json: ${error instanceof Error ? error.message : "parse error"}`)
       }
+      const manifest = document.manifest
       const dependenciesRecord = plainRecord(manifest.dependencies)
       const devDependenciesRecord = plainRecord(manifest.devDependencies)
       const dependencies = dependenciesRecord ?? {}
       const devDependencies = devDependenciesRecord ?? {}
+      const additions = new Map<PackageSectionName, Map<string, string>>()
       for (const name of [...packageRequests.keys()].sort(compareCodeUnits)) {
         const request = packageRequests.get(name) as {
           kind: "dependency" | "devDependency"
@@ -744,19 +969,14 @@ export function planRegistryInstall(input: PlanRegistryInstallInput): RegistryIn
           continue
         }
         const after = request.spec ?? "latest"
-        target[name] = after
+        const section = request.kind === "dependency" ? "dependencies" : "devDependencies"
+        const sectionAdditions = additions.get(section) ?? new Map<string, string>()
+        sectionAdditions.set(name, after)
+        additions.set(section, sectionAdditions)
         packageChanges.push({ kind: request.kind, name, before, after })
       }
       if (packageChanges.length > 0) {
-        if (Object.keys(dependencies).length > 0)
-          manifest.dependencies = Object.fromEntries(
-            Object.entries(dependencies).sort(([left], [right]) => compareCodeUnits(left, right)),
-          )
-        if (Object.keys(devDependencies).length > 0)
-          manifest.devDependencies = Object.fromEntries(
-            Object.entries(devDependencies).sort(([left], [right]) => compareCodeUnits(left, right)),
-          )
-        const after = `${JSON.stringify(manifest, null, 2)}\n`
+        const after = patchPackageDocument(document, additions)
         fileChanges.push({
           kind: "package",
           owner: "@repopress/system",
@@ -771,50 +991,73 @@ export function planRegistryInstall(input: PlanRegistryInstallInput): RegistryIn
 
   const cssChanges: CssChange[] = []
   const cssSnapshot = snapshots.get(canonicalizeInstallTarget(layout.cssTarget))
-  let cssAfter = cssSnapshot?.content ?? ""
+  const cssSource = cssSnapshot?.content ?? ""
+  let cssAfter = cssSource
+  const cssVariableIndex = indexCssVariables(cssSource)
+  const managedBlockIndex = indexManagedCssBlocks(cssSource)
   const managedCssByItem = new Map<string, Array<{ path: string; digest: string }>>()
-  for (const item of resolvedItems) {
-    const planned = cssVariables(item, cssAfter)
-    if (planned.conflict) {
-      conflicts.push({ ...planned.conflict, path: layout.cssTarget })
-      continue
+  const cssBudgetConflict = plannedCssBudget(resolvedItems)
+  const acceptedRemovals: LocatedCssBlock[] = []
+  const plannedBlocks: string[] = []
+  if (cssBudgetConflict) {
+    conflicts.push({ ...cssBudgetConflict, path: layout.cssTarget })
+    for (const item of resolvedItems) {
+      managedCssByItem.set(item.logicalId, [...(currentLock?.items[item.logicalId]?.managedCss ?? [])])
     }
-    const priorManaged = currentLock?.items[item.logicalId]?.managedCss ?? []
-    const priorRecord = priorManaged.find(
-      (record) => canonicalizeInstallTarget(record.path) === canonicalizeInstallTarget(layout.cssTarget),
-    )
-    if (priorManaged.length > (priorRecord ? 1 : 0)) {
-      conflicts.push({
-        code: "MANAGED_CSS_MODIFIED",
-        path: layout.cssTarget,
-        message: `Managed CSS ownership for ${item.logicalId} points outside the configured CSS target`,
-      })
-      continue
+  } else {
+    for (const item of resolvedItems) {
+      const planned = cssVariables(item, cssVariableIndex)
+      if (planned.conflict) {
+        conflicts.push({ ...planned.conflict, path: layout.cssTarget })
+        continue
+      }
+      const priorManaged = currentLock?.items[item.logicalId]?.managedCss ?? []
+      const priorRecord = priorManaged.find(
+        (record) => canonicalizeInstallTarget(record.path) === canonicalizeInstallTarget(layout.cssTarget),
+      )
+      if (priorManaged.length > (priorRecord ? 1 : 0)) {
+        conflicts.push({
+          code: "MANAGED_CSS_MODIFIED",
+          path: layout.cssTarget,
+          message: `Managed CSS ownership for ${item.logicalId} points outside the configured CSS target`,
+        })
+        continue
+      }
+      const located = managedBlockIndex.get(item.logicalId) ?? null
+      if (
+        located === "invalid" ||
+        (priorRecord && (!located || sha256(located.block) !== priorRecord.digest)) ||
+        (!priorRecord && located)
+      ) {
+        conflicts.push({
+          code: "MANAGED_CSS_MODIFIED",
+          path: layout.cssTarget,
+          message: `Managed CSS block for ${item.logicalId} is missing, duplicated, malformed, or locally modified`,
+        })
+        continue
+      }
+      cssChanges.push(...planned.changes)
+      if (located) {
+        acceptedRemovals.push(located)
+        for (const name of indexCssVariables(located.block).keys()) cssVariableIndex.delete(name)
+      }
+      for (const change of planned.changes) cssVariableIndex.set(change.name, change.after)
+      if (planned.block) {
+        plannedBlocks.push(planned.block)
+        managedCssByItem.set(item.logicalId, [{ path: layout.cssTarget, digest: sha256(planned.block) }])
+      } else {
+        managedCssByItem.set(item.logicalId, [])
+      }
     }
-    const located = locateManagedCssBlock(cssAfter, item.logicalId)
-    if (
-      located === "invalid" ||
-      (priorRecord && (!located || sha256(located.block) !== priorRecord.digest)) ||
-      (!priorRecord && located)
-    ) {
-      conflicts.push({
-        code: "MANAGED_CSS_MODIFIED",
-        path: layout.cssTarget,
-        message: `Managed CSS block for ${item.logicalId} is missing, duplicated, malformed, or locally modified`,
-      })
-      continue
+    for (const located of acceptedRemovals.sort((left, right) => right.start - left.start)) {
+      cssAfter = removeLocatedCssBlock(cssAfter, located)
     }
-    cssChanges.push(...planned.changes)
-    if (located) cssAfter = removeLocatedCssBlock(cssAfter, located)
-    if (planned.block) {
+    for (const block of plannedBlocks) {
       cssAfter = cssAfter.trimEnd()
-      cssAfter = `${cssAfter}${cssAfter ? "\n\n" : ""}${planned.block}\n`
-      managedCssByItem.set(item.logicalId, [{ path: layout.cssTarget, digest: sha256(planned.block) }])
-    } else {
-      managedCssByItem.set(item.logicalId, [])
+      cssAfter = `${cssAfter}${cssAfter ? "\n\n" : ""}${block}\n`
     }
   }
-  if (cssAfter !== (cssSnapshot?.content ?? "")) {
+  if (cssAfter !== cssSource) {
     fileChanges.push({
       kind: "css",
       owner: "@repopress/system",
