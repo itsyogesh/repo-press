@@ -87,7 +87,7 @@ export type SandboxSessionState = Readonly<{
   invalidated: boolean
   rateLimit: Readonly<{
     windowStartedAt: number
-    acceptedMessages: number
+    attemptedMessages: number
   }>
 }>
 
@@ -96,6 +96,7 @@ export type SandboxRefusalCode =
   | "SESSION_INVALIDATED"
   | "CLOCK_INVALID"
   | "RATE_LIMIT"
+  | "INVALID_TRANSPORT"
   | "MALFORMED_MESSAGE"
   | "MESSAGE_TOO_LARGE"
   | "MESSAGE_TOO_COMPLEX"
@@ -119,7 +120,8 @@ export type SandboxValidationFailure = Readonly<{
 export type SandboxValidationResult = SandboxValidationSuccess | SandboxValidationFailure
 
 const activeSessionStates = new WeakSet<object>()
-const successfulValidations = new WeakSet<object>()
+const authenticValidations = new WeakSet<object>()
+const appliedValidations = new WeakSet<object>()
 
 function isSafeTimestamp(value: number): boolean {
   return Number.isSafeInteger(value) && value >= 0
@@ -148,7 +150,7 @@ const INVALID_SESSION_STATE = makeSessionState({
   snapshotVersion: 1,
   sequence: 0,
   invalidated: true,
-  rateLimit: { windowStartedAt: 0, acceptedMessages: 0 },
+  rateLimit: { windowStartedAt: 0, attemptedMessages: 0 },
 })
 
 function isActiveState(state: unknown): state is SandboxSessionState {
@@ -156,12 +158,14 @@ function isActiveState(state: unknown): state is SandboxSessionState {
 }
 
 function makeFailure(code: SandboxRefusalCode, nextState: SandboxSessionState): SandboxValidationFailure {
-  return Object.freeze({ accepted: false, code, nextState })
+  const result = Object.freeze({ accepted: false as const, code, nextState })
+  authenticValidations.add(result)
+  return result
 }
 
 function makeSuccess(message: SandboxMessage, nextState: SandboxSessionState): SandboxValidationSuccess {
   const result = Object.freeze({ accepted: true as const, message, nextState })
-  successfulValidations.add(result)
+  authenticValidations.add(result)
   return result
 }
 
@@ -234,7 +238,7 @@ export function createSandboxSessionState(input: { sessionId: string; snapshotVe
     snapshotVersion: input.snapshotVersion,
     sequence: 0,
     invalidated: false,
-    rateLimit: { windowStartedAt: now, acceptedMessages: 0 },
+    rateLimit: { windowStartedAt: now, attemptedMessages: 0 },
   })
 }
 
@@ -242,9 +246,7 @@ export function rotateSandboxSnapshot(
   state: SandboxSessionState,
   input: { snapshotVersion: number },
 ): SandboxSessionState {
-  const now = currentTimestamp()
   if (!isActiveState(state) || state.invalidated) throw new TypeError("An active sandbox session is required")
-  if (now === null) throw new TypeError("A safe host clock is required")
   if (!isPositiveSafeInteger(input.snapshotVersion) || input.snapshotVersion <= state.snapshotVersion) {
     throw new TypeError("Snapshot rotation requires a higher positive safe version")
   }
@@ -253,7 +255,7 @@ export function rotateSandboxSnapshot(
     snapshotVersion: input.snapshotVersion,
     sequence: 0,
     invalidated: false,
-    rateLimit: { windowStartedAt: now, acceptedMessages: 0 },
+    rateLimit: state.rateLimit,
   })
 }
 
@@ -382,145 +384,131 @@ export function acceptBootstrap(attempt: BootstrapAttempt): boolean {
   }
 }
 
-type TraversalFailureCode = "MALFORMED_MESSAGE" | "MESSAGE_TOO_LARGE" | "MESSAGE_TOO_COMPLEX"
-type TraversalResult = { ok: true; value: SandboxData } | { ok: false; code: TraversalFailureCode }
-type TraversalContext = {
-  bytes: number
+type ParsedInspectionContext = {
   nodes: number
   seen: WeakSet<object>
 }
 
-function traversalFailure(code: TraversalFailureCode): TraversalResult {
-  return { ok: false, code }
+const DANGEROUS_DATA_KEYS = new Set(["__proto__", "constructor", "prototype"])
+
+/** Returns null as soon as the encoded string exceeds the caller's byte budget. */
+function boundedUtf8Length(value: string, limit: number): number | null {
+  if (value.length > limit) return null
+  let bytes = 0
+  for (let index = 0; index < value.length; index += 1) {
+    const unit = value.charCodeAt(index)
+    if (unit <= 0x7f) bytes += 1
+    else if (unit <= 0x7ff) bytes += 2
+    else if (unit >= 0xd800 && unit <= 0xdbff) {
+      const next = value.charCodeAt(index + 1)
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        bytes += 4
+        index += 1
+      } else bytes += 3
+    } else bytes += 3
+    if (bytes > limit) return null
+  }
+  return bytes
 }
 
-function chargeBytes(context: TraversalContext, bytes: number): boolean {
-  if (!Number.isSafeInteger(bytes) || bytes < 0 || context.bytes > SANDBOX_MAX_MESSAGE_BYTES - bytes) return false
-  context.bytes += bytes
-  return true
-}
-
-function chargeString(context: TraversalContext, value: string): boolean {
-  const size = measureString(value)
-  return size.rawBytes <= SANDBOX_MAX_STRING_BYTES && chargeBytes(context, size.jsonBytes)
-}
-
-function traverseAndClone(input: unknown, context: TraversalContext, depth: number): TraversalResult {
+function inspectParsedData(
+  input: unknown,
+  context: ParsedInspectionContext,
+  depth: number,
+): "MALFORMED_MESSAGE" | "MESSAGE_TOO_LARGE" | "MESSAGE_TOO_COMPLEX" | null {
   context.nodes += 1
-  if (context.nodes > SANDBOX_MAX_DATA_NODES || depth > SANDBOX_MAX_DATA_DEPTH) {
-    return traversalFailure("MESSAGE_TOO_COMPLEX")
-  }
-
-  if (input === null) {
-    return chargeBytes(context, 4) ? { ok: true, value: null } : traversalFailure("MESSAGE_TOO_LARGE")
-  }
-  if (typeof input === "boolean") {
-    return chargeBytes(context, input ? 4 : 5) ? { ok: true, value: input } : traversalFailure("MESSAGE_TOO_LARGE")
-  }
-  if (typeof input === "number") {
-    if (!Number.isFinite(input)) return traversalFailure("MALFORMED_MESSAGE")
-    const serialized = Object.is(input, -0) ? "0" : String(input)
-    return chargeBytes(context, serialized.length) ? { ok: true, value: input } : traversalFailure("MESSAGE_TOO_LARGE")
-  }
+  if (context.nodes > SANDBOX_MAX_DATA_NODES || depth > SANDBOX_MAX_DATA_DEPTH) return "MESSAGE_TOO_COMPLEX"
+  if (input === null || typeof input === "boolean") return null
+  if (typeof input === "number") return Number.isFinite(input) ? null : "MALFORMED_MESSAGE"
   if (typeof input === "string") {
-    return chargeString(context, input) ? { ok: true, value: input } : traversalFailure("MESSAGE_TOO_LARGE")
+    return boundedUtf8Length(input, SANDBOX_MAX_STRING_BYTES) === null ? "MESSAGE_TOO_LARGE" : null
   }
-  if (typeof input !== "object") return traversalFailure("MALFORMED_MESSAGE")
-  if (context.seen.has(input)) return traversalFailure("MALFORMED_MESSAGE")
+  if (typeof input !== "object") return "MALFORMED_MESSAGE"
+  if (context.seen.has(input)) return "MALFORMED_MESSAGE"
   context.seen.add(input)
 
   if (Array.isArray(input)) {
-    if (input.length > SANDBOX_MAX_COLLECTION_ITEMS) return traversalFailure("MESSAGE_TOO_COMPLEX")
-    if (!chargeBytes(context, 2 + Math.max(0, input.length - 1))) {
-      return traversalFailure("MESSAGE_TOO_LARGE")
-    }
-    const keys = Reflect.ownKeys(input)
-    if (keys.length !== input.length + 1 || keys.some((key) => typeof key === "symbol")) {
-      return traversalFailure("MALFORMED_MESSAGE")
-    }
-
-    const output: SandboxData[] = []
+    if (input.length > SANDBOX_MAX_COLLECTION_ITEMS) return "MESSAGE_TOO_COMPLEX"
     for (let index = 0; index < input.length; index += 1) {
       const descriptor = Object.getOwnPropertyDescriptor(input, String(index))
-      if (!descriptor || !("value" in descriptor) || !descriptor.enumerable) {
-        return traversalFailure("MALFORMED_MESSAGE")
-      }
-      const child = traverseAndClone(descriptor.value, context, depth + 1)
-      if (!child.ok) return child
-      output.push(child.value)
+      if (!descriptor || !("value" in descriptor) || !descriptor.enumerable) return "MALFORMED_MESSAGE"
+      const failure = inspectParsedData(descriptor.value, context, depth + 1)
+      if (failure) return failure
     }
-    return { ok: true, value: output }
+    return null
   }
 
   const prototype = Object.getPrototypeOf(input)
-  if (prototype !== Object.prototype && prototype !== null) return traversalFailure("MALFORMED_MESSAGE")
-  const keys = Reflect.ownKeys(input)
-  if (keys.length > SANDBOX_MAX_COLLECTION_ITEMS) return traversalFailure("MESSAGE_TOO_COMPLEX")
-  if (keys.some((key) => typeof key === "symbol")) return traversalFailure("MALFORMED_MESSAGE")
-  if (!chargeBytes(context, 2 + Math.max(0, keys.length - 1))) {
-    return traversalFailure("MESSAGE_TOO_LARGE")
-  }
-
-  const output: Record<string, SandboxData> = {}
-  for (const key of keys) {
-    if (typeof key !== "string") return traversalFailure("MALFORMED_MESSAGE")
+  if (prototype !== Object.prototype && prototype !== null) return "MALFORMED_MESSAGE"
+  let entries = 0
+  for (const key in input) {
+    if (!Object.hasOwn(input, key) || DANGEROUS_DATA_KEYS.has(key)) return "MALFORMED_MESSAGE"
+    entries += 1
+    if (entries > SANDBOX_MAX_COLLECTION_ITEMS) return "MESSAGE_TOO_COMPLEX"
+    if (boundedUtf8Length(key, SANDBOX_MAX_STRING_BYTES) === null) return "MESSAGE_TOO_LARGE"
     const descriptor = Object.getOwnPropertyDescriptor(input, key)
-    if (!descriptor || !("value" in descriptor) || !descriptor.enumerable) {
-      return traversalFailure("MALFORMED_MESSAGE")
-    }
-    if (!chargeString(context, key) || !chargeBytes(context, 1)) {
-      return traversalFailure("MESSAGE_TOO_LARGE")
-    }
-    const child = traverseAndClone(descriptor.value, context, depth + 1)
-    if (!child.ok) return child
-    Object.defineProperty(output, key, {
-      value: child.value,
-      enumerable: true,
-      writable: true,
-      configurable: true,
-    })
+    if (!descriptor || !("value" in descriptor) || !descriptor.enumerable) return "MALFORMED_MESSAGE"
+    const failure = inspectParsedData(descriptor.value, context, depth + 1)
+    if (failure) return failure
   }
-  return { ok: true, value: output }
-}
-
-function cloneBoundedMessage(input: unknown): TraversalResult {
-  try {
-    return traverseAndClone(input, { bytes: 0, nodes: 0, seen: new WeakSet() }, 0)
-  } catch {
-    return traversalFailure("MALFORMED_MESSAGE")
-  }
+  return null
 }
 
 function deepFreeze<T>(input: T): T {
   if (input !== null && typeof input === "object" && !Object.isFrozen(input)) {
-    for (const key of Reflect.ownKeys(input)) {
-      const descriptor = Object.getOwnPropertyDescriptor(input, key)
-      if (descriptor && "value" in descriptor) deepFreeze(descriptor.value)
+    if (Array.isArray(input)) {
+      for (let index = 0; index < input.length; index += 1) deepFreeze(input[index])
+    } else {
+      for (const key in input) {
+        if (Object.hasOwn(input, key)) deepFreeze(input[key as keyof T])
+      }
     }
     Object.freeze(input)
   }
   return input
 }
 
+export function serializeSandboxMessage(input: unknown): string {
+  const parsed = sandboxMessageSchema.safeParse(input)
+  if (!parsed.success) throw new TypeError("A valid sandbox message is required")
+  const serialized = JSON.stringify(parsed.data)
+  if (boundedUtf8Length(serialized, SANDBOX_MAX_MESSAGE_BYTES) === null) {
+    throw new RangeError("Sandbox message exceeds the encoded byte limit")
+  }
+  return serialized
+}
+
 function parseMessage(input: unknown): { ok: true; message: SandboxMessage } | { ok: false; code: SandboxRefusalCode } {
-  const traversed = cloneBoundedMessage(input)
-  if (!traversed.ok) return { ok: false, code: traversed.code }
-  const parsed = sandboxMessageSchema.safeParse(traversed.value)
+  if (typeof input !== "string") return { ok: false, code: "INVALID_TRANSPORT" }
+  if (boundedUtf8Length(input, SANDBOX_MAX_MESSAGE_BYTES) === null) {
+    return { ok: false, code: "MESSAGE_TOO_LARGE" }
+  }
+
+  let decoded: unknown
+  try {
+    decoded = JSON.parse(input)
+  } catch {
+    return { ok: false, code: "MALFORMED_MESSAGE" }
+  }
+  const inspectionFailure = inspectParsedData(decoded, { nodes: 0, seen: new WeakSet() }, 0)
+  if (inspectionFailure) return { ok: false, code: inspectionFailure }
+
+  const parsed = sandboxMessageSchema.safeParse(decoded)
   return parsed.success ? { ok: true, message: deepFreeze(parsed.data) } : { ok: false, code: "SCHEMA_INVALID" }
 }
 
 function rateWindowAt(state: SandboxSessionState, now: number): SandboxSessionState["rateLimit"] | null {
   if (now < state.rateLimit.windowStartedAt) return null
   if (now - state.rateLimit.windowStartedAt >= SANDBOX_RATE_WINDOW_MS) {
-    return { windowStartedAt: now, acceptedMessages: 0 }
+    return { windowStartedAt: now, attemptedMessages: 0 }
   }
   return state.rateLimit
 }
 
 /**
- * Atomically charges one inbound attempt before parsing and always returns the
- * immutable state the caller must persist. Success state already includes the
- * contiguous sequence transition, so Task 9 cannot accidentally omit it.
+ * Atomically charges one inbound attempt before parsing and returns an
+ * authentic result. Always apply that result, before branching on `accepted`:
+ * `state = advanceSandboxSequence(validateSandboxMessage(wire, state))`.
  */
 export function validateSandboxMessage(input: unknown, state: SandboxSessionState): SandboxValidationResult {
   if (!isActiveState(state)) return makeFailure("INVALID_STATE", INVALID_SESSION_STATE)
@@ -530,13 +518,13 @@ export function validateSandboxMessage(input: unknown, state: SandboxSessionStat
   if (now === null) return makeFailure("CLOCK_INVALID", state)
   const window = rateWindowAt(state, now)
   if (!window) return makeFailure("CLOCK_INVALID", state)
-  if (window.acceptedMessages >= SANDBOX_RATE_BURST) return makeFailure("RATE_LIMIT", state)
+  if (window.attemptedMessages >= SANDBOX_RATE_BURST) return makeFailure("RATE_LIMIT", state)
 
   const chargedState = makeSessionState({
     ...state,
     rateLimit: {
       windowStartedAt: window.windowStartedAt,
-      acceptedMessages: window.acceptedMessages + 1,
+      attemptedMessages: window.attemptedMessages + 1,
     },
   })
 
@@ -558,9 +546,11 @@ export function validateSandboxMessage(input: unknown, state: SandboxSessionStat
   return makeSuccess(message, nextState)
 }
 
-/** Returns the already charged/advanced state from an authentic successful validation. */
-export function advanceSandboxSequence(validation: SandboxValidationSuccess): SandboxSessionState {
-  if (!successfulValidations.has(validation)) throw new TypeError("A successful sandbox validation is required")
+/** Applies every authentic validation exactly once, including refusals. */
+export function advanceSandboxSequence(validation: SandboxValidationResult): SandboxSessionState {
+  if (!authenticValidations.has(validation)) throw new TypeError("An authentic validation result is required")
+  if (appliedValidations.has(validation)) throw new TypeError("Sandbox validation result was already applied")
+  appliedValidations.add(validation)
   return validation.nextState
 }
 
