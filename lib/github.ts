@@ -526,6 +526,86 @@ export async function deleteBranchRef(accessToken: string, owner: string, repo: 
   await octokit.git.deleteRef({ owner, repo, ref: `heads/${branch}` })
 }
 
+export interface DedicatedBranchState {
+  headSha: string
+  commit: null | { sha: string; parents: readonly string[]; message: string }
+}
+
+export async function getDedicatedBranchState(
+  accessToken: string,
+  owner: string,
+  repo: string,
+  branch: string,
+  baseSha: string,
+): Promise<DedicatedBranchState | null> {
+  assertRepository(owner, repo)
+  assertBranch(branch)
+  assertSha(baseSha)
+  if (!branch.startsWith("repopress/install/")) throw new TypeError("Registry installs require a dedicated branch")
+  const octokit = createGitHubClient(accessToken)
+  try {
+    const { data: ref } = await octokit.git.getRef({ owner, repo, ref: `heads/${branch}` })
+    assertSha(ref.object.sha)
+    if (ref.object.sha === baseSha) return { headSha: baseSha, commit: null }
+    const { data: commit } = await octokit.git.getCommit({ owner, repo, commit_sha: ref.object.sha })
+    if (typeof commit.message !== "string" || Buffer.byteLength(commit.message, "utf8") > 16 * 1024) {
+      throw new TypeError("Dedicated branch commit message exceeds limit")
+    }
+    const parents = commit.parents.map((parent) => {
+      assertSha(parent.sha)
+      return parent.sha
+    })
+    if (parents.length > 16) throw new TypeError("Dedicated branch commit parent limit exceeded")
+    return { headSha: ref.object.sha, commit: { sha: ref.object.sha, parents, message: commit.message } }
+  } catch (error) {
+    if ((error as { status?: number }).status === 404) return null
+    throw error
+  }
+}
+
+export interface ExistingPullRequest {
+  number: number
+  htmlUrl: string
+}
+
+export async function findOpenPullRequestByHead(
+  accessToken: string,
+  owner: string,
+  repo: string,
+  branch: string,
+  baseBranch: string,
+  expectedHeadSha: string,
+): Promise<ExistingPullRequest | null> {
+  assertRepository(owner, repo)
+  assertBranch(branch)
+  assertBranch(baseBranch)
+  assertSha(expectedHeadSha)
+  if (!branch.startsWith("repopress/install/") || branch === baseBranch) {
+    throw new TypeError("Pull request lookup requires a dedicated branch")
+  }
+  const octokit = createGitHubClient(accessToken)
+  const { data } = await octokit.pulls.list({
+    owner,
+    repo,
+    state: "open",
+    head: `${owner}:${branch}`,
+    base: baseBranch,
+    per_page: 10,
+  })
+  const matches = data.filter(
+    (pull) =>
+      pull.state === "open" &&
+      pull.head.ref === branch &&
+      pull.head.sha === expectedHeadSha &&
+      pull.base.ref === baseBranch &&
+      pull.head.repo?.owner.login === owner &&
+      pull.head.repo?.name === repo,
+  )
+  if (matches.length > 1) throw new Error("Multiple open pull requests match the dedicated branch")
+  const pull = matches[0]
+  return pull ? { number: pull.number, htmlUrl: pull.html_url } : null
+}
+
 export interface ExpectedBranchHead {
   branch: string
   protectedBaseBranch: string

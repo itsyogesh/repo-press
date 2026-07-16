@@ -17,6 +17,9 @@ const { mockOctokit } = vi.hoisted(() => {
       repos: {
         getContent: vi.fn(),
       },
+      pulls: {
+        list: vi.fn(),
+      },
     },
   }
 })
@@ -32,6 +35,8 @@ import {
   batchCommitAtExpectedHead,
   createBranchFromSha,
   deleteBranchRef,
+  findOpenPullRequestByHead,
+  getDedicatedBranchState,
   getTextFilesAtCommit,
 } from "../github"
 
@@ -50,6 +55,7 @@ describe("batchCommit", () => {
     mockOctokit.repos.getContent.mockResolvedValue({
       data: { sha: "d".repeat(40), content: Buffer.from("file text").toString("base64") },
     })
+    mockOctokit.pulls.list.mockResolvedValue({ data: [] })
   })
 
   it("keeps text operations as inline content tree entries", async () => {
@@ -210,6 +216,89 @@ describe("batchCommit", () => {
     mockOctokit.repos.getContent.mockRejectedValueOnce({ status: 500 })
     await expect(getTextFilesAtCommit("token", "owner", "repo", sha, ["failed.json"])).rejects.toMatchObject({
       status: 500,
+    })
+  })
+
+  it("inspects only a validated dedicated branch and binds a child commit to its exact parent", async () => {
+    const baseSha = "a".repeat(40)
+    const commitSha = "b".repeat(40)
+    mockOctokit.git.getRef.mockResolvedValueOnce({ data: { object: { sha: baseSha } } })
+    await expect(
+      getDedicatedBranchState("token", "owner", "repo", "repopress/install/callout", baseSha),
+    ).resolves.toEqual({ headSha: baseSha, commit: null })
+
+    mockOctokit.git.getRef.mockResolvedValueOnce({ data: { object: { sha: commitSha } } })
+    mockOctokit.git.getCommit.mockResolvedValueOnce({
+      data: { message: "Install callout\n\nPlan-Digest: sha256:abc", parents: [{ sha: baseSha }] },
+    })
+    await expect(
+      getDedicatedBranchState("token", "owner", "repo", "repopress/install/callout", baseSha),
+    ).resolves.toEqual({
+      headSha: commitSha,
+      commit: {
+        sha: commitSha,
+        parents: [baseSha],
+        message: "Install callout\n\nPlan-Digest: sha256:abc",
+      },
+    })
+    await expect(getDedicatedBranchState("token", "owner", "repo", "main", baseSha)).rejects.toThrow("dedicated")
+  })
+
+  it("finds only the exact open head/base pull request", async () => {
+    mockOctokit.pulls.list.mockResolvedValue({
+      data: [
+        {
+          number: 42,
+          html_url: "https://github.com/owner/repo/pull/42",
+          state: "open",
+          head: {
+            ref: "repopress/install/callout",
+            sha: "b".repeat(40),
+            repo: { owner: { login: "owner" }, name: "repo" },
+          },
+          base: { ref: "main" },
+        },
+      ],
+    })
+    await expect(
+      findOpenPullRequestByHead("token", "owner", "repo", "repopress/install/callout", "main", "b".repeat(40)),
+    ).resolves.toEqual({ number: 42, htmlUrl: "https://github.com/owner/repo/pull/42" })
+    expect(mockOctokit.pulls.list).toHaveBeenCalledWith({
+      owner: "owner",
+      repo: "repo",
+      state: "open",
+      head: "owner:repopress/install/callout",
+      base: "main",
+      per_page: 10,
+    })
+  })
+
+  it("ignores an open PR whose branch name matches but whose head SHA does not", async () => {
+    mockOctokit.pulls.list.mockResolvedValue({
+      data: [
+        {
+          number: 42,
+          html_url: "https://github.com/owner/repo/pull/42",
+          state: "open",
+          head: {
+            ref: "repopress/install/callout",
+            sha: "c".repeat(40),
+            repo: { owner: { login: "owner" }, name: "repo" },
+          },
+          base: { ref: "main" },
+        },
+      ],
+    })
+    await expect(
+      findOpenPullRequestByHead("token", "owner", "repo", "repopress/install/callout", "main", "b".repeat(40)),
+    ).resolves.toBeNull()
+    expect(mockOctokit.pulls.list).toHaveBeenCalledWith({
+      owner: "owner",
+      repo: "repo",
+      state: "open",
+      head: "owner:repopress/install/callout",
+      base: "main",
+      per_page: 10,
     })
   })
 })
