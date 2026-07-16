@@ -9,6 +9,7 @@ import {
   invalidateBootstrapCapability,
   invalidateSandboxSession,
   type SandboxMessage,
+  type SandboxRefusalCode,
   type SandboxSessionState,
   validateSandboxMessage,
 } from "@/lib/preview/sandbox-protocol"
@@ -17,6 +18,12 @@ import { cn } from "@/lib/utils"
 const BOOTSTRAP_PROTOCOL_VERSION = 1 as const
 const BOOTSTRAP_WIRE_LIMIT = 2_048
 const CAPABILITY_PATTERN = /^[A-Za-z0-9_-]{43}$/
+const TERMINAL_SANDBOX_REFUSALS = new Set<SandboxRefusalCode>([
+  "RATE_LIMIT",
+  "MESSAGE_TOO_LARGE",
+  "MESSAGE_TOO_COMPLEX",
+  "INVALID_TRANSPORT",
+])
 
 type RuntimeEnvironment = "development" | "production" | "test"
 
@@ -213,7 +220,10 @@ export function createCompatiblePreviewHost(options: {
     port.onmessage = (messageEvent) => {
       const validation = validateSandboxMessage(messageEvent.data, state)
       state = advanceSandboxSequence(validation)
-      if (!validation.accepted) return
+      if (!validation.accepted) {
+        if (TERMINAL_SANDBOX_REFUSALS.has(validation.code)) terminate()
+        return
+      }
       if (validation.message.type === "teardown") terminate()
       try {
         options.onMessage?.(validation.message)
@@ -337,18 +347,24 @@ export function CompatiblePreviewFrame({
   const hostRef = React.useRef<CompatiblePreviewHost | null>(null)
   const [generatedSessionId] = React.useState(createSessionId)
   const sessionId = providedSessionId ?? generatedSessionId
+  const onMessageRef = React.useRef(onMessage)
   const [studioOrigin, setStudioOrigin] = React.useState<string | null>(null)
 
   React.useEffect(() => {
     setStudioOrigin(window.location.origin)
   }, [])
 
-  React.useEffect(() => {
+  React.useLayoutEffect(() => {
+    onMessageRef.current = onMessage
+  }, [onMessage])
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: authority changes must synchronously dispose the prior channel.
+  React.useLayoutEffect(() => {
     return () => {
       hostRef.current?.dispose()
       hostRef.current = null
     }
-  }, [])
+  }, [sessionId, snapshotVersion])
 
   const environment = process.env.NODE_ENV as RuntimeEnvironment
   const origin = studioOrigin
@@ -369,11 +385,11 @@ export function CompatiblePreviewFrame({
       iframeWindow,
       sessionId,
       snapshotVersion,
-      onMessage,
+      onMessage: (message) => onMessageRef.current?.(message),
     })
     hostRef.current = host
     host.start()
-  }, [onMessage, origin, sessionId, snapshotVersion])
+  }, [origin, sessionId, snapshotVersion])
 
   if (origin !== null && !origin.ok) {
     return (
@@ -396,6 +412,7 @@ export function CompatiblePreviewFrame({
 
   return (
     <iframe
+      key={`${sessionId}:${snapshotVersion}`}
       ref={iframeRef}
       title={title}
       src={`${origin.origin}/preview/sandbox`}

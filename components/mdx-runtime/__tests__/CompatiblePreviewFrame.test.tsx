@@ -1,7 +1,9 @@
-import { cleanup, render, screen } from "@testing-library/react"
+import { createRequire } from "node:module"
+import { cleanup, fireEvent, render, screen } from "@testing-library/react"
+import { StrictMode } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { Preview } from "@/components/studio/preview"
-import { serializeSandboxMessage } from "@/lib/preview/sandbox-protocol"
+import { SANDBOX_MAX_MESSAGE_BYTES, SANDBOX_RATE_BURST, serializeSandboxMessage } from "@/lib/preview/sandbox-protocol"
 import { createPreviewSandboxHeaders, nextConfig } from "../../../next.config.mjs"
 import {
   CompatiblePreviewFrame,
@@ -10,6 +12,10 @@ import {
 } from "../CompatiblePreviewFrame"
 
 vi.mock("@sentry/nextjs", () => ({ withSentryConfig: (config: unknown) => config }))
+
+const { pathToRegexp } = createRequire(import.meta.url)("next/dist/compiled/path-to-regexp") as {
+  pathToRegexp(source: string): RegExp
+}
 
 class FakePort {
   closed = false
@@ -29,7 +35,7 @@ class FakePort {
     this.started = true
   }
 
-  emit(message: string) {
+  emit(message: unknown) {
     this.onmessage?.({ data: message } as MessageEvent)
   }
 }
@@ -42,7 +48,40 @@ class FakeMessageChannel {
 afterEach(() => {
   cleanup()
   vi.unstubAllEnvs()
+  vi.unstubAllGlobals()
 })
+
+function connectHost(onMessage = vi.fn()) {
+  const hostWindow = { addEventListener: vi.fn(), removeEventListener: vi.fn() }
+  const expectedWindow = { postMessage: vi.fn() }
+  const channel = new FakeMessageChannel()
+  const host = createCompatiblePreviewHost({
+    hostWindow,
+    iframeWindow: expectedWindow,
+    sessionId: "session-1",
+    snapshotVersion: 1,
+    createMessageChannel: () => channel as unknown as MessageChannel,
+    onMessage,
+  })
+  host.start()
+  const offer = JSON.parse(expectedWindow.postMessage.mock.calls[0][0])
+  host.receiveWindowMessage({
+    source: expectedWindow,
+    data: JSON.stringify({ ...offer, type: "repopress:bootstrap-accept" }),
+  })
+  return { channel, host, onMessage }
+}
+
+function runtimeWire(sessionId: string, snapshotVersion: number, sequence: number, type = "rendered") {
+  return serializeSandboxMessage({
+    protocolVersion: 1,
+    type,
+    sessionId,
+    snapshotVersion,
+    sequence,
+    payload: {},
+  })
+}
 
 describe("CompatiblePreviewFrame", () => {
   it("uses only the script sandbox capability and keeps the bootstrap capability out of its URL", () => {
@@ -234,6 +273,158 @@ describe("CompatiblePreviewFrame", () => {
     expect(hostWindow.removeEventListener).toHaveBeenCalledOnce()
   })
 
+  it.each([
+    ["INVALID_TRANSPORT", { hostile: true }],
+    ["MESSAGE_TOO_LARGE", "x".repeat(SANDBOX_MAX_MESSAGE_BYTES + 1)],
+    ["MESSAGE_TOO_COMPLEX", JSON.stringify(Array.from({ length: 65 }, () => null))],
+  ])("applies %s before terminating the hostile session", (_code, hostileMessage) => {
+    const { channel, host, onMessage } = connectHost()
+
+    channel.port1.emit(hostileMessage)
+
+    expect(host.getSessionState()).toMatchObject({ invalidated: true, sequence: 0 })
+    expect(host.getSessionState().rateLimit.attemptedMessages).toBe(1)
+    expect(channel.port1.closed).toBe(true)
+    expect(onMessage).not.toHaveBeenCalled()
+
+    channel.port1.emit(runtimeWire("session-1", 1, 1))
+    expect(onMessage).not.toHaveBeenCalled()
+  })
+
+  it("terminates on RATE_LIMIT after applying the terminal refusal", () => {
+    const { channel, host, onMessage } = connectHost()
+    for (let attempt = 0; attempt < SANDBOX_RATE_BURST; attempt += 1) channel.port1.emit("{")
+
+    expect(channel.port1.closed).toBe(false)
+    channel.port1.emit(runtimeWire("session-1", 1, 1))
+
+    expect(host.getSessionState()).toMatchObject({ invalidated: true, sequence: 0 })
+    expect(host.getSessionState().rateLimit.attemptedMessages).toBe(SANDBOX_RATE_BURST)
+    expect(channel.port1.closed).toBe(true)
+    expect(onMessage).not.toHaveBeenCalled()
+  })
+
+  it("keeps non-terminal schema, session, and order refusals recoverable", () => {
+    const { channel, host, onMessage } = connectHost()
+
+    channel.port1.emit(JSON.stringify({ invalid: true }))
+    channel.port1.emit(runtimeWire("foreign-session", 1, 1))
+    channel.port1.emit(runtimeWire("session-1", 1, 2))
+
+    expect(host.getSessionState()).toMatchObject({ invalidated: false, sequence: 0 })
+    expect(host.getSessionState().rateLimit.attemptedMessages).toBe(3)
+    expect(channel.port1.closed).toBe(false)
+
+    channel.port1.emit(runtimeWire("session-1", 1, 1))
+    expect(onMessage).toHaveBeenCalledOnce()
+  })
+
+  it("updates the live callback without reloading or leaving a stale callback", () => {
+    vi.stubEnv("NEXT_PUBLIC_PREVIEW_ORIGIN", "https://preview.repopress.test")
+    const channels: FakeMessageChannel[] = []
+    vi.stubGlobal(
+      "MessageChannel",
+      class extends FakeMessageChannel {
+        constructor() {
+          super()
+          channels.push(this)
+        }
+      },
+    )
+    const firstCallback = vi.fn()
+    const nextCallback = vi.fn()
+    const { rerender } = render(
+      <CompatiblePreviewFrame sessionId="session-1" snapshotVersion={1} onMessage={firstCallback} />,
+    )
+    const frame = screen.getByTitle("Compatible component preview") as HTMLIFrameElement
+    const frameWindow = frame.contentWindow as Window
+    const postMessage = vi.spyOn(frameWindow, "postMessage")
+    fireEvent.load(frame)
+    const offer = JSON.parse(postMessage.mock.calls[0][0] as string)
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        source: frameWindow,
+        data: JSON.stringify({ ...offer, type: "repopress:bootstrap-accept" }),
+      }),
+    )
+    channels[0].port1.emit(runtimeWire("session-1", 1, 1))
+    expect(firstCallback).toHaveBeenCalledOnce()
+
+    rerender(<CompatiblePreviewFrame sessionId="session-1" snapshotVersion={1} onMessage={nextCallback} />)
+    expect(screen.getByTitle("Compatible component preview")).toBe(frame)
+    channels[0].port1.emit(runtimeWire("session-1", 1, 2))
+
+    expect(firstCallback).toHaveBeenCalledOnce()
+    expect(nextCallback).toHaveBeenCalledOnce()
+    expect(channels[0].port1.closed).toBe(false)
+  })
+
+  it("atomically replaces the iframe and host when session or snapshot authority changes", () => {
+    vi.stubEnv("NEXT_PUBLIC_PREVIEW_ORIGIN", "https://preview.repopress.test")
+    const channels: FakeMessageChannel[] = []
+    vi.stubGlobal(
+      "MessageChannel",
+      class extends FakeMessageChannel {
+        constructor() {
+          super()
+          channels.push(this)
+        }
+      },
+    )
+    const onMessage = vi.fn()
+    const { rerender } = render(
+      <StrictMode>
+        <CompatiblePreviewFrame sessionId="session-1" snapshotVersion={1} onMessage={onMessage} />
+      </StrictMode>,
+    )
+
+    const connectFrame = (frame: HTMLIFrameElement) => {
+      const frameWindow = frame.contentWindow as Window
+      const postMessage = vi.spyOn(frameWindow, "postMessage")
+      fireEvent.load(frame)
+      const offer = JSON.parse(postMessage.mock.calls[0][0] as string)
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          source: frameWindow,
+          data: JSON.stringify({ ...offer, type: "repopress:bootstrap-accept" }),
+        }),
+      )
+      return { channel: channels.at(-1) as FakeMessageChannel, offer }
+    }
+
+    const firstFrame = screen.getByTitle("Compatible component preview") as HTMLIFrameElement
+    const first = connectFrame(firstFrame)
+    first.channel.port1.emit(runtimeWire("session-1", 1, 1))
+    expect(onMessage).toHaveBeenCalledOnce()
+
+    rerender(
+      <StrictMode>
+        <CompatiblePreviewFrame sessionId="session-2" snapshotVersion={1} onMessage={onMessage} />
+      </StrictMode>,
+    )
+    const secondFrame = screen.getByTitle("Compatible component preview") as HTMLIFrameElement
+    expect(secondFrame).not.toBe(firstFrame)
+    expect(first.channel.port1.closed).toBe(true)
+    first.channel.port1.emit(runtimeWire("session-1", 1, 2))
+    expect(onMessage).toHaveBeenCalledOnce()
+
+    const second = connectFrame(secondFrame)
+    expect(second.offer).toMatchObject({ sessionId: "session-2", snapshotVersion: 1 })
+    second.channel.port1.emit(runtimeWire("session-2", 1, 1))
+    expect(onMessage).toHaveBeenCalledTimes(2)
+
+    rerender(
+      <StrictMode>
+        <CompatiblePreviewFrame sessionId="session-2" snapshotVersion={2} onMessage={onMessage} />
+      </StrictMode>,
+    )
+    const thirdFrame = screen.getByTitle("Compatible component preview") as HTMLIFrameElement
+    expect(thirdFrame).not.toBe(secondFrame)
+    expect(second.channel.port1.closed).toBe(true)
+    const third = connectFrame(thirdFrame)
+    expect(third.offer).toMatchObject({ sessionId: "session-2", snapshotVersion: 2 })
+  })
+
   it("keeps the safe generic Studio preview as the default and makes the shell explicit", () => {
     vi.stubEnv("NEXT_PUBLIC_PREVIEW_ORIGIN", "https://preview.repopress.test")
     const { rerender } = render(<Preview content="# Safe" frontmatter={{ title: "Safe" }} />)
@@ -275,6 +466,27 @@ describe("preview sandbox response headers", () => {
         headers: [{ key: "X-Frame-Options", value: "DENY" }],
       }),
     )
+  })
+
+  it("deterministically disables DNS prefetch for the sandbox while normal routes keep it enabled", async () => {
+    const routes = await nextConfig.headers?.()
+    if (!routes) throw new Error("Expected configured response headers")
+    const valuesFor = (pathname: string, key: string) => {
+      const values: string[] = []
+      for (const route of routes) {
+        if (!pathToRegexp(route.source).test(pathname)) continue
+        for (const header of route.headers) if (header.key === key) values.push(header.value)
+      }
+      return values
+    }
+
+    const sandboxDns = valuesFor("/preview/sandbox", "X-DNS-Prefetch-Control")
+    expect(sandboxDns).toEqual(["on", "off"])
+    expect(sandboxDns.at(-1)).toBe("off")
+    expect(valuesFor("/preview/sandbox", "X-Frame-Options")).toEqual([])
+
+    expect(valuesFor("/preview/sandboxx", "X-DNS-Prefetch-Control")).toEqual(["on"])
+    expect(valuesFor("/preview/sandboxx", "X-Frame-Options")).toEqual(["DENY"])
   })
 
   it("uses the same strict Studio-origin policy for production headers and a local development fallback", () => {
