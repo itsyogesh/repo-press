@@ -23,6 +23,18 @@ describe("proxy.ts", () => {
     expect(response.headers.get("x-middleware-next")).toBe("1")
   })
 
+  it("allows dashboard access when a Better Auth session cookie is present", () => {
+    const request = new NextRequest("https://repo-press.dev/dashboard/acme/docs-site", {
+      headers: {
+        cookie: "better-auth.session_token=valid-session-token",
+      },
+    })
+    const response = proxy(request)
+
+    expect(response.headers.get("location")).toBeNull()
+    expect(response.headers.get("x-middleware-next")).toBe("1")
+  })
+
   it("allows /login when only a Convex JWT cookie is present", () => {
     const request = new NextRequest("https://repo-press.dev/login", {
       headers: {

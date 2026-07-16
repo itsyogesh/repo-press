@@ -2,15 +2,20 @@ import { type NextRequest, NextResponse } from "next/server"
 
 const DASHBOARD_PATH = "/dashboard"
 const CONVEX_JWT_COOKIE_NAMES = ["better-auth.convex_jwt", "convex_jwt"] as const
+const BETTER_AUTH_SESSION_COOKIE_NAMES = ["better-auth.session_token", "__Secure-better-auth.session_token"] as const
 
 function getAuthSignals(request: NextRequest) {
   const hasConvexJwt = CONVEX_JWT_COOKIE_NAMES.some((cookieName) => Boolean(request.cookies.get(cookieName)?.value))
+  const hasBetterAuthSession = BETTER_AUTH_SESSION_COOKIE_NAMES.some((cookieName) =>
+    Boolean(request.cookies.get(cookieName)?.value),
+  )
   const hasPatAuth = Boolean(request.cookies.get("github_pat")?.value)
 
   return {
+    hasBetterAuthSession,
     hasConvexJwt,
     hasPatAuth,
-    isAuthenticated: hasConvexJwt || hasPatAuth,
+    isAuthenticated: hasConvexJwt || hasPatAuth || hasBetterAuthSession,
   }
 }
 
