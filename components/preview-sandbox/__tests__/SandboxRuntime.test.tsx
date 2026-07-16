@@ -3,15 +3,17 @@ import { beforeAll, describe, expect, it, vi } from "vitest"
 import { createSignedCompatibleFixture } from "@/lib/preview/__tests__/compatible-test-fixture"
 import {
   COMPATIBLE_COMMAND_RATE_BURST,
-  type SignedCompatiblePreviewResolution,
+  type CompatiblePreviewAuthorityContext,
   serializeCompatibleArtifactTransfer,
+  type VerifiedCompatiblePreviewResolution,
+  verifySignedCompatiblePreviewResolution,
 } from "@/lib/preview/compatible-artifact"
 import {
   advanceSandboxSequence,
   createSandboxSessionState,
   validateSandboxMessage,
 } from "@/lib/preview/sandbox-protocol"
-import { createSandboxRuntimeBridge, evaluateCompatibleArtifact, SandboxRuntime } from "../SandboxRuntime"
+import { createSandboxRuntimeBridge, SandboxRuntime } from "../SandboxRuntime"
 
 class FakePort {
   closed = false
@@ -36,13 +38,18 @@ class FakePort {
   }
 }
 
-let serverResolution: SignedCompatiblePreviewResolution
-let approvalPublicKey: JsonWebKey
+let serverResolution: VerifiedCompatiblePreviewResolution
+let authorityContext: CompatiblePreviewAuthorityContext
 
 beforeAll(async () => {
   const fixture = await createSignedCompatibleFixture({ sessionId: "session-1", snapshotVersion: 3 })
-  serverResolution = fixture.resolution
-  approvalPublicKey = fixture.publicKey
+  authorityContext = fixture.expectedAuthority
+  const verified = await verifySignedCompatiblePreviewResolution(fixture.wire, {
+    publicKey: fixture.publicKey,
+    expectedAuthority: fixture.expectedAuthority,
+  })
+  if (!verified) throw new Error("Expected sandbox fixture to verify")
+  serverResolution = verified
 })
 
 describe("SandboxRuntime", () => {
@@ -55,13 +62,6 @@ describe("SandboxRuntime", () => {
     )
     expect(container.querySelector("script")).toBeNull()
     expect(container.querySelector("[dangerouslySetInnerHTML]")).toBeNull()
-  })
-
-  it("compiles and evaluates resolved MDX only through the sandbox runtime module", async () => {
-    const Artifact = await evaluateCompatibleArtifact(serverResolution.artifact)
-    render(<Artifact />)
-
-    expect(screen.getByRole("heading", { name: "Isolated" })).toBeInTheDocument()
   })
 
   it("accepts a serialized parent offer and emits serialized ready and teardown messages over the port", () => {
@@ -146,9 +146,7 @@ describe("SandboxRuntime", () => {
     })
     const wires = await serializeCompatibleArtifactTransfer({
       resolution: serverResolution,
-      publicKey: approvalPublicKey,
-      sessionId: "session-1",
-      snapshotVersion: 3,
+      expectedAuthority: authorityContext,
     })
     wires.forEach((wire) => {
       port.emit(wire)
@@ -179,9 +177,7 @@ describe("SandboxRuntime", () => {
     })
     const wires = await serializeCompatibleArtifactTransfer({
       resolution: serverResolution,
-      publicKey: approvalPublicKey,
-      sessionId: "session-1",
-      snapshotVersion: 3,
+      expectedAuthority: authorityContext,
     })
     port.emit(wires[0])
     port.emit(wires.at(-1))

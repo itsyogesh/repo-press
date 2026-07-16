@@ -2,9 +2,9 @@
 
 import * as React from "react"
 import {
-  parseConfiguredPreviewApprovalKey,
-  type SignedCompatiblePreviewResolution,
+  type CompatiblePreviewAuthorityContext,
   serializeCompatibleArtifactTransfer,
+  type VerifiedCompatiblePreviewResolution,
 } from "@/lib/preview/compatible-artifact"
 import {
   acceptBootstrap,
@@ -154,16 +154,14 @@ export type CompatiblePreviewHost = Readonly<{
 export function createCompatiblePreviewHost(options: {
   hostWindow: HostWindow
   iframeWindow: FrameWindow
-  sessionId: string
-  snapshotVersion: number
-  resolution?: SignedCompatiblePreviewResolution
-  approvalPublicKey?: JsonWebKey
+  authorityContext: CompatiblePreviewAuthorityContext
+  resolution?: VerifiedCompatiblePreviewResolution
   createMessageChannel?: () => MessageChannel
   onMessage?: (message: SandboxMessage) => void
 }): CompatiblePreviewHost {
   let state = createSandboxSessionState({
-    sessionId: options.sessionId,
-    snapshotVersion: options.snapshotVersion,
+    sessionId: options.authorityContext.sessionId,
+    snapshotVersion: options.authorityContext.snapshotVersion,
   })
   let capability: string | null = null
   let port: MessagePort | null = null
@@ -241,16 +239,10 @@ export function createCompatiblePreviewHost(options: {
     port.start()
 
     if (options.resolution) {
-      if (!options.approvalPublicKey) {
-        terminate()
-        return false
-      }
       const authenticatedPort = port
       void serializeCompatibleArtifactTransfer({
         resolution: options.resolution,
-        publicKey: options.approvalPublicKey,
-        sessionId: state.sessionId,
-        snapshotVersion: state.snapshotVersion,
+        expectedAuthority: options.authorityContext,
       })
         .then((wires) => {
           if (disposed || port !== authenticatedPort) return
@@ -347,40 +339,29 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
-function createSessionId(): string {
-  if (typeof globalThis.crypto?.randomUUID === "function") return globalThis.crypto.randomUUID()
-  const bytes = globalThis.crypto?.getRandomValues(new Uint8Array(16))
-  if (!bytes) throw new Error("Web Crypto is required for compatible preview sessions")
-  return Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("")
-}
-
 export interface CompatiblePreviewFrameProps {
-  resolution: SignedCompatiblePreviewResolution
+  resolution: VerifiedCompatiblePreviewResolution
+  authorityContext: CompatiblePreviewAuthorityContext
   className?: string
-  sessionId?: string
-  snapshotVersion?: number
   title?: string
   onMessage?: (message: SandboxMessage) => void
 }
 
 export function CompatiblePreviewFrame({
   resolution,
+  authorityContext,
   className,
-  sessionId: providedSessionId,
-  snapshotVersion = 1,
   title = "Compatible component preview",
   onMessage,
 }: CompatiblePreviewFrameProps) {
   const iframeRef = React.useRef<HTMLIFrameElement>(null)
   const hostRef = React.useRef<CompatiblePreviewHost | null>(null)
-  const [generatedSessionId] = React.useState(createSessionId)
-  const sessionId = providedSessionId ?? generatedSessionId
+  const hasLoadedRef = React.useRef(false)
+  const [frameKilled, setFrameKilled] = React.useState(false)
+  const sessionId = authorityContext.sessionId
+  const snapshotVersion = authorityContext.snapshotVersion
   const onMessageRef = React.useRef(onMessage)
   const [studioOrigin, setStudioOrigin] = React.useState<string | null>(null)
-  const approvalPublicKey = React.useMemo(
-    () => parseConfiguredPreviewApprovalKey(process.env.NEXT_PUBLIC_PREVIEW_APPROVAL_PUBLIC_KEY_JWK),
-    [],
-  )
 
   React.useEffect(() => {
     setStudioOrigin(window.location.origin)
@@ -392,6 +373,8 @@ export function CompatiblePreviewFrame({
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: authority changes must synchronously dispose the prior channel.
   React.useLayoutEffect(() => {
+    hasLoadedRef.current = false
+    setFrameKilled(false)
     return () => {
       hostRef.current?.dispose()
       hostRef.current = null
@@ -409,21 +392,37 @@ export function CompatiblePreviewFrame({
     : null
 
   const handleLoad = React.useCallback(() => {
+    if (hasLoadedRef.current) {
+      hostRef.current?.dispose()
+      hostRef.current = null
+      setFrameKilled(true)
+      return
+    }
+    hasLoadedRef.current = true
     const iframeWindow = iframeRef.current?.contentWindow
     if (!iframeWindow || !origin?.ok) return
     hostRef.current?.dispose()
     const host = createCompatiblePreviewHost({
       hostWindow: window,
       iframeWindow,
-      sessionId,
-      snapshotVersion,
+      authorityContext,
       resolution,
-      approvalPublicKey: approvalPublicKey ?? undefined,
       onMessage: (message) => onMessageRef.current?.(message),
     })
     hostRef.current = host
     host.start()
-  }, [approvalPublicKey, origin, resolution, sessionId, snapshotVersion])
+  }, [authorityContext, origin, resolution])
+
+  if (frameKilled) {
+    return (
+      <output
+        data-preview-unavailable="FRAME_RELOADED"
+        className={cn("rounded-lg border border-border bg-muted p-4 text-sm text-muted-foreground", className)}
+      >
+        Compatible preview stopped because its isolated frame navigated.
+      </output>
+    )
+  }
 
   if (origin !== null && !origin.ok) {
     return (

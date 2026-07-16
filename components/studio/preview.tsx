@@ -10,8 +10,9 @@ import { Button } from "@/components/ui/button"
 import type { FieldVariantMap } from "@/lib/framework-adapters"
 import { resolveFieldValue } from "@/lib/framework-adapters"
 import {
+  type CompatiblePreviewAuthorityContext,
   parseConfiguredPreviewApprovalKey,
-  type SignedCompatiblePreviewResolution,
+  type VerifiedCompatiblePreviewResolution,
   verifySignedCompatiblePreviewResolution,
 } from "@/lib/preview/compatible-artifact"
 import { buildGenericRenderModel } from "@/lib/preview/generic-render-model"
@@ -69,7 +70,7 @@ export function createCompileStatusForwarder(
   }
 }
 
-interface PreviewProps {
+interface PreviewBaseProps {
   content: string
   frontmatter: Record<string, any>
   fieldVariants?: FieldVariantMap
@@ -81,8 +82,13 @@ interface PreviewProps {
   onScroll?: () => void
   onCompilingChange?: (isCompiling: boolean) => void
   previewFidelity?: "generic" | "compatible"
-  compatibleResolution?: SignedCompatiblePreviewResolution | null
 }
+
+type PreviewProps = PreviewBaseProps &
+  (
+    | { compatibleResolution?: null | undefined; compatibleAuthority?: null | undefined }
+    | { compatibleResolution: string; compatibleAuthority: CompatiblePreviewAuthorityContext }
+  )
 
 export function Preview({
   content,
@@ -97,6 +103,7 @@ export function Preview({
   onCompilingChange,
   previewFidelity = "generic",
   compatibleResolution,
+  compatibleAuthority,
 }: PreviewProps) {
   const [viewport, setViewport] = React.useState<Viewport>("desktop")
   const [isFullScreen, setIsFullScreen] = React.useState(false)
@@ -107,7 +114,7 @@ export function Preview({
   const [debouncedContent, setDebouncedContent] = React.useState(content)
   const genericRenderModel = React.useMemo(() => buildGenericRenderModel(debouncedContent), [debouncedContent])
   const [verifiedCompatibleResolution, setVerifiedCompatibleResolution] =
-    React.useState<SignedCompatiblePreviewResolution | null>(null)
+    React.useState<VerifiedCompatiblePreviewResolution | null>(null)
   const approvalPublicKey = React.useMemo(
     () => parseConfiguredPreviewApprovalKey(process.env.NEXT_PUBLIC_PREVIEW_APPROVAL_PUBLIC_KEY_JWK),
     [],
@@ -115,11 +122,10 @@ export function Preview({
   React.useEffect(() => {
     let active = true
     setVerifiedCompatibleResolution(null)
-    if (compatibleResolution && approvalPublicKey) {
+    if (compatibleResolution && compatibleAuthority && approvalPublicKey) {
       void verifySignedCompatiblePreviewResolution(compatibleResolution, {
         publicKey: approvalPublicKey,
-        expectedSessionId: compatibleResolution.authority.sessionId,
-        expectedSnapshotVersion: compatibleResolution.authority.snapshotVersion,
+        expectedAuthority: compatibleAuthority,
       }).then((resolution) => {
         if (active) setVerifiedCompatibleResolution(resolution)
       })
@@ -127,7 +133,7 @@ export function Preview({
     return () => {
       active = false
     }
-  }, [approvalPublicKey, compatibleResolution])
+  }, [approvalPublicKey, compatibleAuthority, compatibleResolution])
   const onCompilingChangeRef = React.useRef(onCompilingChange)
   onCompilingChangeRef.current = onCompilingChange
   const [compileStatusForwarder] = React.useState(() =>
@@ -257,13 +263,9 @@ export function Preview({
           </div>
         )}
 
-        {previewFidelity === "compatible" && verifiedCompatibleResolution ? (
+        {previewFidelity === "compatible" && verifiedCompatibleResolution && compatibleAuthority ? (
           <div className="min-h-96 p-4 md:p-6">
-            <CompatiblePreviewFrame
-              resolution={verifiedCompatibleResolution}
-              sessionId={verifiedCompatibleResolution.authority.sessionId}
-              snapshotVersion={verifiedCompatibleResolution.authority.snapshotVersion}
-            />
+            <CompatiblePreviewFrame resolution={verifiedCompatibleResolution} authorityContext={compatibleAuthority} />
           </div>
         ) : (
           <div className="px-5 py-6 md:px-7 md:py-8">

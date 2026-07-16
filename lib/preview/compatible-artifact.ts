@@ -2,6 +2,10 @@ import { z } from "zod"
 import { SANDBOX_MAX_MESSAGE_BYTES, SANDBOX_PROTOCOL_VERSION } from "./sandbox-protocol"
 
 export const COMPATIBLE_ARTIFACT_MAX_BYTES = 1024 * 1024
+export const COMPATIBLE_DOCUMENT_MAX_BYTES = 512 * 1024
+export const COMPATIBLE_ADAPTER_SOURCE_MAX_BYTES = 256 * 1024
+export const COMPATIBLE_SOURCE_TOTAL_MAX_BYTES = 768 * 1024
+export const COMPATIBLE_SOURCE_FILE_MAX_COUNT = 64
 export const COMPATIBLE_ARTIFACT_CHUNK_BYTES = 32 * 1024
 export const COMPATIBLE_ARTIFACT_MAX_CHUNKS = COMPATIBLE_ARTIFACT_MAX_BYTES / COMPATIBLE_ARTIFACT_CHUNK_BYTES
 export const COMPATIBLE_COMMAND_RATE_BURST = COMPATIBLE_ARTIFACT_MAX_CHUNKS + 2
@@ -20,7 +24,10 @@ const sourcePathSchema = z
   )
 const sourceMapSchema = z
   .record(sourcePathSchema, z.string())
-  .refine((sources) => Object.keys(sources).length <= 64, "Compatible source graphs are limited to 64 files")
+  .refine(
+    (sources) => Object.keys(sources).length <= COMPATIBLE_SOURCE_FILE_MAX_COUNT,
+    `Compatible source graphs are limited to ${COMPATIBLE_SOURCE_FILE_MAX_COUNT} files`,
+  )
 const adapterSourceSchema = z
   .object({ entryPath: sourcePathSchema, sources: sourceMapSchema })
   .strict()
@@ -58,13 +65,27 @@ export const signedCompatiblePreviewResolutionSchema = z
         issuedAt: z.number().int().nonnegative().safe(),
         expiresAt: z.number().int().positive().safe(),
         executableDigest: digestSchema,
-        signature: z.string().regex(/^[A-Za-z0-9_-]{80,128}$/),
+        signature: z.string().regex(/^[A-Za-z0-9_-]{86}$/),
       })
       .strict(),
     artifact: compatibleSourceArtifactSchema,
   })
   .strict()
 export type SignedCompatiblePreviewResolution = z.infer<typeof signedCompatiblePreviewResolutionSchema>
+export type CompatiblePreviewAuthorityContext = Readonly<{
+  tenantId: string
+  projectId: string
+  baseCommit: string
+  sessionId: string
+  snapshotVersion: number
+}>
+
+declare const verifiedCompatibleResolutionBrand: unique symbol
+export type VerifiedCompatiblePreviewResolution = SignedCompatiblePreviewResolution & {
+  readonly [verifiedCompatibleResolutionBrand]: true
+}
+
+const verifiedCompatibleResolutions = new WeakSet<object>()
 
 const commandFields = {
   protocolVersion: z.literal(SANDBOX_PROTOCOL_VERSION),
@@ -124,8 +145,8 @@ function deepFreeze<T>(input: T): T {
   return input
 }
 
-function boundedUtf8Length(value: string, limit: number): boolean {
-  if (value.length > limit) return false
+function utf8LengthWithin(value: string, limit: number): number | null {
+  if (value.length > limit) return null
   let bytes = 0
   for (let index = 0; index < value.length; index += 1) {
     const unit = value.charCodeAt(index)
@@ -138,15 +159,144 @@ function boundedUtf8Length(value: string, limit: number): boolean {
         index += 1
       } else bytes += 3
     } else bytes += 3
-    if (bytes > limit) return false
+    if (bytes > limit) return null
   }
-  return true
+  return bytes
+}
+
+function boundedUtf8Length(value: string, limit: number): boolean {
+  return utf8LengthWithin(value, limit) !== null
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false
+  const prototype = Object.getPrototypeOf(value)
+  return prototype === Object.prototype || prototype === null
+}
+
+function isBoundedIdentifier(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && boundedUtf8Length(value, 256)
+}
+
+function isNormalizedSourcePath(value: string): boolean {
+  return (
+    value.length > 0 &&
+    value.length <= 512 &&
+    !value.startsWith("/") &&
+    !value.includes("\\") &&
+    value.split("/").every((segment) => segment !== "" && segment !== "." && segment !== "..")
+  )
+}
+
+function isExpectedAuthorityContext(input: CompatiblePreviewAuthorityContext): boolean {
+  return (
+    isBoundedIdentifier(input.tenantId) &&
+    isBoundedIdentifier(input.projectId) &&
+    isBoundedIdentifier(input.baseCommit) &&
+    isBoundedIdentifier(input.sessionId) &&
+    Number.isSafeInteger(input.snapshotVersion) &&
+    input.snapshotVersion > 0
+  )
+}
+
+function authorityMatches(
+  authority: SignedCompatiblePreviewResolution["authority"],
+  expected: CompatiblePreviewAuthorityContext,
+): boolean {
+  return (
+    authority.tenantId === expected.tenantId &&
+    authority.projectId === expected.projectId &&
+    authority.baseCommit === expected.baseCommit &&
+    authority.sessionId === expected.sessionId &&
+    authority.snapshotVersion === expected.snapshotVersion
+  )
+}
+
+/**
+ * Cheap, allocation-bounded gate for an untrusted wire. Only strings cross
+ * this API, so hostile objects/Proxies are rejected without touching traps.
+ */
+function preflightCompatibleResolutionWire(
+  input: unknown,
+  expected: CompatiblePreviewAuthorityContext,
+): unknown | null {
+  if (typeof input !== "string" || !isExpectedAuthorityContext(expected)) return null
+  if (!boundedUtf8Length(input, COMPATIBLE_ARTIFACT_MAX_BYTES)) return null
+
+  let decoded: unknown
+  try {
+    decoded = JSON.parse(input)
+  } catch {
+    return null
+  }
+  if (!isPlainRecord(decoded) || !isPlainRecord(decoded.authority) || !isPlainRecord(decoded.artifact)) return null
+
+  const authority = decoded.authority
+  for (const field of [
+    "kind",
+    "algorithm",
+    "keyId",
+    "approvalId",
+    "tenantId",
+    "projectId",
+    "baseCommit",
+    "sessionId",
+    "executableDigest",
+    "signature",
+  ]) {
+    if (!isBoundedIdentifier(authority[field])) return null
+  }
+  if (
+    authority.tenantId !== expected.tenantId ||
+    authority.projectId !== expected.projectId ||
+    authority.baseCommit !== expected.baseCommit ||
+    authority.sessionId !== expected.sessionId ||
+    authority.snapshotVersion !== expected.snapshotVersion
+  ) {
+    return null
+  }
+
+  const artifact = decoded.artifact
+  if (!isBoundedIdentifier(artifact.artifactId) || typeof artifact.documentSource !== "string") return null
+  const documentBytes = utf8LengthWithin(artifact.documentSource, COMPATIBLE_DOCUMENT_MAX_BYTES)
+  if (documentBytes === null) return null
+  let totalSourceBytes = documentBytes
+
+  if (artifact.adapter !== null) {
+    if (!isPlainRecord(artifact.adapter)) return null
+    const entryPath = artifact.adapter.entryPath
+    const sources = artifact.adapter.sources
+    if (typeof entryPath !== "string" || !isNormalizedSourcePath(entryPath) || !isPlainRecord(sources)) return null
+
+    let sourceCount = 0
+    let hasEntry = false
+    for (const sourcePath in sources) {
+      if (!Object.hasOwn(sources, sourcePath)) continue
+      sourceCount += 1
+      if (sourceCount > COMPATIBLE_SOURCE_FILE_MAX_COUNT) return null
+      if (!isNormalizedSourcePath(sourcePath)) return null
+      if (sourcePath === entryPath) hasEntry = true
+      const source = sources[sourcePath]
+      if (typeof source !== "string") return null
+      const sourceBytes = utf8LengthWithin(source, COMPATIBLE_ADAPTER_SOURCE_MAX_BYTES)
+      if (sourceBytes === null) return null
+      totalSourceBytes += sourceBytes
+      if (totalSourceBytes > COMPATIBLE_SOURCE_TOTAL_MAX_BYTES) return null
+    }
+    if (!hasEntry) return null
+  }
+
+  return decoded
+}
+
+function compareCodeUnits(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0
 }
 
 function canonicalizeResolution(input: SignedCompatiblePreviewResolution): string {
   const sources = input.artifact.adapter?.sources
   const sortedSources = sources
-    ? Object.fromEntries(Object.entries(sources).sort(([left], [right]) => left.localeCompare(right)))
+    ? Object.fromEntries(Object.entries(sources).sort(([left], [right]) => compareCodeUnits(left, right)))
     : undefined
   return JSON.stringify({
     authority: input.authority,
@@ -167,7 +317,7 @@ function executableSource(input: CompatibleSourceArtifact): string {
       ? {
           entryPath: input.adapter.entryPath,
           sources: Object.fromEntries(
-            Object.entries(sources ?? {}).sort(([left], [right]) => left.localeCompare(right)),
+            Object.entries(sources ?? {}).sort(([left], [right]) => compareCodeUnits(left, right)),
           ),
         }
       : null,
@@ -181,6 +331,7 @@ function bytesToBase64Url(bytes: Uint8Array): string {
 }
 
 export function decodeCompatibleArtifactChunk(data: string): Uint8Array | null {
+  if (data.length === 0 || data.length > Math.ceil((COMPATIBLE_ARTIFACT_CHUNK_BYTES * 4) / 3)) return null
   if (!/^[A-Za-z0-9_-]+$/.test(data)) return null
   try {
     const padded = data
@@ -245,17 +396,18 @@ function decodeSignature(input: string): Uint8Array | null {
 
 export async function verifySignedCompatiblePreviewResolution(
   input: unknown,
-  options: { publicKey: JsonWebKey; expectedSessionId: string; expectedSnapshotVersion: number; now?: number },
-): Promise<SignedCompatiblePreviewResolution | null> {
-  const parsed = signedCompatiblePreviewResolutionSchema.safeParse(input)
+  options: { publicKey: JsonWebKey; expectedAuthority: CompatiblePreviewAuthorityContext; now?: number },
+): Promise<VerifiedCompatiblePreviewResolution | null> {
+  const preflight = preflightCompatibleResolutionWire(input, options.expectedAuthority)
+  if (!preflight) return null
+  const parsed = signedCompatiblePreviewResolutionSchema.safeParse(preflight)
   if (!parsed.success) return null
   const resolution = parsed.data
   const now = options.now ?? Date.now()
   if (
     !Number.isSafeInteger(now) ||
     now < 0 ||
-    resolution.authority.sessionId !== options.expectedSessionId ||
-    resolution.authority.snapshotVersion !== options.expectedSnapshotVersion ||
+    !authorityMatches(resolution.authority, options.expectedAuthority) ||
     resolution.authority.issuedAt > now + 30_000 ||
     resolution.authority.expiresAt <= now ||
     resolution.authority.expiresAt <= resolution.authority.issuedAt ||
@@ -263,8 +415,6 @@ export async function verifySignedCompatiblePreviewResolution(
   ) {
     return null
   }
-  const digest = await computeCompatibleExecutableDigest(parsed.data.artifact)
-  if (digest !== resolution.authority.executableDigest) return null
   const signature = decodeSignature(resolution.authority.signature)
   if (!signature || !globalThis.crypto?.subtle) return null
   try {
@@ -282,7 +432,12 @@ export async function verifySignedCompatiblePreviewResolution(
       signature as BufferSource,
       createCompatibleApprovalPayload({ authority, artifact: resolution.artifact }) as BufferSource,
     )
-    return valid ? deepFreeze(resolution) : null
+    if (!valid) return null
+    const digest = await computeCompatibleExecutableDigest(parsed.data.artifact)
+    if (digest !== resolution.authority.executableDigest) return null
+    const verified = deepFreeze(resolution) as VerifiedCompatiblePreviewResolution
+    verifiedCompatibleResolutions.add(verified)
+    return verified
   } catch {
     return null
   }
@@ -305,17 +460,16 @@ function serializeCommand(command: CompatibleTransferCommand): string {
 }
 
 export async function serializeCompatibleArtifactTransfer(input: {
-  resolution: SignedCompatiblePreviewResolution
-  publicKey: JsonWebKey
-  sessionId: string
-  snapshotVersion: number
+  resolution: VerifiedCompatiblePreviewResolution
+  expectedAuthority: CompatiblePreviewAuthorityContext
 }): Promise<string[]> {
-  const resolution = await verifySignedCompatiblePreviewResolution(input.resolution, {
-    publicKey: input.publicKey,
-    expectedSessionId: input.sessionId,
-    expectedSnapshotVersion: input.snapshotVersion,
-  })
-  if (!resolution) throw new TypeError("An authenticated, digest-bound compatible resolution is required")
+  const resolution = input.resolution
+  if (
+    !verifiedCompatibleResolutions.has(resolution) ||
+    !authorityMatches(resolution.authority, input.expectedAuthority)
+  ) {
+    throw new TypeError("An authenticated, authority-bound compatible resolution is required")
+  }
   const bytes = new TextEncoder().encode(canonicalizeResolution(resolution))
   if (bytes.length === 0 || bytes.length > COMPATIBLE_ARTIFACT_MAX_BYTES) {
     throw new RangeError("Compatible artifact exceeds the transfer limit")
@@ -329,8 +483,8 @@ export async function serializeCompatibleArtifactTransfer(input: {
     serializeCommand({
       protocolVersion: SANDBOX_PROTOCOL_VERSION,
       type: "repopress:artifact-start",
-      sessionId: input.sessionId,
-      snapshotVersion: input.snapshotVersion,
+      sessionId: input.expectedAuthority.sessionId,
+      snapshotVersion: input.expectedAuthority.snapshotVersion,
       sequence: sequence++,
       payload: { transferId, totalBytes: bytes.length, totalChunks, digest },
     }),
@@ -341,8 +495,8 @@ export async function serializeCompatibleArtifactTransfer(input: {
       serializeCommand({
         protocolVersion: SANDBOX_PROTOCOL_VERSION,
         type: "repopress:artifact-chunk",
-        sessionId: input.sessionId,
-        snapshotVersion: input.snapshotVersion,
+        sessionId: input.expectedAuthority.sessionId,
+        snapshotVersion: input.expectedAuthority.snapshotVersion,
         sequence: sequence++,
         payload: {
           transferId,
@@ -356,8 +510,8 @@ export async function serializeCompatibleArtifactTransfer(input: {
     serializeCommand({
       protocolVersion: SANDBOX_PROTOCOL_VERSION,
       type: "repopress:artifact-commit",
-      sessionId: input.sessionId,
-      snapshotVersion: input.snapshotVersion,
+      sessionId: input.expectedAuthority.sessionId,
+      snapshotVersion: input.expectedAuthority.snapshotVersion,
       sequence,
       payload: { transferId },
     }),
@@ -378,9 +532,21 @@ export function parseCompatibleTransferCommand(input: unknown): CompatibleTransf
 }
 
 export function parseAssembledCompatibleResolution(input: Uint8Array): SignedCompatiblePreviewResolution | null {
+  if (input.byteLength === 0 || input.byteLength > COMPATIBLE_ARTIFACT_MAX_BYTES) return null
   try {
     const decoded = new TextDecoder("utf-8", { fatal: true }).decode(input)
-    const parsed = signedCompatiblePreviewResolutionSchema.safeParse(JSON.parse(decoded))
+    const shallow = JSON.parse(decoded) as unknown
+    if (!isPlainRecord(shallow) || !isPlainRecord(shallow.authority)) return null
+    const expectedAuthority: CompatiblePreviewAuthorityContext = {
+      tenantId: String(shallow.authority.tenantId ?? ""),
+      projectId: String(shallow.authority.projectId ?? ""),
+      baseCommit: String(shallow.authority.baseCommit ?? ""),
+      sessionId: String(shallow.authority.sessionId ?? ""),
+      snapshotVersion: Number(shallow.authority.snapshotVersion),
+    }
+    const preflight = preflightCompatibleResolutionWire(decoded, expectedAuthority)
+    if (!preflight) return null
+    const parsed = signedCompatiblePreviewResolutionSchema.safeParse(preflight)
     return parsed.success ? deepFreeze(parsed.data) : null
   } catch {
     return null

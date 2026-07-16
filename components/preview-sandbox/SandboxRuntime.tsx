@@ -11,9 +11,8 @@ import {
   verifyCompatibleExecutableDigest,
 } from "@/lib/preview/compatible-artifact"
 import { serializeSandboxMessage } from "@/lib/preview/sandbox-protocol"
-import { compileMdx } from "./compileMdx"
-import { evaluateAdapter, type RepoPressPreviewAdapter } from "./evaluate-adapter"
-import { evaluateMdx } from "./evaluateMdx"
+import { type CompatibleRenderTree, CompatibleRenderTreeView } from "./compatible-render-tree"
+import { createCompatibleWorkerRenderer, prepareCompatibleWorkerJob } from "./compatible-worker"
 
 const BOOTSTRAP_PROTOCOL_VERSION = 1 as const
 const BOOTSTRAP_WIRE_LIMIT = 2_048
@@ -187,7 +186,14 @@ export function createSandboxRuntimeBridge(options: {
         .then(async ([transportDigest, parsed]) => {
           if (disposed || transportDigest !== completed.digest || !parsed) return
           const verified = await verifyCompatibleExecutableDigest(parsed)
-          if (!disposed && verified) options.onResolution?.(verified)
+          if (
+            !disposed &&
+            verified &&
+            verified.authority.sessionId === offer?.sessionId &&
+            verified.authority.snapshotVersion === offer.snapshotVersion
+          ) {
+            options.onResolution?.(verified)
+          }
         })
         .catch(() => {
           send("error", {
@@ -243,35 +249,6 @@ export function createSandboxRuntimeBridge(options: {
   })
 }
 
-export async function evaluateCompatibleArtifact(
-  artifact: SignedCompatiblePreviewResolution["artifact"],
-): Promise<React.ComponentType<Record<string, never>>> {
-  let adapter: RepoPressPreviewAdapter = {}
-  if (artifact.adapter) {
-    const { transpileAdapter } = await import("./esbuild-browser")
-    const transpiled = await transpileAdapter(artifact.adapter)
-    adapter = evaluateAdapter(transpiled)
-  }
-
-  const allowedImports = Object.fromEntries(
-    Object.entries(adapter.allowImports ?? {}).map(([moduleName, exports]) => [moduleName, Object.keys(exports)]),
-  )
-  const compiled = await compileMdx(artifact.documentSource, allowedImports)
-  if (!compiled.code || compiled.error) throw new Error(compiled.error ?? "Compatible MDX compilation failed")
-
-  const components = adapter.components ?? {}
-  const scope: Record<string, unknown> = { ...(adapter.scope ?? {}), ...components }
-  for (const imported of compiled.imports ?? []) {
-    const value = adapter.allowImports?.[imported.source]?.[imported.imported]
-    if (value !== undefined) scope[imported.local] = value
-  }
-  const MdxComponent = evaluateMdx(compiled.code, scope)
-
-  return function CompatibleArtifactView() {
-    return <MdxComponent components={components} />
-  }
-}
-
 function parseBootstrapOffer(input: unknown): BootstrapOffer | null {
   const value = parseBootstrapWire(input)
   if (
@@ -319,33 +296,38 @@ function parseBootstrapWire(input: unknown): Record<string, unknown> | null {
 }
 
 export function SandboxRuntime() {
-  const [RenderedArtifact, setRenderedArtifact] = React.useState<React.ComponentType<Record<string, never>> | null>(
-    null,
-  )
+  const [renderTree, setRenderTree] = React.useState<CompatibleRenderTree | null>(null)
   const [renderError, setRenderError] = React.useState<string | null>(null)
 
   React.useEffect(() => {
     if (window.parent === window) return
     let active = true
+    let workerRenderer: ReturnType<typeof createCompatibleWorkerRenderer> | null = null
     let bridge: SandboxRuntimeBridge
     bridge = createSandboxRuntimeBridge({
       sandboxWindow: window,
       parentWindow: window.parent,
       onResolution: (resolution) => {
         bridge.reportStatus("loading")
-        void evaluateCompatibleArtifact(resolution.artifact)
-          .then((component) => {
+        void prepareCompatibleWorkerJob(resolution.artifact)
+          .then(async (job) => {
+            if (!active) return null
+            workerRenderer = createCompatibleWorkerRenderer()
+            return await workerRenderer.render(job)
+          })
+          .then((tree) => {
+            if (!tree) return
             if (!active) return
             bridge.reportStatus("rendering")
             setRenderError(null)
-            setRenderedArtifact(() => component)
+            setRenderTree(tree)
             bridge.reportStatus("ready")
             bridge.reportRendered()
           })
           .catch((error: unknown) => {
             if (!active) return
             const message = boundedErrorMessage(error)
-            setRenderedArtifact(null)
+            setRenderTree(null)
             setRenderError(message)
             bridge.reportError({ code: "COMPATIBLE_RENDER_FAILED", message, recoverable: true })
           })
@@ -354,14 +336,15 @@ export function SandboxRuntime() {
     bridge.start()
     return () => {
       active = false
+      workerRenderer?.dispose()
       bridge.dispose()
     }
   }, [])
 
   return (
     <main className="min-h-screen bg-background p-6 text-foreground">
-      {RenderedArtifact ? (
-        <RenderedArtifact />
+      {renderTree ? (
+        <CompatibleRenderTreeView tree={renderTree} />
       ) : (
         <div
           data-repopress-sandbox-shell="inert"

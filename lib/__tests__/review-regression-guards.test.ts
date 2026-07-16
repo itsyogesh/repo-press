@@ -155,11 +155,64 @@ function findHostExecutionViolations(): string[] {
   })
 }
 
+function findNavigableSandboxExecutionViolations(): string[] {
+  const allowedWorkerSource = path.join("components", "preview-sandbox", "compatible-worker.ts")
+  return listHostExecutionFiles(path.join("components", "preview-sandbox")).flatMap((relativePath) => {
+    if (relativePath === allowedWorkerSource) return []
+    const sourceFile = ts.createSourceFile(
+      relativePath,
+      read(relativePath),
+      ts.ScriptTarget.Latest,
+      true,
+      relativePath.endsWith("x") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+    )
+    const violations: string[] = []
+    const visit = (node: ts.Node) => {
+      if (
+        (ts.isIdentifier(node) && ["Function", "eval", "evaluateAdapter", "evaluateMdx"].includes(node.text)) ||
+        ((ts.isNewExpression(node) || ts.isCallExpression(node)) &&
+          ts.isIdentifier(node.expression) &&
+          ["Function", "eval"].includes(node.expression.text))
+      ) {
+        const position = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile))
+        violations.push(`${relativePath}:${position.line + 1}`)
+      }
+      ts.forEachChild(node, visit)
+    }
+    visit(sourceFile)
+    return violations
+  })
+}
+
 describe("review regression guards", () => {
   it("keeps repository and MDX execution out of the host realm", () => {
     expect(findHostExecutionViolations()).toEqual([])
     for (const relativePath of removedHostExecutionPaths) {
       expect(fs.existsSync(path.join(ROOT, relativePath)), relativePath).toBe(false)
+    }
+  })
+
+  it("keeps repository execution out of the navigable sandbox Window", () => {
+    const runtime = read("components/preview-sandbox/SandboxRuntime.tsx")
+    for (const forbidden of [
+      "evaluateCompatibleArtifact",
+      "evaluateMdx",
+      "evaluateAdapter",
+      "RepoPressPreviewAdapter",
+      "<RenderedArtifact",
+    ]) {
+      expect(runtime, forbidden).not.toContain(forbidden)
+    }
+    expect(runtime).toContain("createCompatibleWorkerRenderer")
+    expect(runtime).toContain("CompatibleRenderTreeView")
+    expect(read("components/preview-sandbox/compatible-worker.ts")).toContain("sanitizeCompatibleRenderTree")
+    expect(findNavigableSandboxExecutionViolations()).toEqual([])
+    for (const removed of [
+      "components/preview-sandbox/evaluate-adapter.ts",
+      "components/preview-sandbox/evaluateMdx.ts",
+      "components/preview-sandbox/execution-guard.ts",
+    ]) {
+      expect(fs.existsSync(path.join(ROOT, removed)), removed).toBe(false)
     }
   })
 

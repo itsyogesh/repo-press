@@ -4,7 +4,11 @@ import { StrictMode } from "react"
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { Preview } from "@/components/studio/preview"
 import { createSignedCompatibleFixture } from "@/lib/preview/__tests__/compatible-test-fixture"
-import type { SignedCompatiblePreviewResolution } from "@/lib/preview/compatible-artifact"
+import {
+  type CompatiblePreviewAuthorityContext,
+  type VerifiedCompatiblePreviewResolution,
+  verifySignedCompatiblePreviewResolution,
+} from "@/lib/preview/compatible-artifact"
 import { SANDBOX_MAX_MESSAGE_BYTES, SANDBOX_RATE_BURST, serializeSandboxMessage } from "@/lib/preview/sandbox-protocol"
 import { createPreviewSandboxHeaders, nextConfig } from "../../../next.config.mjs"
 import {
@@ -47,22 +51,53 @@ class FakeMessageChannel {
   port2 = new FakePort()
 }
 
-let serverResolution: SignedCompatiblePreviewResolution
-let secondSessionResolution: SignedCompatiblePreviewResolution
-let secondSnapshotResolution: SignedCompatiblePreviewResolution
-let forgedResolution: SignedCompatiblePreviewResolution
+const authorityContext: CompatiblePreviewAuthorityContext = {
+  tenantId: "tenant-1",
+  projectId: "project-1",
+  baseCommit: "abc123",
+  sessionId: "session-1",
+  snapshotVersion: 1,
+}
+let serverResolution: VerifiedCompatiblePreviewResolution
+let serverWire: string
+let secondSessionResolution: VerifiedCompatiblePreviewResolution
+let secondSessionAuthority: CompatiblePreviewAuthorityContext
+let secondSnapshotResolution: VerifiedCompatiblePreviewResolution
+let secondSnapshotAuthority: CompatiblePreviewAuthorityContext
+let forgedWire: string
 let approvalPublicKey: JsonWebKey
 
 beforeAll(async () => {
   const fixture = await createSignedCompatibleFixture()
-  serverResolution = fixture.resolution
+  serverWire = fixture.wire
   approvalPublicKey = fixture.publicKey
-  secondSessionResolution = (await createSignedCompatibleFixture({ sessionId: "session-2", keyPair: fixture.keyPair }))
-    .resolution
-  secondSnapshotResolution = (
-    await createSignedCompatibleFixture({ sessionId: "session-2", snapshotVersion: 2, keyPair: fixture.keyPair })
-  ).resolution
-  forgedResolution = (await createSignedCompatibleFixture()).resolution
+  const verified = await verifySignedCompatiblePreviewResolution(fixture.wire, {
+    publicKey: fixture.publicKey,
+    expectedAuthority: fixture.expectedAuthority,
+  })
+  if (!verified) throw new Error("Expected signed fixture to verify")
+  serverResolution = verified
+  const secondSession = await createSignedCompatibleFixture({ sessionId: "session-2", keyPair: fixture.keyPair })
+  secondSessionAuthority = secondSession.expectedAuthority
+  const verifiedSecondSession = await verifySignedCompatiblePreviewResolution(secondSession.wire, {
+    publicKey: fixture.publicKey,
+    expectedAuthority: secondSession.expectedAuthority,
+  })
+  if (!verifiedSecondSession) throw new Error("Expected second session fixture to verify")
+  secondSessionResolution = verifiedSecondSession
+  const secondSnapshot = await createSignedCompatibleFixture({
+    sessionId: "session-2",
+    snapshotVersion: 2,
+    keyPair: fixture.keyPair,
+  })
+  secondSnapshotAuthority = secondSnapshot.expectedAuthority
+  const verifiedSecondSnapshot = await verifySignedCompatiblePreviewResolution(secondSnapshot.wire, {
+    publicKey: fixture.publicKey,
+    expectedAuthority: secondSnapshot.expectedAuthority,
+  })
+  if (!verifiedSecondSnapshot) throw new Error("Expected second snapshot fixture to verify")
+  secondSnapshotResolution = verifiedSecondSnapshot
+  forgedWire = (await createSignedCompatibleFixture()).wire
 })
 
 beforeEach(() => {
@@ -82,8 +117,7 @@ function connectHost(onMessage = vi.fn()) {
   const host = createCompatiblePreviewHost({
     hostWindow,
     iframeWindow: expectedWindow,
-    sessionId: "session-1",
-    snapshotVersion: 1,
+    authorityContext,
     createMessageChannel: () => channel as unknown as MessageChannel,
     onMessage,
   })
@@ -111,7 +145,7 @@ describe("CompatiblePreviewFrame", () => {
   it("uses only the script sandbox capability and keeps the bootstrap capability out of its URL", () => {
     vi.stubEnv("NEXT_PUBLIC_PREVIEW_ORIGIN", "https://preview.repopress.test")
 
-    render(<CompatiblePreviewFrame resolution={serverResolution} sessionId="session-1" snapshotVersion={1} />)
+    render(<CompatiblePreviewFrame resolution={serverResolution} authorityContext={authorityContext} />)
 
     const frame = screen.getByTitle("Compatible component preview")
     expect(frame).toHaveAttribute("sandbox", "allow-scripts")
@@ -201,8 +235,7 @@ describe("CompatiblePreviewFrame", () => {
     const host = createCompatiblePreviewHost({
       hostWindow,
       iframeWindow: expectedWindow,
-      sessionId: "session-1",
-      snapshotVersion: 1,
+      authorityContext,
       createMessageChannel: () => channel as unknown as MessageChannel,
     })
 
@@ -241,10 +274,8 @@ describe("CompatiblePreviewFrame", () => {
     const host = createCompatiblePreviewHost({
       hostWindow,
       iframeWindow: expectedWindow,
-      sessionId: "session-1",
-      snapshotVersion: 1,
+      authorityContext,
       resolution: serverResolution,
-      approvalPublicKey,
       createMessageChannel: () => channel as unknown as MessageChannel,
     } as never)
 
@@ -278,8 +309,7 @@ describe("CompatiblePreviewFrame", () => {
     const host = createCompatiblePreviewHost({
       hostWindow,
       iframeWindow: expectedWindow,
-      sessionId: "session-1",
-      snapshotVersion: 1,
+      authorityContext,
       createMessageChannel: () => channel as unknown as MessageChannel,
     })
 
@@ -311,8 +341,7 @@ describe("CompatiblePreviewFrame", () => {
     const host = createCompatiblePreviewHost({
       hostWindow,
       iframeWindow: expectedWindow,
-      sessionId: "session-1",
-      snapshotVersion: 1,
+      authorityContext,
       createMessageChannel: () => {
         throw new Error("channel unavailable")
       },
@@ -393,8 +422,7 @@ describe("CompatiblePreviewFrame", () => {
     const { rerender } = render(
       <CompatiblePreviewFrame
         resolution={serverResolution}
-        sessionId="session-1"
-        snapshotVersion={1}
+        authorityContext={authorityContext}
         onMessage={firstCallback}
       />,
     )
@@ -415,8 +443,7 @@ describe("CompatiblePreviewFrame", () => {
     rerender(
       <CompatiblePreviewFrame
         resolution={serverResolution}
-        sessionId="session-1"
-        snapshotVersion={1}
+        authorityContext={authorityContext}
         onMessage={nextCallback}
       />,
     )
@@ -426,6 +453,44 @@ describe("CompatiblePreviewFrame", () => {
     expect(firstCallback).toHaveBeenCalledOnce()
     expect(nextCallback).toHaveBeenCalledOnce()
     expect(channels[0].port1.closed).toBe(false)
+  })
+
+  it("kills the mounted frame on every post-bootstrap load without issuing another capability", () => {
+    vi.stubEnv("NEXT_PUBLIC_PREVIEW_ORIGIN", "https://preview.repopress.test")
+    const channels: FakeMessageChannel[] = []
+    vi.stubGlobal(
+      "MessageChannel",
+      class extends FakeMessageChannel {
+        constructor() {
+          super()
+          channels.push(this)
+        }
+      },
+    )
+    render(<CompatiblePreviewFrame resolution={serverResolution} authorityContext={authorityContext} />)
+    const frame = screen.getByTitle("Compatible component preview") as HTMLIFrameElement
+    const frameWindow = frame.contentWindow as Window
+    const postMessage = vi.spyOn(frameWindow, "postMessage")
+
+    fireEvent.load(frame)
+    const offer = JSON.parse(postMessage.mock.calls[0][0] as string)
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        source: frameWindow,
+        data: JSON.stringify({ ...offer, type: "repopress:bootstrap-accept" }),
+      }),
+    )
+    expect(channels).toHaveLength(1)
+    expect(channels[0].port1.closed).toBe(false)
+
+    // A repository component can navigate its own sandboxed frame. The same
+    // WindowProxy must never receive a fresh capability or artifact afterward.
+    fireEvent.load(frame)
+
+    expect(screen.queryByTitle("Compatible component preview")).not.toBeInTheDocument()
+    expect(postMessage).toHaveBeenCalledTimes(2)
+    expect(channels).toHaveLength(1)
+    expect(channels[0].port1.closed).toBe(true)
   })
 
   it("atomically replaces the iframe and host when session or snapshot authority changes", () => {
@@ -445,8 +510,7 @@ describe("CompatiblePreviewFrame", () => {
       <StrictMode>
         <CompatiblePreviewFrame
           resolution={serverResolution}
-          sessionId="session-1"
-          snapshotVersion={1}
+          authorityContext={authorityContext}
           onMessage={onMessage}
         />
       </StrictMode>,
@@ -475,8 +539,7 @@ describe("CompatiblePreviewFrame", () => {
       <StrictMode>
         <CompatiblePreviewFrame
           resolution={secondSessionResolution}
-          sessionId="session-2"
-          snapshotVersion={1}
+          authorityContext={secondSessionAuthority}
           onMessage={onMessage}
         />
       </StrictMode>,
@@ -496,8 +559,7 @@ describe("CompatiblePreviewFrame", () => {
       <StrictMode>
         <CompatiblePreviewFrame
           resolution={secondSnapshotResolution}
-          sessionId="session-2"
-          snapshotVersion={2}
+          authorityContext={secondSnapshotAuthority}
           onMessage={onMessage}
         />
       </StrictMode>,
@@ -525,18 +587,33 @@ describe("CompatiblePreviewFrame", () => {
         content="# Safe"
         frontmatter={{ title: "Safe" }}
         previewFidelity="compatible"
-        compatibleResolution={forgedResolution}
+        compatibleResolution={forgedWire}
+        compatibleAuthority={authorityContext}
       />,
     )
     await waitFor(() => expect(screen.queryByTitle("Compatible component preview")).not.toBeInTheDocument())
     expect(screen.getAllByRole("heading", { name: "Safe" })).toHaveLength(2)
+
+    for (const mismatch of [{ tenantId: "tenant-2" }, { projectId: "project-2" }, { baseCommit: "def456" }]) {
+      rerender(
+        <Preview
+          content="# Safe"
+          frontmatter={{ title: "Safe" }}
+          previewFidelity="compatible"
+          compatibleResolution={serverWire}
+          compatibleAuthority={{ ...authorityContext, ...mismatch }}
+        />,
+      )
+      await waitFor(() => expect(screen.queryByTitle("Compatible component preview")).not.toBeInTheDocument())
+    }
 
     rerender(
       <Preview
         content="# Safe"
         frontmatter={{ title: "Safe" }}
         previewFidelity="compatible"
-        compatibleResolution={serverResolution}
+        compatibleResolution={serverWire}
+        compatibleAuthority={authorityContext}
       />,
     )
     expect(await screen.findByTitle("Compatible component preview")).toBeInTheDocument()
@@ -549,7 +626,8 @@ describe("CompatiblePreviewFrame", () => {
         content="# Safe"
         frontmatter={{ title: "Safe" }}
         previewFidelity="compatible"
-        compatibleResolution={serverResolution}
+        compatibleResolution={serverWire}
+        compatibleAuthority={authorityContext}
       />,
     )
 
@@ -567,6 +645,8 @@ describe("preview sandbox response headers", () => {
     expect(value("Content-Security-Policy")).toContain("default-src 'none'")
     expect(value("Content-Security-Policy")).toContain("script-src 'self' 'unsafe-inline' 'unsafe-eval'")
     expect(value("Content-Security-Policy")).toContain("connect-src 'none'")
+    expect(value("Content-Security-Policy")).toContain("worker-src blob:")
+    expect(value("Content-Security-Policy")).not.toContain("worker-src 'self'")
     expect(value("Content-Security-Policy")).toContain("script-src-attr 'none'")
     expect(value("Content-Security-Policy")).toContain("form-action 'none'")
     expect(value("Content-Security-Policy")).toContain("frame-ancestors https://studio.repopress.test")

@@ -8,7 +8,10 @@ export interface ExtractedImport {
   local: string
 }
 
-export const remarkTransformImports: Plugin<[{ allowedImports: Record<string, string[]> }], Root> = (options) => {
+export const remarkTransformImports: Plugin<
+  [{ allowedImports: Record<string, string[]>; deferValidation?: boolean }],
+  Root
+> = (options) => {
   return (tree, file) => {
     const extracted: ExtractedImport[] = []
     const allowed = options?.allowedImports || {}
@@ -24,7 +27,7 @@ export const remarkTransformImports: Plugin<[{ allowedImports: Record<string, st
           const source = statement.source.value as string
           const allowedSpecifiers = allowed[source]
 
-          if (!allowedSpecifiers) {
+          if (!allowedSpecifiers && !options.deferValidation) {
             file.fail(`Import from '${source}' is not allowed in this project.`)
             return
           }
@@ -37,7 +40,7 @@ export const remarkTransformImports: Plugin<[{ allowedImports: Record<string, st
                   : (specifier.imported.value as string)
               const localName = specifier.local.name
 
-              if (!allowedSpecifiers.includes(importedName)) {
+              if (allowedSpecifiers && !allowedSpecifiers.includes(importedName)) {
                 file.fail(`Importing '${importedName}' from '${source}' is not allowed.`)
                 return
               }
@@ -49,7 +52,7 @@ export const remarkTransformImports: Plugin<[{ allowedImports: Record<string, st
               })
             } else if (specifier.type === "ImportDefaultSpecifier") {
               const localName = specifier.local.name
-              if (!allowedSpecifiers.includes("default")) {
+              if (allowedSpecifiers && !allowedSpecifiers.includes("default")) {
                 file.fail(`Default import from '${source}' is not allowed.`)
                 return
               }

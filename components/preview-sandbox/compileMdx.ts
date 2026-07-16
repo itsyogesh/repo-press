@@ -55,11 +55,18 @@ function rewriteMissingRefChecks(code: string): string {
   return code
 }
 
-export async function compileMdx(source: string, allowedImports: Record<string, string[]>): Promise<CompileMdxResult> {
+export async function compileMdx(
+  source: string,
+  allowedImports: Record<string, string[]>,
+  options: { deferImportValidation?: boolean } = {},
+): Promise<CompileMdxResult> {
   try {
     const vfile = await compile(source, {
       outputFormat: "function-body",
-      remarkPlugins: [remarkGfm, [remarkTransformImports, { allowedImports }]],
+      remarkPlugins: [
+        remarkGfm,
+        [remarkTransformImports, { allowedImports, deferValidation: options.deferImportValidation }],
+      ],
       development: false,
     })
 

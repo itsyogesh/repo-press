@@ -11,6 +11,9 @@ function base64Url(bytes: Uint8Array) {
 }
 
 export async function createSignedCompatibleFixture(options?: {
+  tenantId?: string
+  projectId?: string
+  baseCommit?: string
   sessionId?: string
   snapshotVersion?: number
   documentSource?: string
@@ -34,9 +37,9 @@ export async function createSignedCompatibleFixture(options?: {
     algorithm: "ECDSA-P256-SHA256" as const,
     keyId: "test-key",
     approvalId: "approval-1",
-    tenantId: "tenant-1",
-    projectId: "project-1",
-    baseCommit: "abc123",
+    tenantId: options?.tenantId ?? "tenant-1",
+    projectId: options?.projectId ?? "project-1",
+    baseCommit: options?.baseCommit ?? "abc123",
     sessionId: options?.sessionId ?? "session-1",
     snapshotVersion: options?.snapshotVersion ?? 1,
     issuedAt: now,
@@ -52,5 +55,18 @@ export async function createSignedCompatibleFixture(options?: {
     authority: { ...authorityWithoutSignature, signature: base64Url(new Uint8Array(signature)) },
     artifact,
   }
-  return { resolution, publicKey, privateKey: keyPair.privateKey, keyPair }
+  return {
+    resolution,
+    wire: JSON.stringify(resolution),
+    expectedAuthority: {
+      tenantId: authorityWithoutSignature.tenantId,
+      projectId: authorityWithoutSignature.projectId,
+      baseCommit: authorityWithoutSignature.baseCommit,
+      sessionId: authorityWithoutSignature.sessionId,
+      snapshotVersion: authorityWithoutSignature.snapshotVersion,
+    },
+    publicKey,
+    privateKey: keyPair.privateKey,
+    keyPair,
+  }
 }

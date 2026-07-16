@@ -34,8 +34,8 @@ export function createPreviewSandboxHeaders(studioOriginValue, environment = pro
 			key: "Content-Security-Policy",
 			value: [
 				"default-src 'none'",
-				// Repository code executes only on this opaque, credentialless sandbox route.
-				// Dynamic MDX/adapter evaluation requires unsafe-eval; connect-src remains none.
+				// Repository code executes only in a one-shot blob worker created by this
+				// opaque route. Worker evaluation requires unsafe-eval; connect-src remains none.
 				"script-src 'self' 'unsafe-inline' 'unsafe-eval'",
 				"script-src-attr 'none'",
 				"style-src 'self' 'unsafe-inline'",
@@ -43,7 +43,8 @@ export function createPreviewSandboxHeaders(studioOriginValue, environment = pro
 				"font-src 'none'",
 				"media-src 'none'",
 				"connect-src 'none'",
-				"worker-src 'none'",
+				// The opaque sandbox can launch only RepoPress-owned, self-contained blob workers.
+				"worker-src blob:",
 				"child-src 'none'",
 				"frame-src 'none'",
 				"object-src 'none'",
