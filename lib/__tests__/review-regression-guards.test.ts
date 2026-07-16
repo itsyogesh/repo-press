@@ -72,7 +72,8 @@ function listSandboxSourceFiles(directory: string): string[] {
       return listSandboxSourceFiles(relativePath)
     }
 
-    return entry.isFile() && new Set([".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"]).has(path.extname(entry.name))
+    return entry.isFile() &&
+      new Set([".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".mts", ".cts"]).has(path.extname(entry.name))
       ? [relativePath]
       : []
   })
@@ -153,26 +154,36 @@ describe("review regression guards", () => {
     const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), "repopress-host-scan-"))
     const productionFiles = [
       "app/page.tsx",
+      "app/runtime.mts",
       "components/card.jsx",
+      "convex/runtime.cts",
+      "hooks/runtime.cts",
       "lib/runtime.ts",
+      "lib/runtime.mts",
+      "lib/config/runtime.ts",
+      "lib/runtime.config.ts",
       "hooks/use-runtime.js",
       "convex/runtime.cjs",
       "proxy.ts",
       "instrumentation.mjs",
+      "next.config.mjs",
+      "root.setup.ts",
       "root-component.tsx",
+      "root-module.mts",
       "root-runtime.js",
       "root-widget.jsx",
       "root-worker.cjs",
+      "root-worker.cts",
     ]
     const excludedFiles = [
       "app/__tests__/page.test.tsx",
       "lib/runtime.spec.ts",
-      "lib/config/runtime.ts",
+      "lib/types.d.mts",
+      "lib/types.d.cts",
       "convex/_generated/api.js",
       "components/preview-sandbox/compatible-worker.ts",
       ".next/server/app.js",
       "dist/runtime.js",
-      "next.config.mjs",
     ]
 
     try {
@@ -189,9 +200,49 @@ describe("review regression guards", () => {
 
       const discovered = listHostProductionFiles(fixtureRoot).sort()
       expect(discovered).toEqual([...productionFiles].sort())
+      expect(findHostExecutionViolations(fixtureRoot)).toEqual([])
     } finally {
       fs.rmSync(fixtureRoot, { recursive: true, force: true })
     }
+  })
+
+  it("detects destructured, computed, assigned, and aliased executable adapter component maps", () => {
+    const violations = findHostExecutionViolationsInSource(
+      "lib/adapter-map-probe.ts",
+      `
+        const adapterAlias = repositoryAdapter
+        const componentKey = "compo" + "nents"
+        const contextKey = "components" + "ByContext"
+        const bindingsKey = "Render" + "Bindings"
+        const { components: directMap } = adapterAlias
+        const { [componentKey]: computedMap } = adapterAlias
+        const { [contextKey]: contextualMap, [bindingsKey]: bindingsMap } = adapterAlias
+        let assignedMap
+        ;({ [componentKey]: assignedMap } = adapterAlias)
+        const renamedMap = assignedMap
+        renamedMap.Hero({})
+        computedMap["Callout"]({})
+        directMap({})
+        contextualMap.docs.Hero({})
+        bindingsMap["Callout"]({})
+      `,
+    )
+
+    expect(violations).toEqual(expect.arrayContaining([expect.stringContaining("executable adapter component-map")]))
+  })
+
+  it("does not taint generated Convex component imports or ordinary adapter config metadata", () => {
+    expect(
+      findHostExecutionViolationsInSource(
+        "convex/convex.config.ts",
+        `
+          import { components } from "./_generated/api"
+          const adapterConfig = { components: ["metadata-only"] }
+          const metadataComponents = adapterConfig.components
+          export default { components, metadataComponents }
+        `,
+      ),
+    ).toEqual([])
   })
 
   it("keeps repository and MDX execution out of the host realm", () => {

@@ -3,14 +3,12 @@ import path from "node:path"
 import ts from "typescript"
 
 const PRODUCTION_DIRECTORIES = ["app", "components", "lib", "hooks", "convex"] as const
-const PRODUCTION_EXTENSIONS = new Set([".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"])
+const PRODUCTION_EXTENSIONS = new Set([".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".mts", ".cts"])
 const EXCLUDED_DIRECTORIES = new Set([
   ".next",
   "__tests__",
   "_generated",
   "build",
-  "config",
-  "configs",
   "coverage",
   "dist",
   "generated",
@@ -20,6 +18,7 @@ const EXCLUDED_DIRECTORIES = new Set([
   "tests",
 ])
 const SANDBOX_ALLOWLIST = path.join("components", "preview-sandbox")
+const COMPONENT_MAP_PROPERTIES = new Set(["components", "componentsByContext", "RenderBindings"])
 
 const forbiddenExecutionIdentifiers = new Set([
   "Function",
@@ -34,7 +33,7 @@ const forbiddenExecutionIdentifiers = new Set([
 ])
 const forbiddenExecutionModule = /(?:evaluateMdx|evaluate-adapter|esbuild-browser|execution-guard)(?:\.[cm]?[jt]sx?)?$/
 
-type ExecutionTarget = "eval" | "function" | "global" | "import" | "require"
+type ExecutionTarget = "adapter" | "component-map" | "eval" | "function" | "global" | "import" | "require"
 
 interface ResolvedValue {
   stringValue?: string
@@ -43,10 +42,8 @@ interface ResolvedValue {
 
 function isExcludedProductionFile(fileName: string): boolean {
   return (
-    fileName.endsWith(".d.ts") ||
+    /\.d\.[cm]?ts$/.test(fileName) ||
     /(?:^|[.-])(?:test|spec)\.[^.]+$/.test(fileName) ||
-    /(?:^|[.-])config\.[^.]+$/.test(fileName) ||
-    /(?:^|[.-])setup\.[^.]+$/.test(fileName) ||
     /(?:^|[.-])generated\.[^.]+$/.test(fileName)
   )
 }
@@ -123,6 +120,10 @@ export function findHostExecutionViolationsInSource(relativePath: string, source
       if (expression.text === "Function") return { target: "function" }
       if (expression.text === "eval") return { target: "eval" }
       if (expression.text === "require") return { target: "require" }
+      if (expression.text === "componentsByContext" || expression.text === "RenderBindings") {
+        return { target: "component-map" }
+      }
+      if (/adapter(?:alias)?$/i.test(expression.text)) return { target: "adapter" }
       return undefined
     }
     if (expression.kind === ts.SyntaxKind.ImportKeyword) return { target: "import" }
@@ -154,8 +155,24 @@ export function findHostExecutionViolationsInSource(relativePath: string, source
       if (propertyName === "constructor" || propertyName === "Function") return { target: "function" }
       if (propertyName === "eval") return { target: "eval" }
       if (base?.target === "global" && propertyName === "require") return { target: "require" }
+      if (propertyName && COMPONENT_MAP_PROPERTIES.has(propertyName) && base?.target === "adapter") {
+        return { target: "component-map" }
+      }
+      if (base?.target === "component-map") return { target: "component-map" }
       return undefined
     }
+    if (ts.isCallExpression(expression)) {
+      if (ts.isIdentifier(expression.expression) && expression.expression.text === "createRenderBindings") {
+        return { target: "component-map" }
+      }
+    }
+    return undefined
+  }
+
+  const propertyNameText = (propertyName: ts.PropertyName | undefined): string | undefined => {
+    if (!propertyName) return undefined
+    if (ts.isIdentifier(propertyName) || ts.isStringLiteralLike(propertyName)) return propertyName.text
+    if (ts.isComputedPropertyName(propertyName)) return resolve(propertyName.expression)?.stringValue
     return undefined
   }
 
@@ -183,23 +200,53 @@ export function findHostExecutionViolationsInSource(relativePath: string, source
     return true
   }
 
+  const assignObjectBindingAliases = (pattern: ts.ObjectBindingPattern, initializer: ts.Expression): boolean => {
+    const sourceTarget = resolve(initializer)?.target
+    if (sourceTarget !== "adapter" && sourceTarget !== "global" && sourceTarget !== "component-map") return false
+    let changed = false
+    for (const element of pattern.elements) {
+      if (!ts.isIdentifier(element.name)) continue
+      const propertyName = propertyNameText(element.propertyName) ?? element.name.text
+      const target =
+        sourceTarget === "global"
+          ? propertyName === "Function"
+            ? "function"
+            : propertyName === "eval"
+              ? "eval"
+              : undefined
+          : COMPONENT_MAP_PROPERTIES.has(propertyName) || sourceTarget === "component-map"
+            ? "component-map"
+            : undefined
+      if (target) changed = assignAlias(element.name.text, { target }) || changed
+    }
+    return changed
+  }
+
+  const assignObjectLiteralAliases = (pattern: ts.ObjectLiteralExpression, initializer: ts.Expression): boolean => {
+    const sourceTarget = resolve(initializer)?.target
+    if (sourceTarget !== "adapter" && sourceTarget !== "component-map") return false
+    let changed = false
+    for (const property of pattern.properties) {
+      const propertyName = propertyNameText(property.name)
+      if (!propertyName || (!COMPONENT_MAP_PROPERTIES.has(propertyName) && sourceTarget !== "component-map")) continue
+      const assignedName = ts.isShorthandPropertyAssignment(property)
+        ? property.name.text
+        : ts.isPropertyAssignment(property) && ts.isIdentifier(unwrapExpression(property.initializer))
+          ? (unwrapExpression(property.initializer) as ts.Identifier).text
+          : undefined
+      if (assignedName) changed = assignAlias(assignedName, { target: "component-map" }) || changed
+    }
+    return changed
+  }
+
   const collectAliases = (node: ts.Node): boolean => {
     let changed = false
     if (ts.isVariableDeclaration(node) && node.initializer) {
       if (ts.isIdentifier(node.name)) {
         changed =
           assignAlias(node.name.text, resolveLoaderWrapper(node.initializer) ?? resolve(node.initializer)) || changed
-      } else if (ts.isObjectBindingPattern(node.name) && resolve(node.initializer)?.target === "global") {
-        for (const element of node.name.elements) {
-          if (!ts.isIdentifier(element.name)) continue
-          const propertyName = element.propertyName
-            ? ts.isIdentifier(element.propertyName) || ts.isStringLiteralLike(element.propertyName)
-              ? element.propertyName.text
-              : undefined
-            : element.name.text
-          const target = propertyName === "Function" ? "function" : propertyName === "eval" ? "eval" : undefined
-          if (target) changed = assignAlias(element.name.text, { target }) || changed
-        }
+      } else if (ts.isObjectBindingPattern(node.name)) {
+        changed = assignObjectBindingAliases(node.name, node.initializer) || changed
       }
     }
     if (
@@ -208,6 +255,10 @@ export function findHostExecutionViolationsInSource(relativePath: string, source
       ts.isIdentifier(node.left)
     ) {
       changed = assignAlias(node.left.text, resolveLoaderWrapper(node.right) ?? resolve(node.right)) || changed
+    }
+    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+      const left = unwrapExpression(node.left)
+      if (ts.isObjectLiteralExpression(left)) changed = assignObjectLiteralAliases(left, node.right) || changed
     }
     ts.forEachChild(node, (child) => {
       changed = collectAliases(child) || changed
@@ -235,6 +286,9 @@ export function findHostExecutionViolationsInSource(relativePath: string, source
     if (ts.isIdentifier(node) && forbiddenExecutionIdentifiers.has(node.text)) {
       report(node, `forbidden execution identifier ${node.text}`)
     }
+    if (ts.isIdentifier(node) && aliases.get(node.text)?.target === "component-map") {
+      report(node, "executable adapter component-map alias")
+    }
     if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
       const propertyName = ts.isPropertyAccessExpression(node)
         ? node.name.text
@@ -245,13 +299,11 @@ export function findHostExecutionViolationsInSource(relativePath: string, source
         report(node, "dynamic constructor access")
       }
       if (propertyName === "eval") report(node, "computed eval access")
-      if (
-        ts.isPropertyAccessExpression(node) &&
-        node.name.text === "components" &&
-        /adapter/i.test(node.expression.getText(sourceFile))
-      ) {
+      const baseTarget = resolve(node.expression)?.target
+      if (propertyName && COMPONENT_MAP_PROPERTIES.has(propertyName) && baseTarget === "adapter") {
         report(node, "executable adapter component-map access")
       }
+      if (baseTarget === "component-map") report(node, "executable adapter component-map member use")
     }
     if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
       const specifier =
@@ -262,6 +314,7 @@ export function findHostExecutionViolationsInSource(relativePath: string, source
       const target = resolve(node.expression)
       if (target?.target === "function") report(node, "dynamic Function execution")
       if (target?.target === "eval") report(node, "indirect eval execution")
+      if (target?.target === "component-map") report(node, "executable adapter component-map invocation")
       const specifier = node.arguments?.length === 1 ? moduleText(node.arguments[0]) : undefined
       if (
         specifier &&
