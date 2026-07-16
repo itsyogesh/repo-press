@@ -1,10 +1,12 @@
 import { v } from "convex/values"
-import { api } from "./_generated/api"
-import { action, mutation, query } from "./_generated/server"
-import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
+import { internal } from "./_generated/api"
+import { action, internalMutation } from "./_generated/server"
+import { authorizeGitHubProjectActor, verifyGitHubProjectReadAccess } from "./lib/githubActionAccess"
 
 const IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".avif"])
 const BATCH_SIZE = 5
+const MAX_TREE_ENTRIES = 20_000
+const MAX_IMAGE_FILES = 1_000
 
 function isImagePath(path: string): boolean {
   const lower = path.toLowerCase()
@@ -13,36 +15,19 @@ function isImagePath(path: string): boolean {
   return IMAGE_EXTENSIONS.has(lower.slice(dot))
 }
 
-/** Check read access for the project. Used by the scanImagesFromGitHub action. */
-export const checkAccessQuery = query({
-  args: {
-    projectId: v.id("projects"),
-    userId: v.optional(v.string()),
-    projectAccessToken: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const access = await resolveProjectReader(ctx, args)
-    return access !== null
-  },
-})
-
 /**
  * Upsert a GitHub-scanned image into mediaAssets.
  * Returns { wasInserted: true } for new records, { wasInserted: false } for updates.
  */
-export const upsertScannedImage = mutation({
+export const upsertScannedImage = internalMutation({
   args: {
     projectId: v.id("projects"),
-    userId: v.optional(v.string()),
-    projectAccessToken: v.optional(v.string()),
     fileName: v.string(),
     filePath: v.string(),
     githubSha: v.optional(v.string()),
     sizeBytes: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    await resolveProjectAccess(ctx, args, "editor")
-
     const now = Date.now()
     const existing = await ctx.db
       .query("mediaAssets")
@@ -80,23 +65,20 @@ export const upsertScannedImage = mutation({
 export const scanImagesFromGitHub = action({
   args: {
     projectId: v.id("projects"),
-    owner: v.string(),
-    repo: v.string(),
-    branch: v.string(),
     readRef: v.string(),
     githubToken: v.string(),
-    userId: v.optional(v.string()),
-    projectAccessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const hasAccess = await ctx.runQuery(api.mediaGallery.checkAccessQuery, {
-      projectId: args.projectId,
-      userId: args.userId,
-      projectAccessToken: args.projectAccessToken,
-    })
-    if (!hasAccess) throw new Error("Unauthorized")
+    const { actorUserId, project } = await authorizeGitHubProjectActor(ctx, args)
 
-    const treeUrl = `https://api.github.com/repos/${args.owner}/${args.repo}/git/trees/${encodeURIComponent(args.readRef)}?recursive=1`
+    await ctx.runMutation(internal.projects.consumeGitHubActionRateLimit, {
+      projectId: args.projectId,
+      userId: actorUserId,
+      action: "gallery_scan",
+    })
+    await verifyGitHubProjectReadAccess(project, args.githubToken, args.readRef)
+
+    const treeUrl = `https://api.github.com/repos/${project.repoOwner}/${project.repoName}/git/trees/${encodeURIComponent(args.readRef)}?recursive=1`
     const treeRes = await fetch(treeUrl, {
       headers: {
         Authorization: `token ${args.githubToken}`,
@@ -110,11 +92,16 @@ export const scanImagesFromGitHub = action({
     }
 
     const treeData = (await treeRes.json()) as {
-      tree: Array<{ path: string; sha: string; type: string; size?: number }>
+      tree?: Array<{ path: string; sha: string; type: string; size?: number }>
       truncated?: boolean
+    }
+    if (treeData.truncated) throw new Error("GitHub tree is truncated")
+    if (!Array.isArray(treeData.tree) || treeData.tree.length > MAX_TREE_ENTRIES) {
+      throw new Error(`GitHub tree exceeds ${MAX_TREE_ENTRIES} entries`)
     }
 
     const imageFiles = treeData.tree.filter((item) => item.type === "blob" && isImagePath(item.path))
+    if (imageFiles.length > MAX_IMAGE_FILES) throw new Error(`Gallery image limit exceeds ${MAX_IMAGE_FILES}`)
 
     let inserted = 0
     let updated = 0
@@ -124,10 +111,8 @@ export const scanImagesFromGitHub = action({
       await Promise.all(
         batch.map(async (file) => {
           const fileName = file.path.split("/").pop() ?? file.path
-          const result = await ctx.runMutation(api.mediaGallery.upsertScannedImage, {
+          const result = await ctx.runMutation(internal.mediaGallery.upsertScannedImage, {
             projectId: args.projectId,
-            userId: args.userId,
-            projectAccessToken: args.projectAccessToken,
             fileName,
             filePath: file.path,
             githubSha: file.sha,

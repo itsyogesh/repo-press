@@ -293,6 +293,19 @@ export default defineSchema({
     .index("by_userId", ["userId"])
     .index("by_expiresAt", ["expiresAt"]),
 
+  // ─── GitHub Action Rate Limits ──────────────────────────────
+  githubActionRateLimits: defineTable({
+    projectId: v.optional(v.id("projects")),
+    scopeKey: v.string(),
+    userId: v.string(),
+    action: v.union(v.literal("title_sync"), v.literal("gallery_scan")),
+    windowStartedAt: v.number(),
+    attempts: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_scope_user_action", ["scopeKey", "userId", "action"])
+    .index("by_projectId", ["projectId"]),
+
   // ─── Deleted Config Projects (tombstone for config-driven project deletion) ─
   deletedConfigProjects: defineTable({
     configProjectId: v.string(), // The id field from repopress.config.json

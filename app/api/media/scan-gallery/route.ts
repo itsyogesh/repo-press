@@ -2,6 +2,7 @@ import { ConvexHttpClient } from "convex/browser"
 import { NextResponse } from "next/server"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
+import { fetchAuthAction } from "@/lib/auth-server"
 import { mintServerQueryToken } from "@/lib/project-access-token"
 import { RouteAuthError, resolveRouteAuth } from "@/lib/route-auth"
 
@@ -45,17 +46,12 @@ export async function POST(request: Request) {
       throw e
     }
 
-    const { actingUserId, projectAccessToken, githubToken } = auth
+    if (!fetchAuthAction) throw new Error("Authenticated Convex actions are unavailable")
 
-    const result = await convex.action(api.mediaGallery.scanImagesFromGitHub, {
+    const result = await fetchAuthAction(api.mediaGallery.scanImagesFromGitHub, {
       projectId: projectId as Id<"projects">,
-      owner,
-      repo,
-      branch,
       readRef,
-      githubToken,
-      userId: actingUserId,
-      projectAccessToken,
+      githubToken: auth.githubToken,
     })
 
     return NextResponse.json(result)

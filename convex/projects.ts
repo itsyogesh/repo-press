@@ -54,6 +54,96 @@ export const listMyProjectsForRepo = query({
   },
 })
 
+/** Internal project authorization used only after a GitHub action derives the real actor. */
+export const getGitHubActionProjectAccess = internalQuery({
+  args: {
+    projectId: v.id("projects"),
+    userId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const project = await ctx.db.get(args.projectId)
+    if (!project) return null
+
+    if (project.userId === args.userId) {
+      return { project, role: "owner" as const }
+    }
+
+    const cached = await ctx.db
+      .query("repoAccessCache")
+      .withIndex("by_repo_userId", (q) =>
+        q.eq("repoOwner", project.repoOwner).eq("repoName", project.repoName).eq("userId", args.userId),
+      )
+      .first()
+
+    if (!cached || cached.expiresAt <= Date.now()) return null
+    return { project, role: cached.role }
+  },
+})
+
+const GITHUB_ACTION_RATE_WINDOW_MS = 60_000
+const GITHUB_ACTION_PROJECT_RATE_LIMITS = {
+  title_sync: 4,
+  gallery_scan: 2,
+} as const
+const GITHUB_ACTION_GLOBAL_RATE_LIMITS = {
+  title_sync: 8,
+  gallery_scan: 4,
+} as const
+
+/** Atomically consumes global and per-project allowances for the real actor. */
+export const consumeGitHubActionRateLimit = internalMutation({
+  args: {
+    projectId: v.id("projects"),
+    userId: v.string(),
+    action: v.union(v.literal("title_sync"), v.literal("gallery_scan")),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now()
+    const buckets = [
+      {
+        scopeKey: "global",
+        limit: GITHUB_ACTION_GLOBAL_RATE_LIMITS[args.action],
+      },
+      {
+        scopeKey: `project:${args.projectId}`,
+        projectId: args.projectId,
+        limit: GITHUB_ACTION_PROJECT_RATE_LIMITS[args.action],
+      },
+    ]
+
+    for (const bucket of buckets) {
+      const existing = await ctx.db
+        .query("githubActionRateLimits")
+        .withIndex("by_scope_user_action", (q) =>
+          q.eq("scopeKey", bucket.scopeKey).eq("userId", args.userId).eq("action", args.action),
+        )
+        .first()
+
+      const windowExpired =
+        !existing || now < existing.windowStartedAt || now - existing.windowStartedAt >= GITHUB_ACTION_RATE_WINDOW_MS
+      if (windowExpired) {
+        if (existing) {
+          await ctx.db.patch(existing._id, { windowStartedAt: now, attempts: 1, updatedAt: now })
+        } else {
+          await ctx.db.insert("githubActionRateLimits", {
+            projectId: bucket.projectId,
+            scopeKey: bucket.scopeKey,
+            userId: args.userId,
+            action: args.action,
+            windowStartedAt: now,
+            attempts: 1,
+            updatedAt: now,
+          })
+        }
+        continue
+      }
+
+      if (existing.attempts >= bucket.limit) throw new Error("Rate limit exceeded")
+      await ctx.db.patch(existing._id, { attempts: existing.attempts + 1, updatedAt: now })
+    }
+  },
+})
+
 export const get = query({
   args: {
     id: v.id("projects"),
@@ -893,6 +983,7 @@ export const _removeFullBatch = internalMutation({
         "explorerOps",
         "mediaOps",
         "publishBranches",
+        "githubActionRateLimits",
       ] as const
 
       for (const table of tables) {

@@ -2,9 +2,9 @@ import { ConvexHttpClient } from "convex/browser"
 import { NextResponse } from "next/server"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
-import { getGitHubToken } from "@/lib/auth-server"
-import { getRepoRole } from "@/lib/github-permissions"
+import { fetchAuthAction, getGitHubToken } from "@/lib/auth-server"
 import { mintServerQueryToken } from "@/lib/project-access-token"
+import { RouteAuthError, resolveRouteAuth } from "@/lib/route-auth"
 import { prepareTitleSyncFiles } from "@/lib/studio/path-adapters"
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
@@ -41,21 +41,23 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Project does not match repo/branch" }, { status: 400 })
     }
 
-    const { role } = await getRepoRole(token, owner, repo)
-    if (!role) {
-      return NextResponse.json({ error: "Forbidden: no access to this repository" }, { status: 403 })
+    let auth: Awaited<ReturnType<typeof resolveRouteAuth>>
+    try {
+      auth = await resolveRouteAuth(project, "editor")
+    } catch (error) {
+      if (error instanceof RouteAuthError) {
+        return NextResponse.json({ error: error.message }, { status: error.status })
+      }
+      throw error
     }
 
-    // Call the Convex action with the server-side token
-    await convex.action(api.documents.syncTreeTitles, {
+    if (!fetchAuthAction) throw new Error("Authenticated Convex actions are unavailable")
+    const preparedFiles = prepareTitleSyncFiles(project.contentRoot, files).map(({ path, sha }) => ({ path, sha }))
+    await fetchAuthAction(api.documents.syncTreeTitles, {
       projectId: projectId as Id<"projects">,
-      owner,
-      repo,
-      branch,
       readRef,
-      contentRoot: project.contentRoot,
-      files: prepareTitleSyncFiles(project.contentRoot, files),
-      githubToken: token,
+      files: preparedFiles,
+      githubToken: auth.githubToken,
     })
 
     return NextResponse.json({ ok: true })

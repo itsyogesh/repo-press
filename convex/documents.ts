@@ -1,9 +1,56 @@
 import { v } from "convex/values"
 import { DOCUMENT_ALLOWED_TRANSITIONS, isPublishableDocumentStatus } from "../lib/document-status"
-import { resolveStoredContentPath, type StoredPathRepresentation } from "../lib/preview/path-policy"
+import {
+  assertContentPath,
+  resolveStoredContentPath,
+  type StoredPathRepresentation,
+  toRepoPath,
+} from "../lib/preview/path-policy"
 import { internal } from "./_generated/api"
 import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server"
 import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
+import {
+  assertGitHubCommitSha,
+  authorizeGitHubProjectActor,
+  verifyGitHubProjectReadAccess,
+} from "./lib/githubActionAccess"
+
+const TITLE_SYNC_MAX_PATH_BYTES = 1_024
+const TITLE_SYNC_MAX_TOTAL_PATH_BYTES = 128 * 1_024
+const TITLE_SYNC_MAX_CONTENT_BYTES = 256 * 1_024
+const TITLE_SYNC_MAX_FILES = 256
+const utf8Encoder = new TextEncoder()
+const utf8Decoder = new TextDecoder()
+
+function decodeTitleSyncContent(payload: {
+  type?: string
+  size?: number
+  encoding?: string
+  content?: string
+}): string | null {
+  if (
+    payload.type !== "file" ||
+    payload.encoding !== "base64" ||
+    typeof payload.content !== "string" ||
+    typeof payload.size !== "number" ||
+    payload.size < 0 ||
+    payload.size > TITLE_SYNC_MAX_CONTENT_BYTES
+  ) {
+    return null
+  }
+
+  const compactBase64 = payload.content.replace(/\s/g, "")
+  if (compactBase64.length > Math.ceil((TITLE_SYNC_MAX_CONTENT_BYTES * 4) / 3) + 4) return null
+
+  try {
+    const binary = atob(compactBase64)
+    if (binary.length > TITLE_SYNC_MAX_CONTENT_BYTES) return null
+    const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0))
+    return utf8Decoder.decode(bytes)
+  } catch {
+    return null
+  }
+}
 
 export const listByProject = query({
   args: {
@@ -584,15 +631,45 @@ export const listDirtyForProject = query({
 export const syncTreeTitles = action({
   args: {
     projectId: v.id("projects"),
-    owner: v.string(),
-    repo: v.string(),
-    branch: v.string(),
     readRef: v.string(),
-    contentRoot: v.string(),
-    files: v.array(v.object({ path: v.string(), repoPath: v.string(), sha: v.string() })),
+    files: v.array(v.object({ path: v.string(), sha: v.string() })),
     githubToken: v.string(),
   },
   handler: async (ctx, args) => {
+    const { actorUserId, project } = await authorizeGitHubProjectActor(ctx, args)
+    if (!Array.isArray(args.files) || args.files.length > TITLE_SYNC_MAX_FILES) {
+      throw new Error(`file list exceeds ${TITLE_SYNC_MAX_FILES} entries`)
+    }
+    for (let index = 0; index < args.files.length; index++) {
+      if (!Object.hasOwn(args.files, index)) throw new Error("Invalid file list")
+    }
+    const seenPaths = new Set<string>()
+    let totalPathBytes = 0
+    const files = args.files.map((file) => {
+      assertGitHubCommitSha(file.sha, "file sha")
+      const pathBytes = utf8Encoder.encode(file.path).byteLength
+      if (pathBytes > TITLE_SYNC_MAX_PATH_BYTES) {
+        throw new Error(`content path exceeds ${TITLE_SYNC_MAX_PATH_BYTES} bytes`)
+      }
+      totalPathBytes += pathBytes
+      if (totalPathBytes > TITLE_SYNC_MAX_TOTAL_PATH_BYTES) {
+        throw new Error(`total path bytes exceed ${TITLE_SYNC_MAX_TOTAL_PATH_BYTES}`)
+      }
+      const path = assertContentPath(file.path)
+      if (seenPaths.has(path)) throw new Error("Duplicate content path")
+      seenPaths.add(path)
+      const repoPath = toRepoPath(project.contentRoot, path)
+      if (!/\.(?:md|mdx|markdown)$/i.test(repoPath)) throw new Error("Unsupported content file")
+      return { path, sha: file.sha, repoPath }
+    })
+
+    await ctx.runMutation(internal.projects.consumeGitHubActionRateLimit, {
+      projectId: args.projectId,
+      userId: actorUserId,
+      action: "title_sync",
+    })
+    await verifyGitHubProjectReadAccess(project, args.githubToken, args.readRef)
+
     // Check which files already have document records
     const existingDocs = await ctx.runQuery(internal.documents.listByProjectInternal, {
       projectId: args.projectId,
@@ -600,14 +677,14 @@ export const syncTreeTitles = action({
     const existingPaths = new Set(
       existingDocs.map((document) =>
         resolveStoredContentPath(
-          args.contentRoot,
+          project.contentRoot,
           document.filePath,
           document.pathRepresentation as StoredPathRepresentation | undefined,
         ),
       ),
     )
 
-    const missingFiles = args.files.filter((f) => !existingPaths.has(f.path))
+    const missingFiles = files.filter((f) => !existingPaths.has(f.path))
     if (missingFiles.length === 0) return
 
     // Fetch and sync in batches of 5 to avoid rate limits
@@ -616,42 +693,58 @@ export const syncTreeTitles = action({
       const batch = missingFiles.slice(i, i + BATCH_SIZE)
       await Promise.all(
         batch.map(async (file) => {
+          let response: Response
           try {
-            const response = await fetch(
-              `https://api.github.com/repos/${args.owner}/${args.repo}/contents/${encodeURIComponent(file.repoPath)}?ref=${encodeURIComponent(args.readRef)}`,
+            response = await fetch(
+              `https://api.github.com/repos/${project.repoOwner}/${project.repoName}/contents/${encodeURIComponent(file.repoPath)}?ref=${encodeURIComponent(args.readRef)}`,
               {
                 headers: {
                   Authorization: `token ${args.githubToken}`,
-                  Accept: "application/vnd.github.v3.raw",
+                  Accept: "application/vnd.github+json",
                 },
               },
             )
-            if (!response.ok) return
-
-            const content = await response.text()
-
-            // Extract title from frontmatter (simple regex - no gray-matter in Convex)
-            let title =
-              file.path
-                .split("/")
-                .pop()
-                ?.replace(/\.(mdx?|markdown)$/i, "") || file.path
-            const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/)
-            if (fmMatch) {
-              const titleMatch = fmMatch[1].match(/^title:\s*["']?(.+?)["']?\s*$/m)
-              if (titleMatch) title = titleMatch[1].trim()
-            }
-
-            await ctx.runMutation(internal.documents.getOrCreateInternal, {
-              projectId: args.projectId,
-              filePath: file.path,
-              pathRepresentation: "content_relative_v1",
-              title,
-              githubSha: file.sha,
-            })
           } catch {
-            // Skip files that fail to fetch
+            return
           }
+          if (!response.ok) return
+
+          let payload: {
+            type?: string
+            sha?: string
+            size?: number
+            encoding?: string
+            content?: string
+          }
+          try {
+            payload = (await response.json()) as typeof payload
+          } catch {
+            return
+          }
+          if (payload.sha !== file.sha) throw new Error("File SHA mismatch")
+
+          const content = decodeTitleSyncContent(payload)
+          if (content === null) return
+
+          // Extract title from frontmatter (simple regex - no gray-matter in Convex)
+          let title =
+            file.path
+              .split("/")
+              .pop()
+              ?.replace(/\.(mdx?|markdown)$/i, "") || file.path
+          const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/)
+          if (fmMatch) {
+            const titleMatch = fmMatch[1].match(/^title:\s*["']?(.+?)["']?\s*$/m)
+            if (titleMatch) title = titleMatch[1].trim()
+          }
+
+          await ctx.runMutation(internal.documents.getOrCreateInternal, {
+            projectId: args.projectId,
+            filePath: file.path,
+            pathRepresentation: "content_relative_v1",
+            title,
+            githubSha: file.sha,
+          })
         }),
       )
     }
