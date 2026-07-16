@@ -41,7 +41,7 @@ const forbiddenExecutionIdentifiers = new Set([
 ])
 const forbiddenExecutionModule = /(?:evaluateMdx|evaluate-adapter|esbuild-browser|execution-guard)(?:\.[cm]?[jt]sx?)?$/
 const previewSandboxModule = /(?:^|\/)(?:components\/)?preview-sandbox(?:\/|$)/
-const repositoryPreviewAdapterModule = /(?:^|\/)\.repopress\/mdx-preview(?:\/|$)/
+const repositoryPreviewAdapterModule = /(?:^|\/)\.repopress\/mdx-preview(?:\/|$|\.(?:ts|tsx|js|jsx|mts|cts|mjs|cjs)$)/
 
 type ExecutionTarget = "adapter" | "component-map" | "eval" | "function" | "global" | "import" | "module" | "require"
 type ModuleTarget = "preview-sandbox" | "repository-adapter"
@@ -235,11 +235,11 @@ export function findHostExecutionViolationsInSource(relativePath: string, source
     if (ts.isIdentifier(expression)) {
       const aliased = aliases.get(expression.text)
       if (aliased && !resolving.has(expression.text)) return aliased
-      if (expression.text === "globalThis") return { target: "global" }
+      if (expression.text === "globalThis" && !isLocallyBound(expression)) return { target: "global" }
       if (expression.text === "Function") return { target: "function" }
       if (expression.text === "eval") return { target: "eval" }
       if (expression.text === "require" && !isLocallyBound(expression)) return { target: "require" }
-      if (expression.text === "module") return { target: "module" }
+      if (expression.text === "module" && !isLocallyBound(expression)) return { target: "module" }
       if (expression.text === "componentsByContext" || expression.text === "RenderBindings") {
         return { target: "component-map" }
       }

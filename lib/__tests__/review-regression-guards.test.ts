@@ -383,6 +383,77 @@ describe("review regression guards", () => {
     ).toEqual([])
   })
 
+  it.each([
+    "@/.repopress/mdx-preview",
+    "@/.repopress/mdx-preview/schema",
+    "@/.repopress/mdx-preview.ts",
+    "@/.repopress/mdx-preview.tsx",
+    "@/.repopress/mdx-preview.js",
+    "@/.repopress/mdx-preview.jsx",
+    "@/.repopress/mdx-preview.mts",
+    "@/.repopress/mdx-preview.cts",
+    "@/.repopress/mdx-preview.mjs",
+    "@/.repopress/mdx-preview.cjs",
+  ])("recognizes canonical repository adapter module %s", (specifier) => {
+    const violations = findHostExecutionViolationsInSource(
+      "components/studio/reviewer-adapter-probe.tsx",
+      `
+        import adapterDefault from "${specifier}"
+        import { adapter as reviewerAdapter } from "${specifier}"
+        import { adapter } from "${specifier}"
+        adapterDefault.components.Reviewer({})
+        reviewerAdapter.components.Reviewer({})
+        adapter.components.Reviewer({})
+      `,
+    )
+
+    expect(violations.filter((violation) => violation.includes("repository preview adapter module"))).toHaveLength(3)
+    expect(
+      violations.filter((violation) => violation.includes("executable adapter component-map access")),
+    ).toHaveLength(3)
+  })
+
+  it.each([
+    "@/.repopress/mdx-preview-old.tsx",
+    "@/.repopress/mdx-preview.evil",
+    "@/.repopress/mdx-preview-json",
+  ])("rejects repository adapter suffix lookalike %s", (specifier) => {
+    expect(
+      findHostExecutionViolationsInSource(
+        "components/studio/lookalike-adapter-probe.tsx",
+        `
+          import lookalikeDefault from "${specifier}"
+          import { adapter as lookalikeAdapter } from "${specifier}"
+          lookalikeDefault.components.Reviewer({})
+          lookalikeAdapter.components.Reviewer({})
+        `,
+      ),
+    ).toEqual([])
+  })
+
+  it("does not treat lexically shadowed module or globalThis objects as CommonJS loaders", () => {
+    expect(
+      findHostExecutionViolationsInSource(
+        "lib/local-commonjs-objects-probe.cjs",
+        `
+          function inspect(module, globalThis) {
+            const target = "@/components/preview-sandbox/compatible-worker"
+            module.require(target)
+            globalThis.require(target)
+            const moduleLoad = module.require
+            const { require: globalLoad } = globalThis
+            const boundModuleLoad = module.require.bind(module)
+            const boundGlobalLoad = globalThis.require.bind(globalThis)
+            moduleLoad(target)
+            globalLoad(target)
+            boundModuleLoad(target)
+            boundGlobalLoad(target)
+          }
+        `,
+      ),
+    ).toEqual([])
+  })
+
   it("allows only the inert type edge and the exact sandbox route runtime entry", () => {
     expect(
       findHostExecutionViolationsInSource(
