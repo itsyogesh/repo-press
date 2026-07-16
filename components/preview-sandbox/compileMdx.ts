@@ -1,8 +1,6 @@
-"use server"
-
 import { compile } from "@mdx-js/mdx"
 import remarkGfm from "remark-gfm"
-import { type ExtractedImport, remarkTransformImports } from "./transformImports"
+import { type ExtractedImport, remarkTransformImports } from "@/components/mdx-runtime/transformImports"
 
 export interface CompileMdxResult {
   code?: string

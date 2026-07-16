@@ -9,6 +9,11 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import type { FieldVariantMap } from "@/lib/framework-adapters"
 import { resolveFieldValue } from "@/lib/framework-adapters"
+import {
+  parseConfiguredPreviewApprovalKey,
+  type SignedCompatiblePreviewResolution,
+  verifySignedCompatiblePreviewResolution,
+} from "@/lib/preview/compatible-artifact"
 import { buildGenericRenderModel } from "@/lib/preview/generic-render-model"
 import { resolveStudioAssetUrl } from "@/lib/studio/media-resolve"
 import { cn } from "@/lib/utils"
@@ -76,6 +81,7 @@ interface PreviewProps {
   onScroll?: () => void
   onCompilingChange?: (isCompiling: boolean) => void
   previewFidelity?: "generic" | "compatible"
+  compatibleResolution?: SignedCompatiblePreviewResolution | null
 }
 
 export function Preview({
@@ -90,6 +96,7 @@ export function Preview({
   onScroll,
   onCompilingChange,
   previewFidelity = "generic",
+  compatibleResolution,
 }: PreviewProps) {
   const [viewport, setViewport] = React.useState<Viewport>("desktop")
   const [isFullScreen, setIsFullScreen] = React.useState(false)
@@ -99,6 +106,28 @@ export function Preview({
   // Debounced content for preview (300ms delay)
   const [debouncedContent, setDebouncedContent] = React.useState(content)
   const genericRenderModel = React.useMemo(() => buildGenericRenderModel(debouncedContent), [debouncedContent])
+  const [verifiedCompatibleResolution, setVerifiedCompatibleResolution] =
+    React.useState<SignedCompatiblePreviewResolution | null>(null)
+  const approvalPublicKey = React.useMemo(
+    () => parseConfiguredPreviewApprovalKey(process.env.NEXT_PUBLIC_PREVIEW_APPROVAL_PUBLIC_KEY_JWK),
+    [],
+  )
+  React.useEffect(() => {
+    let active = true
+    setVerifiedCompatibleResolution(null)
+    if (compatibleResolution && approvalPublicKey) {
+      void verifySignedCompatiblePreviewResolution(compatibleResolution, {
+        publicKey: approvalPublicKey,
+        expectedSessionId: compatibleResolution.authority.sessionId,
+        expectedSnapshotVersion: compatibleResolution.authority.snapshotVersion,
+      }).then((resolution) => {
+        if (active) setVerifiedCompatibleResolution(resolution)
+      })
+    }
+    return () => {
+      active = false
+    }
+  }, [approvalPublicKey, compatibleResolution])
   const onCompilingChangeRef = React.useRef(onCompilingChange)
   onCompilingChangeRef.current = onCompilingChange
   const [compileStatusForwarder] = React.useState(() =>
@@ -228,9 +257,13 @@ export function Preview({
           </div>
         )}
 
-        {previewFidelity === "compatible" ? (
+        {previewFidelity === "compatible" && verifiedCompatibleResolution ? (
           <div className="min-h-96 p-4 md:p-6">
-            <CompatiblePreviewFrame />
+            <CompatiblePreviewFrame
+              resolution={verifiedCompatibleResolution}
+              sessionId={verifiedCompatibleResolution.authority.sessionId}
+              snapshotVersion={verifiedCompatibleResolution.authority.snapshotVersion}
+            />
           </div>
         ) : (
           <div className="px-5 py-6 md:px-7 md:py-8">

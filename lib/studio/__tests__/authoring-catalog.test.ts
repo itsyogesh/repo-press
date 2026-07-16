@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { createRenderBindings, getRenderBindingNames } from "../../preview/render-bindings"
+import { createRenderBindings, getRenderBindingNames } from "../../../components/preview-sandbox/render-bindings"
 import { AUTHORING_CATALOG_LIMITS, buildAuthoringCatalog } from "../authoring-catalog"
 
 describe("authoring catalog separation", () => {

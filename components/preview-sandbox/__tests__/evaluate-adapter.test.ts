@@ -1,9 +1,18 @@
 // @vitest-environment node
+import fs from "node:fs"
+import path from "node:path"
 import { describe, expect, it } from "vitest"
 import { transpileAdapter } from "../esbuild-browser"
 import { evaluateAdapter } from "../evaluate-adapter"
 
 describe("evaluateAdapter", () => {
+  it("transpiles without WASM fetches so the sandbox can keep connect-src disabled", () => {
+    const source = fs.readFileSync(path.join(process.cwd(), "components/preview-sandbox/esbuild-browser.ts"), "utf8")
+    expect(source).not.toContain("esbuild-wasm")
+    expect(source).not.toContain("wasmURL")
+    expect(source).not.toMatch(/\bfetch\s*\(/)
+  })
+
   it("reads default exports from bundled CommonJS output", async () => {
     const code = await transpileAdapter({
       entryPath: "mdx-preview.tsx",

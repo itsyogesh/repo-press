@@ -1,11 +1,17 @@
-import { render, screen } from "@testing-library/react"
-import { describe, expect, it, vi } from "vitest"
+import { render, screen, waitFor } from "@testing-library/react"
+import { beforeAll, describe, expect, it, vi } from "vitest"
+import { createSignedCompatibleFixture } from "@/lib/preview/__tests__/compatible-test-fixture"
+import {
+  COMPATIBLE_COMMAND_RATE_BURST,
+  type SignedCompatiblePreviewResolution,
+  serializeCompatibleArtifactTransfer,
+} from "@/lib/preview/compatible-artifact"
 import {
   advanceSandboxSequence,
   createSandboxSessionState,
   validateSandboxMessage,
 } from "@/lib/preview/sandbox-protocol"
-import { createSandboxRuntimeBridge, SandboxRuntime } from "../SandboxRuntime"
+import { createSandboxRuntimeBridge, evaluateCompatibleArtifact, SandboxRuntime } from "../SandboxRuntime"
 
 class FakePort {
   closed = false
@@ -24,7 +30,20 @@ class FakePort {
   start() {
     this.started = true
   }
+
+  emit(message: unknown) {
+    this.onmessage?.({ data: message } as MessageEvent)
+  }
 }
+
+let serverResolution: SignedCompatiblePreviewResolution
+let approvalPublicKey: JsonWebKey
+
+beforeAll(async () => {
+  const fixture = await createSignedCompatibleFixture({ sessionId: "session-1", snapshotVersion: 3 })
+  serverResolution = fixture.resolution
+  approvalPublicKey = fixture.publicKey
+})
 
 describe("SandboxRuntime", () => {
   it("renders only the RepoPress-owned inert Task 9 shell", () => {
@@ -36,6 +55,13 @@ describe("SandboxRuntime", () => {
     )
     expect(container.querySelector("script")).toBeNull()
     expect(container.querySelector("[dangerouslySetInnerHTML]")).toBeNull()
+  })
+
+  it("compiles and evaluates resolved MDX only through the sandbox runtime module", async () => {
+    const Artifact = await evaluateCompatibleArtifact(serverResolution.artifact)
+    render(<Artifact />)
+
+    expect(screen.getByRole("heading", { name: "Isolated" })).toBeInTheDocument()
   })
 
   it("accepts a serialized parent offer and emits serialized ready and teardown messages over the port", () => {
@@ -95,6 +121,75 @@ describe("SandboxRuntime", () => {
     state = advanceSandboxSequence(teardown)
     expect(teardown).toMatchObject({ accepted: true, message: { type: "teardown", sequence: 2 } })
     expect(state.invalidated).toBe(true)
+  })
+
+  it("assembles only ordered, digest-bound source from the authenticated port", async () => {
+    const sandboxWindow = { addEventListener: vi.fn(), removeEventListener: vi.fn() }
+    const parentWindow = { postMessage: vi.fn() }
+    const port = new FakePort()
+    const onResolution = vi.fn()
+    const bridge = createSandboxRuntimeBridge({ sandboxWindow, parentWindow, onResolution })
+    const offer = {
+      protocolVersion: 1,
+      type: "repopress:bootstrap-offer",
+      sessionId: "session-1",
+      snapshotVersion: 3,
+      capability: "A".repeat(43),
+    }
+
+    bridge.start()
+    bridge.receiveWindowMessage({ data: JSON.stringify(offer), source: parentWindow, ports: [] })
+    bridge.receiveWindowMessage({
+      data: JSON.stringify({ protocolVersion: 1, type: "repopress:bootstrap-port", sessionId: "session-1" }),
+      source: parentWindow,
+      ports: [port as unknown as MessagePort],
+    })
+    const wires = await serializeCompatibleArtifactTransfer({
+      resolution: serverResolution,
+      publicKey: approvalPublicKey,
+      sessionId: "session-1",
+      snapshotVersion: 3,
+    })
+    wires.forEach((wire) => {
+      port.emit(wire)
+    })
+
+    await waitFor(() => expect(onResolution).toHaveBeenCalledWith(serverResolution))
+  })
+
+  it("invalidates partial assembly on sequence gaps and closes command floods", async () => {
+    const sandboxWindow = { addEventListener: vi.fn(), removeEventListener: vi.fn() }
+    const parentWindow = { postMessage: vi.fn() }
+    const port = new FakePort()
+    const onResolution = vi.fn()
+    const bridge = createSandboxRuntimeBridge({ sandboxWindow, parentWindow, onResolution })
+    const offer = {
+      protocolVersion: 1,
+      type: "repopress:bootstrap-offer",
+      sessionId: "session-1",
+      snapshotVersion: 3,
+      capability: "A".repeat(43),
+    }
+    bridge.start()
+    bridge.receiveWindowMessage({ data: JSON.stringify(offer), source: parentWindow, ports: [] })
+    bridge.receiveWindowMessage({
+      data: JSON.stringify({ protocolVersion: 1, type: "repopress:bootstrap-port", sessionId: "session-1" }),
+      source: parentWindow,
+      ports: [port as unknown as MessagePort],
+    })
+    const wires = await serializeCompatibleArtifactTransfer({
+      resolution: serverResolution,
+      publicKey: approvalPublicKey,
+      sessionId: "session-1",
+      snapshotVersion: 3,
+    })
+    port.emit(wires[0])
+    port.emit(wires.at(-1))
+    await Promise.resolve()
+    expect(onResolution).not.toHaveBeenCalled()
+
+    for (let attempt = 0; attempt <= COMPATIBLE_COMMAND_RATE_BURST; attempt += 1) port.emit("{")
+    expect(port.closed).toBe(true)
   })
 
   it("never treats event.origin as bootstrap authentication", () => {

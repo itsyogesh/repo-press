@@ -1,8 +1,10 @@
 import { createRequire } from "node:module"
-import { cleanup, fireEvent, render, screen } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { StrictMode } from "react"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { Preview } from "@/components/studio/preview"
+import { createSignedCompatibleFixture } from "@/lib/preview/__tests__/compatible-test-fixture"
+import type { SignedCompatiblePreviewResolution } from "@/lib/preview/compatible-artifact"
 import { SANDBOX_MAX_MESSAGE_BYTES, SANDBOX_RATE_BURST, serializeSandboxMessage } from "@/lib/preview/sandbox-protocol"
 import { createPreviewSandboxHeaders, nextConfig } from "../../../next.config.mjs"
 import {
@@ -44,6 +46,28 @@ class FakeMessageChannel {
   port1 = new FakePort()
   port2 = new FakePort()
 }
+
+let serverResolution: SignedCompatiblePreviewResolution
+let secondSessionResolution: SignedCompatiblePreviewResolution
+let secondSnapshotResolution: SignedCompatiblePreviewResolution
+let forgedResolution: SignedCompatiblePreviewResolution
+let approvalPublicKey: JsonWebKey
+
+beforeAll(async () => {
+  const fixture = await createSignedCompatibleFixture()
+  serverResolution = fixture.resolution
+  approvalPublicKey = fixture.publicKey
+  secondSessionResolution = (await createSignedCompatibleFixture({ sessionId: "session-2", keyPair: fixture.keyPair }))
+    .resolution
+  secondSnapshotResolution = (
+    await createSignedCompatibleFixture({ sessionId: "session-2", snapshotVersion: 2, keyPair: fixture.keyPair })
+  ).resolution
+  forgedResolution = (await createSignedCompatibleFixture()).resolution
+})
+
+beforeEach(() => {
+  vi.stubEnv("NEXT_PUBLIC_PREVIEW_APPROVAL_PUBLIC_KEY_JWK", JSON.stringify(approvalPublicKey))
+})
 
 afterEach(() => {
   cleanup()
@@ -87,7 +111,7 @@ describe("CompatiblePreviewFrame", () => {
   it("uses only the script sandbox capability and keeps the bootstrap capability out of its URL", () => {
     vi.stubEnv("NEXT_PUBLIC_PREVIEW_ORIGIN", "https://preview.repopress.test")
 
-    render(<CompatiblePreviewFrame sessionId="session-1" snapshotVersion={1} />)
+    render(<CompatiblePreviewFrame resolution={serverResolution} sessionId="session-1" snapshotVersion={1} />)
 
     const frame = screen.getByTitle("Compatible component preview")
     expect(frame).toHaveAttribute("sandbox", "allow-scripts")
@@ -208,6 +232,39 @@ describe("CompatiblePreviewFrame", () => {
     // The single-use capability cannot bootstrap another channel.
     expect(host.receiveWindowMessage({ data: acceptance, source: expectedWindow })).toBe(false)
     expect(postMessage).toHaveBeenCalledTimes(2)
+  })
+
+  it("sends a digest-bound resolved artifact in bounded ordered chunks after authentication", async () => {
+    const hostWindow = { addEventListener: vi.fn(), removeEventListener: vi.fn() }
+    const expectedWindow = { postMessage: vi.fn() }
+    const channel = new FakeMessageChannel()
+    const host = createCompatiblePreviewHost({
+      hostWindow,
+      iframeWindow: expectedWindow,
+      sessionId: "session-1",
+      snapshotVersion: 1,
+      resolution: serverResolution,
+      approvalPublicKey,
+      createMessageChannel: () => channel as unknown as MessageChannel,
+    } as never)
+
+    host.start()
+    expect(channel.port1.sent).toEqual([])
+    const offer = JSON.parse(expectedWindow.postMessage.mock.calls[0][0])
+    host.receiveWindowMessage({
+      source: expectedWindow,
+      data: JSON.stringify({ ...offer, type: "repopress:bootstrap-accept" }),
+    })
+
+    await waitFor(() => expect(channel.port1.sent.length).toBeGreaterThanOrEqual(3))
+    const commands = channel.port1.sent.map((wire) => JSON.parse(wire))
+    expect(commands.map((command) => command.type)).toEqual([
+      "repopress:artifact-start",
+      "repopress:artifact-chunk",
+      "repopress:artifact-commit",
+    ])
+    expect(commands.map((command) => command.sequence)).toEqual([1, 2, 3])
+    expect(channel.port1.sent.every((wire) => !wire.includes("# Isolated"))).toBe(true)
   })
 
   it("atomically applies serialized teardown before closing the port and invalidating the session", () => {
@@ -334,7 +391,12 @@ describe("CompatiblePreviewFrame", () => {
     const firstCallback = vi.fn()
     const nextCallback = vi.fn()
     const { rerender } = render(
-      <CompatiblePreviewFrame sessionId="session-1" snapshotVersion={1} onMessage={firstCallback} />,
+      <CompatiblePreviewFrame
+        resolution={serverResolution}
+        sessionId="session-1"
+        snapshotVersion={1}
+        onMessage={firstCallback}
+      />,
     )
     const frame = screen.getByTitle("Compatible component preview") as HTMLIFrameElement
     const frameWindow = frame.contentWindow as Window
@@ -350,7 +412,14 @@ describe("CompatiblePreviewFrame", () => {
     channels[0].port1.emit(runtimeWire("session-1", 1, 1))
     expect(firstCallback).toHaveBeenCalledOnce()
 
-    rerender(<CompatiblePreviewFrame sessionId="session-1" snapshotVersion={1} onMessage={nextCallback} />)
+    rerender(
+      <CompatiblePreviewFrame
+        resolution={serverResolution}
+        sessionId="session-1"
+        snapshotVersion={1}
+        onMessage={nextCallback}
+      />,
+    )
     expect(screen.getByTitle("Compatible component preview")).toBe(frame)
     channels[0].port1.emit(runtimeWire("session-1", 1, 2))
 
@@ -374,7 +443,12 @@ describe("CompatiblePreviewFrame", () => {
     const onMessage = vi.fn()
     const { rerender } = render(
       <StrictMode>
-        <CompatiblePreviewFrame sessionId="session-1" snapshotVersion={1} onMessage={onMessage} />
+        <CompatiblePreviewFrame
+          resolution={serverResolution}
+          sessionId="session-1"
+          snapshotVersion={1}
+          onMessage={onMessage}
+        />
       </StrictMode>,
     )
 
@@ -399,7 +473,12 @@ describe("CompatiblePreviewFrame", () => {
 
     rerender(
       <StrictMode>
-        <CompatiblePreviewFrame sessionId="session-2" snapshotVersion={1} onMessage={onMessage} />
+        <CompatiblePreviewFrame
+          resolution={secondSessionResolution}
+          sessionId="session-2"
+          snapshotVersion={1}
+          onMessage={onMessage}
+        />
       </StrictMode>,
     )
     const secondFrame = screen.getByTitle("Compatible component preview") as HTMLIFrameElement
@@ -415,7 +494,12 @@ describe("CompatiblePreviewFrame", () => {
 
     rerender(
       <StrictMode>
-        <CompatiblePreviewFrame sessionId="session-2" snapshotVersion={2} onMessage={onMessage} />
+        <CompatiblePreviewFrame
+          resolution={secondSnapshotResolution}
+          sessionId="session-2"
+          snapshotVersion={2}
+          onMessage={onMessage}
+        />
       </StrictMode>,
     )
     const thirdFrame = screen.getByTitle("Compatible component preview") as HTMLIFrameElement
@@ -425,7 +509,7 @@ describe("CompatiblePreviewFrame", () => {
     expect(third.offer).toMatchObject({ sessionId: "session-2", snapshotVersion: 2 })
   })
 
-  it("keeps the safe generic Studio preview as the default and makes the shell explicit", () => {
+  it("keeps the safe generic Studio preview active until a signed compatible resolution verifies", async () => {
     vi.stubEnv("NEXT_PUBLIC_PREVIEW_ORIGIN", "https://preview.repopress.test")
     const { rerender } = render(<Preview content="# Safe" frontmatter={{ title: "Safe" }} />)
 
@@ -433,7 +517,44 @@ describe("CompatiblePreviewFrame", () => {
     expect(screen.getAllByRole("heading", { name: "Safe" })).toHaveLength(2)
 
     rerender(<Preview content="# Safe" frontmatter={{ title: "Safe" }} previewFidelity="compatible" />)
-    expect(screen.getByTitle("Compatible component preview")).toBeInTheDocument()
+    expect(screen.queryByTitle("Compatible component preview")).not.toBeInTheDocument()
+    expect(screen.getAllByRole("heading", { name: "Safe" })).toHaveLength(2)
+
+    rerender(
+      <Preview
+        content="# Safe"
+        frontmatter={{ title: "Safe" }}
+        previewFidelity="compatible"
+        compatibleResolution={forgedResolution}
+      />,
+    )
+    await waitFor(() => expect(screen.queryByTitle("Compatible component preview")).not.toBeInTheDocument())
+    expect(screen.getAllByRole("heading", { name: "Safe" })).toHaveLength(2)
+
+    rerender(
+      <Preview
+        content="# Safe"
+        frontmatter={{ title: "Safe" }}
+        previewFidelity="compatible"
+        compatibleResolution={serverResolution}
+      />,
+    )
+    expect(await screen.findByTitle("Compatible component preview")).toBeInTheDocument()
+  })
+
+  it("keeps Studio generic when the approval verification key is absent", async () => {
+    vi.stubEnv("NEXT_PUBLIC_PREVIEW_APPROVAL_PUBLIC_KEY_JWK", "")
+    render(
+      <Preview
+        content="# Safe"
+        frontmatter={{ title: "Safe" }}
+        previewFidelity="compatible"
+        compatibleResolution={serverResolution}
+      />,
+    )
+
+    await waitFor(() => expect(screen.queryByTitle("Compatible component preview")).not.toBeInTheDocument())
+    expect(screen.getAllByRole("heading", { name: "Safe" })).toHaveLength(2)
   })
 })
 
@@ -444,6 +565,7 @@ describe("preview sandbox response headers", () => {
 
     expect(value("Cache-Control")).toBe("no-store")
     expect(value("Content-Security-Policy")).toContain("default-src 'none'")
+    expect(value("Content-Security-Policy")).toContain("script-src 'self' 'unsafe-inline' 'unsafe-eval'")
     expect(value("Content-Security-Policy")).toContain("connect-src 'none'")
     expect(value("Content-Security-Policy")).toContain("script-src-attr 'none'")
     expect(value("Content-Security-Policy")).toContain("form-action 'none'")
@@ -459,6 +581,9 @@ describe("preview sandbox response headers", () => {
     if (!routes) throw new Error("Expected configured response headers")
     const previewRoute = routes.find((route: { source: string }) => route.source === "/preview/sandbox")
     expect(previewRoute?.headers).toEqual(createPreviewSandboxHeaders(process.env.NEXT_PUBLIC_APP_URL))
+    for (const route of routes.filter((route: { source: string }) => route.source !== "/preview/sandbox")) {
+      expect(JSON.stringify(route.headers)).not.toContain("unsafe-eval")
+    }
     expect(routes).toContainEqual(expect.objectContaining({ source: "/(.*)" }))
     expect(routes).toContainEqual(
       expect.objectContaining({

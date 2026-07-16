@@ -1,7 +1,7 @@
 import React from "react"
 import * as jsxRuntime from "react/jsx-runtime"
 import { Callout, DocsImage, DocsVideo } from "@/components/docs/doc-media"
-import { withEvalGuard, withFunctionConstructorGuard } from "./function-constructor-guard"
+import { withEvalGuard, withFunctionConstructorGuard } from "./execution-guard"
 
 export interface RepoPressPreviewAdapter {
   components?: Record<string, React.ComponentType<any>>
@@ -64,10 +64,9 @@ export function evaluateAdapter(code: string): RepoPressPreviewAdapter {
     throw new Error(`Module ${name} is not available in the adapter sandbox.`)
   }
 
-  // Fix #2: Shadow dangerous globals in adapter evaluation.
-  // Adapter code comes from the user's GitHub repo - a compromised repo could
-  // exfiltrate session tokens via fetch/XMLHttpRequest/etc.
-  // SECURITY: This is defence-in-depth. Task 4 will replace `new Function()`.
+  // Defense in depth inside the opaque sandbox. This shadowing is not the
+  // security boundary; the separate origin, CSP, signed source approval, and
+  // authenticated channel provide that boundary.
   const blockedGlobals = [
     "window",
     "self",

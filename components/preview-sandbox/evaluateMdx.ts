@@ -1,14 +1,13 @@
 import { Fragment } from "react"
 import * as jsxRuntime from "react/jsx-runtime"
-import { withEvalGuard, withFunctionConstructorGuard } from "@/lib/repopress/function-constructor-guard"
+import { withEvalGuard, withFunctionConstructorGuard } from "./execution-guard"
 
 /**
  * List of global browser APIs that compiled MDX code must NOT access.
  * Used to shadow dangerous globals inside the evaluation sandbox.
  *
- * NOTE: This is a defence-in-depth measure, not a full sandbox.
- * Task 4 (expression sandbox / allowlist evaluator) will replace
- * `new Function()` entirely.
+ * This is defense in depth inside the opaque preview origin, not a substitute
+ * for origin isolation, CSP, signed source approval, or the channel protocol.
  */
 const BLOCKED_GLOBALS = [
   "window",
@@ -96,9 +95,8 @@ export function evaluateMdx(code: string, scope: Record<string, unknown>, onMiss
 
   // Create a new function where the first argument is the config expected by MDX,
   // followed by any scope variables we want to inject.
-  // SECURITY: `new Function()` still executes arbitrary JS - the blocked-globals
-  // shadow above is defence-in-depth only. Task 4 will replace this with a proper
-  // allowlist evaluator.
+  // `new Function()` intentionally executes approved MDX only in the opaque
+  // sandbox realm. The blocked globals above are defense in depth.
   const result = withEvalGuard(() =>
     withFunctionConstructorGuard(() => {
       const fn = new Function("_mdxConfig", ...keys, code)

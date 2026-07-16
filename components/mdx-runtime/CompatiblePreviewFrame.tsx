@@ -2,6 +2,11 @@
 
 import * as React from "react"
 import {
+  parseConfiguredPreviewApprovalKey,
+  type SignedCompatiblePreviewResolution,
+  serializeCompatibleArtifactTransfer,
+} from "@/lib/preview/compatible-artifact"
+import {
   acceptBootstrap,
   advanceSandboxSequence,
   createBootstrapCapability,
@@ -151,6 +156,8 @@ export function createCompatiblePreviewHost(options: {
   iframeWindow: FrameWindow
   sessionId: string
   snapshotVersion: number
+  resolution?: SignedCompatiblePreviewResolution
+  approvalPublicKey?: JsonWebKey
   createMessageChannel?: () => MessageChannel
   onMessage?: (message: SandboxMessage) => void
 }): CompatiblePreviewHost {
@@ -232,6 +239,25 @@ export function createCompatiblePreviewHost(options: {
       }
     }
     port.start()
+
+    if (options.resolution) {
+      if (!options.approvalPublicKey) {
+        terminate()
+        return false
+      }
+      const authenticatedPort = port
+      void serializeCompatibleArtifactTransfer({
+        resolution: options.resolution,
+        publicKey: options.approvalPublicKey,
+        sessionId: state.sessionId,
+        snapshotVersion: state.snapshotVersion,
+      })
+        .then((wires) => {
+          if (disposed || port !== authenticatedPort) return
+          for (const wire of wires) authenticatedPort.postMessage(wire)
+        })
+        .catch(() => terminate())
+    }
 
     try {
       options.iframeWindow.postMessage(
@@ -329,6 +355,7 @@ function createSessionId(): string {
 }
 
 export interface CompatiblePreviewFrameProps {
+  resolution: SignedCompatiblePreviewResolution
   className?: string
   sessionId?: string
   snapshotVersion?: number
@@ -337,6 +364,7 @@ export interface CompatiblePreviewFrameProps {
 }
 
 export function CompatiblePreviewFrame({
+  resolution,
   className,
   sessionId: providedSessionId,
   snapshotVersion = 1,
@@ -349,6 +377,10 @@ export function CompatiblePreviewFrame({
   const sessionId = providedSessionId ?? generatedSessionId
   const onMessageRef = React.useRef(onMessage)
   const [studioOrigin, setStudioOrigin] = React.useState<string | null>(null)
+  const approvalPublicKey = React.useMemo(
+    () => parseConfiguredPreviewApprovalKey(process.env.NEXT_PUBLIC_PREVIEW_APPROVAL_PUBLIC_KEY_JWK),
+    [],
+  )
 
   React.useEffect(() => {
     setStudioOrigin(window.location.origin)
@@ -385,11 +417,13 @@ export function CompatiblePreviewFrame({
       iframeWindow,
       sessionId,
       snapshotVersion,
+      resolution,
+      approvalPublicKey: approvalPublicKey ?? undefined,
       onMessage: (message) => onMessageRef.current?.(message),
     })
     hostRef.current = host
     host.start()
-  }, [origin, sessionId, snapshotVersion])
+  }, [approvalPublicKey, origin, resolution, sessionId, snapshotVersion])
 
   if (origin !== null && !origin.ok) {
     return (

@@ -34,7 +34,9 @@ export function createPreviewSandboxHeaders(studioOriginValue, environment = pro
 			key: "Content-Security-Policy",
 			value: [
 				"default-src 'none'",
-				"script-src 'self' 'unsafe-inline'",
+				// Repository code executes only on this opaque, credentialless sandbox route.
+				// Dynamic MDX/adapter evaluation requires unsafe-eval; connect-src remains none.
+				"script-src 'self' 'unsafe-inline' 'unsafe-eval'",
 				"script-src-attr 'none'",
 				"style-src 'self' 'unsafe-inline'",
 				"img-src 'none'",

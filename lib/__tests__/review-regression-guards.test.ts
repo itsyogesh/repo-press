@@ -1,5 +1,6 @@
 import fs from "node:fs"
 import path from "node:path"
+import ts from "typescript"
 import { describe, expect, it } from "vitest"
 
 const ROOT = process.cwd()
@@ -22,14 +23,9 @@ const rawColorFiles = [
   "components/studio/studio-layout.tsx",
   "components/studio/component-insert-modal.tsx",
   "components/studio/image-field.tsx",
-  "lib/repopress/standard-library.tsx",
 ]
 
-const noEffectFetchFiles = [
-  "components/studio/hooks/use-studio-queries.ts",
-  "lib/hooks/use-adapter.ts",
-  "lib/hooks/use-preview-context.ts",
-]
+const noEffectFetchFiles = ["components/studio/hooks/use-studio-queries.ts"]
 
 const optimisticSaveFiles = [
   "components/studio/hooks/use-studio-save.ts",
@@ -40,7 +36,133 @@ function read(relativePath: string) {
   return fs.readFileSync(path.join(ROOT, relativePath), "utf8")
 }
 
+const hostExecutionRoots = ["app", "components", "lib"]
+const hostExecutionExtensions = new Set([".js", ".jsx", ".ts", ".tsx"])
+
+const forbiddenExecutionIdentifiers = new Set([
+  "Function",
+  "eval",
+  "evaluateMdx",
+  "evaluateAdapter",
+  "transpileAdapter",
+  "RepoPressPreviewAdapter",
+  "RenderBindings",
+  "createRenderBindings",
+  "componentsByContext",
+])
+const forbiddenExecutionModule = /(?:evaluateMdx|evaluate-adapter|esbuild-browser|execution-guard)(?:\.[jt]sx?)?$/
+
+const removedHostExecutionPaths = [
+  "app/dashboard/[owner]/[repo]/adapter-actions.ts",
+  "app/dashboard/[owner]/[repo]/plugin-actions.ts",
+  "app/dashboard/[owner]/[repo]/mdx-actions.ts",
+  "components/mdx-runtime/adapter.tsx",
+  "components/mdx-runtime/evaluateMdx.ts",
+  "components/studio/repo-jsx-bridge.tsx",
+  "lib/hooks/use-adapter.ts",
+  "lib/hooks/use-preview-context.ts",
+  "lib/repopress/adapter-cache.ts",
+  "lib/repopress/adapter.ts",
+  "lib/repopress/esbuild-browser.ts",
+  "lib/repopress/evaluate-adapter.ts",
+  "lib/repopress/function-constructor-guard.ts",
+  "lib/repopress/preview-context.ts",
+  "lib/repopress/repo-module-bundle.ts",
+  "lib/preview/render-bindings.ts",
+]
+
+function listHostExecutionFiles(directory: string): string[] {
+  const absoluteDirectory = path.join(ROOT, directory)
+  if (!fs.existsSync(absoluteDirectory)) return []
+
+  return fs.readdirSync(absoluteDirectory, { withFileTypes: true }).flatMap((entry) => {
+    const relativePath = path.join(directory, entry.name)
+    if (entry.isDirectory()) {
+      if (
+        entry.name === "__tests__" ||
+        entry.name === "node_modules" ||
+        relativePath === path.join("components", "preview-sandbox")
+      ) {
+        return []
+      }
+      return listHostExecutionFiles(relativePath)
+    }
+
+    return entry.isFile() && hostExecutionExtensions.has(path.extname(entry.name)) ? [relativePath] : []
+  })
+}
+
+function findHostExecutionViolations(): string[] {
+  return hostExecutionRoots.flatMap(listHostExecutionFiles).flatMap((relativePath) => {
+    const source = read(relativePath)
+    const sourceFile = ts.createSourceFile(
+      relativePath,
+      source,
+      ts.ScriptTarget.Latest,
+      true,
+      relativePath.endsWith("x") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+    )
+    const violations: string[] = []
+    const report = (node: ts.Node, label: string) => {
+      const position = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile))
+      violations.push(`${relativePath}:${position.line + 1}: ${label}`)
+    }
+    const moduleText = (node: ts.Expression | undefined) => (node && ts.isStringLiteralLike(node) ? node.text : null)
+    const visit = (node: ts.Node) => {
+      if (ts.isIdentifier(node) && forbiddenExecutionIdentifiers.has(node.text)) {
+        report(node, `forbidden execution identifier ${node.text}`)
+      }
+      if (
+        (ts.isPropertyAccessExpression(node) && ["constructor", "Function"].includes(node.name.text)) ||
+        (ts.isElementAccessExpression(node) &&
+          ["constructor", "Function"].includes(moduleText(node.argumentExpression) ?? ""))
+      ) {
+        report(node, "dynamic constructor access")
+      }
+      if (
+        (ts.isPropertyAccessExpression(node) && node.name.text === "eval") ||
+        (ts.isElementAccessExpression(node) && moduleText(node.argumentExpression) === "eval")
+      ) {
+        report(node, "computed eval access")
+      }
+      if (
+        ts.isPropertyAccessExpression(node) &&
+        node.name.text === "components" &&
+        /adapter/i.test(node.expression.getText(sourceFile))
+      ) {
+        report(node, "executable adapter component-map access")
+      }
+      if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
+        const specifier = node.moduleSpecifier && moduleText(node.moduleSpecifier)
+        if (specifier && forbiddenExecutionModule.test(specifier))
+          report(node, "host import of sandbox execution module")
+      }
+      if (ts.isCallExpression(node)) {
+        const specifier = node.arguments.length === 1 ? moduleText(node.arguments[0]) : null
+        if (
+          specifier &&
+          forbiddenExecutionModule.test(specifier) &&
+          (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
+            (ts.isIdentifier(node.expression) && node.expression.text === "require"))
+        ) {
+          report(node, "dynamic host import of sandbox execution module")
+        }
+      }
+      ts.forEachChild(node, visit)
+    }
+    visit(sourceFile)
+    return violations
+  })
+}
+
 describe("review regression guards", () => {
+  it("keeps repository and MDX execution out of the host realm", () => {
+    expect(findHostExecutionViolations()).toEqual([])
+    for (const relativePath of removedHostExecutionPaths) {
+      expect(fs.existsSync(path.join(ROOT, relativePath)), relativePath).toBe(false)
+    }
+  })
+
   it("keeps the required studio modules as explicit client files", () => {
     for (const relativePath of clientFiles) {
       expect(read(relativePath).startsWith('"use client"')).toBe(true)
