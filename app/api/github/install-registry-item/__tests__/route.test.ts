@@ -385,8 +385,8 @@ describe("POST /api/github/install-registry-item", () => {
     expect(branch).not.toBe("main")
   })
 
-  it("cleans up only the newly-created branch when the batch commit fails", async () => {
-    vi.mocked(batchCommitAtExpectedHead).mockRejectedValue(new Error("tree failed"))
+  it("retains the branch for inspection when an ambiguous post-update batch failure occurs", async () => {
+    vi.mocked(batchCommitAtExpectedHead).mockRejectedValue(new Error("connection lost after updateRef"))
     const response = await POST(
       request({
         projectId: "project_123",
@@ -396,10 +396,97 @@ describe("POST /api/github/install-registry-item", () => {
         idempotencyKey: "install-callout-001",
       }),
     )
+    const payload = await response.json()
     expect(response.status).toBe(502)
     const branch = vi.mocked(createBranchFromSha).mock.calls[0][3]
-    expect(deleteBranchRef).toHaveBeenCalledWith("gh-token", "acme", "docs", branch)
+    expect(payload).toMatchObject({
+      code: "BATCH_COMMIT_FAILED",
+      branch,
+      recovery: expect.stringContaining("Inspect"),
+    })
+    expect(deleteBranchRef).not.toHaveBeenCalled()
     expect(createPullRequest).not.toHaveBeenCalled()
+  })
+
+  it("never deletes the dedicated branch when its expected head has advanced", async () => {
+    vi.mocked(batchCommitAtExpectedHead).mockRejectedValue(new Error("Dedicated branch head changed"))
+    const response = await POST(
+      request({
+        projectId: "project_123",
+        item: "@repopress/callout",
+        dryRun: false,
+        expectedBaseSha: BASE_SHA,
+        idempotencyKey: "install-callout-001",
+      }),
+    )
+    const payload = await response.json()
+    expect(response.status).toBe(502)
+    expect(payload).toMatchObject({
+      code: "BATCH_COMMIT_FAILED",
+      branch: expect.stringMatching(/^repopress\/install\//u),
+      recovery: expect.stringContaining("delete it manually"),
+    })
+    expect(deleteBranchRef).not.toHaveBeenCalled()
+    expect(createPullRequest).not.toHaveBeenCalled()
+  })
+
+  it("returns an idempotent no-change success for an already-installed applicable plan", async () => {
+    const dryRunResponse = await POST(request({ projectId: "project_123", item: "@repopress/callout", dryRun: true }))
+    const dryRunPayload = await dryRunResponse.json()
+    expect(dryRunResponse.status).toBe(200)
+
+    const currentFiles = new Map(systemSnapshots.map((snapshot) => [snapshot.path, snapshot.content]))
+    for (const change of dryRunPayload.plan.fileChanges as Array<{ path: string; after: string }>) {
+      currentFiles.set(change.path, change.after)
+    }
+    vi.mocked(getTextFilesAtCommit)
+      .mockReset()
+      .mockImplementation(async (_token, _owner, _repo, _sha, paths) =>
+        paths.flatMap((path) => {
+          const content = currentFiles.get(path)
+          return content === undefined ? [] : [{ path, content }]
+        }),
+      )
+    vi.mocked(createBranchFromSha).mockClear()
+    vi.mocked(batchCommitAtExpectedHead).mockClear()
+    vi.mocked(createPullRequest).mockClear()
+
+    const response = await POST(
+      request({
+        projectId: "project_123",
+        item: "@repopress/callout",
+        dryRun: false,
+        expectedBaseSha: BASE_SHA,
+        idempotencyKey: "install-callout-001",
+      }),
+    )
+    const payload = await response.json()
+    expect(response.status).toBe(200)
+    expect(payload).toMatchObject({
+      ok: true,
+      dryRun: false,
+      noChanges: true,
+      repository: { baseSha: BASE_SHA },
+      plan: { applicable: true, fileChanges: [] },
+      planDigest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/u),
+    })
+    expect(createBranchFromSha).not.toHaveBeenCalled()
+    expect(batchCommitAtExpectedHead).not.toHaveBeenCalled()
+    expect(createPullRequest).not.toHaveBeenCalled()
+    expect(deleteBranchRef).not.toHaveBeenCalled()
+
+    const repeatedResponse = await POST(
+      request({
+        projectId: "project_123",
+        item: "@repopress/callout",
+        dryRun: false,
+        expectedBaseSha: BASE_SHA,
+        idempotencyKey: "install-callout-001",
+      }),
+    )
+    expect(repeatedResponse.status).toBe(200)
+    expect(await repeatedResponse.json()).toEqual(payload)
+    expect(createBranchFromSha).not.toHaveBeenCalled()
   })
 
   it("keeps the committed review branch and reports it explicitly if PR creation fails", async () => {

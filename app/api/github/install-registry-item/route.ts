@@ -8,7 +8,6 @@ import {
   batchCommitAtExpectedHead,
   createBranchFromSha,
   createPullRequest,
-  deleteBranchRef,
   getBranchHeadSha,
   getTextFilesAtCommit,
 } from "@/lib/github"
@@ -512,6 +511,9 @@ export async function POST(request: Request) {
       )
     }
     if (input.dryRun) return NextResponse.json({ ok: true, dryRun: true, ...common })
+    if (plan.fileChanges.length === 0) {
+      return NextResponse.json({ ok: true, dryRun: false, noChanges: true, ...common })
+    }
 
     const version = item.authoring.version ?? item.item.meta.repopress.version
     if (!version) throw new InstallRouteError("REGISTRY_MANIFEST_INVALID", 422, "Registry item version is missing")
@@ -544,15 +546,10 @@ export async function POST(request: Request) {
       )
       commitSha = commit.commitSha
     } catch {
-      let cleanupFailed = false
-      try {
-        await deleteBranchRef(auth.githubToken, project.repoOwner, project.repoName, branch)
-      } catch {
-        cleanupFailed = true
-      }
       throw new InstallRouteError("BATCH_COMMIT_FAILED", 502, "Registry batch commit failed", {
         branch,
-        cleanup: cleanupFailed ? "failed" : "deleted-uncommitted-branch",
+        recovery:
+          "Inspect the retained branch and open a pull request if the commit landed, or delete it manually before retrying with a new key.",
       })
     }
     let pullRequest: Awaited<ReturnType<typeof createPullRequest>>
