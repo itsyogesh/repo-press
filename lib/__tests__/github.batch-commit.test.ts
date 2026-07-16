@@ -158,6 +158,69 @@ describe("batchCommit", () => {
     })
   })
 
+  it("rejects mutable expected-head accessors without invoking them or updating a ref", async () => {
+    const baseSha = "a".repeat(40)
+    const branchGetter = vi.fn<() => string>().mockReturnValueOnce("repopress/install/callout").mockReturnValue("main")
+    const expected = Object.defineProperties(
+      {},
+      {
+        branch: { enumerable: true, get: branchGetter },
+        protectedBaseBranch: { enumerable: true, value: "main" },
+        expectedHeadSha: { enumerable: true, value: baseSha },
+      },
+    )
+
+    await expect(
+      batchCommitAtExpectedHead(
+        "token",
+        "owner",
+        "repo",
+        expected as never,
+        [{ action: "create", path: "components/callout.tsx", content: "export {}\n" }],
+        "Install callout",
+      ),
+    ).rejects.toThrow("own data")
+    expect(branchGetter).not.toHaveBeenCalled()
+    expect(mockOctokit.git.updateRef).not.toHaveBeenCalled()
+  })
+
+  it("rejects an accessor batch-array entry without invoking it", async () => {
+    const baseSha = "a".repeat(40)
+    const entryGetter = vi.fn(() => {
+      throw new Error("batch array entry getter executed")
+    })
+    const operations = Object.defineProperty([], "0", { get: entryGetter })
+    Object.defineProperty(operations, "length", { value: 1 })
+
+    await expect(
+      batchCommitAtExpectedHead(
+        "token",
+        "owner",
+        "repo",
+        { branch: "repopress/install/callout", protectedBaseBranch: "main", expectedHeadSha: baseSha },
+        operations as never,
+        "Install callout",
+      ),
+    ).rejects.toThrow("own data")
+    expect(entryGetter).not.toHaveBeenCalled()
+    expect(mockOctokit.git.updateRef).not.toHaveBeenCalled()
+  })
+
+  it("rejects sparse batch-operation arrays before any Git mutation", async () => {
+    const baseSha = "a".repeat(40)
+    await expect(
+      batchCommitAtExpectedHead(
+        "token",
+        "owner",
+        "repo",
+        { branch: "repopress/install/callout", protectedBaseBranch: "main", expectedHeadSha: baseSha },
+        new Array(1) as never,
+        "Install callout",
+      ),
+    ).rejects.toThrow("own data")
+    expect(mockOctokit.git.updateRef).not.toHaveBeenCalled()
+  })
+
   it("rejects base writes, drift, and unsafe paths before creating a tree", async () => {
     const baseSha = "a".repeat(40)
     await expect(

@@ -455,13 +455,25 @@ function ownOptionalData(object: object, key: string, label: string): unknown {
   return descriptor.value
 }
 
+function ownRequiredData(object: object, key: string, label: string): unknown {
+  const descriptor = Object.getOwnPropertyDescriptor(object, key)
+  if (!descriptor || !("value" in descriptor)) throw new TypeError(`${label} must be an own data property`)
+  return descriptor.value
+}
+
 function validateBatchOperations(operations: readonly BatchOperation[]): BatchOperation[] {
-  if (!Array.isArray(operations) || operations.length === 0 || operations.length > MAX_BATCH_OPERATIONS) {
+  if (!Array.isArray(operations)) {
+    throw new TypeError("Batch operations must be a non-empty bounded array")
+  }
+  const length = ownRequiredData(operations, "length", "Batch operations length")
+  if (typeof length !== "number" || !Number.isSafeInteger(length) || length === 0 || length > MAX_BATCH_OPERATIONS) {
     throw new TypeError("Batch operations must be a non-empty bounded array")
   }
   const paths = new Set<string>()
+  const validated: BatchOperation[] = []
   let bytes = 0
-  return operations.map((rawOperation) => {
+  for (let index = 0; index < length; index += 1) {
+    const rawOperation = ownRequiredData(operations, String(index), `Batch operation ${index}`)
     if (!rawOperation || typeof rawOperation !== "object" || Array.isArray(rawOperation)) {
       throw new TypeError("Batch operation must be an object")
     }
@@ -500,8 +512,9 @@ function validateBatchOperations(operations: readonly BatchOperation[]): BatchOp
     if (content !== undefined) operation.content = content
     if (contentEncoding !== undefined) operation.contentEncoding = contentEncoding
     if (blobSha !== undefined) operation.blobSha = blobSha as string
-    return operation
-  })
+    validated.push(operation)
+  }
+  return validated
 }
 
 function assertCommitMessage(message: string): void {
@@ -640,15 +653,29 @@ export interface ExpectedBranchHead {
   expectedHeadSha: string
 }
 
+function validateExpectedBranchHead(expected: ExpectedBranchHead): ExpectedBranchHead {
+  if (!expected || typeof expected !== "object" || Array.isArray(expected)) {
+    throw new TypeError("Expected branch head must be an object")
+  }
+  const branch = ownRequiredData(expected, "branch", "Expected branch")
+  const protectedBaseBranch = ownRequiredData(expected, "protectedBaseBranch", "Protected base branch")
+  const expectedHeadSha = ownRequiredData(expected, "expectedHeadSha", "Expected head SHA")
+  if (typeof branch !== "string" || typeof protectedBaseBranch !== "string" || typeof expectedHeadSha !== "string") {
+    throw new TypeError("Expected branch head fields must be strings")
+  }
+  return { branch, protectedBaseBranch, expectedHeadSha }
+}
+
 export async function batchCommitAtExpectedHead(
   accessToken: string,
   owner: string,
   repo: string,
-  expected: ExpectedBranchHead,
+  rawExpected: ExpectedBranchHead,
   rawOperations: readonly BatchOperation[],
   message: string,
 ): Promise<{ commitSha: string; treeSha: string }> {
   assertRepository(owner, repo)
+  const expected = validateExpectedBranchHead(rawExpected)
   assertBranch(expected.branch)
   assertBranch(expected.protectedBaseBranch)
   assertSha(expected.expectedHeadSha)
