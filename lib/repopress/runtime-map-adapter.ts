@@ -3,6 +3,9 @@ import { compareCodeUnits, deepFreeze } from "./registry-schema"
 
 const MAX_SOURCE_BYTES = 2 * 1024 * 1024
 const MAX_BINDINGS = 128
+const MAX_STATIC_SPREAD_DEPTH = 16
+const MAX_STATIC_SPREAD_OBJECTS = 64
+const MAX_STATIC_SPREAD_PROPERTIES = 512
 const SAFE_IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/u
 const SAFE_IMPORT =
   /^(?:@\/[A-Za-z0-9._~/-]+|@?[A-Za-z0-9._-]+|@?[A-Za-z0-9._-]+\/[A-Za-z0-9._~/-]+|[.]{1,2}\/[A-Za-z0-9._~/-]+)$/u
@@ -217,27 +220,92 @@ function propertyReferencesBinding(object: ts.ObjectLiteralExpression, name: str
   return "conflict"
 }
 
-function staticSpreadNames(sourceFile: ts.SourceFile, target: ts.ObjectLiteralExpression): Set<string> {
-  const names = new Set<string>()
+function topLevelConstObjects(sourceFile: ts.SourceFile): Map<string, ts.ObjectLiteralExpression> {
+  const objects = new Map<string, ts.ObjectLiteralExpression>()
   for (const statement of sourceFile.statements) {
-    if (!ts.isVariableStatement(statement)) continue
+    if (!ts.isVariableStatement(statement) || !(statement.declarationList.flags & ts.NodeFlags.Const)) continue
     for (const declaration of statement.declarationList.declarations) {
       if (ts.isIdentifier(declaration.name) && declaration.initializer && unwrapObject(declaration.initializer)) {
-        names.add(declaration.name.text)
+        objects.set(declaration.name.text, unwrapObject(declaration.initializer) as ts.ObjectLiteralExpression)
       }
     }
   }
+  return objects
+}
+
+function canonicalCallerParameter(target: ts.ObjectLiteralExpression): string | null {
   let current: ts.Node | undefined = target.parent
   while (current) {
-    if (ts.isFunctionDeclaration(current)) {
-      for (const parameter of current.parameters) {
-        if (ts.isIdentifier(parameter.name)) names.add(parameter.name.text)
-      }
-      break
+    if (
+      ts.isFunctionDeclaration(current) &&
+      ["useMDXComponents", "getMDXComponents"].includes(current.name?.text ?? "")
+    ) {
+      const parameter = current.parameters.find(
+        (candidate) => ts.isIdentifier(candidate.name) && candidate.name.text === "components",
+      )
+      return parameter && ts.isIdentifier(parameter.name) ? parameter.name.text : null
     }
     current = current.parent
   }
-  return names
+  return null
+}
+
+function inspectStaticSpreadClosure(
+  rootName: string,
+  objects: ReadonlyMap<string, ts.ObjectLiteralExpression>,
+  managedNames: ReadonlySet<string>,
+): "safe" | "collision" | "unsupported" {
+  const visiting = new Set<string>()
+  const memo = new Map<string, "safe" | "collision" | "unsupported">()
+  let objectCount = 0
+  let propertyCount = 0
+
+  const visit = (name: string, depth: number): "safe" | "collision" | "unsupported" => {
+    const cached = memo.get(name)
+    if (cached) return cached
+    if (depth > MAX_STATIC_SPREAD_DEPTH || visiting.has(name)) return "unsupported"
+    const object = objects.get(name)
+    if (!object || ++objectCount > MAX_STATIC_SPREAD_OBJECTS) return "unsupported"
+    visiting.add(name)
+    let result: "safe" | "collision" | "unsupported" = "safe"
+    for (const property of object.properties) {
+      propertyCount += 1
+      if (propertyCount > MAX_STATIC_SPREAD_PROPERTIES) {
+        result = "unsupported"
+        break
+      }
+      if (ts.isSpreadAssignment(property)) {
+        if (!ts.isIdentifier(property.expression)) {
+          result = "unsupported"
+          break
+        }
+        const nested = visit(property.expression.text, depth + 1)
+        if (nested !== "safe") {
+          result = nested
+          break
+        }
+        continue
+      }
+      if (!ts.isPropertyAssignment(property) && !ts.isShorthandPropertyAssignment(property)) {
+        result = "unsupported"
+        break
+      }
+      const name = propertyName(property)
+      if (name === null) {
+        result = "unsupported"
+        break
+      }
+      if (managedNames.has(name)) {
+        result = "collision"
+        break
+      }
+    }
+    visiting.delete(name)
+    memo.set(name, result)
+    return result
+  }
+
+  return visit(rootName, 0)
 }
 
 function propertyName(property: ts.ObjectLiteralElementLike): string | null {
@@ -281,6 +349,54 @@ function importInsertionPoint(sourceFile: ts.SourceFile): number {
   return point
 }
 
+function propertyInsertionEdits(
+  source: string,
+  object: ts.ObjectLiteralExpression,
+  propertyNames: readonly string[],
+  insertionIndex: number,
+): Array<{ start: number; text: string }> {
+  if (propertyNames.length === 0) return []
+  const style = insertionIndent(source, object)
+  const before = object.properties[insertionIndex]
+  if (before) {
+    return [
+      {
+        start: before.getStart(),
+        text: style.multiline
+          ? `${propertyNames.join(`,${style.newline}${style.indent}`)},${style.newline}${style.indent}`
+          : `${propertyNames.join(", ")}, `,
+      },
+    ]
+  }
+  if (object.properties.length === 0) {
+    return [
+      {
+        start: object.getStart() + 1,
+        text: style.multiline
+          ? `${style.newline}${style.indent}${propertyNames.join(`,${style.newline}${style.indent}`)},`
+          : ` ${propertyNames.join(", ")} `,
+      },
+    ]
+  }
+  const close = object.end - 1
+  const last = object.properties.at(-1) as ts.ObjectLiteralElementLike
+  if (!style.multiline) {
+    const body = source.slice(object.getStart() + 1, close)
+    const bodyEnd = object.getStart() + 1 + body.trimEnd().length
+    const separator = source.slice(last.end, bodyEnd).includes(",") ? "" : ","
+    return [{ start: bodyEnd, text: `${separator} ${propertyNames.join(", ")}` }]
+  }
+  const lineStart = source.lastIndexOf("\n", close - 1) + 1
+  const hasComma = source.slice(last.end, lineStart).includes(",")
+  return [
+    ...(!hasComma ? [{ start: last.end, text: "," }] : []),
+    {
+      start: lineStart,
+      text: `${style.indent}${propertyNames.join(`,${style.newline}${style.indent}`)},${style.newline}`,
+    },
+  ]
+}
+
 export function adaptRuntimeMap({ source, bindings: inputBindings }: AdaptRuntimeMapInput): RuntimeMapEditResult {
   if (typeof source !== "string" || new TextEncoder().encode(source).byteLength > MAX_SOURCE_BYTES) {
     return refuse(
@@ -313,16 +429,43 @@ export function adaptRuntimeMap({ source, bindings: inputBindings }: AdaptRuntim
     return refuse(source, "AMBIGUOUS_MAP", "Runtime map is dynamic or has multiple possible exported component maps")
   }
   const target = targets[0]
-  const allowedSpreads = staticSpreadNames(sourceFile, target)
-  for (const property of target.properties) {
+  const staticObjects = topLevelConstObjects(sourceFile)
+  const callerParameter = canonicalCallerParameter(target)
+  const managedNames = new Set(bindings.map((binding) => binding.mdxName))
+  let callerSpreadIndex = -1
+  let lastStaticSpreadIndex = -1
+  for (let index = 0; index < target.properties.length; index += 1) {
+    const property = target.properties[index]
     if (ts.isSpreadAssignment(property)) {
-      if (!ts.isIdentifier(property.expression) || !allowedSpreads.has(property.expression.text)) {
+      if (ts.isIdentifier(property.expression) && property.expression.text === callerParameter) {
+        if (callerSpreadIndex >= 0) {
+          return refuse(source, "UNSUPPORTED_SOURCE", "The canonical caller component map may only be spread once")
+        }
+        callerSpreadIndex = index
+        continue
+      }
+      if (!ts.isIdentifier(property.expression) || !staticObjects.has(property.expression.text)) {
         return refuse(
           source,
           "UNSUPPORTED_SOURCE",
           "Dynamic component-map spreads cannot be edited safely; use a known static map or function parameter",
         )
       }
+      if (callerSpreadIndex >= 0) {
+        return refuse(
+          source,
+          "UNSUPPORTED_SOURCE",
+          "Static defaults after the caller override prevent a safe RepoPress insertion point",
+        )
+      }
+      const closure = inspectStaticSpreadClosure(property.expression.text, staticObjects, managedNames)
+      if (closure === "collision") {
+        return refuse(source, "BINDING_COLLISION", "A static component-map spread already defines a managed binding")
+      }
+      if (closure === "unsupported") {
+        return refuse(source, "UNSUPPORTED_SOURCE", "Static component-map spread closure is dynamic or unbounded")
+      }
+      lastStaticSpreadIndex = index
       continue
     }
     if (!ts.isSpreadAssignment(property) && (!property.name || ts.isComputedPropertyName(property.name))) {
@@ -375,16 +518,11 @@ export function adaptRuntimeMap({ source, bindings: inputBindings }: AdaptRuntim
       : `${importLines}${newline}${source.length > 0 ? newline : ""}`
     : ""
 
-  const style = insertionIndent(source, target)
   const propertyNames = missingProperties.map((binding) => binding.mdxName)
-  const propertyText = style.multiline
-    ? `${style.newline}${style.indent}${propertyNames.join(`,${style.newline}${style.indent}`)},`
-    : target.properties.length > 0
-      ? ` ${propertyNames.join(", ")},`
-      : ` ${propertyNames.join(", ")} `
+  const insertionIndex = callerSpreadIndex >= 0 ? callerSpreadIndex : lastStaticSpreadIndex + 1
   const edits = [
     ...(importText ? [{ start: importPoint, text: importText }] : []),
-    ...(propertyNames.length > 0 ? [{ start: target.getStart() + 1, text: propertyText }] : []),
+    ...propertyInsertionEdits(source, target, propertyNames, insertionIndex),
   ].sort((left, right) => right.start - left.start)
   let edited = source
   for (const edit of edits) edited = `${edited.slice(0, edit.start)}${edit.text}${edited.slice(edit.start)}`

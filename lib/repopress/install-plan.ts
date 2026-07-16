@@ -396,7 +396,7 @@ function lockModificationDigest(
     .sort((left, right) =>
       compareCodeUnits(canonicalizeInstallTarget(left.path), canonicalizeInstallTarget(right.path)),
     )
-    .map((target) => `target\0${canonicalizeInstallTarget(target.path)}\0${target.digest}\n`)
+    .map((target) => `${canonicalizeInstallTarget(target.path)}\0${target.digest}\n`)
   const cssFrames = [...managedCss]
     .sort((left, right) =>
       compareCodeUnits(canonicalizeInstallTarget(left.path), canonicalizeInstallTarget(right.path)),

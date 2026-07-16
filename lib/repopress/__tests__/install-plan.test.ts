@@ -366,6 +366,27 @@ describe("planRegistryInstall", () => {
     )
   })
 
+  it("accepts an authentic legacy v1 target-only local-modification digest", () => {
+    const item = registrySource({ id: "@example/legacy-lock" })
+    const initial = plan([item])
+    const legacy = JSON.parse(JSON.stringify(initial.lockSnapshot))
+    const legacyEntry = legacy.items["@example/legacy-lock"]
+    delete legacyEntry.managedCss
+    legacyEntry.localModificationDigest = sha(
+      [...legacyEntry.targets]
+        .sort((left, right) => left.path.localeCompare(right.path))
+        .map((target) => `${target.path}\0${target.digest}\n`)
+        .join(""),
+    )
+    const currentFiles = filesFromPlan(initial).map((file) =>
+      file.path === "repopress.lock.json" ? { ...file, content: `${JSON.stringify(legacy, null, 2)}\n` } : file,
+    )
+
+    const result = plan([item], { currentFiles, currentLock: legacy })
+    expect(result.conflicts).not.toContainEqual(expect.objectContaining({ code: "LOCK_DIGEST_MISMATCH" }))
+    expect(result.applicable).toBe(true)
+  })
+
   it.each([
     ["clean", "original"],
     ["modified", "local edit"],

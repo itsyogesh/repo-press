@@ -11,7 +11,8 @@ describe("adaptRuntimeMap", () => {
     expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.source).toContain('import { Callout } from "@/components/repopress/callout"')
-    expect(result.source).toContain("    Callout,\n    h1:")
+    expect(result.source.indexOf("h1:")).toBeLessThan(result.source.indexOf("Callout,"))
+    expect(result.source.indexOf("Callout,")).toBeLessThan(result.source.indexOf("...components"))
     expect(result.source).toContain("// keep this comment")
     expect(
       result.source
@@ -46,8 +47,13 @@ describe("adaptRuntimeMap", () => {
     const result = adaptRuntimeMap({ source, bindings: [binding] })
     expect(result.ok).toBe(true)
     if (!result.ok) return
-    const indent = source.includes("function ") ? "    " : "  "
-    expect(result.source).toContain(`${indent}Callout,\n${indent}strong:`)
+    expect(result.source).toContain("Callout,")
+    if (source.includes("...components")) {
+      expect(result.source.indexOf("strong:")).toBeLessThan(result.source.indexOf("Callout,"))
+      expect(result.source.indexOf("Callout,")).toBeLessThan(result.source.indexOf("...components"))
+    } else {
+      expect(result.source.indexOf("Callout,")).toBeLessThan(result.source.indexOf("strong:"))
+    }
     expect(result.source).toContain('import { Callout } from "@/components/repopress/callout"')
   })
 
@@ -116,6 +122,62 @@ describe("adaptRuntimeMap", () => {
     const result = adaptRuntimeMap({ source: canonical, bindings: [binding] })
     expect(result.ok).toBe(true)
     if (result.ok) expect(result.source.indexOf("Callout,")).toBeLessThan(result.source.indexOf("...components"))
+  })
+
+  it("rejects managed-name collisions hidden in direct or nested static spreads", () => {
+    for (const source of [
+      "const defaults = { Callout: Other }\nexport const components = { ...defaults }\n",
+      "const base = { Callout: Other }\nconst defaults = { ...base }\nexport const components = { ...defaults }\n",
+    ]) {
+      expect(adaptRuntimeMap({ source, bindings: [binding] })).toMatchObject({
+        ok: false,
+        source,
+        code: "BINDING_COLLISION",
+      })
+    }
+  })
+
+  it("recursively rejects unproved static-spread closures", () => {
+    for (const source of [
+      "const base = { ...factory() }\nconst defaults = { ...base }\nexport const components = { ...defaults }\n",
+      "const base = { render() { return null } }\nconst defaults = { ...base }\nexport const components = { ...defaults }\n",
+      'const key = "strong"\nconst base = { [key]: "strong" }\nconst defaults = { ...base }\nexport const components = { ...defaults }\n',
+      "const first = { ...second }\nconst second = { ...first }\nexport const components = { ...first }\n",
+      "const defaults = { strong: 'strong' }\nexport function useMDXComponents(components) { return { ...components, ...defaults } }\n",
+    ]) {
+      expect(adaptRuntimeMap({ source, bindings: [binding] })).toMatchObject({
+        ok: false,
+        source,
+        code: "UNSUPPORTED_SOURCE",
+      })
+    }
+  })
+
+  it("inserts after proved nested defaults and before the canonical caller override", () => {
+    const source =
+      "const base = { strong: 'strong' }\nconst defaults = { ...base, em: 'em' }\nexport function getMDXComponents(components?: Record<string, unknown>) {\n  return {\n    ...defaults,\n    ...components,\n  }\n}\n"
+    const result = adaptRuntimeMap({ source, bindings: [binding] })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.source.indexOf("...defaults")).toBeLessThan(result.source.indexOf("Callout,"))
+    expect(result.source.indexOf("Callout,")).toBeLessThan(result.source.indexOf("...components"))
+    expect(adaptRuntimeMap({ source: result.source, bindings: [binding] })).toEqual({
+      ok: true,
+      source: result.source,
+      changed: false,
+    })
+
+    const staticSource =
+      "const base = { strong: 'strong' }\nconst defaults = { ...base }\nexport const components = { ...defaults }\n"
+    const staticResult = adaptRuntimeMap({ source: staticSource, bindings: [binding] })
+    expect(staticResult.ok).toBe(true)
+    if (!staticResult.ok) return
+    expect(staticResult.source.indexOf("...defaults")).toBeLessThan(staticResult.source.lastIndexOf("Callout"))
+    expect(adaptRuntimeMap({ source: staticResult.source, bindings: [binding] })).toEqual({
+      ok: true,
+      source: staticResult.source,
+      changed: false,
+    })
   })
 
   it("detects value-space collisions introduced through object and array destructuring", () => {
