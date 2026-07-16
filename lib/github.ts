@@ -382,6 +382,274 @@ export type BatchOperation = {
   action: "create" | "update" | "delete"
 }
 
+const GITHUB_SHA = /^[a-f0-9]{40}$/u
+const GITHUB_REPOSITORY_PART = /^[A-Za-z0-9_.-]{1,100}$/u
+const GITHUB_BRANCH = /^[A-Za-z0-9._/-]{1,200}$/u
+const MAX_BATCH_OPERATIONS = 2_048
+const MAX_BATCH_BYTES = 32 * 1024 * 1024
+const MAX_SNAPSHOT_FILES = 2_048
+const MAX_SNAPSHOT_FILE_BYTES = 2 * 1024 * 1024
+const MAX_SNAPSHOT_BYTES = 64 * 1024 * 1024
+
+function assertRepository(owner: string, repo: string): void {
+  if (!GITHUB_REPOSITORY_PART.test(owner) || !GITHUB_REPOSITORY_PART.test(repo)) {
+    throw new TypeError("Invalid GitHub repository coordinates")
+  }
+}
+
+function assertBranch(branch: string): void {
+  if (
+    !GITHUB_BRANCH.test(branch) ||
+    branch.startsWith(".") ||
+    branch.startsWith("/") ||
+    branch.endsWith(".") ||
+    branch.endsWith("/") ||
+    branch.includes("..") ||
+    branch.includes("//") ||
+    branch.includes("@{")
+  )
+    throw new TypeError("Invalid GitHub branch")
+}
+
+function assertSha(sha: string): void {
+  if (!GITHUB_SHA.test(sha)) throw new TypeError("Invalid GitHub commit SHA")
+}
+
+function hasControlOrBidi(value: string): boolean {
+  for (const character of value) {
+    const codePoint = character.codePointAt(0) ?? 0
+    if (
+      codePoint <= 0x1f ||
+      (codePoint >= 0x7f && codePoint <= 0x9f) ||
+      codePoint === 0x61c ||
+      codePoint === 0x200e ||
+      codePoint === 0x200f ||
+      (codePoint >= 0x202a && codePoint <= 0x202e) ||
+      (codePoint >= 0x2066 && codePoint <= 0x2069)
+    )
+      return true
+  }
+  return false
+}
+
+function assertRepositoryPath(path: string): void {
+  if (
+    typeof path !== "string" ||
+    path.length === 0 ||
+    Buffer.byteLength(path, "utf8") > 4_096 ||
+    path.startsWith("/") ||
+    path.includes("\\") ||
+    hasControlOrBidi(path) ||
+    path.split("/").some((part) => part === "" || part === "." || part === "..")
+  ) {
+    throw new TypeError("Invalid repository path")
+  }
+}
+
+function validateBatchOperations(operations: readonly BatchOperation[]): BatchOperation[] {
+  if (!Array.isArray(operations) || operations.length === 0 || operations.length > MAX_BATCH_OPERATIONS) {
+    throw new TypeError("Batch operations must be a non-empty bounded array")
+  }
+  const paths = new Set<string>()
+  let bytes = 0
+  return operations.map((operation) => {
+    assertRepositoryPath(operation.path)
+    const identity = operation.path.normalize("NFC").toLocaleLowerCase("en-US")
+    if (paths.has(identity)) throw new TypeError(`Duplicate batch operation path ${operation.path}`)
+    paths.add(identity)
+    if (operation.action !== "create" && operation.action !== "update" && operation.action !== "delete") {
+      throw new TypeError("Invalid batch operation action")
+    }
+    if (operation.action === "delete") {
+      if (operation.content !== undefined || operation.blobSha !== undefined)
+        throw new TypeError("Delete operation must not contain content")
+    } else if (operation.blobSha) {
+      assertSha(operation.blobSha)
+    } else if (typeof operation.content !== "string") {
+      throw new TypeError("Create and update operations require content")
+    }
+    bytes += operation.content
+      ? Buffer.byteLength(operation.content, operation.contentEncoding === "base64" ? "base64" : "utf8")
+      : 0
+    if (bytes > MAX_BATCH_BYTES) throw new TypeError("Batch operation content exceeds byte limit")
+    return { ...operation }
+  })
+}
+
+function assertCommitMessage(message: string): void {
+  if (typeof message !== "string" || message.length === 0 || Buffer.byteLength(message, "utf8") > 4_096) {
+    throw new TypeError("Invalid Git commit message")
+  }
+  if (
+    [...message].some((character) => {
+      const code = character.codePointAt(0) ?? 0
+      return (code < 0x20 && character !== "\n" && character !== "\t") || code === 0x7f
+    })
+  )
+    throw new TypeError("Git commit message contains control characters")
+}
+
+export async function getBranchHeadSha(
+  accessToken: string,
+  owner: string,
+  repo: string,
+  branch: string,
+): Promise<string> {
+  assertRepository(owner, repo)
+  assertBranch(branch)
+  const octokit = createGitHubClient(accessToken)
+  const { data } = await octokit.git.getRef({ owner, repo, ref: `heads/${branch}` })
+  assertSha(data.object.sha)
+  return data.object.sha
+}
+
+export async function createBranchFromSha(
+  accessToken: string,
+  owner: string,
+  repo: string,
+  branch: string,
+  baseSha: string,
+): Promise<void> {
+  assertRepository(owner, repo)
+  assertBranch(branch)
+  assertSha(baseSha)
+  if (!branch.startsWith("repopress/install/")) throw new TypeError("Registry installs require a dedicated branch")
+  const octokit = createGitHubClient(accessToken)
+  await octokit.git.createRef({ owner, repo, ref: `refs/heads/${branch}`, sha: baseSha })
+}
+
+export async function deleteBranchRef(accessToken: string, owner: string, repo: string, branch: string): Promise<void> {
+  assertRepository(owner, repo)
+  assertBranch(branch)
+  if (!branch.startsWith("repopress/install/")) throw new TypeError("Refusing to delete a non-dedicated branch")
+  const octokit = createGitHubClient(accessToken)
+  await octokit.git.deleteRef({ owner, repo, ref: `heads/${branch}` })
+}
+
+export interface ExpectedBranchHead {
+  branch: string
+  protectedBaseBranch: string
+  expectedHeadSha: string
+}
+
+export async function batchCommitAtExpectedHead(
+  accessToken: string,
+  owner: string,
+  repo: string,
+  expected: ExpectedBranchHead,
+  rawOperations: readonly BatchOperation[],
+  message: string,
+): Promise<{ commitSha: string; treeSha: string }> {
+  assertRepository(owner, repo)
+  assertBranch(expected.branch)
+  assertBranch(expected.protectedBaseBranch)
+  assertSha(expected.expectedHeadSha)
+  if (expected.branch === expected.protectedBaseBranch)
+    throw new TypeError("Refusing to mutate the protected base branch")
+  if (!expected.branch.startsWith("repopress/install/"))
+    throw new TypeError("Registry installs require a dedicated branch")
+  assertCommitMessage(message)
+  const operations = validateBatchOperations(rawOperations)
+  const octokit = createGitHubClient(accessToken)
+  const { data: branchRef } = await octokit.git.getRef({ owner, repo, ref: `heads/${expected.branch}` })
+  if (branchRef.object.sha !== expected.expectedHeadSha) throw new Error("Dedicated branch head changed")
+  const { data: baseCommit } = await octokit.git.getCommit({
+    owner,
+    repo,
+    commit_sha: expected.expectedHeadSha,
+  })
+  const tree = await Promise.all(
+    operations.map(async (operation) => {
+      if (operation.action === "delete") {
+        return { path: operation.path, mode: "100644" as const, type: "blob" as const, sha: null }
+      }
+      if (operation.blobSha) {
+        return { path: operation.path, mode: "100644" as const, type: "blob" as const, sha: operation.blobSha }
+      }
+      if (operation.contentEncoding === "base64") {
+        const { data: blob } = await octokit.git.createBlob({
+          owner,
+          repo,
+          content: operation.content as string,
+          encoding: "base64",
+        })
+        return { path: operation.path, mode: "100644" as const, type: "blob" as const, sha: blob.sha }
+      }
+      return {
+        path: operation.path,
+        mode: "100644" as const,
+        type: "blob" as const,
+        content: operation.content as string,
+      }
+    }),
+  )
+  const { data: newTree } = await octokit.git.createTree({
+    owner,
+    repo,
+    base_tree: baseCommit.tree.sha,
+    tree,
+  })
+  const { data: newCommit } = await octokit.git.createCommit({
+    owner,
+    repo,
+    message,
+    tree: newTree.sha,
+    parents: [expected.expectedHeadSha],
+  })
+  await octokit.git.updateRef({
+    owner,
+    repo,
+    ref: `heads/${expected.branch}`,
+    sha: newCommit.sha,
+    force: false,
+  })
+  return { commitSha: newCommit.sha, treeSha: newTree.sha }
+}
+
+export interface GitHubTextFileSnapshot {
+  path: string
+  content: string
+}
+
+export async function getTextFilesAtCommit(
+  accessToken: string,
+  owner: string,
+  repo: string,
+  commitSha: string,
+  rawPaths: readonly string[],
+): Promise<GitHubTextFileSnapshot[]> {
+  assertRepository(owner, repo)
+  assertSha(commitSha)
+  if (!Array.isArray(rawPaths) || rawPaths.length > MAX_SNAPSHOT_FILES)
+    throw new TypeError("Repository snapshot path limit exceeded")
+  const paths = [...new Set(rawPaths)].sort()
+  for (const path of paths) assertRepositoryPath(path)
+  const octokit = createGitHubClient(accessToken)
+  let totalBytes = 0
+  const snapshots: GitHubTextFileSnapshot[] = []
+  for (const path of paths) {
+    try {
+      const { data } = await octokit.repos.getContent({ owner, repo, path, ref: commitSha })
+      if (Array.isArray(data)) throw new TypeError(`Repository snapshot path is a directory: ${path}`)
+      let bytes: Buffer
+      if ("content" in data && typeof data.content === "string" && data.content.length > 0) {
+        bytes = Buffer.from(data.content, "base64")
+      } else {
+        const { data: blob } = await octokit.git.getBlob({ owner, repo, file_sha: data.sha })
+        bytes = Buffer.from(blob.content, "base64")
+      }
+      if (bytes.byteLength > MAX_SNAPSHOT_FILE_BYTES) throw new TypeError(`Repository snapshot file too large: ${path}`)
+      totalBytes += bytes.byteLength
+      if (totalBytes > MAX_SNAPSHOT_BYTES) throw new TypeError("Repository snapshot byte limit exceeded")
+      snapshots.push({ path, content: new TextDecoder("utf-8", { fatal: true }).decode(bytes) })
+    } catch (error) {
+      if ((error as { status?: number }).status === 404) continue
+      throw error
+    }
+  }
+  return snapshots
+}
+
 export async function batchCommit(
   accessToken: string,
   owner: string,
