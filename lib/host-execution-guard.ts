@@ -142,6 +142,74 @@ function staticModuleSpecifier(
   return node.moduleSpecifier && ts.isStringLiteralLike(node.moduleSpecifier) ? node.moduleSpecifier.text : null
 }
 
+function isPreviewSandboxSource(relativePath: string): boolean {
+  const normalizedPath = relativePath.replaceAll("\\", "/")
+  return normalizedPath === "components/preview-sandbox" || normalizedPath.startsWith("components/preview-sandbox/")
+}
+
+function bindingNameContainsIdentifier(name: ts.BindingName, identifier: ts.Identifier): boolean {
+  if (ts.isIdentifier(name)) return name === identifier
+  return name.elements.some(
+    (element) => !ts.isOmittedExpression(element) && bindingNameContainsIdentifier(element.name, identifier),
+  )
+}
+
+function isRuntimeIdentifierReference(identifier: ts.Identifier): boolean {
+  if (ts.isPartOfTypeNode(identifier)) return false
+  let ancestor: ts.Node | undefined = identifier.parent
+  while (ancestor && !ts.isStatement(ancestor) && !ts.isSourceFile(ancestor)) {
+    if (ts.isTypeQueryNode(ancestor)) return false
+    ancestor = ancestor.parent
+  }
+  const parent = identifier.parent
+  if (ts.isPropertyAccessExpression(parent) && parent.name === identifier) return false
+  if (
+    (ts.isPropertyAssignment(parent) ||
+      ts.isMethodDeclaration(parent) ||
+      ts.isMethodSignature(parent) ||
+      ts.isPropertyDeclaration(parent) ||
+      ts.isPropertySignature(parent) ||
+      ts.isGetAccessorDeclaration(parent) ||
+      ts.isSetAccessorDeclaration(parent) ||
+      ts.isEnumMember(parent)) &&
+    parent.name === identifier
+  ) {
+    return false
+  }
+  if (ts.isBindingElement(parent)) {
+    return !bindingNameContainsIdentifier(parent.name, identifier) && parent.propertyName !== identifier
+  }
+  if (ts.isVariableDeclaration(parent) || ts.isParameter(parent)) {
+    return !bindingNameContainsIdentifier(parent.name, identifier)
+  }
+  if (
+    ((ts.isFunctionDeclaration(parent) ||
+      ts.isFunctionExpression(parent) ||
+      ts.isClassDeclaration(parent) ||
+      ts.isClassExpression(parent) ||
+      ts.isInterfaceDeclaration(parent) ||
+      ts.isTypeAliasDeclaration(parent) ||
+      ts.isTypeParameterDeclaration(parent) ||
+      ts.isEnumDeclaration(parent) ||
+      ts.isModuleDeclaration(parent)) &&
+      parent.name === identifier) ||
+    ts.isImportClause(parent) ||
+    ts.isImportSpecifier(parent) ||
+    ts.isNamespaceImport(parent) ||
+    ts.isImportEqualsDeclaration(parent) ||
+    ts.isExportSpecifier(parent)
+  ) {
+    return false
+  }
+  if (
+    (ts.isLabeledStatement(parent) || ts.isBreakStatement(parent) || ts.isContinueStatement(parent)) &&
+    parent.label === identifier
+  ) {
+    return false
+  }
+  return true
+}
+
 function bindingNameIncludes(name: ts.BindingName, identifier: string): boolean {
   if (ts.isIdentifier(name)) return name.text === identifier
   return name.elements.some(
@@ -206,6 +274,7 @@ export function findHostExecutionViolationsInSource(relativePath: string, source
     true,
     scriptKindFor(relativePath),
   )
+  const permitsCommonJsLoader = isPreviewSandboxSource(relativePath)
   const aliases = new Map<string, ResolvedValue>()
 
   const isLocallyBound = (identifier: ts.Identifier): boolean => {
@@ -492,7 +561,15 @@ export function findHostExecutionViolationsInSource(relativePath: string, source
     node: ts.ImportDeclaration | ts.ExportDeclaration | ts.ImportEqualsDeclaration,
   ): boolean => {
     if (ts.isImportEqualsDeclaration(node)) return node.isTypeOnly
-    if (ts.isExportDeclaration(node)) return node.isTypeOnly
+    if (ts.isExportDeclaration(node)) {
+      if (node.isTypeOnly) return true
+      return (
+        node.exportClause !== undefined &&
+        ts.isNamedExports(node.exportClause) &&
+        node.exportClause.elements.length > 0 &&
+        node.exportClause.elements.every((element) => element.isTypeOnly)
+      )
+    }
     return isTypeOnlyImportDeclaration(node)
   }
   const isSandboxRouteEntry = (node: ts.ImportDeclaration | ts.ExportDeclaration, specifier: string): boolean => {
@@ -514,6 +591,14 @@ export function findHostExecutionViolationsInSource(relativePath: string, source
   }
 
   const visit = (node: ts.Node) => {
+    if (
+      !permitsCommonJsLoader &&
+      ts.isIdentifier(node) &&
+      isRuntimeIdentifierReference(node) &&
+      ((node.text === "require" && !isLocallyBound(node)) || (node.text === "module" && !isLocallyBound(node)))
+    ) {
+      report(node, "ambient CommonJS loader use")
+    }
     if (ts.isIdentifier(node) && forbiddenExecutionIdentifiers.has(node.text)) {
       report(node, `forbidden execution identifier ${node.text}`)
     }
@@ -531,6 +616,13 @@ export function findHostExecutionViolationsInSource(relativePath: string, source
       }
       if (propertyName === "eval") report(node, "computed eval access")
       const baseTarget = resolve(node.expression)?.target
+      if (
+        !permitsCommonJsLoader &&
+        propertyName === "require" &&
+        (baseTarget === "global" || baseTarget === "module")
+      ) {
+        report(node, "ambient CommonJS loader use")
+      }
       if (propertyName && COMPONENT_MAP_PROPERTIES.has(propertyName) && baseTarget === "adapter") {
         report(node, "executable adapter component-map access")
       }
@@ -539,6 +631,15 @@ export function findHostExecutionViolationsInSource(relativePath: string, source
     if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node) || ts.isImportEqualsDeclaration(node)) {
       const specifier = staticModuleSpecifier(node)
       const moduleTarget = specifier ? classifyModuleTarget(specifier) : null
+      if (
+        !permitsCommonJsLoader &&
+        ts.isImportEqualsDeclaration(node) &&
+        specifier &&
+        !node.isTypeOnly &&
+        !isDeclarationOnlyContext(node)
+      ) {
+        report(node, "ambient CommonJS loader use")
+      }
       if (
         specifier &&
         moduleTarget === "preview-sandbox" &&
@@ -554,6 +655,9 @@ export function findHostExecutionViolationsInSource(relativePath: string, source
     }
     if (ts.isCallExpression(node) || ts.isNewExpression(node)) {
       const target = resolve(node.expression)
+      if (!permitsCommonJsLoader && target?.target === "require") {
+        report(node, "ambient CommonJS loader use")
+      }
       if (target?.target === "function") report(node, "dynamic Function execution")
       if (target?.target === "eval") report(node, "indirect eval execution")
       if (target?.target === "component-map") report(node, "executable adapter component-map invocation")

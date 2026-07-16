@@ -314,6 +314,94 @@ describe("review regression guards", () => {
     expect(violations).toHaveLength(7)
   })
 
+  it.each([
+    `require(target)`,
+    `module.require(target)`,
+    `globalThis.require(target)`,
+    `const load = require; load(target)`,
+    `const load = module.require; load(target)`,
+    `const load = globalThis.require; load(target)`,
+    `const { require: load } = module; load(target)`,
+    `const { require: load } = globalThis; load(target)`,
+    `let load; ({ require: load } = globalThis); load(target)`,
+    `const commonJs = globalThis; commonJs.require(target)`,
+    `const load = require.bind(undefined); load(target)`,
+    `require.call(undefined, target)`,
+    `module.require.apply(module, [target])`,
+    `Reflect.apply(require, undefined, [target])`,
+    `require?.(target)`,
+    `module?.require?.(target)`,
+    `globalThis?.require?.(target)`,
+    `(0, require)(target)`,
+    "require`./plain-module`",
+    `consume(require)`,
+    `import loader = require("./plain-module")`,
+    `export import loader = require("./plain-module")`,
+  ])("categorically rejects ambient host CommonJS loader form %#", (loaderUse) => {
+    const violations = findHostExecutionViolationsInSource(
+      "lib/ambient-commonjs-loader-probe.ts",
+      `
+        const target = "./plain-module"
+        declare function consume(value: unknown): void
+        ${loaderUse}
+      `,
+    )
+
+    expect(violations).toEqual(expect.arrayContaining([expect.stringContaining("ambient CommonJS loader use")]))
+  })
+
+  it("keeps genuine local CommonJS-shaped values harmless", () => {
+    expect(
+      findHostExecutionViolationsInSource(
+        "lib/local-commonjs-shapes-probe.ts",
+        `
+          const target = "./plain-module"
+          function require(specifier: string) { return specifier }
+          require.call(undefined, target)
+          require.apply(undefined, [target])
+          Reflect.apply(require, undefined, [target])
+          const bound = require.bind(undefined)
+          bound?.(target)
+
+          function inspect(module: { require(value: string): string }, globalThis: typeof module) {
+            module.require?.(target)
+            globalThis.require.apply(globalThis, [target])
+          }
+
+          const module = { require: (value: string) => value }
+          const localLoad = module.require
+          localLoad(target)
+        `,
+      ),
+    ).toEqual([])
+  })
+
+  it("ignores CommonJS words in property keys, strings, and type positions", () => {
+    expect(
+      findHostExecutionViolationsInSource(
+        "lib/commonjs-metadata-probe.ts",
+        `
+          const metadata = {
+            require: "require",
+            module: "module.require",
+          }
+          type AmbientLoader = typeof require
+          interface LoaderShape { require(specifier: string): unknown }
+          export { metadata }
+        `,
+      ),
+    ).toEqual([])
+  })
+
+  it("allows CommonJS only inside the non-navigable preview sandbox source tree", () => {
+    expect(
+      findHostExecutionViolationsInSource("components/preview-sandbox/worker-loader.ts", `require("./owned-worker")`),
+    ).toEqual([])
+    expect(findHostExecutionViolationsInSource("app/preview/sandbox/page.tsx", `require("./owned-worker")`)).toEqual(
+      expect.arrayContaining([expect.stringContaining("ambient CommonJS loader use")]),
+    )
+  })
+
   it("does not treat ordinary local require or load functions as CommonJS loaders", () => {
     expect(
       findHostExecutionViolationsInSource(
@@ -554,6 +642,35 @@ describe("review regression guards", () => {
         `export { SandboxRuntime } from "@/components/preview-sandbox/SandboxRuntime"`,
       ),
     ).toEqual(expect.arrayContaining([expect.stringContaining("host import of preview sandbox module")]))
+  })
+
+  it("allows wholly type-only named reexports from guarded modules", () => {
+    expect(
+      findHostExecutionViolationsInSource(
+        "lib/type-reexports.ts",
+        `
+          export { type CompatibleRenderTree } from "@/components/preview-sandbox/compatible-render-tree"
+          export { type MdxPreviewSchema } from "@/.repopress/mdx-preview/schema"
+        `,
+      ),
+    ).toEqual([])
+  })
+
+  it("rejects mixed type and runtime named reexports from guarded modules", () => {
+    const violations = findHostExecutionViolationsInSource(
+      "lib/mixed-reexports.ts",
+      `
+        export { type CompatibleRenderTree, renderCompatibleTree } from "@/components/preview-sandbox/compatible-render-tree"
+        export { type MdxPreviewSchema, adapter } from "@/.repopress/mdx-preview/schema"
+      `,
+    )
+
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("host import of preview sandbox module"),
+        expect.stringContaining("host import of repository preview adapter module"),
+      ]),
+    )
   })
 
   it("does not taint generated Convex component imports or ordinary adapter config metadata", () => {

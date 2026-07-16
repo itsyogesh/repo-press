@@ -4,6 +4,7 @@ import { AlertCircle, CheckCircle2, ChevronDown, ChevronUp, Code2, Loader2, Save
 import { useCallback, useEffect, useState, useTransition } from "react"
 import { toast } from "sonner"
 import { commitRawConfigAction } from "@/app/dashboard/[owner]/[repo]/config-actions"
+import { repoPressConfigSchema } from "@/lib/config-schema"
 import { Badge } from "./ui/badge"
 import { Button } from "./ui/button"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "./ui/collapsible"
@@ -28,8 +29,6 @@ function validateConfig(json: string): ValidationResult {
   try {
     const parsed = JSON.parse(json)
 
-    // Lazy-import Zod schema at runtime (avoid server-only issues)
-    const { repoPressConfigSchema } = require("@/lib/config-schema")
     const result = repoPressConfigSchema.safeParse(parsed)
     if (!result.success) {
       return {
