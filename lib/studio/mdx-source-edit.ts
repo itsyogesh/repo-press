@@ -83,24 +83,29 @@ function collectTargets(source: string, root: RepoPressMdxSyntaxNode): readonly 
     if (!entry) break
     const node = entry.node as MdxElement
     if (node.type === "mdxJsxFlowElement" || node.type === "mdxJsxTextElement") {
-      if (typeof node.name !== "string") return null
-      try {
-        assertSafeMdxName(node.name)
-      } catch {
-        return null
+      // MDX fragments are represented as JSX nodes with a null name. They are
+      // structural containers, not editable component targets, so keep walking
+      // their children without weakening validation for named elements.
+      if (node.name != null) {
+        if (typeof node.name !== "string") return null
+        try {
+          assertSafeMdxName(node.name)
+        } catch {
+          return null
+        }
+        const opening = openingTagFor(source, node)
+        if (!opening) return null
+        targets.push(
+          Object.freeze({
+            name: node.name,
+            path: Object.freeze([...entry.path]),
+            start: opening.start,
+            end: opening.end,
+            openingTag: opening.source,
+            sourceSnapshot: source,
+          }),
+        )
       }
-      const opening = openingTagFor(source, node)
-      if (!opening) return null
-      targets.push(
-        Object.freeze({
-          name: node.name,
-          path: Object.freeze([...entry.path]),
-          start: opening.start,
-          end: opening.end,
-          openingTag: opening.source,
-          sourceSnapshot: source,
-        }),
-      )
     }
     for (let index = (node.children?.length ?? 0) - 1; index >= 0; index -= 1) {
       const child = node.children?.[index]

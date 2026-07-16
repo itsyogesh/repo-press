@@ -44,6 +44,13 @@ describe("source-preserving MDX component prop edits", () => {
     expect(result).toEqual({ ok: true, source: '<Card title="First" />\n<Card title="Changed" />' })
   })
 
+  it("walks through MDX fragments without treating them as unnamed components", () => {
+    const source = '<>\n  <Callout title="Before" />\n</>'
+    const result = editComponentProp(source, targetFor(source, "Callout"), { title: "After" })
+
+    expect(result).toEqual({ ok: true, source: '<>\n  <Callout title="After" />\n</>' })
+  })
+
   it("preserves CRLF and UTF-16 offsets after astral Unicode", () => {
     const source = '😀 heading\r\n\r\n<Callout title="Before" />\r\n'
     const result = editComponentProp(source, targetFor(source, "Callout"), { title: "After" })
