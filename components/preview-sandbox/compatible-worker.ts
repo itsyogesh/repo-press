@@ -131,13 +131,7 @@ function compatibleWorkerMain() {
   const root = globalThis as any
   const UnsafeFunction = Function
   const uncurryThis = (fn: any) => Function.prototype.call.bind(fn)
-  const arrayFilter = uncurryThis(Array.prototype.filter)
-  const arrayFlatMap = uncurryThis(Array.prototype.flatMap)
-  const arrayIncludes = uncurryThis(Array.prototype.includes)
-  const arrayMap = uncurryThis(Array.prototype.map)
   const arrayPush = uncurryThis(Array.prototype.push)
-  const arraySlice = uncurryThis(Array.prototype.slice)
-  const arraySome = uncurryThis(Array.prototype.some)
   const arrayIsArray = Array.isArray
   const numberIsSafeInteger = Number.isSafeInteger
   const objectAssign = Object.assign
@@ -149,6 +143,8 @@ function compatibleWorkerMain() {
   const objectGetPrototypeOf = Object.getPrototypeOf
   const objectHasOwn = Object.hasOwn
   const objectKeys = Object.keys
+  const reflectApply = Reflect.apply
+  const regexpTest = uncurryThis(RegExp.prototype.test)
   const setHas = uncurryThis(Set.prototype.has)
   const weakSetAdd = uncurryThis(WeakSet.prototype.add)
   const weakSetHas = uncurryThis(WeakSet.prototype.has)
@@ -158,6 +154,16 @@ function compatibleWorkerMain() {
   let bootstrapped = false
   const fidelityLosses: string[] = []
   const recordedFidelityLosses = objectCreate(null)
+
+  function appendArray(target: any[], source: readonly any[], limit = source.length) {
+    const boundedLength = limit < source.length ? limit : source.length
+    for (let index = 0; index < boundedLength; index += 1) arrayPush(target, source[index])
+    return target
+  }
+
+  function copyArray(source: readonly any[], limit = source.length) {
+    return appendArray([], source, limit)
+  }
 
   function recordFidelityLoss(code: string) {
     if (fidelityLosses.length >= 32 || objectHasOwn(recordedFidelityLosses, code)) return
@@ -175,7 +181,9 @@ function compatibleWorkerMain() {
       return value
     }
     weakSetAdd(frozenOwnedValues, value)
-    for (const key of objectKeys(value)) {
+    const keys = objectKeys(value)
+    for (let index = 0; index < keys.length; index += 1) {
+      const key = keys[index]
       const descriptor = objectGetOwnPropertyDescriptor(value, key)
       if (descriptor && objectHasOwn(descriptor, "value")) deepFreezeOwned(descriptor.value)
     }
@@ -227,7 +235,8 @@ function compatibleWorkerMain() {
       objectGetPrototypeOf(function* () {}).constructor,
       objectGetPrototypeOf(async function* () {}).constructor,
     ]
-    for (const functionConstructor of constructors) {
+    for (let index = 0; index < constructors.length; index += 1) {
+      const functionConstructor = constructors[index]
       try {
         objectDefineProperty(functionConstructor.prototype, "constructor", {
           configurable: false,
@@ -237,7 +246,8 @@ function compatibleWorkerMain() {
         })
       } catch {}
     }
-    for (const name of [...blockedNames, "eval"]) {
+    for (let index = 0; index <= blockedNames.length; index += 1) {
+      const name = index === blockedNames.length ? "eval" : blockedNames[index]
       try {
         objectDefineProperty(root, name, {
           configurable: false,
@@ -285,9 +295,15 @@ function compatibleWorkerMain() {
     Fragment,
     Children: {
       count: (children: any) => (arrayIsArray(children) ? children.length : children == null ? 0 : 1),
-      map: (children: any, callback: any) =>
-        arrayMap(arrayIsArray(children) ? children : children == null ? [] : [children], callback),
-      toArray: (children: any) => (arrayIsArray(children) ? arraySlice(children) : children == null ? [] : [children]),
+      map: (children: any, callback: any) => {
+        const source = arrayIsArray(children) ? children : children == null ? [] : [children]
+        const output: any[] = []
+        for (let index = 0; index < source.length; index += 1) {
+          arrayPush(output, reflectApply(callback, undefined, [source[index], index]))
+        }
+        return output
+      },
+      toArray: (children: any) => (arrayIsArray(children) ? copyArray(children) : children == null ? [] : [children]),
     },
     cloneElement: (value: any, props: any, ...children: any[]) =>
       element(
@@ -365,9 +381,13 @@ function compatibleWorkerMain() {
       if (objectHasOwn(shimModules, name)) return shimModules[name]
       throw new Error(`Module ${name} is unavailable in compatible preview`)
     }
-    const values = arrayMap(blockedNames, () => undefined)
-    const execute = UnsafeFunction("exports", "module", "require", "React", ...blockedNames, code)
-    execute(exports, module, requireModule, React, ...values)
+    const parameters = ["exports", "module", "require", "React"]
+    appendArray(parameters, blockedNames)
+    arrayPush(parameters, code)
+    const execute = reflectApply(UnsafeFunction, undefined, parameters)
+    const values = [exports, module, requireModule, React]
+    for (let index = 0; index < blockedNames.length; index += 1) arrayPush(values, undefined)
+    reflectApply(execute, undefined, values)
     const output = module.exports || exports
     return (
       output.adapter ||
@@ -381,16 +401,20 @@ function compatibleWorkerMain() {
 
   function evaluateDocument(job: any, adapter: any) {
     const components = adapter.components && typeof adapter.components === "object" ? adapter.components : {}
-    const scope = adapter.scope && typeof adapter.scope === "object" ? { ...adapter.scope } : {}
+    const scope =
+      adapter.scope && typeof adapter.scope === "object"
+        ? objectAssign(objectCreate(null), adapter.scope)
+        : objectCreate(null)
     const allowed = adapter.allowImports && typeof adapter.allowImports === "object" ? adapter.allowImports : {}
     if (!arrayIsArray(job.imports) || job.imports.length > 128) throw new Error("Too many compatible imports")
-    for (const imported of job.imports) {
+    for (let index = 0; index < job.imports.length; index += 1) {
+      const imported = job.imports[index]
       if (
         !imported ||
         typeof imported.source !== "string" ||
         typeof imported.imported !== "string" ||
         typeof imported.local !== "string" ||
-        !/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(imported.local)
+        !regexpTest(/^[A-Za-z_$][A-Za-z0-9_$]*$/, imported.local)
       ) {
         throw new Error("Invalid compatible import binding")
       }
@@ -400,12 +424,19 @@ function compatibleWorkerMain() {
       }
       scope[imported.local] = moduleValue[imported.imported]
     }
-    for (const [name, value] of objectEntries(components)) scope[name] = value
-    const pairs = arraySlice(
-      arrayFilter(objectEntries(scope), ([name]: [string, any]) => /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name)),
-      0,
-      256,
-    )
+    const componentEntries = objectEntries(components)
+    for (let index = 0; index < componentEntries.length; index += 1) {
+      const pair = componentEntries[index]
+      scope[pair[0]] = pair[1]
+    }
+    const scopeEntries = objectEntries(scope)
+    const pairs: any[] = []
+    for (let index = 0; index < scopeEntries.length && pairs.length < 256; index += 1) {
+      const pair = scopeEntries[index]
+      if (typeof pair[0] === "string" && regexpTest(/^[A-Za-z_$][A-Za-z0-9_$]*$/, pair[0])) {
+        arrayPush(pairs, pair)
+      }
+    }
     const missing = (name: string, component: boolean) => {
       recordFidelityLoss("STATIC_INERT_MISSING_REFERENCE")
       return component
@@ -413,15 +444,30 @@ function compatibleWorkerMain() {
         : `[Missing ${name}]`
     }
     arrayPush(pairs, ["_missingMdxReference", missing])
-    for (const name of blockedNames) {
-      if (!arraySome(pairs, ([key]: [string, any]) => key === name)) arrayPush(pairs, [name, undefined])
+    for (let nameIndex = 0; nameIndex < blockedNames.length; nameIndex += 1) {
+      const name = blockedNames[nameIndex]
+      let present = false
+      for (let pairIndex = 0; pairIndex < pairs.length; pairIndex += 1) {
+        if (pairs[pairIndex][0] === name) {
+          present = true
+          break
+        }
+      }
+      if (!present) arrayPush(pairs, [name, undefined])
     }
     const mdxConfig = objectAssign(objectCreate(null), jsxRuntime, {
       useMDXComponents: (value: any) => value || {},
       _missingMdxReference: missing,
     })
-    const execute = UnsafeFunction("_mdxConfig", ...arrayMap(pairs, ([name]: [string, any]) => name), job.mdxCode)
-    const moduleValue = execute(mdxConfig, ...arrayMap(pairs, ([, value]: [string, any]) => value))
+    const parameters = ["_mdxConfig"]
+    const values = [mdxConfig]
+    for (let index = 0; index < pairs.length; index += 1) {
+      arrayPush(parameters, pairs[index][0])
+      arrayPush(values, pairs[index][1])
+    }
+    arrayPush(parameters, job.mdxCode)
+    const execute = reflectApply(UnsafeFunction, undefined, parameters)
+    const moduleValue = reflectApply(execute, undefined, values)
     if (!moduleValue || typeof moduleValue.default !== "function") throw new Error("Compatible MDX has no component")
     return moduleValue.default({ components })
   }
@@ -503,29 +549,47 @@ function compatibleWorkerMain() {
   const navigationTags = new Set(["a", "nav"])
   const networkTags = new Set(["base", "link", "meta"])
   const activeContentTags = new Set(["math", "noscript", "script", "style", "svg", "template"])
+  const stringPropKeys = ["aria-description", "aria-label", "aria-live", "className", "role", "scope", "title"]
+  const integerPropKeys = ["colSpan", "rowSpan", "start"]
+  const safePropNames = new Set([
+    "aria-description",
+    "aria-label",
+    "aria-live",
+    "className",
+    "role",
+    "scope",
+    "title",
+    "aria-hidden",
+    "colSpan",
+    "rowSpan",
+    "start",
+  ])
   function safeProps(props: any) {
     const output: any = objectCreate(null)
     if (!props || typeof props !== "object") return output
-    const stringKeys = ["aria-description", "aria-label", "aria-live", "className", "role", "scope", "title"]
-    for (const key of stringKeys) {
+    for (let index = 0; index < stringPropKeys.length; index += 1) {
+      const key = stringPropKeys[index]
       if (typeof props[key] === "string" && props[key].length <= 1_024) output[key] = props[key]
     }
     if (typeof props["aria-hidden"] === "boolean") output["aria-hidden"] = props["aria-hidden"]
-    for (const key of ["colSpan", "rowSpan", "start"]) {
+    for (let index = 0; index < integerPropKeys.length; index += 1) {
+      const key = integerPropKeys[index]
       if (numberIsSafeInteger(props[key]) && props[key] >= 1 && props[key] <= 1_000) output[key] = props[key]
     }
     let inspected = 0
-    for (const key of objectKeys(props)) {
+    const keys = objectKeys(props)
+    for (let index = 0; index < keys.length; index += 1) {
+      const key = keys[index]
       inspected += 1
       if (inspected > 64) {
         recordFidelityLoss("STATIC_INERT_PROP")
         break
       }
       if (key === "children" || key === "key") continue
-      if (/^on[A-Z]/.test(key)) recordFidelityLoss("STATIC_INERT_EVENT")
+      if (regexpTest(/^on[A-Z]/, key)) recordFidelityLoss("STATIC_INERT_EVENT")
       else if (key === "ref") recordFidelityLoss("STATIC_INERT_REF")
       else if (key === "style" || key === "dangerouslySetInnerHTML") recordFidelityLoss("STATIC_INERT_STYLE")
-      else if (!arrayIncludes([...stringKeys, "aria-hidden", "colSpan", "rowSpan", "start"], key)) {
+      else if (!setHas(safePropNames, key)) {
         recordFidelityLoss("STATIC_INERT_PROP")
       }
     }
@@ -549,7 +613,11 @@ function compatibleWorkerMain() {
       if (node === null || node === undefined || typeof node === "boolean") return []
       if (arrayIsArray(node)) {
         if (node.length > 128) throw new Error("Compatible child count exceeded")
-        return arrayFlatMap(node, (child: any) => visit(child, depth + 1))
+        const children: any[] = []
+        for (let index = 0; index < node.length; index += 1) {
+          appendArray(children, visit(node[index], depth + 1))
+        }
+        return children
       }
       if (typeof node === "string" || typeof node === "number" || typeof node === "bigint") {
         const text = String(node)
@@ -624,7 +692,7 @@ function compatibleWorkerMain() {
             type: "repopress:rendered-compatible",
             requestId,
             tree,
-            fidelityLosses: arraySlice(fidelityLosses, 0, 32),
+            fidelityLosses: copyArray(fidelityLosses, 32),
           })
         } catch {
           send({ type: "repopress:compatible-error", requestId, code: "COMPATIBLE_RENDER_FAILED" })

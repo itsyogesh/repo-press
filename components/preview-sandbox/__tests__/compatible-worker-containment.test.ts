@@ -204,6 +204,7 @@ describe("compatible worker containment", () => {
             try { Set.prototype.add = () => undefined } catch {}
             try { Array.from = () => [] } catch {}
             try { Array.prototype.sort = () => [] } catch {}
+            try { Array.prototype[Symbol.iterator] = function* () {} } catch {}
             try { Object.keys = () => [] } catch {}
             try { Object.entries = () => [] } catch {}
             try { React.useEffect = () => undefined } catch {}
@@ -211,7 +212,10 @@ describe("compatible worker containment", () => {
             function Poisoned() {
               React.useEffect(() => undefined, [])
               React.useState(0)
-              return <article><h2>Poison resistant</h2><a href="https://evil.test">Link</a></article>
+              return <article
+                onClick={() => undefined}
+                style={{ color: "red" }}
+              ><h2>Poison resistant</h2><a href="https://evil.test">Link</a></article>
             }
             export default { components: { Poisoned } }
           `,
@@ -248,7 +252,13 @@ describe("compatible worker containment", () => {
     expect(sent).toHaveLength(1)
     expect(sent[0]).toMatchObject({
       type: "repopress:rendered-compatible",
-      fidelityLosses: expect.arrayContaining(["STATIC_INERT_EFFECT", "STATIC_INERT_STATE", "STATIC_INERT_LINK"]),
+      fidelityLosses: expect.arrayContaining([
+        "STATIC_INERT_EFFECT",
+        "STATIC_INERT_STATE",
+        "STATIC_INERT_EVENT",
+        "STATIC_INERT_STYLE",
+        "STATIC_INERT_LINK",
+      ]),
       tree: expect.arrayContaining([expect.objectContaining({ kind: "element", tag: "article" })]),
     })
     expect(JSON.stringify(sent[0])).not.toContain("evil.test")
