@@ -393,6 +393,41 @@ describe("review regression guards", () => {
     expect(violations).toHaveLength(1)
   })
 
+  it.each([
+    `const { ...container } = globalThis`,
+    `const { ...container } = module`,
+    `let container; ({ ...container } = globalThis)`,
+    `let container; ({ ...container } = module)`,
+    `const container = { ...globalThis }`,
+    `const container = { ...module }`,
+  ])("rejects ambient loader container rest or spread copy %#", (containerCopy) => {
+    const violations = findHostExecutionViolationsInSource(
+      "lib/ambient-loader-container-copy-probe.ts",
+      containerCopy,
+    ).filter((violation) => violation.includes("ambient CommonJS loader use"))
+
+    expect(violations).toHaveLength(1)
+  })
+
+  it.each([
+    `const { ...container } = globalThis
+     container["require"]("./plain-module")`,
+    `let container; ({ ...container } = globalThis)
+     Reflect.apply(container.require, undefined, ["./plain-module"])`,
+    `declare function consume(value: unknown): void
+     const { ...container } = globalThis
+     consume(container)`,
+    `const container = { ...globalThis }
+     const stored = { container }`,
+  ])("rejects use of an ambient loader rest or spread copy %#", (containerUse) => {
+    const violations = findHostExecutionViolationsInSource(
+      "lib/ambient-loader-container-use-probe.ts",
+      containerUse,
+    ).filter((violation) => violation.includes("ambient CommonJS loader use"))
+
+    expect(violations).toHaveLength(1)
+  })
+
   it("keeps genuine local CommonJS-shaped values harmless", () => {
     expect(
       findHostExecutionViolationsInSource(
@@ -450,6 +485,40 @@ describe("review regression guards", () => {
             ;({ require: second } = module)
             return { require: "metadata", values: [first, second] }
           }
+        `,
+      ),
+    ).toEqual([])
+  })
+
+  it("keeps local and ordinary object rest or spread copies inert", () => {
+    expect(
+      findHostExecutionViolationsInSource(
+        "lib/local-loader-container-copy-probe.ts",
+        `
+          function inspect(globalThis: object, module: object) {
+            const { ...first } = globalThis
+            let second: object
+            ;({ ...second } = module)
+            const third = { ...globalThis, ...module }
+            return { first, second, third }
+          }
+
+          const source = { require: "metadata", value: 1 }
+          const { ...rest } = source
+          const copy = { ...source }
+          export { rest, copy }
+        `,
+      ),
+    ).toEqual([])
+  })
+
+  it("does not treat an ambient-named assignment destination as a spread source", () => {
+    expect(
+      findHostExecutionViolationsInSource(
+        "lib/loader-container-assignment-destination-probe.ts",
+        `
+          const source = { metadata: true }
+          ;({ ...globalThis } = source)
         `,
       ),
     ).toEqual([])

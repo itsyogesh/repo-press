@@ -407,6 +407,7 @@ export function findHostExecutionViolationsInSource(relativePath: string, source
 
   const objectBindingAcquiresRequire = (pattern: ts.ObjectBindingPattern): boolean =>
     pattern.elements.some((element) => {
+      if (element.dotDotDotToken) return true
       const propertyName = propertyNameText(element.propertyName)
       return (
         propertyName === "require" ||
@@ -415,12 +416,39 @@ export function findHostExecutionViolationsInSource(relativePath: string, source
     })
 
   const objectAssignmentAcquiresRequire = (pattern: ts.ObjectLiteralExpression): boolean =>
-    pattern.properties.some((property) => propertyNameText(property.name) === "require")
+    pattern.properties.some(
+      (property) => ts.isSpreadAssignment(property) || propertyNameText(property.name) === "require",
+    )
 
   const isAmbientLoaderContainer = (expression: ts.Expression): boolean => {
     const target = resolve(expression)?.target
     return target === "global" || target === "module"
   }
+
+  const isObjectAssignmentPattern = (expression: ts.ObjectLiteralExpression): boolean => {
+    let current: ts.Expression = expression
+    while (
+      (ts.isParenthesizedExpression(current.parent) ||
+        ts.isAsExpression(current.parent) ||
+        ts.isTypeAssertionExpression(current.parent) ||
+        ts.isNonNullExpression(current.parent) ||
+        ts.isSatisfiesExpression(current.parent)) &&
+      current.parent.expression === current
+    ) {
+      current = current.parent
+    }
+    return (
+      ts.isBinaryExpression(current.parent) &&
+      current.parent.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+      unwrapExpression(current.parent.left) === expression
+    )
+  }
+
+  const objectLiteralCopiesAmbientLoader = (expression: ts.ObjectLiteralExpression): boolean =>
+    !isObjectAssignmentPattern(expression) &&
+    expression.properties.some(
+      (property) => ts.isSpreadAssignment(property) && isAmbientLoaderContainer(property.expression),
+    )
 
   const resolveLoaderWrapper = (input: ts.Expression): ResolvedValue | undefined => {
     const expression = unwrapExpression(input)
@@ -608,6 +636,9 @@ export function findHostExecutionViolationsInSource(relativePath: string, source
   }
 
   const visit = (node: ts.Node) => {
+    if (!permitsCommonJsLoader && ts.isObjectLiteralExpression(node) && objectLiteralCopiesAmbientLoader(node)) {
+      report(node, "ambient CommonJS loader use")
+    }
     if (
       !permitsCommonJsLoader &&
       ts.isVariableDeclaration(node) &&
