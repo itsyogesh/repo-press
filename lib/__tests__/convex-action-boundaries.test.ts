@@ -19,7 +19,7 @@ vi.mock("@/convex/auth", () => ({
 }))
 
 import { syncTreeTitles } from "@/convex/documents"
-import { scanImagesFromGitHub } from "@/convex/mediaGallery"
+import { scanImagesFromGitHub, upsertScannedImagesBatch } from "@/convex/mediaGallery"
 import { consumeGitHubActionRateLimit, getGitHubActionProjectAccess } from "@/convex/projects"
 
 const BASE_SHA = "a".repeat(40)
@@ -70,6 +70,42 @@ function authorizeEditor(ctx: ReturnType<typeof actionCtx>, existingDocuments: u
       }),
     } as any
   })
+}
+
+function mockAuthorizedTitlePayload(payload: Record<string, unknown>) {
+  vi.mocked(fetch).mockImplementation(async (input) => {
+    const url = String(input)
+    if (url === "https://api.github.com/user") {
+      return { ok: true, json: vi.fn().mockResolvedValue({ id: 123 }) } as any
+    }
+    if (url === "https://api.github.com/repos/acme/docs") {
+      return { ok: true, json: vi.fn().mockResolvedValue({ permissions: { push: true } }) } as any
+    }
+    if (url === COMPARE_URL) {
+      return { ok: true, json: vi.fn().mockResolvedValue({ status: "ahead" }) } as any
+    }
+    return { ok: true, json: vi.fn().mockResolvedValue(payload) } as any
+  })
+}
+
+function mockAuthorizedGalleryPayload(payload: unknown) {
+  vi.mocked(fetch).mockImplementation(async (input) => {
+    const url = String(input)
+    if (url === "https://api.github.com/user") {
+      return { ok: true, json: vi.fn().mockResolvedValue({ id: 123 }) } as any
+    }
+    if (url === "https://api.github.com/repos/acme/docs") {
+      return { ok: true, json: vi.fn().mockResolvedValue({ permissions: { push: true } }) } as any
+    }
+    if (url === COMPARE_URL) {
+      return { ok: true, json: vi.fn().mockResolvedValue({ status: "ahead" }) } as any
+    }
+    return { ok: true, json: vi.fn().mockResolvedValue(payload) } as any
+  })
+}
+
+function mockAuthorizedGalleryTree(tree: unknown, truncated = false) {
+  mockAuthorizedGalleryPayload({ tree, truncated })
 }
 
 describe("public Convex GitHub action boundaries", () => {
@@ -533,6 +569,52 @@ describe("public Convex GitHub action boundaries", () => {
     })
   })
 
+  it.each([
+    [
+      "a non-integer declared size",
+      {
+        type: "file",
+        sha: "f".repeat(40),
+        size: 21.5,
+        encoding: "base64",
+        content: btoa("---\ntitle: Guide\n---\n"),
+      },
+    ],
+    [
+      "a decoded length that differs from the declared size",
+      {
+        type: "file",
+        sha: "f".repeat(40),
+        size: 20,
+        encoding: "base64",
+        content: btoa("---\ntitle: Guide\n---\n"),
+      },
+    ],
+    [
+      "malformed UTF-8 bytes",
+      {
+        type: "file",
+        sha: "f".repeat(40),
+        size: 2,
+        encoding: "base64",
+        content: btoa(String.fromCharCode(0xc3, 0x28)),
+      },
+    ],
+  ])("does not write a title document for %s", async (_label, payload) => {
+    const ctx = actionCtx()
+    authorizeEditor(ctx)
+    mockAuthorizedTitlePayload(payload)
+
+    await (syncTreeTitles as any).handler(ctx, {
+      projectId: "project_1",
+      readRef: BASE_SHA,
+      files: [{ path: "guide.mdx", sha: "f".repeat(40) }],
+      githubToken: "editor-token",
+    })
+
+    expect(ctx.runMutation).toHaveBeenCalledTimes(1)
+  })
+
   it("rejects a title-sync commit that is unrelated to the configured project branch", async () => {
     const ctx = actionCtx()
     authorizeEditor(ctx)
@@ -690,7 +772,7 @@ describe("public Convex GitHub action boundaries", () => {
       },
       role: "editor",
     })
-    ctx.runMutation.mockResolvedValue({ wasInserted: true })
+    ctx.runMutation.mockResolvedValueOnce(undefined).mockResolvedValueOnce({ inserted: 1, updated: 0 })
     vi.mocked(fetch).mockImplementation(async (input) => {
       const url = String(input)
       if (url === "https://api.github.com/user") {
@@ -723,10 +805,13 @@ describe("public Convex GitHub action boundaries", () => {
     expect(urls).toContain(`https://api.github.com/repos/acme/docs/git/trees/${BASE_SHA}?recursive=1`)
     expect(urls.some((url) => url.includes("attacker"))).toBe(false)
     expect(ctx.runQuery.mock.calls[1][1]).toEqual({ projectId: "project_1", userId: "editor_1" })
-    expect(ctx.runMutation).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ projectId: "project_1", filePath: "public/hero.png" }),
-    )
+    const batchArgs = ctx.runMutation.mock.calls[1][1]
+    expect(batchArgs).toEqual({
+      projectId: "project_1",
+      images: [{ fileName: "hero.png", filePath: "public/hero.png", githubSha: "f".repeat(40), sizeBytes: 42 }],
+    })
+    expect(Object.isFrozen(batchArgs.images)).toBe(true)
+    expect(Object.isFrozen(batchArgs.images[0])).toBe(true)
     expect(result).toEqual({ found: 1, inserted: 1, updated: 0, truncated: false })
   })
 
@@ -918,6 +1003,215 @@ describe("public Convex GitHub action boundaries", () => {
 
     expect(ctx.runMutation).toHaveBeenCalledTimes(1)
   })
+
+  it("rejects a malformed later gallery entry before any media mutation", async () => {
+    const ctx = actionCtx()
+    authorizeEditor(ctx)
+    ctx.runMutation.mockResolvedValue({ wasInserted: true })
+    mockAuthorizedGalleryTree([
+      { path: "public/first.png", sha: "f".repeat(40), type: "blob", size: 42 },
+      { path: "../escape.png", sha: "e".repeat(40), type: "blob", size: 42 },
+    ])
+
+    await expect(
+      (scanImagesFromGitHub as any).handler(ctx, {
+        projectId: "project_1",
+        readRef: BASE_SHA,
+        githubToken: "editor-token",
+      }),
+    ).rejects.toThrow()
+
+    expect(ctx.runMutation).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    ["an invalid blob SHA", [{ path: "public/image.png", sha: "invalid", type: "blob", size: 42 }]],
+    ["a non-integer blob size", [{ path: "public/image.png", sha: "f".repeat(40), type: "blob", size: 1.5 }]],
+    [
+      "an oversized blob size",
+      [{ path: "public/image.png", sha: "f".repeat(40), type: "blob", size: 2 * 1024 * 1024 * 1024 + 1 }],
+    ],
+    ["an oversized path", [{ path: `${"x".repeat(1_021)}.png`, sha: "f".repeat(40), type: "blob", size: 42 }]],
+    ["an image-looking non-blob", [{ path: "public/image.png", sha: "f".repeat(40), type: "tree", size: 42 }]],
+    [
+      "duplicate canonical paths",
+      [
+        { path: "public/caf\u00e9.png", sha: "f".repeat(40), type: "blob", size: 42 },
+        { path: "public/cafe\u0301.png", sha: "e".repeat(40), type: "blob", size: 42 },
+      ],
+    ],
+    [
+      "an inherited tree entry",
+      [Object.create({ path: "public/image.png", sha: "f".repeat(40), type: "blob", size: 42 })],
+    ],
+    [
+      "an accessor-backed path",
+      [
+        Object.defineProperties(
+          {},
+          {
+            path: { enumerable: true, get: () => "public/image.png" },
+            sha: { enumerable: true, value: "f".repeat(40) },
+            type: { enumerable: true, value: "blob" },
+            size: { enumerable: true, value: 42 },
+          },
+        ),
+      ],
+    ],
+    [
+      "an accessor-backed optional size",
+      [
+        Object.defineProperties(
+          {},
+          {
+            path: { enumerable: true, value: "public/image.png" },
+            sha: { enumerable: true, value: "f".repeat(40) },
+            type: { enumerable: true, value: "blob" },
+            size: { enumerable: true, get: () => 42 },
+          },
+        ),
+      ],
+    ],
+    [
+      "a stateful accessor-backed SHA",
+      [
+        Object.defineProperties(
+          {},
+          {
+            path: { enumerable: true, value: "public/image.png" },
+            sha: {
+              enumerable: true,
+              get: vi.fn().mockReturnValueOnce("f".repeat(40)).mockReturnValue("invalid"),
+            },
+            type: { enumerable: true, value: "blob" },
+            size: { enumerable: true, value: 42 },
+          },
+        ),
+      ],
+    ],
+    ["an unknown entry type", [{ path: "public", sha: "f".repeat(40), type: "unknown" }]],
+  ])("rejects gallery tree data containing %s before media mutation", async (_label, tree) => {
+    const ctx = actionCtx()
+    authorizeEditor(ctx)
+    ctx.runMutation.mockResolvedValue({ wasInserted: true })
+    mockAuthorizedGalleryTree(tree)
+
+    await expect(
+      (scanImagesFromGitHub as any).handler(ctx, {
+        projectId: "project_1",
+        readRef: BASE_SHA,
+        githubToken: "editor-token",
+      }),
+    ).rejects.toThrow()
+
+    expect(ctx.runMutation).toHaveBeenCalledTimes(1)
+  })
+
+  it("rejects a sparse gallery tree before media mutation", async () => {
+    const ctx = actionCtx()
+    authorizeEditor(ctx)
+    ctx.runMutation.mockResolvedValue({ wasInserted: true })
+    mockAuthorizedGalleryTree(new Array(1))
+
+    await expect(
+      (scanImagesFromGitHub as any).handler(ctx, {
+        projectId: "project_1",
+        readRef: BASE_SHA,
+        githubToken: "editor-token",
+      }),
+    ).rejects.toThrow()
+
+    expect(ctx.runMutation).toHaveBeenCalledTimes(1)
+  })
+
+  it("rejects an accessor-backed gallery tree index before media mutation", async () => {
+    const ctx = actionCtx()
+    authorizeEditor(ctx)
+    ctx.runMutation.mockResolvedValue({ inserted: 1, updated: 0 })
+    const tree: unknown[] = []
+    Object.defineProperty(tree, 0, {
+      enumerable: true,
+      get: () => ({ path: "public/image.png", sha: "f".repeat(40), type: "blob", size: 42 }),
+    })
+    mockAuthorizedGalleryTree(tree)
+
+    await expect(
+      (scanImagesFromGitHub as any).handler(ctx, {
+        projectId: "project_1",
+        readRef: BASE_SHA,
+        githubToken: "editor-token",
+      }),
+    ).rejects.toThrow()
+
+    expect(ctx.runMutation).toHaveBeenCalledTimes(1)
+  })
+
+  it("rejects an inherited top-level gallery tree before media mutation", async () => {
+    const ctx = actionCtx()
+    authorizeEditor(ctx)
+    ctx.runMutation.mockResolvedValue({ inserted: 1, updated: 0 })
+    mockAuthorizedGalleryPayload(
+      Object.create({
+        tree: [{ path: "public/image.png", sha: "f".repeat(40), type: "blob", size: 42 }],
+      }),
+    )
+
+    await expect(
+      (scanImagesFromGitHub as any).handler(ctx, {
+        projectId: "project_1",
+        readRef: BASE_SHA,
+        githubToken: "editor-token",
+      }),
+    ).rejects.toThrow()
+
+    expect(ctx.runMutation).toHaveBeenCalledTimes(1)
+  })
+
+  it("rejects an accessor-backed top-level gallery tree before media mutation", async () => {
+    const ctx = actionCtx()
+    authorizeEditor(ctx)
+    ctx.runMutation.mockResolvedValue({ inserted: 1, updated: 0 })
+    mockAuthorizedGalleryPayload(
+      Object.defineProperty({}, "tree", {
+        enumerable: true,
+        get: () => [{ path: "public/image.png", sha: "f".repeat(40), type: "blob", size: 42 }],
+      }),
+    )
+
+    await expect(
+      (scanImagesFromGitHub as any).handler(ctx, {
+        projectId: "project_1",
+        readRef: BASE_SHA,
+        githubToken: "editor-token",
+      }),
+    ).rejects.toThrow()
+
+    expect(ctx.runMutation).toHaveBeenCalledTimes(1)
+  })
+
+  it("rejects excessive aggregate gallery path bytes before media mutation", async () => {
+    const ctx = actionCtx()
+    authorizeEditor(ctx)
+    ctx.runMutation.mockResolvedValue({ wasInserted: true })
+    mockAuthorizedGalleryTree(
+      Array.from({ length: 2_100 }, (_, index) => ({
+        path: `${index}-${"x".repeat(995)}.txt`,
+        sha: "f".repeat(40),
+        type: "blob",
+        size: 42,
+      })),
+    )
+
+    await expect(
+      (scanImagesFromGitHub as any).handler(ctx, {
+        projectId: "project_1",
+        readRef: BASE_SHA,
+        githubToken: "editor-token",
+      }),
+    ).rejects.toThrow()
+
+    expect(ctx.runMutation).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe("GitHub action access persistence", () => {
@@ -1087,5 +1381,34 @@ describe("GitHub action access persistence", () => {
       attempts: 1,
       updatedAt: 60_001,
     })
+  })
+})
+
+describe("gallery scan batch persistence", () => {
+  it("updates and inserts the validated image set in one mutation", async () => {
+    const first = vi.fn().mockResolvedValueOnce({ _id: "asset_1" }).mockResolvedValueOnce(null)
+    const patch = vi.fn().mockResolvedValue(undefined)
+    const insert = vi.fn().mockResolvedValue("asset_2")
+    const ctx = {
+      db: {
+        query: vi.fn().mockReturnValue({
+          withIndex: vi.fn().mockReturnValue({ first }),
+        }),
+        patch,
+        insert,
+      },
+    }
+
+    const result = await (upsertScannedImagesBatch as any).handler(ctx, {
+      projectId: "project_1",
+      images: [
+        { fileName: "first.png", filePath: "public/first.png", githubSha: "f".repeat(40), sizeBytes: 42 },
+        { fileName: "second.png", filePath: "public/second.png", githubSha: "e".repeat(40) },
+      ],
+    })
+
+    expect(result).toEqual({ inserted: 1, updated: 1 })
+    expect(patch).toHaveBeenCalledOnce()
+    expect(insert).toHaveBeenCalledOnce()
   })
 })

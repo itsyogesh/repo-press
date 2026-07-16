@@ -18,6 +18,12 @@ interface RouteAuthResult {
   githubToken: string
 }
 
+export async function resolveRouteGitHubCredential(): Promise<{ githubToken: string }> {
+  const githubToken = await getGitHubToken()
+  if (!githubToken) throw new RouteAuthError("Unauthorized", 401)
+  return { githubToken }
+}
+
 /**
  * Shared auth resolution for route handlers.
  * Replaces 3 copies of resolveActingUserId + verifyProjectAccess + token minting.
@@ -32,10 +38,7 @@ export async function resolveRouteAuth(
   project: Doc<"projects">,
   minimumRole: Role = "editor",
 ): Promise<RouteAuthResult> {
-  const githubToken = await getGitHubToken()
-  if (!githubToken) {
-    throw new RouteAuthError("Unauthorized", 401)
-  }
+  const { githubToken } = await resolveRouteGitHubCredential()
 
   // 1. Resolve acting user
   const actingUserId = await resolveActingUserId(githubToken)

@@ -20,7 +20,7 @@ const TITLE_SYNC_MAX_TOTAL_PATH_BYTES = 128 * 1_024
 const TITLE_SYNC_MAX_CONTENT_BYTES = 256 * 1_024
 const TITLE_SYNC_MAX_FILES = 256
 const utf8Encoder = new TextEncoder()
-const utf8Decoder = new TextDecoder()
+const utf8Decoder = new TextDecoder("utf-8", { fatal: true })
 
 function decodeTitleSyncContent(payload: {
   type?: string
@@ -33,6 +33,7 @@ function decodeTitleSyncContent(payload: {
     payload.encoding !== "base64" ||
     typeof payload.content !== "string" ||
     typeof payload.size !== "number" ||
+    !Number.isInteger(payload.size) ||
     payload.size < 0 ||
     payload.size > TITLE_SYNC_MAX_CONTENT_BYTES
   ) {
@@ -44,7 +45,7 @@ function decodeTitleSyncContent(payload: {
 
   try {
     const binary = atob(compactBase64)
-    if (binary.length > TITLE_SYNC_MAX_CONTENT_BYTES) return null
+    if (binary.length > TITLE_SYNC_MAX_CONTENT_BYTES || binary.length !== payload.size) return null
     const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0))
     return utf8Decoder.decode(bytes)
   } catch {

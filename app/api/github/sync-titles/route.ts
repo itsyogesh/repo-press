@@ -2,17 +2,23 @@ import { ConvexHttpClient } from "convex/browser"
 import { NextResponse } from "next/server"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
-import { fetchAuthAction, getGitHubToken } from "@/lib/auth-server"
+import { fetchAuthAction } from "@/lib/auth-server"
 import { mintServerQueryToken } from "@/lib/project-access-token"
-import { RouteAuthError, resolveRouteAuth } from "@/lib/route-auth"
+import { RouteAuthError, resolveRouteGitHubCredential } from "@/lib/route-auth"
 import { prepareTitleSyncFiles } from "@/lib/studio/path-adapters"
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
 
 export async function POST(request: Request) {
-  const token = await getGitHubToken()
-  if (!token) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  let githubToken: string
+  try {
+    const credential = await resolveRouteGitHubCredential()
+    githubToken = credential.githubToken
+  } catch (error) {
+    if (error instanceof RouteAuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
+    throw error
   }
 
   try {
@@ -26,7 +32,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid read ref" }, { status: 400 })
     }
 
-    // P1 fix: Verify the caller has at least viewer access to the repo
+    // Resolve the canonical project; the Convex action authorizes the real actor.
     const serverQueryToken = await mintServerQueryToken()
     const project = await convex.query(api.projects.get, {
       id: projectId as Id<"projects">,
@@ -41,23 +47,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Project does not match repo/branch" }, { status: 400 })
     }
 
-    let auth: Awaited<ReturnType<typeof resolveRouteAuth>>
-    try {
-      auth = await resolveRouteAuth(project, "editor")
-    } catch (error) {
-      if (error instanceof RouteAuthError) {
-        return NextResponse.json({ error: error.message }, { status: error.status })
-      }
-      throw error
-    }
-
     if (!fetchAuthAction) throw new Error("Authenticated Convex actions are unavailable")
     const preparedFiles = prepareTitleSyncFiles(project.contentRoot, files).map(({ path, sha }) => ({ path, sha }))
     await fetchAuthAction(api.documents.syncTreeTitles, {
       projectId: projectId as Id<"projects">,
       readRef,
       files: preparedFiles,
-      githubToken: auth.githubToken,
+      githubToken,
     })
 
     return NextResponse.json({ ok: true })

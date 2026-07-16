@@ -4,13 +4,24 @@ import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
 import { fetchAuthAction } from "@/lib/auth-server"
 import { mintServerQueryToken } from "@/lib/project-access-token"
-import { RouteAuthError, resolveRouteAuth } from "@/lib/route-auth"
+import { RouteAuthError, resolveRouteGitHubCredential } from "@/lib/route-auth"
 
 export const runtime = "nodejs"
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
 
 export async function POST(request: Request) {
+  let githubToken: string
+  try {
+    const credential = await resolveRouteGitHubCredential()
+    githubToken = credential.githubToken
+  } catch (error) {
+    if (error instanceof RouteAuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
+    throw error
+  }
+
   try {
     const body = await request.json()
     const { projectId, owner, repo, branch, readRef } = body
@@ -36,22 +47,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Project does not match repo/branch" }, { status: 400 })
     }
 
-    let auth: Awaited<ReturnType<typeof resolveRouteAuth>>
-    try {
-      auth = await resolveRouteAuth(project, "editor")
-    } catch (e) {
-      if (e instanceof RouteAuthError) {
-        return NextResponse.json({ error: e.message }, { status: e.status })
-      }
-      throw e
-    }
-
     if (!fetchAuthAction) throw new Error("Authenticated Convex actions are unavailable")
 
     const result = await fetchAuthAction(api.mediaGallery.scanImagesFromGitHub, {
       projectId: projectId as Id<"projects">,
       readRef,
-      githubToken: auth.githubToken,
+      githubToken,
     })
 
     return NextResponse.json(result)
