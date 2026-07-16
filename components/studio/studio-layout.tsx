@@ -30,10 +30,11 @@ import { type FileTreeNode, findTreeNode } from "@/lib/github"
 import type { PreviewResult } from "@/lib/preview/contracts"
 import { buildGenericRenderModel } from "@/lib/preview/generic-render-model"
 import { CONTENT_PATH_REPRESENTATION, toRepoPath } from "@/lib/preview/path-policy"
-import { buildAuthoringCatalog } from "@/lib/studio/authoring-catalog"
+import { type AuthoringComponentMetadata, buildAuthoringCatalog } from "@/lib/studio/authoring-catalog"
 import { buildHistoryHref } from "@/lib/studio/history-link"
 import { resolveStudioCreatePaths, treePathToContentPath } from "@/lib/studio/path-adapters"
 import { getPublishLaneViewModel } from "@/lib/studio/publish-lane-view-model"
+import { buildStudioAuthoringCatalog } from "@/lib/studio/studio-authoring-catalog"
 import { cn } from "@/lib/utils"
 import { CommandPalette } from "./command-palette"
 import { getDiscardPlan } from "./discard-pending-changes"
@@ -95,6 +96,8 @@ export interface StudioLayoutProps {
   projectAccessToken?: string
   contentRoot?: string
   role?: "owner" | "editor" | "viewer"
+  registryAuthoringMetadata?: Readonly<Record<string, AuthoringComponentMetadata>>
+  registryAuthoringDiagnostics?: readonly string[]
 }
 
 function findTreeNodeByPath(nodes: FileTreeNode[], path: string): FileTreeNode | null {
@@ -1888,6 +1891,8 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
     initialFile,
     currentPath,
     role = "owner",
+    registryAuthoringMetadata,
+    registryAuthoringDiagnostics = [],
   } = props
 
   // Tree starts from the server-provided value ([] when server deferred loading).
@@ -1934,8 +1939,9 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
 
   const authoringState = React.useMemo(() => {
     try {
-      const authoringCatalog = buildAuthoringCatalog({
-        metadata: componentSchema,
+      const authoringCatalog = buildStudioAuthoringCatalog({
+        projectMetadata: componentSchema,
+        installedRegistryMetadata: registryAuthoringMetadata,
         framework: studioQueries.project?.detectedFramework as string | undefined,
       })
       return createStudioAdapterState({
@@ -1944,19 +1950,36 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
         ...(studioQueries.project?.detectedFramework
           ? { detectedFramework: studioQueries.project.detectedFramework as string }
           : {}),
-        diagnostics: [],
+        diagnostics: [...registryAuthoringDiagnostics],
       })
     } catch (error) {
+      let fallbackCatalog = buildAuthoringCatalog({})
+      try {
+        fallbackCatalog = buildStudioAuthoringCatalog({
+          installedRegistryMetadata: registryAuthoringMetadata,
+          framework: studioQueries.project?.detectedFramework as string | undefined,
+        })
+      } catch {
+        // Preserve the already validated empty fallback when registry metadata is invalid.
+      }
       return createStudioAdapterState({
-        authoringCatalog: buildAuthoringCatalog({}),
+        authoringCatalog: fallbackCatalog,
         nativeComponentNames: [],
         ...(studioQueries.project?.detectedFramework
           ? { detectedFramework: studioQueries.project.detectedFramework as string }
           : {}),
-        diagnostics: [error instanceof Error ? error.message : "Invalid authoring metadata"],
+        diagnostics: [
+          ...registryAuthoringDiagnostics,
+          error instanceof Error ? error.message : "Invalid authoring metadata",
+        ],
       })
     }
-  }, [componentSchema, studioQueries.project?.detectedFramework])
+  }, [
+    componentSchema,
+    registryAuthoringDiagnostics,
+    registryAuthoringMetadata,
+    studioQueries.project?.detectedFramework,
+  ])
 
   // 4. Memoize serializable Studio Context Value
   const contextValue = React.useMemo(

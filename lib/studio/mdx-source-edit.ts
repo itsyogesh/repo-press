@@ -1,5 +1,5 @@
 import { parseRepoPressMdxSyntax, type RepoPressMdxSyntaxNode } from "../preview/generic-render-model"
-import { assertSafeAuthoringPropName, assertSafeMdxName } from "./authoring-catalog"
+import { type AuthoringComponent, assertSafeAuthoringPropName, assertSafeMdxName } from "./authoring-catalog"
 import { formatSafeLiteralPropValue } from "./component-serializer"
 
 export const MDX_SOURCE_EDIT_LIMITS = Object.freeze({ maxChanges: 128 })
@@ -27,6 +27,13 @@ export type MdxSourceEditResult = Readonly<{ ok: true; source: string }> | MdxSo
 export type FindEditableMdxComponentsResult =
   | Readonly<{ ok: true; targets: readonly MdxComponentEditTarget[] }>
   | MdxSourceEditRefusal
+
+export type PreparedComponentPropEdit = Readonly<{
+  ok: true
+  target: MdxComponentEditTarget
+  initialProps: Readonly<Record<string, string | number | boolean | undefined>>
+  editablePropNames: readonly string[]
+}>
 
 type OffsetPosition = { start?: { offset?: number }; end?: { offset?: number } }
 type MdxAttribute = {
@@ -179,6 +186,119 @@ function findNodeAtPath(root: RepoPressMdxSyntaxNode, path: readonly number[]): 
     node = child
   }
   return node as MdxElement
+}
+
+function normalizeEditAnchor(anchor: unknown): { name: string; start: number; sourceSnapshot: string } | null {
+  try {
+    if (!isPlainDataRecord(anchor)) return null
+    const name = dataValue(anchor, "name")
+    const start = dataValue(anchor, "start")
+    const sourceSnapshot = dataValue(anchor, "sourceSnapshot")
+    if (
+      typeof name !== "string" ||
+      !Number.isSafeInteger(start) ||
+      (start as number) < 0 ||
+      typeof sourceSnapshot !== "string"
+    ) {
+      return null
+    }
+    assertSafeMdxName(name)
+    return { name, start: start as number, sourceSnapshot }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * MDXEditor trims its initial Markdown before producing MDAST positions while
+ * its imperative getMarkdown() initially exposes the untrimmed value. Later
+ * positions are relative to getMarkdown() directly. Accept either coordinate
+ * system only when it identifies one unique same-name opening boundary.
+ */
+function resolveEditAnchorStart(source: string, anchor: Readonly<{ name: string; start: number }>): number | null {
+  const openingPrefix = `<${anchor.name}`
+  const candidates = new Set<number>()
+  const addCandidate = (start: number) => {
+    if (source.slice(start, start + openingPrefix.length) === openingPrefix) candidates.add(start)
+  }
+
+  addCandidate(anchor.start)
+  const leadingWhitespaceLength = source.length - source.trimStart().length
+  addCandidate(anchor.start + leadingWhitespaceLength)
+
+  return candidates.size === 1 ? (candidates.values().next().value ?? null) : null
+}
+
+/** Prepare an exact clicked component for literal-only, source-preserving prop editing. */
+export function prepareComponentPropEdit(
+  source: string,
+  anchor: unknown,
+  component: AuthoringComponent,
+): PreparedComponentPropEdit | MdxSourceEditRefusal {
+  if (typeof source !== "string") return refuse("")
+  const normalizedAnchor = normalizeEditAnchor(anchor)
+  if (!normalizedAnchor || component.mdxName !== normalizedAnchor.name || component.schemaStatus !== "complete") {
+    return refuse(source)
+  }
+  if (normalizedAnchor.sourceSnapshot !== source) return refuse(source)
+  const resolvedStart = resolveEditAnchorStart(source, normalizedAnchor)
+  if (resolvedStart === null) return refuse(source)
+  const parsed = parseRepoPressMdxSyntax(source)
+  if (!parsed.ok) return refuse(source)
+  const discovered = collectTargets(source, parsed.root)
+  if (!discovered) return refuse(source)
+  const matches = discovered.filter((target) => target.name === normalizedAnchor.name && target.start === resolvedStart)
+  if (matches.length !== 1) return refuse(source)
+  const target = matches[0]
+  const node = findNodeAtPath(parsed.root, target.path)
+  if (!node || node.name !== component.mdxName) return refuse(source)
+
+  const attributes = new Map<string, MdxAttribute>()
+  for (const attribute of node.attributes ?? []) {
+    if (
+      attribute.type !== "mdxJsxAttribute" ||
+      typeof attribute.name !== "string" ||
+      attributes.has(attribute.name) ||
+      (typeof attribute.value === "object" && attribute.value !== null)
+    ) {
+      return refuse(source)
+    }
+    try {
+      assertSafeAuthoringPropName(attribute.name)
+    } catch {
+      return refuse(source)
+    }
+    attributes.set(attribute.name, attribute)
+  }
+
+  const initialProps: Record<string, string | number | boolean | undefined> = {}
+  const editablePropNames: string[] = []
+  for (const prop of component.props) {
+    if (prop.type === "expression") continue
+    editablePropNames.push(prop.name)
+    const attribute = attributes.get(prop.name)
+    if (!attribute) {
+      const defaultValue = prop.default
+      if (["string", "number", "boolean"].includes(typeof defaultValue)) {
+        initialProps[prop.name] = defaultValue as string | number | boolean
+      } else initialProps[prop.name] = undefined
+      continue
+    }
+    if (prop.type === "boolean") {
+      if (attribute.value !== null && attribute.value !== undefined) return refuse(source)
+      initialProps[prop.name] = true
+      continue
+    }
+    if (prop.type === "number" || typeof attribute.value !== "string") return refuse(source)
+    initialProps[prop.name] = attribute.value
+  }
+
+  return Object.freeze({
+    ok: true as const,
+    target,
+    initialProps: Object.freeze(initialProps),
+    editablePropNames: Object.freeze(editablePropNames),
+  })
 }
 
 function literalAttributeValue(attribute: MdxAttribute): string | boolean | undefined {

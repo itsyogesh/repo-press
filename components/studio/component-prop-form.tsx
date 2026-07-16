@@ -23,7 +23,11 @@ export function getRequiredProps(props: AuthoringProp[]): string[] {
 }
 
 /** Validates declarative props and slots without evaluating expert expressions. */
-export function validateFormState(def: AuthoringComponent, state: PropFormState): Record<string, string> {
+export function validateFormState(
+  def: AuthoringComponent,
+  state: PropFormState,
+  options: { validateSlots?: boolean } = {},
+): Record<string, string> {
   const errors: Record<string, string> = {}
   for (const prop of def.props) {
     const val = state[prop.name]
@@ -49,10 +53,12 @@ export function validateFormState(def: AuthoringComponent, state: PropFormState)
       errors[prop.name] = "Enter text"
     }
   }
-  for (const slot of def.slots) {
-    if (!slot.required) continue
-    const value = state[slot.name]
-    if (typeof value !== "string" || value.trim() === "") errors[slot.name] = "Required"
+  if (options.validateSlots !== false) {
+    for (const slot of def.slots) {
+      if (!slot.required) continue
+      const value = state[slot.name]
+      if (typeof value !== "string" || value.trim() === "") errors[slot.name] = "Required"
+    }
   }
   return errors
 }
@@ -72,6 +78,8 @@ interface ComponentPropFormProps {
   }
   /** Map of prop name → error message for validation display. */
   errors?: Record<string, string>
+  /** Edit mode preserves child bytes instead of validating or serializing them. */
+  preserveSlots?: boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -91,7 +99,14 @@ interface ComponentPropFormProps {
  * If the component declares a children slot, an additional textarea is rendered
  * for children content.
  */
-export function ComponentPropForm({ def, formState, onFormChange, repoContext, errors = {} }: ComponentPropFormProps) {
+export function ComponentPropForm({
+  def,
+  formState,
+  onFormChange,
+  repoContext,
+  errors = {},
+  preserveSlots = false,
+}: ComponentPropFormProps) {
   const setProp = React.useCallback(
     (name: string, value: unknown) => {
       onFormChange({ ...formState, [name]: value })
@@ -112,7 +127,11 @@ export function ComponentPropForm({ def, formState, onFormChange, repoContext, e
         />
       ))}
 
-      {componentAcceptsChildren(def) && (
+      {componentAcceptsChildren(def) && preserveSlots ? (
+        <p className="rounded-lg border border-studio-border bg-studio-canvas-inset/50 px-3 py-2 text-xs text-studio-fg-muted">
+          Children are preserved exactly.
+        </p>
+      ) : componentAcceptsChildren(def) ? (
         <div className="space-y-1.5">
           <Label htmlFor="__children">
             Children
@@ -141,7 +160,7 @@ export function ComponentPropForm({ def, formState, onFormChange, repoContext, e
             </p>
           ) : null}
         </div>
-      )}
+      ) : null}
     </div>
   )
 }

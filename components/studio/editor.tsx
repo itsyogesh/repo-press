@@ -29,6 +29,7 @@ import { createCurrentDocumentAuthoringStateCache, discoverMdxComponents } from 
 import { getAuthoredImageValue } from "@/lib/studio/image-authoring"
 import { getSuggestedImagePath, resolveStudioAssetUrl } from "@/lib/studio/media-resolve"
 import { uploadMedia } from "@/lib/studio/media-upload"
+import { ComponentEditProvider } from "./component-edit-context"
 import { shouldResetEditorBoundary } from "./editor-error-boundary-utils"
 import { EditorErrorFallback } from "./error-boundary"
 import { ForwardRefEditor } from "./forward-ref-editor"
@@ -306,6 +307,18 @@ export function Editor({
 
   const errorBoundaryResetKey = React.useMemo(() => `${filePath}:${sanitizedContent}`, [filePath, sanitizedContent])
 
+  const getEditSource = React.useCallback(
+    () => editorRef.current?.getMarkdown() ?? sanitizedContent,
+    [sanitizedContent],
+  )
+  const applyEditedSource = React.useCallback(
+    (source: string) => {
+      editorRef.current?.setMarkdown(source)
+      onChangeContent(source)
+    },
+    [onChangeContent],
+  )
+
   // Sync content to MDXEditor when content changes externally (file switch)
   const lastSyncedContent = React.useRef<string | null>(null)
   React.useEffect(() => {
@@ -317,49 +330,55 @@ export function Editor({
 
   return (
     <StudioAdapterProvider value={editorProviderState}>
-      <div className="h-full flex flex-col">
-        <div ref={scrollContainerRef} onScroll={onScroll} className="flex-1 overflow-y-auto">
-          <div className="space-y-0">
-            {/* Frontmatter Panel (Phase 6) */}
-            <FrontmatterPanel
-              frontmatter={frontmatter}
-              frontmatterSchema={frontmatterSchema}
-              fieldVariants={fieldVariants}
-              onChangeFrontmatter={onChangeFrontmatter}
-              filePath={filePath}
-            />
+      <ComponentEditProvider
+        authoringCatalog={authoringCatalog}
+        getSource={getEditSource}
+        applySource={applyEditedSource}
+      >
+        <div className="h-full flex flex-col">
+          <div ref={scrollContainerRef} onScroll={onScroll} className="flex-1 overflow-y-auto">
+            <div className="space-y-0">
+              {/* Frontmatter Panel (Phase 6) */}
+              <FrontmatterPanel
+                frontmatter={frontmatter}
+                frontmatterSchema={frontmatterSchema}
+                fieldVariants={fieldVariants}
+                onChangeFrontmatter={onChangeFrontmatter}
+                filePath={filePath}
+              />
 
-            {/* MDXEditor */}
-            <div className="min-h-[500px]" data-scroll-sync-root="editor">
-              <EditorErrorBoundary
-                resetKey={errorBoundaryResetKey}
-                fallback={
-                  <EditorErrorFallback
-                    content={content}
-                    onOpenSource={() => {
-                      // The error boundary will automatically reset when content changes
-                      // This is handled in componentDidUpdate
-                    }}
-                    onCopy={() => {
-                      navigator.clipboard.writeText(content)
-                    }}
+              {/* MDXEditor */}
+              <div className="min-h-[500px]" data-scroll-sync-root="editor">
+                <EditorErrorBoundary
+                  resetKey={errorBoundaryResetKey}
+                  fallback={
+                    <EditorErrorFallback
+                      content={content}
+                      onOpenSource={() => {
+                        // The error boundary will automatically reset when content changes
+                        // This is handled in componentDidUpdate
+                      }}
+                      onCopy={() => {
+                        navigator.clipboard.writeText(content)
+                      }}
+                    />
+                  }
+                >
+                  <ForwardRefEditor
+                    ref={editorRef}
+                    key={filePath || "empty"}
+                    markdown={sanitizedContent}
+                    contentEditableClassName="prose prose-neutral dark:prose-invert max-w-none font-sans px-6 py-4 min-h-[500px] focus:outline-none"
+                    onChange={handleContentChange}
+                    plugins={plugins}
+                    className="mdxeditor-studio"
                   />
-                }
-              >
-                <ForwardRefEditor
-                  ref={editorRef}
-                  key={filePath || "empty"}
-                  markdown={sanitizedContent}
-                  contentEditableClassName="prose prose-neutral dark:prose-invert max-w-none font-sans px-6 py-4 min-h-[500px] focus:outline-none"
-                  onChange={handleContentChange}
-                  plugins={plugins}
-                  className="mdxeditor-studio"
-                />
-              </EditorErrorBoundary>
+                </EditorErrorBoundary>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      </ComponentEditProvider>
     </StudioAdapterProvider>
   )
 }

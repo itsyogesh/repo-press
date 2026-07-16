@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { editComponentProp, findEditableMdxComponents } from "../mdx-source-edit"
+import { buildAuthoringCatalog } from "../authoring-catalog"
+import { editComponentProp, findEditableMdxComponents, prepareComponentPropEdit } from "../mdx-source-edit"
 
 function targetFor(source: string, name: string, occurrence = 0) {
   const discovered = findEditableMdxComponents(source)
@@ -11,6 +12,96 @@ function targetFor(source: string, name: string, occurrence = 0) {
 }
 
 describe("source-preserving MDX component prop edits", () => {
+  it("prepares one exact position-bound literal component without confusing duplicates", () => {
+    const source = '<Callout title="First" />\n<Callout title="Second" variant="accent">Body</Callout>'
+    const def = buildAuthoringCatalog({
+      metadata: {
+        Callout: {
+          props: [
+            { name: "title", type: "string" },
+            { name: "variant", type: "string", options: ["default", "accent"] },
+          ],
+          slots: [{ name: "children", accepts: "mdx", required: true }],
+        },
+      },
+    })[0]
+    const start = source.indexOf("<Callout", 1)
+    const prepared = prepareComponentPropEdit(source, { name: "Callout", start, sourceSnapshot: source }, def)
+
+    expect(prepared).toMatchObject({
+      ok: true,
+      initialProps: { title: "Second", variant: "accent" },
+      editablePropNames: ["title", "variant"],
+      target: { name: "Callout", start },
+    })
+    if (prepared.ok) {
+      expect(Object.isFrozen(prepared)).toBe(true)
+      expect(Object.isFrozen(prepared.initialProps)).toBe(true)
+      expect(Object.isFrozen(prepared.target)).toBe(true)
+    }
+  })
+
+  it("refuses position-bound preparation for spreads and expression-backed props", () => {
+    const def = buildAuthoringCatalog({
+      metadata: { Callout: { props: [{ name: "title", type: "string" }], hasChildren: false } },
+    })[0]
+    for (const source of ["<Callout {...props} />", "<Callout title={computeTitle()} />"]) {
+      expect(prepareComponentPropEdit(source, { name: "Callout", start: 0, sourceSnapshot: source }, def)).toEqual({
+        ok: false,
+        source,
+        code: "UNSAFE_TO_PRESERVE",
+      })
+    }
+  })
+
+  it("refuses a retained position when its node snapshot differs from current source", () => {
+    const source = '<Callout title="Alpha" />\n<Callout title="Bravo" />'
+    const swapped = '<Callout title="Bravo" />\n<Callout title="Alpha" />'
+    const def = buildAuthoringCatalog({
+      metadata: { Callout: { props: [{ name: "title", type: "string" }], hasChildren: false } },
+    })[0]
+    const start = source.indexOf("<Callout", 1)
+
+    expect(prepareComponentPropEdit(swapped, { name: "Callout", start, sourceSnapshot: source }, def)).toEqual({
+      ok: false,
+      source: swapped,
+      code: "UNSAFE_TO_PRESERVE",
+    })
+  })
+
+  it("maps an initial MDXEditor offset from its trimmed parser source without confusing duplicates", () => {
+    const source = '\n\n<Callout title="First" />\n<Callout title="Second" />\n'
+    const importedSource = source.trim()
+    const def = buildAuthoringCatalog({
+      metadata: { Callout: { props: [{ name: "title", type: "string" }], hasChildren: false } },
+    })[0]
+    const importedStart = importedSource.indexOf("<Callout", 1)
+
+    expect(
+      prepareComponentPropEdit(source, { name: "Callout", start: importedStart, sourceSnapshot: source }, def),
+    ).toMatchObject({
+      ok: true,
+      initialProps: { title: "Second" },
+      target: { name: "Callout", start: source.lastIndexOf("<Callout") },
+    })
+  })
+
+  it("refuses when raw and trim-adjusted offsets both look like the requested duplicate", () => {
+    const importedSource = '<Callout />\n<Callout title="Intended" />'
+    const source = `${" ".repeat("<Callout />\n".length)}${importedSource}`
+    const def = buildAuthoringCatalog({
+      metadata: { Callout: { props: [{ name: "title", type: "string" }], hasChildren: false } },
+    })[0]
+
+    expect(
+      prepareComponentPropEdit(
+        source,
+        { name: "Callout", start: importedSource.lastIndexOf("<Callout"), sourceSnapshot: source },
+        def,
+      ),
+    ).toEqual({ ok: false, source, code: "UNSAFE_TO_PRESERVE" })
+  })
+
   it("returns byte-identical source for a semantic no-op", () => {
     const source =
       "import { Callout } from './callout'\r\n\r\n<Callout  title='Before' enabled={flag}>Body</Callout>\r\n"

@@ -8,6 +8,7 @@ import { createGitHubClient, getFile } from "@/lib/github"
 import { resolveRepoRole } from "@/lib/github-permissions"
 import { resolveProjectAccessRole } from "@/lib/project-access-role"
 import { mintProjectAccessToken } from "@/lib/project-access-token"
+import { loadProjectLockAuthoringMetadata } from "@/lib/repopress/project-lock-snapshot"
 import { createServerQueryContext, resolveActingUserId } from "@/lib/server-context"
 import { projectMatchesRoute, selectStudioFallbackProject } from "@/lib/studio/project-route"
 
@@ -115,6 +116,18 @@ export default async function StudioPage({
 
   const contentRoot = project?.contentRoot || ""
 
+  let registryAuthoringMetadata = Object.freeze({})
+  let registryAuthoringDiagnostics: readonly string[] = Object.freeze([])
+  if (project) {
+    try {
+      const installed = await loadProjectLockAuthoringMetadata({ accessToken: token, project })
+      registryAuthoringMetadata = installed.metadata
+      registryAuthoringDiagnostics = installed.diagnostics
+    } catch {
+      registryAuthoringDiagnostics = Object.freeze(["Installed registry metadata could not be loaded."])
+    }
+  }
+
   // Fetch initial file content server-side (fast for small files).
   // The file tree is deferred to client-side to avoid blocking on large repos.
   let fileData = null
@@ -153,6 +166,8 @@ export default async function StudioPage({
           projectAccessToken={projectAccessToken}
           contentRoot={contentRoot}
           role={repoRole}
+          registryAuthoringMetadata={registryAuthoringMetadata}
+          registryAuthoringDiagnostics={registryAuthoringDiagnostics}
         />
       </div>
     </div>
