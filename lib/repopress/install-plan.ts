@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto"
+import { posix } from "node:path"
 import { type RepoPressLock, repoPressLockSchema } from "./lock-schema"
-import type { RegistryIntegrityFile } from "./registry-integrity"
+import { computeRegistryItemIntegrity, type RegistryIntegrityFile } from "./registry-integrity"
 import type { ResolvedRegistryItem } from "./registry-resolver"
-import { canonicalizeInstallTarget, compareCodeUnits, deepFreeze } from "./registry-schema"
+import { canonicalizeInstallTarget, compareCodeUnits, deepFreeze, installTargetSchema } from "./registry-schema"
 import { adaptRuntimeMap, type RuntimeMapBinding } from "./runtime-map-adapter"
 
 const MAX_SNAPSHOT_FILES = 8_192
@@ -44,6 +45,10 @@ export interface InstallConflict {
     | "PACKAGE_VERSION_CONFLICT"
     | "UNSUPPORTED_ENV_VARS"
     | "UNSUPPORTED_CSS"
+    | "LOCK_SNAPSHOT_MISMATCH"
+    | "LOCK_DIGEST_MISMATCH"
+    | "STALE_TARGET"
+    | "MANAGED_CSS_MODIFIED"
   path: string
   message: string
 }
@@ -134,7 +139,7 @@ function validateLayout(layout: ProjectInstallLayout): ValidatedLayout {
       if (!alias || typeof alias !== "object" || Array.isArray(alias))
         throw new TypeError(`Alias ${index} must be an object`)
       const name = ownString(alias, "name", `aliases[${index}].name`)
-      const path = ownString(alias, "path", `aliases[${index}].path`)
+      const path = installTargetSchema.parse(ownString(alias, "path", `aliases[${index}].path`))
       const importPrefix = ownString(alias, "importPrefix", `aliases[${index}].importPrefix`)
       if (!SAFE_ALIAS.test(name) || !SAFE_IMPORT_PREFIX.test(importPrefix))
         throw new TypeError(`Alias ${index} is invalid`)
@@ -144,13 +149,13 @@ function validateLayout(layout: ProjectInstallLayout): ValidatedLayout {
       return { name, path, importPrefix: importPrefix.replace(/\/$/u, "") }
     })
     .sort((left, right) => compareCodeUnits(left.name, right.name))
-  const runtimeMapPath = ownString(layout, "runtimeMapPath", "runtimeMapPath")
-  const cssTarget = ownString(layout, "cssTarget", "cssTarget")
-  const lockPath = ownString(layout, "lockPath", "lockPath")
+  const runtimeMapPath = installTargetSchema.parse(ownString(layout, "runtimeMapPath", "runtimeMapPath"))
+  const cssTarget = installTargetSchema.parse(ownString(layout, "cssTarget", "cssTarget"))
+  const lockPath = installTargetSchema.parse(ownString(layout, "lockPath", "lockPath"))
   const packageDescriptor = Object.getOwnPropertyDescriptor(layout, "packageJsonPath")
   const packageJsonPath = packageDescriptor
     ? typeof packageDescriptor.value === "string"
-      ? packageDescriptor.value
+      ? installTargetSchema.parse(packageDescriptor.value)
       : (() => {
           throw new TypeError("packageJsonPath must be a string data property")
         })()
@@ -186,42 +191,58 @@ function resolveTarget(
   target: string,
   layout: ValidatedLayout,
 ): { path: string; importSource: string } | { conflict: InstallConflict } {
-  const first = target.split("/", 1)[0]
+  const normalizedTarget = installTargetSchema.parse(target)
+  const first = normalizedTarget.split("/", 1)[0]
   const alias = layout.aliases.find((candidate) => candidate.name === first)
   if (first.startsWith("@") && !alias) {
     return {
       conflict: {
         code: "UNKNOWN_TARGET_ALIAS",
-        path: target,
+        path: normalizedTarget,
         message: `Install target uses unknown caller-unresolved alias ${first}`,
       },
     }
   }
-  const suffix = alias ? target.slice(alias.name.length).replace(/^\//u, "") : target
-  const path = alias ? `${alias.path.replace(/\/$/u, "")}/${suffix}` : suffix
-  canonicalizeInstallTarget(path)
+  const suffix = alias ? normalizedTarget.slice(alias.name.length).replace(/^\//u, "") : normalizedTarget
+  const path = installTargetSchema.parse(alias ? `${alias.path.replace(/\/$/u, "")}/${suffix}` : suffix)
   const modulePath = suffix.replace(/\.(?:[cm]?[jt]sx?)$/u, "")
-  const importSource = alias ? `${alias.importPrefix}/${modulePath}` : `./${modulePath}`
+  const directModulePath = path.replace(/\.(?:[cm]?[jt]sx?)$/u, "")
+  const relativeImport = posix.relative(posix.dirname(layout.runtimeMapPath), directModulePath)
+  const importSource = alias
+    ? `${alias.importPrefix}/${modulePath}`
+    : relativeImport.startsWith(".")
+      ? relativeImport
+      : `./${relativeImport}`
   return { path, importSource }
 }
 
-function packageSpec(raw: string): { name: string; version: string; explicit: boolean } {
-  if (raw.length === 0 || raw.length > 512 || /(?:https?:|git\+|file:|workspace:|npm:)/u.test(raw)) {
+function packageSpec(raw: string): { name: string; spec: string | null } {
+  const hasControlCharacter = [...raw].some((character) => {
+    const codePoint = character.codePointAt(0)
+    return codePoint !== undefined && (codePoint <= 0x1f || codePoint === 0x7f)
+  })
+  if (raw.length === 0 || raw.length > 512 || hasControlCharacter) {
     throw new TypeError(`Unsupported registry package dependency ${raw}`)
   }
+  let name: string
+  let spec: string | null
   if (raw.startsWith("@")) {
     const separator = raw.indexOf("@", raw.indexOf("/") + 1)
-    const name = separator >= 0 ? raw.slice(0, separator) : raw
-    const version = separator >= 0 ? raw.slice(separator + 1) : "latest"
-    if (!/^@[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/u.test(name) || !version)
-      throw new TypeError(`Invalid package dependency ${raw}`)
-    return { name, version, explicit: separator >= 0 }
+    name = separator >= 0 ? raw.slice(0, separator) : raw
+    spec = separator >= 0 ? raw.slice(separator + 1) : null
+    if (!/^@[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/u.test(name)) {
+      throw new TypeError(`Unsupported registry package dependency ${raw}`)
+    }
+  } else {
+    const separator = raw.indexOf("@")
+    name = separator >= 0 ? raw.slice(0, separator) : raw
+    spec = separator >= 0 ? raw.slice(separator + 1) : null
+    if (!/^[A-Za-z0-9._-]+$/u.test(name)) throw new TypeError(`Unsupported registry package dependency ${raw}`)
   }
-  const separator = raw.indexOf("@")
-  const name = separator >= 0 ? raw.slice(0, separator) : raw
-  const version = separator >= 0 ? raw.slice(separator + 1) : "latest"
-  if (!/^[A-Za-z0-9._-]+$/u.test(name) || !version) throw new TypeError(`Invalid package dependency ${raw}`)
-  return { name, version, explicit: separator >= 0 }
+  if (spec !== null && !/^[~^]?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(spec)) {
+    throw new TypeError(`Unsupported registry package dependency ${raw}`)
+  }
+  return { name, spec }
 }
 
 function plainRecord(value: unknown): Record<string, unknown> | null {
@@ -247,14 +268,14 @@ function cssVariables(
   item: ResolvedRegistryItem,
   current: string,
 ): { changes: CssChange[]; block: string; conflict?: InstallConflict } {
-  if (item.item.css !== undefined) {
+  if (item.item.css !== undefined || item.item.tailwind !== undefined) {
     return {
       changes: [],
       block: "",
       conflict: {
         code: "UNSUPPORTED_CSS",
         path: "css",
-        message: `Registry item ${item.logicalId} contains unsupported free-form CSS; only bounded cssVars are planned`,
+        message: `Registry item ${item.logicalId} contains unsupported CSS or Tailwind metadata; only bounded cssVars are planned`,
       },
     }
   }
@@ -334,22 +355,54 @@ function cssVariables(
   return { changes, block }
 }
 
-function removeOwnedCssBlock(source: string, itemId: string): string {
-  const escaped = itemId.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")
-  return source.replace(
-    new RegExp(`\\n?/\\* repopress:${escaped}:start \\*/[\\s\\S]*?/\\* repopress:${escaped}:end \\*/\\n?`, "gu"),
-    "\n",
-  )
+type LocatedCssBlock = { start: number; end: number; block: string }
+
+function locateManagedCssBlock(source: string, itemId: string): LocatedCssBlock | null | "invalid" {
+  const startMarker = `/* repopress:${itemId}:start */`
+  const endMarker = `/* repopress:${itemId}:end */`
+  const indexes = (marker: string): number[] => {
+    const found: number[] = []
+    let offset = 0
+    while (offset <= source.length) {
+      const index = source.indexOf(marker, offset)
+      if (index < 0) break
+      found.push(index)
+      offset = index + marker.length
+    }
+    return found
+  }
+  const starts = indexes(startMarker)
+  const ends = indexes(endMarker)
+  if (starts.length === 0 && ends.length === 0) return null
+  if (starts.length !== 1 || ends.length !== 1 || ends[0] < starts[0]) return "invalid"
+  const end = ends[0] + endMarker.length
+  return { start: starts[0], end, block: source.slice(starts[0], end) }
 }
 
-function lockModificationDigest(targets: readonly { path: string; digest: string }[]): string {
-  const framed = [...targets]
+function removeLocatedCssBlock(source: string, located: LocatedCssBlock): string {
+  let start = located.start
+  let end = located.end
+  if (source.slice(end, end + 2) === "\r\n") end += 2
+  else if (source[end] === "\n") end += 1
+  if (start > 0 && source[start - 1] === "\n") start -= 1
+  return `${source.slice(0, start)}${source.slice(end)}`
+}
+
+function lockModificationDigest(
+  targets: readonly { path: string; digest: string }[],
+  managedCss: readonly { path: string; digest: string }[] = [],
+): string {
+  const targetFrames = [...targets]
     .sort((left, right) =>
       compareCodeUnits(canonicalizeInstallTarget(left.path), canonicalizeInstallTarget(right.path)),
     )
-    .map((target) => `${canonicalizeInstallTarget(target.path)}\0${target.digest}\n`)
-    .join("")
-  return sha256(framed)
+    .map((target) => `target\0${canonicalizeInstallTarget(target.path)}\0${target.digest}\n`)
+  const cssFrames = [...managedCss]
+    .sort((left, right) =>
+      compareCodeUnits(canonicalizeInstallTarget(left.path), canonicalizeInstallTarget(right.path)),
+    )
+    .map((record) => `css\0${canonicalizeInstallTarget(record.path)}\0${record.digest}\n`)
+  return sha256([...targetFrames, ...cssFrames].join(""))
 }
 
 function sortedDiagnostics<T extends { code: string; path?: string; itemId?: string; message: string }>(
@@ -364,20 +417,92 @@ function sortedDiagnostics<T extends { code: string; path?: string; itemId?: str
   })
 }
 
-export function planRegistryInstall(input: PlanRegistryInstallInput): RegistryInstallPlan {
-  const layout = validateLayout(input.layout)
-  if (!Array.isArray(input.resolved) || input.resolved.length === 0 || input.resolved.length > 512) {
+function canonicalResolvedItems(
+  items: readonly ResolvedRegistryItem[],
+  framework: "next" | "fumadocs",
+): ResolvedRegistryItem[] {
+  if (!Array.isArray(items) || items.length === 0 || items.length > 512) {
     throw new TypeError("Resolved registry items must be a non-empty bounded array")
   }
+  const byId = new Map<string, ResolvedRegistryItem>()
+  for (let index = 0; index < items.length; index += 1) {
+    const descriptor = Object.getOwnPropertyDescriptor(items, String(index))
+    if (!descriptor || !("value" in descriptor))
+      throw new TypeError(`Resolved item ${index} must be an own data property`)
+    const item = descriptor.value
+    if (!item || typeof item !== "object" || Array.isArray(item))
+      throw new TypeError(`Resolved item ${index} must be an object`)
+    if (byId.has(item.logicalId)) throw new TypeError(`Duplicate resolved logical identity ${item.logicalId}`)
+    if (item.item.meta.repopress.logicalId !== item.logicalId || item.authoring.logicalId !== item.logicalId) {
+      throw new TypeError(`Resolved logical identity mismatch for ${item.logicalId}`)
+    }
+    if (!item.item.meta.repopress.frameworks.includes(framework)) {
+      throw new TypeError(`Resolved item ${item.logicalId} does not support ${framework}`)
+    }
+    const integrity = computeRegistryItemIntegrity({ item: item.item, files: item.files })
+    if (integrity !== item.integrity || integrity !== item.authoring.provenance.integrity) {
+      throw new TypeError(`Registry integrity mismatch for resolved item ${item.logicalId}`)
+    }
+    if (!Array.isArray(item.dependencies) || item.dependencies.length > 256) {
+      throw new TypeError(`Resolved dependencies for ${item.logicalId} exceed the supported bound`)
+    }
+    byId.set(item.logicalId, item)
+  }
+  for (const item of byId.values()) {
+    const seen = new Set<string>()
+    for (const dependency of item.dependencies) {
+      if (!byId.has(dependency)) throw new TypeError(`Missing resolved dependency ${dependency} for ${item.logicalId}`)
+      if (seen.has(dependency)) throw new TypeError(`Duplicate resolved dependency ${dependency} for ${item.logicalId}`)
+      seen.add(dependency)
+    }
+  }
+  const visiting: string[] = []
+  const visited = new Set<string>()
+  const ordered: ResolvedRegistryItem[] = []
+  const visit = (logicalId: string): void => {
+    const cycleIndex = visiting.indexOf(logicalId)
+    if (cycleIndex >= 0) {
+      throw new TypeError(`Resolved dependency cycle: ${[...visiting.slice(cycleIndex), logicalId].join(" -> ")}`)
+    }
+    if (visited.has(logicalId)) return
+    visiting.push(logicalId)
+    const item = byId.get(logicalId) as ResolvedRegistryItem
+    for (const dependency of [...item.dependencies].sort(compareCodeUnits)) visit(dependency)
+    visiting.pop()
+    visited.add(logicalId)
+    ordered.push(item)
+  }
+  for (const logicalId of [...byId.keys()].sort(compareCodeUnits)) visit(logicalId)
+  return ordered
+}
+
+export function planRegistryInstall(input: PlanRegistryInstallInput): RegistryInstallPlan {
+  const layout = validateLayout(input.layout)
+  const resolvedItems = canonicalResolvedItems(input.resolved, layout.framework)
   const snapshots = snapshotIndex(input.currentFiles)
-  const currentLock = input.currentLock === null ? null : repoPressLockSchema.parse(input.currentLock)
   const conflicts: InstallConflict[] = []
+  const lockFile = snapshots.get(canonicalizeInstallTarget(layout.lockPath))
+  let currentLock: RepoPressLock | null = null
+  if (lockFile) {
+    try {
+      currentLock = repoPressLockSchema.parse(JSON.parse(lockFile.content) as unknown)
+    } catch (error) {
+      throw new TypeError(`Invalid repository lock snapshot: ${error instanceof Error ? error.message : "parse error"}`)
+    }
+  }
+  if (input.currentLock !== null) {
+    const suppliedLock = repoPressLockSchema.parse(input.currentLock)
+    if (!currentLock || JSON.stringify(suppliedLock) !== JSON.stringify(currentLock)) {
+      conflicts.push({
+        code: "LOCK_SNAPSHOT_MISMATCH",
+        path: layout.lockPath,
+        message: "Supplied current lock does not match the authoritative repository snapshot",
+      })
+    }
+  }
   const warnings: InstallWarning[] = []
   const fileChanges: InstallFileChange[] = []
-  const packageRequests = new Map<
-    string,
-    { kind: "dependency" | "devDependency"; version: string; explicit: boolean }
-  >()
+  const packageRequests = new Map<string, { kind: "dependency" | "devDependency"; spec: string | null }>()
   const targetOwners = new Map<string, string>()
   for (const path of [layout.runtimeMapPath, layout.packageJsonPath, layout.cssTarget, layout.lockPath]) {
     targetOwners.set(canonicalizeInstallTarget(path), "@repopress/system")
@@ -400,7 +525,7 @@ export function planRegistryInstall(input: PlanRegistryInstallInput): RegistryIn
   const targetsByItem = new Map<string, Array<{ path: string; digest: string }>>()
   const runtimeBindings: RuntimeMapBinding[] = []
 
-  for (const item of input.resolved) {
+  for (const item of resolvedItems) {
     if (item.item.envVars && Object.keys(item.item.envVars).length > 0) {
       conflicts.push({
         code: "UNSUPPORTED_ENV_VARS",
@@ -409,6 +534,13 @@ export function planRegistryInstall(input: PlanRegistryInstallInput): RegistryIn
       })
     }
     const prior = currentLock?.items[item.logicalId]
+    if (prior && lockModificationDigest(prior.targets, prior.managedCss) !== prior.localModificationDigest) {
+      conflicts.push({
+        code: "LOCK_DIGEST_MISMATCH",
+        path: layout.lockPath,
+        message: `Lock local-modification digest is inconsistent for ${item.logicalId}`,
+      })
+    }
     if (prior && prior.authoring.version !== item.authoring.version) {
       warnings.push({
         code: "VERSION_CHANGE",
@@ -491,6 +623,21 @@ export function planRegistryInstall(input: PlanRegistryInstallInput): RegistryIn
       }
     }
 
+    if (prior) {
+      const nextTargets = new Set(
+        (targetsByItem.get(item.logicalId) ?? []).map((target) => canonicalizeInstallTarget(target.path)),
+      )
+      for (const target of prior.targets) {
+        if (!nextTargets.has(canonicalizeInstallTarget(target.path))) {
+          conflicts.push({
+            code: "STALE_TARGET",
+            path: target.path,
+            message: `Updated item ${item.logicalId} no longer owns prior target ${target.path}`,
+          })
+        }
+      }
+    }
+
     for (const [kind, dependencies] of [
       ["dependency", item.item.dependencies ?? []],
       ["devDependency", item.item.devDependencies ?? []],
@@ -498,13 +645,16 @@ export function planRegistryInstall(input: PlanRegistryInstallInput): RegistryIn
       for (const raw of dependencies) {
         const parsed = packageSpec(raw)
         const existing = packageRequests.get(parsed.name)
-        if (existing && (existing.version !== parsed.version || existing.kind !== kind)) {
+        if (
+          existing &&
+          (existing.kind !== kind || (existing.spec !== null && parsed.spec !== null && existing.spec !== parsed.spec))
+        ) {
           conflicts.push({
             code: "PACKAGE_VERSION_CONFLICT",
             path: parsed.name,
             message: `Registry items request incompatible versions of ${parsed.name}`,
           })
-        } else packageRequests.set(parsed.name, { kind, version: parsed.version, explicit: parsed.explicit })
+        } else packageRequests.set(parsed.name, { kind, spec: existing?.spec ?? parsed.spec })
       }
     }
   }
@@ -553,21 +703,49 @@ export function planRegistryInstall(input: PlanRegistryInstallInput): RegistryIn
       } catch (error) {
         throw new TypeError(`Invalid package.json: ${error instanceof Error ? error.message : "parse error"}`)
       }
-      const dependencies = plainRecord(manifest.dependencies) ?? {}
-      const devDependencies = plainRecord(manifest.devDependencies) ?? {}
+      const dependenciesRecord = plainRecord(manifest.dependencies)
+      const devDependenciesRecord = plainRecord(manifest.devDependencies)
+      const dependencies = dependenciesRecord ?? {}
+      const devDependencies = devDependenciesRecord ?? {}
       for (const name of [...packageRequests.keys()].sort(compareCodeUnits)) {
         const request = packageRequests.get(name) as {
           kind: "dependency" | "devDependency"
-          version: string
-          explicit: boolean
+          spec: string | null
         }
         const target = request.kind === "dependency" ? dependencies : devDependencies
-        const beforeValue = target[name]
-        const before = typeof beforeValue === "string" ? beforeValue : null
-        if (before !== request.version && (before === null || request.explicit)) {
-          target[name] = request.version
-          packageChanges.push({ kind: request.kind, name, before, after: request.version })
+        const other = request.kind === "dependency" ? devDependencies : dependencies
+        const sectionValue = request.kind === "dependency" ? manifest.dependencies : manifest.devDependencies
+        if ((sectionValue !== undefined && !plainRecord(sectionValue)) || Object.hasOwn(other, name)) {
+          conflicts.push({
+            code: "PACKAGE_VERSION_CONFLICT",
+            path: name,
+            message: `Package ${name} has an unsupported or conflicting dependency section`,
+          })
+          continue
         }
+        const beforeValue = target[name]
+        if (beforeValue !== undefined && typeof beforeValue !== "string") {
+          conflicts.push({
+            code: "PACKAGE_VERSION_CONFLICT",
+            path: name,
+            message: `Installed package ${name} must use a string version`,
+          })
+          continue
+        }
+        const before = typeof beforeValue === "string" ? beforeValue : null
+        if (before !== null) {
+          if (request.spec !== null && before !== request.spec) {
+            conflicts.push({
+              code: "PACKAGE_VERSION_CONFLICT",
+              path: name,
+              message: `Installed package ${name}@${before} conflicts with requested ${request.spec}`,
+            })
+          }
+          continue
+        }
+        const after = request.spec ?? "latest"
+        target[name] = after
+        packageChanges.push({ kind: request.kind, name, before, after })
       }
       if (packageChanges.length > 0) {
         if (Object.keys(dependencies).length > 0)
@@ -594,16 +772,46 @@ export function planRegistryInstall(input: PlanRegistryInstallInput): RegistryIn
   const cssChanges: CssChange[] = []
   const cssSnapshot = snapshots.get(canonicalizeInstallTarget(layout.cssTarget))
   let cssAfter = cssSnapshot?.content ?? ""
-  for (const item of input.resolved) {
+  const managedCssByItem = new Map<string, Array<{ path: string; digest: string }>>()
+  for (const item of resolvedItems) {
     const planned = cssVariables(item, cssAfter)
     if (planned.conflict) {
       conflicts.push({ ...planned.conflict, path: layout.cssTarget })
       continue
     }
+    const priorManaged = currentLock?.items[item.logicalId]?.managedCss ?? []
+    const priorRecord = priorManaged.find(
+      (record) => canonicalizeInstallTarget(record.path) === canonicalizeInstallTarget(layout.cssTarget),
+    )
+    if (priorManaged.length > (priorRecord ? 1 : 0)) {
+      conflicts.push({
+        code: "MANAGED_CSS_MODIFIED",
+        path: layout.cssTarget,
+        message: `Managed CSS ownership for ${item.logicalId} points outside the configured CSS target`,
+      })
+      continue
+    }
+    const located = locateManagedCssBlock(cssAfter, item.logicalId)
+    if (
+      located === "invalid" ||
+      (priorRecord && (!located || sha256(located.block) !== priorRecord.digest)) ||
+      (!priorRecord && located)
+    ) {
+      conflicts.push({
+        code: "MANAGED_CSS_MODIFIED",
+        path: layout.cssTarget,
+        message: `Managed CSS block for ${item.logicalId} is missing, duplicated, malformed, or locally modified`,
+      })
+      continue
+    }
     cssChanges.push(...planned.changes)
+    if (located) cssAfter = removeLocatedCssBlock(cssAfter, located)
     if (planned.block) {
-      cssAfter = removeOwnedCssBlock(cssAfter, item.logicalId).trimEnd()
+      cssAfter = cssAfter.trimEnd()
       cssAfter = `${cssAfter}${cssAfter ? "\n\n" : ""}${planned.block}\n`
+      managedCssByItem.set(item.logicalId, [{ path: layout.cssTarget, digest: sha256(planned.block) }])
+    } else {
+      managedCssByItem.set(item.logicalId, [])
     }
   }
   if (cssAfter !== (cssSnapshot?.content ?? "")) {
@@ -622,7 +830,7 @@ export function planRegistryInstall(input: PlanRegistryInstallInput): RegistryIn
     for (const itemId of Object.keys(currentLock.items).sort(compareCodeUnits))
       lockItems[itemId] = currentLock.items[itemId]
   }
-  for (const item of input.resolved) {
+  for (const item of resolvedItems) {
     const targets = targetsByItem.get(item.logicalId) ?? []
     if (targets.length === 0) continue
     lockItems[item.logicalId] = {
@@ -630,19 +838,13 @@ export function planRegistryInstall(input: PlanRegistryInstallInput): RegistryIn
       integrity: item.integrity,
       dependencies: [...item.dependencies],
       targets,
+      managedCss: managedCssByItem.get(item.logicalId) ?? [],
       authoring: item.authoring,
-      localModificationDigest: lockModificationDigest(targets),
+      localModificationDigest: lockModificationDigest(targets, managedCssByItem.get(item.logicalId) ?? []),
     }
   }
   const lockSnapshot = repoPressLockSchema.parse({ lockfileVersion: 1, items: lockItems })
   const lockBefore = snapshots.get(canonicalizeInstallTarget(layout.lockPath))?.content ?? null
-  if (lockBefore !== null && currentLock === null) {
-    conflicts.push({
-      code: "UNMANAGED_TARGET_EXISTS",
-      path: layout.lockPath,
-      message: `Lock target ${layout.lockPath} exists but no validated current lock was supplied`,
-    })
-  }
   const lockAfter = `${JSON.stringify(lockSnapshot, null, 2)}\n`
   if (lockBefore !== lockAfter) {
     fileChanges.push({
@@ -656,7 +858,7 @@ export function planRegistryInstall(input: PlanRegistryInstallInput): RegistryIn
   }
 
   const systemOrder = new Map(["package", "css", "runtime-map", "lock"].map((kind, index) => [kind, index]))
-  const registryOrder = new Map(input.resolved.map((item, index) => [item.logicalId, index]))
+  const registryOrder = new Map(resolvedItems.map((item, index) => [item.logicalId, index]))
   fileChanges.sort((left, right) => {
     if (left.kind === "registry" && right.kind === "registry") {
       return (

@@ -58,15 +58,10 @@ function unwrapObject(expression: ts.Expression): ts.ObjectLiteralExpression | n
 
 function returnedObject(functionNode: ts.FunctionDeclaration): ts.ObjectLiteralExpression | null {
   if (!functionNode.body) return null
-  const returns: ts.ReturnStatement[] = []
-  const visit = (node: ts.Node): void => {
-    if (node !== functionNode && ts.isFunctionLike(node)) return
-    if (ts.isReturnStatement(node)) returns.push(node)
-    ts.forEachChild(node, visit)
-  }
-  visit(functionNode.body)
-  if (returns.length !== 1 || !returns[0].expression) return null
-  return unwrapObject(returns[0].expression)
+  if (functionNode.body.statements.length !== 1) return null
+  const statement = functionNode.body.statements[0]
+  if (!ts.isReturnStatement(statement) || !statement.expression) return null
+  return unwrapObject(statement.expression)
 }
 
 function objectForVariable(sourceFile: ts.SourceFile, name: string): ts.ObjectLiteralExpression | null {
@@ -190,17 +185,59 @@ function importedBinding(
 }
 
 function topLevelNameCollision(sourceFile: ts.SourceFile, name: string): boolean {
+  const bindingContains = (binding: ts.BindingName): boolean => {
+    if (ts.isIdentifier(binding)) return binding.text === name
+    return binding.elements.some((element) => !ts.isOmittedExpression(element) && bindingContains(element.name))
+  }
   for (const statement of sourceFile.statements) {
     if (ts.isImportDeclaration(statement)) continue
-    if ((ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement)) && statement.name?.text === name)
+    if (
+      (ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement) || ts.isEnumDeclaration(statement)) &&
+      statement.name?.text === name
+    )
       return true
     if (ts.isVariableStatement(statement)) {
       for (const declaration of statement.declarationList.declarations) {
-        if (ts.isIdentifier(declaration.name) && declaration.name.text === name) return true
+        if (bindingContains(declaration.name)) return true
       }
     }
   }
   return false
+}
+
+function propertyReferencesBinding(object: ts.ObjectLiteralExpression, name: string): "missing" | "exact" | "conflict" {
+  const matches = object.properties.filter((property) => propertyName(property) === name)
+  if (matches.length === 0) return "missing"
+  if (matches.length !== 1) return "conflict"
+  const property = matches[0]
+  if (ts.isShorthandPropertyAssignment(property)) return property.name.text === name ? "exact" : "conflict"
+  if (ts.isPropertyAssignment(property) && ts.isIdentifier(property.initializer)) {
+    return property.initializer.text === name ? "exact" : "conflict"
+  }
+  return "conflict"
+}
+
+function staticSpreadNames(sourceFile: ts.SourceFile, target: ts.ObjectLiteralExpression): Set<string> {
+  const names = new Set<string>()
+  for (const statement of sourceFile.statements) {
+    if (!ts.isVariableStatement(statement)) continue
+    for (const declaration of statement.declarationList.declarations) {
+      if (ts.isIdentifier(declaration.name) && declaration.initializer && unwrapObject(declaration.initializer)) {
+        names.add(declaration.name.text)
+      }
+    }
+  }
+  let current: ts.Node | undefined = target.parent
+  while (current) {
+    if (ts.isFunctionDeclaration(current)) {
+      for (const parameter of current.parameters) {
+        if (ts.isIdentifier(parameter.name)) names.add(parameter.name.text)
+      }
+      break
+    }
+    current = current.parent
+  }
+  return names
 }
 
 function propertyName(property: ts.ObjectLiteralElementLike): string | null {
@@ -276,7 +313,18 @@ export function adaptRuntimeMap({ source, bindings: inputBindings }: AdaptRuntim
     return refuse(source, "AMBIGUOUS_MAP", "Runtime map is dynamic or has multiple possible exported component maps")
   }
   const target = targets[0]
+  const allowedSpreads = staticSpreadNames(sourceFile, target)
   for (const property of target.properties) {
+    if (ts.isSpreadAssignment(property)) {
+      if (!ts.isIdentifier(property.expression) || !allowedSpreads.has(property.expression.text)) {
+        return refuse(
+          source,
+          "UNSUPPORTED_SOURCE",
+          "Dynamic component-map spreads cannot be edited safely; use a known static map or function parameter",
+        )
+      }
+      continue
+    }
     if (!ts.isSpreadAssignment(property) && (!property.name || ts.isComputedPropertyName(property.name))) {
       return refuse(
         source,
@@ -286,7 +334,6 @@ export function adaptRuntimeMap({ source, bindings: inputBindings }: AdaptRuntim
     }
   }
 
-  const existingNames = new Set(target.properties.map(propertyName).filter((name): name is string => name !== null))
   const missingImports: RuntimeMapBinding[] = []
   const missingProperties: RuntimeMapBinding[] = []
   for (const binding of bindings) {
@@ -294,7 +341,8 @@ export function adaptRuntimeMap({ source, bindings: inputBindings }: AdaptRuntim
     if (imported.collision || (!imported.exact && topLevelNameCollision(sourceFile, binding.mdxName))) {
       return refuse(source, "BINDING_COLLISION", `Binding ${binding.mdxName} collides with an existing local or import`)
     }
-    if (existingNames.has(binding.mdxName) && !imported.exact) {
+    const propertyAuthority = propertyReferencesBinding(target, binding.mdxName)
+    if (propertyAuthority === "conflict" || (propertyAuthority === "exact" && !imported.exact)) {
       return refuse(
         source,
         "BINDING_COLLISION",
@@ -302,7 +350,7 @@ export function adaptRuntimeMap({ source, bindings: inputBindings }: AdaptRuntim
       )
     }
     if (!imported.exact) missingImports.push(binding)
-    if (!existingNames.has(binding.mdxName)) missingProperties.push(binding)
+    if (propertyAuthority === "missing") missingProperties.push(binding)
   }
   if (missingImports.length === 0 && missingProperties.length === 0)
     return deepFreeze({ ok: true, source, changed: false })

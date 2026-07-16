@@ -34,6 +34,7 @@ function validLock() {
           provenance: { source: "registry", registryItem: "@repopress/icon", version: "1.0.0", integrity },
         },
         localModificationDigest: digest,
+        managedCss: [{ path: "app/globals.css", digest }],
       },
       "@repopress/callout": {
         resolved: {
@@ -61,6 +62,7 @@ function validLock() {
           provenance: { source: "registry", registryItem: "@repopress/callout", version: "1.0.0", integrity },
         },
         localModificationDigest: digest,
+        managedCss: [{ path: "app/globals.css", digest }],
       },
     },
   }
@@ -76,6 +78,7 @@ describe("repoPressLockSchema", () => {
     expect(result.items["@repopress/callout"].resolved.resolvedRef).toHaveLength(40)
     expect(result.items["@repopress/callout"].localModificationDigest).toBe(digest)
     expect(result.items["@repopress/callout"].targets[0].path).toBe("components/repopress/callout.tsx")
+    expect(result.items["@repopress/callout"].managedCss).toEqual([{ path: "app/globals.css", digest }])
     expect(Object.isFrozen(result.items["@repopress/callout"].authoring)).toBe(true)
   })
 
@@ -211,5 +214,12 @@ describe("repoPressLockSchema", () => {
     const second = repoPressLockSchema.parse(secondInput)
     expect(second).toStrictEqual(first)
     expect(JSON.stringify(second)).toBe(JSON.stringify(first))
+  })
+
+  it("allows independently owned CSS blocks in one file and rejects duplicate per-item records", () => {
+    expect(repoPressLockSchema.safeParse(validLock()).success).toBe(true)
+    const duplicate = validLock()
+    duplicate.items["@repopress/callout"].managedCss.push({ path: "APP/GLOBALS.CSS", digest })
+    expect(repoPressLockSchema.safeParse(duplicate).success).toBe(false)
   })
 })

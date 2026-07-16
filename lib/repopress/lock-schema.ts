@@ -48,6 +48,10 @@ const lockEntrySchema = z
       .array(z.object({ path: installTargetSchema, digest: digestSchema }).strict())
       .min(1)
       .max(512),
+    managedCss: z
+      .array(z.object({ path: installTargetSchema, digest: digestSchema }).strict())
+      .max(64)
+      .default([]),
     authoring: normalizedAuthoringMetadataSchema,
     localModificationDigest: digestSchema,
   })
@@ -159,6 +163,23 @@ const rawLockSchema = z
           })
         } else targets.set(identity, itemName)
       }
+      const cssPaths = new Set<string>()
+      for (const managedCss of item.managedCss) {
+        let identity: string
+        try {
+          identity = canonicalizeInstallTarget(managedCss.path)
+        } catch {
+          continue
+        }
+        if (cssPaths.has(identity)) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["items", itemName, "managedCss"],
+            message: `Duplicate managed CSS path ${managedCss.path}`,
+          })
+        }
+        cssPaths.add(identity)
+      }
     }
 
     const visiting = new Set<string>()
@@ -191,6 +212,12 @@ const canonicalLockSchema = rawLockSchema.transform((lock) => {
       ...item,
       dependencies: [...item.dependencies].sort(compareCodeUnits),
       targets: [...item.targets].sort((left, right) => {
+        return (
+          compareCodeUnits(canonicalizeInstallTarget(left.path), canonicalizeInstallTarget(right.path)) ||
+          compareCodeUnits(left.digest, right.digest)
+        )
+      }),
+      managedCss: [...item.managedCss].sort((left, right) => {
         return (
           compareCodeUnits(canonicalizeInstallTarget(left.path), canonicalizeInstallTarget(right.path)) ||
           compareCodeUnits(left.digest, right.digest)

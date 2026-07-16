@@ -79,6 +79,61 @@ describe("adaptRuntimeMap", () => {
     }
   })
 
+  it("requires an existing map property to reference the exact imported binding", () => {
+    const exactImport = 'import { Callout } from "@/components/repopress/callout"\n'
+    for (const property of [
+      "Callout: Other",
+      "Callout() { return null }",
+      "get Callout() { return Other }",
+      "Callout: factory()",
+    ]) {
+      const source = `${exactImport}export const components = { ${property} }\n`
+      expect(adaptRuntimeMap({ source, bindings: [binding] })).toMatchObject({
+        ok: false,
+        source,
+        code: "BINDING_COLLISION",
+      })
+    }
+
+    for (const property of ["Callout", "Callout: Callout"]) {
+      const source = `${exactImport}export const components = { ${property} }\n`
+      expect(adaptRuntimeMap({ source, bindings: [binding] })).toEqual({ ok: true, source, changed: false })
+    }
+  })
+
+  it("rejects dynamic spreads and control-flow returns while retaining canonical caller precedence", () => {
+    for (const source of [
+      "export const components = { ...factory() }\n",
+      "export const components = { ...source.components }\n",
+      "export function useMDXComponents(components) { if (components) return { ...components }; return {} }\n",
+      "export function getMDXComponents(components) { return condition ? { ...components } : {} }\n",
+    ]) {
+      expect(adaptRuntimeMap({ source, bindings: [binding] })).toMatchObject({ ok: false, source })
+    }
+
+    const canonical =
+      "export function getMDXComponents(components?: Record<string, unknown>) {\n  return {\n    strong: 'strong',\n    ...components,\n  }\n}\n"
+    const result = adaptRuntimeMap({ source: canonical, bindings: [binding] })
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.source.indexOf("Callout,")).toBeLessThan(result.source.indexOf("...components"))
+  })
+
+  it("detects value-space collisions introduced through object and array destructuring", () => {
+    for (const declaration of [
+      "const { component: Callout } = source",
+      "const { Callout } = source",
+      "const [Callout] = source",
+      "const { nested: { Callout } } = source",
+    ]) {
+      const source = `${declaration}\nexport const components = {}\n`
+      expect(adaptRuntimeMap({ source, bindings: [binding] })).toMatchObject({
+        ok: false,
+        source,
+        code: "BINDING_COLLISION",
+      })
+    }
+  })
+
   it("fails closed and preserves unsupported or malformed source byte-for-byte", () => {
     for (const source of [
       "export function makeComponents() { return {} }\n",

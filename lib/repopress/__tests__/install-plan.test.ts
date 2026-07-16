@@ -22,9 +22,14 @@ function registrySource(options: {
   cssVars?: unknown
   css?: unknown
   envVars?: Record<string, string>
+  tailwind?: unknown
 }): RegistrySourceInput {
   const name = options.id.split("/").at(-1) ?? options.id
-  const mdxName = name[0].toUpperCase() + name.slice(1)
+  const mdxName = name
+    .split(/[^A-Za-z0-9_$]+/u)
+    .filter(Boolean)
+    .map((part) => part[0].toUpperCase() + part.slice(1))
+    .join("")
   const path = `registry/${name}.tsx`
   const content = options.content ?? `export function ${mdxName}() { return null }\n`
   const item: Record<string, any> = {
@@ -36,6 +41,7 @@ function registrySource(options: {
     ...(options.cssVars ? { cssVars: options.cssVars } : {}),
     ...(options.css ? { css: options.css } : {}),
     ...(options.envVars ? { envVars: options.envVars } : {}),
+    ...(options.tailwind ? { tailwind: options.tailwind } : {}),
     meta: {
       repopress: {
         apiVersion: 1,
@@ -83,17 +89,26 @@ function layout(componentsPath = "components", importPrefix = "@/components"): P
 
 function plan(sources: RegistrySourceInput[], extra: Partial<Parameters<typeof planRegistryInstall>[0]> = {}) {
   const resolved = resolveRegistryItems({ requested: [sources.at(-1)?.reference ?? ""], sources, framework: "next" })
+  const defaultFiles = [
+    { path: "mdx-components.tsx", content: runtimeSource },
+    { path: "package.json", content: '{"dependencies":{"react":"19.2.0"}}\n' },
+    { path: "app/globals.css", content: "@import 'tailwindcss';\n" },
+  ]
+  const currentFiles = [...(extra.currentFiles ?? defaultFiles)]
+  if (extra.currentLock && !currentFiles.some((file) => file.path === "repopress.lock.json")) {
+    currentFiles.push({ path: "repopress.lock.json", content: `${JSON.stringify(extra.currentLock, null, 2)}\n` })
+  }
   return planRegistryInstall({
     resolved,
     layout: layout(),
-    currentFiles: [
-      { path: "mdx-components.tsx", content: runtimeSource },
-      { path: "package.json", content: '{"dependencies":{"react":"19.2.0"}}\n' },
-      { path: "app/globals.css", content: "@import 'tailwindcss';\n" },
-    ],
     currentLock: null,
     ...extra,
+    currentFiles,
   })
+}
+
+function filesFromPlan(result: ReturnType<typeof planRegistryInstall>) {
+  return result.fileChanges.map((change) => ({ path: change.path, content: change.after }))
 }
 
 describe("planRegistryInstall", () => {
@@ -118,6 +133,26 @@ describe("planRegistryInstall", () => {
     })
     expect(result.fileChanges).toContainEqual(expect.objectContaining({ path: target, after: source.files[0].content }))
     expect(result.runtimeMapEdit.after).toContain(`from "${importSource}"`)
+  })
+
+  it.each([
+    ["direct root target", "components/callout.tsx", "mdx-components.tsx", "./components/callout"],
+    ["repository-root placeholder", "~/components/callout.tsx", "src/mdx-components.tsx", "../components/callout"],
+    ["nested direct target", "src/components/callout.tsx", "src/mdx-components.tsx", "./components/callout"],
+  ])("derives a POSIX import for %s", (_, target, runtimeMapPath, importSource) => {
+    const item = registrySource({ id: "@example/direct", target })
+    const resolved = resolveRegistryItems({ requested: [item.reference], sources: [item], framework: "next" })
+    const result = planRegistryInstall({
+      resolved,
+      layout: { ...layout(), runtimeMapPath },
+      currentFiles: [{ path: runtimeMapPath, content: "export const components = {}\n" }],
+      currentLock: null,
+    })
+    expect(result.runtimeMapEdit.after).toContain(`from "${importSource}"`)
+    expect(result.fileChanges.find((change) => change.owner === "@example/direct")?.path).not.toContain("~")
+    expect(result.lockSnapshot.items["@example/direct"].targets[0].path).toBe(
+      result.fileChanges.find((change) => change.owner === "@example/direct")?.path,
+    )
   })
 
   it("plans dependency-first files, package/CSS diffs, runtime map, and a valid lock deterministically", () => {
@@ -257,7 +292,7 @@ describe("planRegistryInstall", () => {
     expect(networked.conflicts).toContainEqual(expect.objectContaining({ code: "UNSUPPORTED_CSS" }))
   })
 
-  it("plans a deterministic package version update instead of ignoring an existing mismatch", () => {
+  it("blocks an incompatible existing package version instead of overwriting it", () => {
     const item = registrySource({ id: "@example/package", packages: ["class-variance-authority@^0.7.1"] })
     const result = plan([item], {
       currentFiles: [
@@ -266,15 +301,10 @@ describe("planRegistryInstall", () => {
       ],
     })
 
-    expect(result.packageChanges).toEqual([
-      {
-        kind: "dependency",
-        name: "class-variance-authority",
-        before: "^0.6.0",
-        after: "^0.7.1",
-      },
-    ])
-    expect(result.fileChanges.find((change) => change.kind === "package")?.after).toContain('"^0.7.1"')
+    expect(result.packageChanges).toEqual([])
+    expect(result.conflicts).toContainEqual(
+      expect.objectContaining({ code: "PACKAGE_VERSION_CONFLICT", path: "class-variance-authority" }),
+    )
   })
 
   it("reserves runtime, package, CSS, and lock paths from registry file targets", () => {
@@ -308,15 +338,206 @@ describe("planRegistryInstall", () => {
   })
 
   it("does not overwrite an unmanaged lockfile snapshot", () => {
-    const result = plan([registrySource({ id: "@example/new" })], {
+    expect(() =>
+      plan([registrySource({ id: "@example/new" })], {
+        currentFiles: [
+          { path: "mdx-components.tsx", content: runtimeSource },
+          { path: "repopress.lock.json", content: '{"owned":"elsewhere"}\n' },
+        ],
+        currentLock: null,
+      }),
+    ).toThrow("Invalid repository lock snapshot")
+  })
+
+  it("binds the supplied lock to exact repository snapshot bytes", () => {
+    const item = registrySource({ id: "@example/locked" })
+    const initial = plan([item])
+    const forged = JSON.parse(JSON.stringify(initial.lockSnapshot))
+    forged.items["@example/locked"].integrity = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+    forged.items["@example/locked"].authoring.provenance.integrity =
+      "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+    const currentFiles = filesFromPlan(initial)
+
+    const result = plan([item], { currentFiles, currentLock: forged })
+    expect(result.applicable).toBe(false)
+    expect(result.conflicts).toContainEqual(expect.objectContaining({ code: "LOCK_SNAPSHOT_MISMATCH" }))
+    expect(result.lockSnapshot.items["@example/locked"].integrity).toBe(
+      initial.lockSnapshot.items["@example/locked"].integrity,
+    )
+  })
+
+  it.each([
+    ["clean", "original"],
+    ["modified", "local edit"],
+    ["missing", null],
+  ])("blocks a stale moved target when its prior file is %s", (_, priorContent) => {
+    const oldItem = registrySource({ id: "@example/moved", target: "@components/old.tsx", content: "original" })
+    const initial = plan([oldItem])
+    const nextItem = registrySource({ id: "@example/moved", target: "@components/new.tsx", content: "new" })
+    const currentFiles = filesFromPlan(initial).filter((file) => file.path !== "components/old.tsx")
+    if (priorContent !== null) currentFiles.push({ path: "components/old.tsx", content: priorContent })
+
+    const result = plan([nextItem], { currentFiles, currentLock: initial.lockSnapshot })
+    expect(result.conflicts).toContainEqual(
+      expect.objectContaining({ code: "STALE_TARGET", path: "components/old.tsx" }),
+    )
+    if (priorContent !== "original") {
+      expect(result.conflicts).toContainEqual(
+        expect.objectContaining({ code: "LOCAL_MODIFICATION", path: "components/old.tsx" }),
+      )
+    }
+  })
+
+  it("records managed CSS ownership and permits a clean update and removal", () => {
+    const firstItem = registrySource({
+      id: "@example/css-owned",
+      cssVars: { light: { accent: "oklch(0.5 0.1 250)" } },
+    })
+    const initial = plan([firstItem])
+    expect(initial.lockSnapshot.items["@example/css-owned"].managedCss).toEqual([
+      expect.objectContaining({ path: "app/globals.css", digest: expect.stringMatching(/^sha256:/u) }),
+    ])
+
+    const updatedItem = registrySource({
+      id: "@example/css-owned",
+      cssVars: { light: { accent: "oklch(0.6 0.1 250)" } },
+    })
+    const updated = plan([updatedItem], { currentFiles: filesFromPlan(initial), currentLock: initial.lockSnapshot })
+    expect(updated.conflicts).toEqual([])
+    expect(updated.fileChanges.find((change) => change.kind === "css")?.after).toContain("oklch(0.6 0.1 250)")
+
+    const removedItem = registrySource({ id: "@example/css-owned" })
+    const removed = plan([removedItem], { currentFiles: filesFromPlan(initial), currentLock: initial.lockSnapshot })
+    expect(removed.conflicts).toEqual([])
+    expect(removed.lockSnapshot.items["@example/css-owned"].managedCss).toEqual([])
+    expect(removed.fileChanges.find((change) => change.kind === "css")?.after).not.toContain(
+      "repopress:@example/css-owned:start",
+    )
+  })
+
+  it.each([
+    ["local edit", (css: string) => css.replace("oklch(0.5 0.1 250)", "red")],
+    ["duplicate marker", (css: string) => `${css}\n${css.slice(css.indexOf("/* repopress:"))}`],
+    ["malformed marker", (css: string) => css.replace("/* repopress:@example/css-owned:end */", "")],
+    [
+      "missing marker",
+      (css: string) =>
+        css.replace(
+          /\/\* repopress:@example\/css-owned:start \*\/[\s\S]*?\/\* repopress:@example\/css-owned:end \*\//u,
+          "",
+        ),
+    ],
+  ])("blocks a managed CSS update after %s", (_, mutate) => {
+    const item = registrySource({
+      id: "@example/css-owned",
+      cssVars: { light: { accent: "oklch(0.5 0.1 250)" } },
+    })
+    const initial = plan([item])
+    const currentFiles = filesFromPlan(initial).map((file) =>
+      file.path === "app/globals.css" ? { ...file, content: mutate(file.content) } : file,
+    )
+    const result = plan([item], { currentFiles, currentLock: initial.lockSnapshot })
+    expect(result.conflicts).toContainEqual(expect.objectContaining({ code: "MANAGED_CSS_MODIFIED" }))
+  })
+
+  it("allows independent managed blocks for multiple items and rejects unsupported tailwind metadata", () => {
+    const first = registrySource({ id: "@example/first-css", cssVars: { light: { first: "one" } } })
+    const second = registrySource({ id: "@example/second-css", cssVars: { dark: { second: "two" } } })
+    const resolved = resolveRegistryItems({
+      requested: [first.reference, second.reference],
+      sources: [second, first],
+      framework: "next",
+    })
+    const result = planRegistryInstall({
+      resolved,
+      layout: layout(),
       currentFiles: [
         { path: "mdx-components.tsx", content: runtimeSource },
-        { path: "repopress.lock.json", content: '{"owned":"elsewhere"}\n' },
+        { path: "app/globals.css", content: "@import 'tailwindcss';\n" },
       ],
       currentLock: null,
     })
-    expect(result.conflicts).toContainEqual(
-      expect.objectContaining({ code: "UNMANAGED_TARGET_EXISTS", path: "repopress.lock.json" }),
+    expect(result.conflicts).toEqual([])
+    expect(result.lockSnapshot.items["@example/first-css"].managedCss?.[0].path).toBe("app/globals.css")
+    expect(result.lockSnapshot.items["@example/second-css"].managedCss?.[0].path).toBe("app/globals.css")
+
+    const tailwind = plan([registrySource({ id: "@example/tailwind", tailwind: { config: { plugins: ["unsafe"] } } })])
+    expect(tailwind.conflicts).toContainEqual(expect.objectContaining({ code: "UNSUPPORTED_CSS" }))
+  })
+
+  it("handles package sections and supported specs conservatively", () => {
+    const scoped = registrySource({ id: "@example/scoped", packages: ["@scope/pkg@^1.2.3", "react"] })
+    const crossSection = plan([scoped], {
+      currentFiles: [
+        { path: "mdx-components.tsx", content: runtimeSource },
+        {
+          path: "package.json",
+          content: '{"dependencies":{"react":"19.2.0"},"devDependencies":{"@scope/pkg":"^1.2.3"}}\n',
+        },
+      ],
+    })
+    expect(crossSection.conflicts).toContainEqual(
+      expect.objectContaining({ code: "PACKAGE_VERSION_CONFLICT", path: "@scope/pkg" }),
     )
+    expect(crossSection.packageChanges.find((change) => change.name === "react")).toBeUndefined()
+
+    const nonString = plan([registrySource({ id: "@example/non-string", packages: ["react@19.2.0"] })], {
+      currentFiles: [
+        { path: "mdx-components.tsx", content: runtimeSource },
+        { path: "package.json", content: '{"dependencies":{"react":19}}\n' },
+      ],
+    })
+    expect(nonString.conflicts).toContainEqual(
+      expect.objectContaining({ code: "PACKAGE_VERSION_CONFLICT", path: "react" }),
+    )
+
+    for (const spec of [
+      "react@latest",
+      "react@github:user/repo",
+      "react@https://example.test/x.tgz",
+      "react@^1",
+    ] as const) {
+      expect(() => plan([registrySource({ id: "@example/bad-spec", packages: [spec] })])).toThrow(
+        "Unsupported registry package dependency",
+      )
+    }
+  })
+
+  it("canonicalizes a directly shuffled resolved graph and rejects forged graph structure", () => {
+    const a = registrySource({ id: "@example/a", ref: "a" })
+    const b = registrySource({ id: "@example/b", ref: "b", deps: ["a"] })
+    const resolved = resolveRegistryItems({ requested: ["b"], sources: [a, b], framework: "next" })
+    const currentFiles = [{ path: "mdx-components.tsx", content: "export const components = {}\n" }]
+    const canonical = planRegistryInstall({ resolved, layout: layout(), currentFiles, currentLock: null })
+    const shuffled = planRegistryInstall({
+      resolved: [...resolved].reverse(),
+      layout: layout(),
+      currentFiles,
+      currentLock: null,
+    })
+    expect(JSON.stringify(shuffled)).toBe(JSON.stringify(canonical))
+
+    expect(() =>
+      planRegistryInstall({ resolved: [resolved[0], resolved[0]], layout: layout(), currentFiles, currentLock: null }),
+    ).toThrow("Duplicate resolved logical identity")
+    expect(() =>
+      planRegistryInstall({
+        resolved: [{ ...resolved[1], dependencies: ["@example/missing"] }],
+        layout: layout(),
+        currentFiles,
+        currentLock: null,
+      }),
+    ).toThrow("Missing resolved dependency")
+    expect(() =>
+      planRegistryInstall({
+        resolved: [
+          { ...resolved[0], dependencies: [resolved[1].logicalId] },
+          { ...resolved[1], dependencies: [resolved[0].logicalId] },
+        ],
+        layout: layout(),
+        currentFiles,
+        currentLock: null,
+      }),
+    ).toThrow("Resolved dependency cycle")
   })
 })
