@@ -19,8 +19,93 @@ const TITLE_SYNC_MAX_PATH_BYTES = 1_024
 const TITLE_SYNC_MAX_TOTAL_PATH_BYTES = 128 * 1_024
 const TITLE_SYNC_MAX_CONTENT_BYTES = 256 * 1_024
 const TITLE_SYNC_MAX_FILES = 256
+const TITLE_SYNC_MAX_TITLE_BYTES = 512
+const TITLE_SYNC_MAX_TITLE_CODE_POINTS = 512
 const utf8Encoder = new TextEncoder()
 const utf8Decoder = new TextDecoder("utf-8", { fatal: true })
+
+type NormalizedTitleSyncDocument = Readonly<{
+  filePath: string
+  title: string
+  githubSha: string
+}>
+
+function normalizeBoundedTitle(value: string): string | null {
+  const nfcValue = value.normalize("NFC")
+  for (const character of nfcValue) {
+    const codePoint = character.codePointAt(0)!
+    const isUnsafe =
+      codePoint <= 0x1f ||
+      (codePoint >= 0x7f && codePoint <= 0x9f) ||
+      codePoint === 0x061c ||
+      codePoint === 0x200e ||
+      codePoint === 0x200f ||
+      (codePoint >= 0x2028 && codePoint <= 0x202e) ||
+      (codePoint >= 0x2066 && codePoint <= 0x206f) ||
+      codePoint === 0xfeff
+    if (isUnsafe) return null
+  }
+
+  const title = nfcValue.trim()
+  if (
+    title.length === 0 ||
+    Array.from(title).length > TITLE_SYNC_MAX_TITLE_CODE_POINTS ||
+    utf8Encoder.encode(title).byteLength > TITLE_SYNC_MAX_TITLE_BYTES
+  ) {
+    return null
+  }
+  return title
+}
+
+function titleFromContent(filePath: string, content: string): string {
+  const fileName = filePath.split("/").pop() ?? filePath
+  const fileNameStem = fileName.replace(/\.(mdx?|markdown)$/i, "")
+  const fallbackTitle = normalizeBoundedTitle(fileNameStem) ?? "Untitled"
+  const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/)
+  if (!fmMatch) return fallbackTitle
+
+  const titleMatch = fmMatch[1].match(/^title:\s*["']?(.+?)["']?\s*$/m)
+  if (!titleMatch) return fallbackTitle
+  return normalizeBoundedTitle(titleMatch[1]) ?? fallbackTitle
+}
+
+function validateTitleSyncBatch(
+  documents: readonly NormalizedTitleSyncDocument[],
+): readonly NormalizedTitleSyncDocument[] {
+  if (!Array.isArray(documents) || documents.length > TITLE_SYNC_MAX_FILES) {
+    throw new Error(`title document batch exceeds ${TITLE_SYNC_MAX_FILES} entries`)
+  }
+
+  const seenPaths = new Set<string>()
+  let totalPathBytes = 0
+  for (let index = 0; index < documents.length; index++) {
+    if (!Object.hasOwn(documents, index)) throw new Error("Invalid title document batch")
+    const document = documents[index]
+    const pathBytes = utf8Encoder.encode(document.filePath).byteLength
+    if (pathBytes > TITLE_SYNC_MAX_PATH_BYTES) {
+      throw new Error(`content path exceeds ${TITLE_SYNC_MAX_PATH_BYTES} bytes`)
+    }
+    totalPathBytes += pathBytes
+    if (totalPathBytes > TITLE_SYNC_MAX_TOTAL_PATH_BYTES) {
+      throw new Error(`total path bytes exceed ${TITLE_SYNC_MAX_TOTAL_PATH_BYTES}`)
+    }
+
+    const filePath = assertContentPath(document.filePath)
+    if (filePath !== document.filePath || !/\.(?:md|mdx|markdown)$/i.test(filePath)) {
+      throw new Error("Invalid title document path")
+    }
+    if (seenPaths.has(filePath)) throw new Error("Duplicate title document path")
+    seenPaths.add(filePath)
+    assertGitHubCommitSha(document.githubSha, "file sha")
+
+    const normalizedTitle = normalizeBoundedTitle(document.title)
+    if (normalizedTitle === null || normalizedTitle !== document.title) {
+      throw new Error("Invalid title document title")
+    }
+  }
+
+  return documents
+}
 
 function decodeTitleSyncContent(payload: {
   type?: string
@@ -258,6 +343,52 @@ export const getOrCreateInternal = internalMutation({
       createdAt: now,
       updatedAt: now,
     })
+  },
+})
+
+/** Persists a fully validated title sync as one atomic Convex transaction. */
+export const getOrCreateTitleSyncBatchInternal = internalMutation({
+  args: {
+    projectId: v.id("projects"),
+    documents: v.array(
+      v.object({
+        filePath: v.string(),
+        title: v.string(),
+        githubSha: v.string(),
+      }),
+    ),
+  },
+  handler: async (ctx, args): Promise<{ inserted: number; existing: number }> => {
+    const documents = validateTitleSyncBatch(args.documents)
+    let inserted = 0
+    let existing = 0
+
+    for (const document of documents) {
+      const found = await ctx.db
+        .query("documents")
+        .withIndex("by_projectId_filePath", (q) => q.eq("projectId", args.projectId).eq("filePath", document.filePath))
+        .filter((q) => q.eq(q.field("pathRepresentation"), "content_relative_v1"))
+        .first()
+      if (found) {
+        existing += 1
+        continue
+      }
+
+      const now = Date.now()
+      await ctx.db.insert("documents", {
+        projectId: args.projectId,
+        filePath: document.filePath,
+        pathRepresentation: "content_relative_v1",
+        title: document.title,
+        status: "draft",
+        githubSha: document.githubSha,
+        createdAt: now,
+        updatedAt: now,
+      })
+      inserted += 1
+    }
+
+    return { inserted, existing }
   },
 })
 
@@ -688,11 +819,12 @@ export const syncTreeTitles = action({
     const missingFiles = files.filter((f) => !existingPaths.has(f.path))
     if (missingFiles.length === 0) return
 
-    // Fetch and sync in batches of 5 to avoid rate limits
+    // Fetch and validate every missing file before opening the single write transaction.
     const BATCH_SIZE = 5
+    const normalizedDocuments: NormalizedTitleSyncDocument[] = []
     for (let i = 0; i < missingFiles.length; i += BATCH_SIZE) {
       const batch = missingFiles.slice(i, i + BATCH_SIZE)
-      await Promise.all(
+      const normalizedBatch = await Promise.all(
         batch.map(async (file) => {
           let response: Response
           try {
@@ -706,9 +838,9 @@ export const syncTreeTitles = action({
               },
             )
           } catch {
-            return
+            throw new Error("Failed to fetch title content")
           }
-          if (!response.ok) return
+          if (!response.ok) throw new Error("Failed to fetch title content")
 
           let payload: {
             type?: string
@@ -720,34 +852,28 @@ export const syncTreeTitles = action({
           try {
             payload = (await response.json()) as typeof payload
           } catch {
-            return
+            throw new Error("Invalid title content")
           }
           if (payload.sha !== file.sha) throw new Error("File SHA mismatch")
 
           const content = decodeTitleSyncContent(payload)
-          if (content === null) return
+          if (content === null) throw new Error("Invalid title content")
 
-          // Extract title from frontmatter (simple regex - no gray-matter in Convex)
-          let title =
-            file.path
-              .split("/")
-              .pop()
-              ?.replace(/\.(mdx?|markdown)$/i, "") || file.path
-          const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/)
-          if (fmMatch) {
-            const titleMatch = fmMatch[1].match(/^title:\s*["']?(.+?)["']?\s*$/m)
-            if (titleMatch) title = titleMatch[1].trim()
-          }
-
-          await ctx.runMutation(internal.documents.getOrCreateInternal, {
-            projectId: args.projectId,
+          return Object.freeze({
             filePath: file.path,
-            pathRepresentation: "content_relative_v1",
-            title,
+            title: titleFromContent(file.path, content),
             githubSha: file.sha,
           })
         }),
       )
+      normalizedDocuments.push(...normalizedBatch)
     }
+
+    const documents = Object.freeze(normalizedDocuments)
+    validateTitleSyncBatch(documents)
+    await ctx.runMutation(internal.documents.getOrCreateTitleSyncBatchInternal, {
+      projectId: args.projectId,
+      documents: documents as NormalizedTitleSyncDocument[],
+    })
   },
 })

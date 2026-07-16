@@ -18,7 +18,7 @@ vi.mock("@/convex/auth", () => ({
   },
 }))
 
-import { syncTreeTitles } from "@/convex/documents"
+import { getOrCreateTitleSyncBatchInternal, syncTreeTitles } from "@/convex/documents"
 import { scanImagesFromGitHub, upsertScannedImagesBatch } from "@/convex/mediaGallery"
 import { consumeGitHubActionRateLimit, getGitHubActionProjectAccess } from "@/convex/projects"
 
@@ -86,6 +86,19 @@ function mockAuthorizedTitlePayload(payload: Record<string, unknown>) {
     }
     return { ok: true, json: vi.fn().mockResolvedValue(payload) } as any
   })
+}
+
+function utf8TitlePayload(title: string, sha = "f".repeat(40)) {
+  const content = `---\ntitle: ${title}\n---\n`
+  const bytes = new TextEncoder().encode(content)
+  const binary = Array.from(bytes, (byte) => String.fromCharCode(byte)).join("")
+  return {
+    type: "file",
+    sha,
+    size: bytes.byteLength,
+    encoding: "base64",
+    content: btoa(binary),
+  }
 }
 
 function mockAuthorizedGalleryPayload(payload: unknown) {
@@ -569,6 +582,86 @@ describe("public Convex GitHub action boundaries", () => {
     })
   })
 
+  it("does not persist an earlier valid title when a later file fails SHA validation", async () => {
+    const ctx = actionCtx()
+    authorizeEditor(ctx)
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input)
+      if (url === "https://api.github.com/user") {
+        return { ok: true, json: vi.fn().mockResolvedValue({ id: 123 }) } as any
+      }
+      if (url === "https://api.github.com/repos/acme/docs") {
+        return { ok: true, json: vi.fn().mockResolvedValue({ permissions: { push: true } }) } as any
+      }
+      if (url === COMPARE_URL) {
+        return { ok: true, json: vi.fn().mockResolvedValue({ status: "ahead" }) } as any
+      }
+      if (!url.includes("last.mdx")) {
+        return { ok: true, json: vi.fn().mockResolvedValue(utf8TitlePayload("Valid", "f".repeat(40))) } as any
+      }
+      return { ok: true, json: vi.fn().mockResolvedValue(utf8TitlePayload("Invalid", "d".repeat(40))) } as any
+    })
+
+    await expect(
+      (syncTreeTitles as any).handler(ctx, {
+        projectId: "project_1",
+        readRef: BASE_SHA,
+        files: [
+          ...Array.from({ length: 5 }, (_, index) => ({
+            path: `valid-${index}.mdx`,
+            sha: "f".repeat(40),
+          })),
+          { path: "last.mdx", sha: "e".repeat(40) },
+        ],
+        githubToken: "editor-token",
+      }),
+    ).rejects.toThrow("File SHA mismatch")
+
+    expect(ctx.runMutation).toHaveBeenCalledTimes(1)
+    expect(ctx.runMutation.mock.calls[0][1]).toEqual({
+      projectId: "project_1",
+      userId: "editor_1",
+      action: "title_sync",
+    })
+  })
+
+  it.each([
+    ["the exact ASCII byte boundary", "a".repeat(512), "a".repeat(512)],
+    ["an oversized ASCII title", "a".repeat(513), "guide"],
+    ["the exact multibyte boundary", "é".repeat(256), "é".repeat(256)],
+    ["an oversized multibyte title", "é".repeat(257), "guide"],
+    ["a bidi override", "Safe\u202eName", "guide"],
+    ["an unsafe control", "Safe\u0007Name", "guide"],
+    ["a ZWJ emoji", "Family 👨‍👩‍👧‍👦", "Family 👨‍👩‍👧‍👦"],
+    ["a decomposed Unicode title", "Cafe\u0301", "Café"],
+  ])("normalizes and bounds %s before title persistence", async (_label, sourceTitle, expectedTitle) => {
+    const ctx = actionCtx()
+    authorizeEditor(ctx)
+    mockAuthorizedTitlePayload(utf8TitlePayload(sourceTitle))
+
+    await (syncTreeTitles as any).handler(ctx, {
+      projectId: "project_1",
+      readRef: BASE_SHA,
+      files: [{ path: "guide.mdx", sha: "f".repeat(40) }],
+      githubToken: "editor-token",
+    })
+
+    expect(ctx.runMutation).toHaveBeenCalledTimes(2)
+    const batchArgs = ctx.runMutation.mock.calls[1][1]
+    expect(batchArgs).toEqual({
+      projectId: "project_1",
+      documents: [
+        {
+          filePath: "guide.mdx",
+          title: expectedTitle,
+          githubSha: "f".repeat(40),
+        },
+      ],
+    })
+    expect(Object.isFrozen(batchArgs.documents)).toBe(true)
+    expect(Object.isFrozen(batchArgs.documents[0])).toBe(true)
+  })
+
   it.each([
     [
       "a non-integer declared size",
@@ -600,17 +693,19 @@ describe("public Convex GitHub action boundaries", () => {
         content: btoa(String.fromCharCode(0xc3, 0x28)),
       },
     ],
-  ])("does not write a title document for %s", async (_label, payload) => {
+  ])("rejects %s before writing a title document", async (_label, payload) => {
     const ctx = actionCtx()
     authorizeEditor(ctx)
     mockAuthorizedTitlePayload(payload)
 
-    await (syncTreeTitles as any).handler(ctx, {
-      projectId: "project_1",
-      readRef: BASE_SHA,
-      files: [{ path: "guide.mdx", sha: "f".repeat(40) }],
-      githubToken: "editor-token",
-    })
+    await expect(
+      (syncTreeTitles as any).handler(ctx, {
+        projectId: "project_1",
+        readRef: BASE_SHA,
+        files: [{ path: "guide.mdx", sha: "f".repeat(40) }],
+        githubToken: "editor-token",
+      }),
+    ).rejects.toThrow("Invalid title content")
 
     expect(ctx.runMutation).toHaveBeenCalledTimes(1)
   })
@@ -728,10 +823,16 @@ describe("public Convex GitHub action boundaries", () => {
     expect(urls).toContain(`https://api.github.com/repos/acme/docs/contents/content%2Fguide.mdx?ref=${BASE_SHA}`)
     expect(urls.some((url) => url.includes("attacker") || url.includes("private%2Fsecret"))).toBe(false)
     expect(ctx.runQuery.mock.calls[1][1]).toEqual({ projectId: "project_1", userId: "editor_1" })
-    expect(ctx.runMutation).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ projectId: "project_1", filePath: "guide.mdx", title: "Guide" }),
-    )
+    expect(ctx.runMutation.mock.calls[1][1]).toEqual({
+      projectId: "project_1",
+      documents: [
+        {
+          filePath: "guide.mdx",
+          title: "Guide",
+          githubSha: "f".repeat(40),
+        },
+      ],
+    })
   })
 
   it("rejects a gallery scan that forges the project owner through userId", async () => {
@@ -1410,5 +1511,96 @@ describe("gallery scan batch persistence", () => {
     expect(result).toEqual({ inserted: 1, updated: 1 })
     expect(patch).toHaveBeenCalledOnce()
     expect(insert).toHaveBeenCalledOnce()
+  })
+})
+
+describe("title sync batch persistence", () => {
+  it("gets or creates the validated title set idempotently in one mutation", async () => {
+    const rows: Array<Record<string, unknown>> = [
+      {
+        _id: "document_1",
+        projectId: "project_1",
+        filePath: "first.mdx",
+        pathRepresentation: "content_relative_v1",
+      },
+    ]
+    const insert = vi.fn().mockImplementation(async (_table, value) => {
+      const id = `document_${rows.length + 1}`
+      rows.push({ _id: id, ...value })
+      return id
+    })
+    const ctx = {
+      db: {
+        query: vi.fn().mockReturnValue({
+          withIndex: vi.fn().mockImplementation((_indexName, applyIndex) => {
+            const filters: Record<string, unknown> = {}
+            const queryBuilder = {
+              eq(field: string, value: unknown) {
+                filters[field] = value
+                return queryBuilder
+              },
+            }
+            applyIndex(queryBuilder)
+            return {
+              filter: vi.fn().mockReturnValue({
+                first: async () =>
+                  rows.find(
+                    (row) =>
+                      row.pathRepresentation === "content_relative_v1" &&
+                      Object.entries(filters).every(([field, value]) => row[field] === value),
+                  ) ?? null,
+              }),
+            }
+          }),
+        }),
+        insert,
+      },
+    }
+
+    const args = {
+      projectId: "project_1",
+      documents: [
+        { filePath: "first.mdx", title: "First", githubSha: "f".repeat(40) },
+        { filePath: "second.mdx", title: "Second", githubSha: "e".repeat(40) },
+      ],
+    }
+
+    const firstResult = await (getOrCreateTitleSyncBatchInternal as any).handler(ctx, args)
+    const retryResult = await (getOrCreateTitleSyncBatchInternal as any).handler(ctx, args)
+
+    expect(firstResult).toEqual({ inserted: 1, existing: 1 })
+    expect(retryResult).toEqual({ inserted: 0, existing: 2 })
+    expect(insert).toHaveBeenCalledOnce()
+    expect(insert).toHaveBeenCalledWith(
+      "documents",
+      expect.objectContaining({
+        projectId: "project_1",
+        filePath: "second.mdx",
+        pathRepresentation: "content_relative_v1",
+        title: "Second",
+        githubSha: "e".repeat(40),
+      }),
+    )
+  })
+
+  it("rejects an oversized direct batch title before database access", async () => {
+    const ctx = {
+      db: {
+        query: vi.fn(),
+        insert: vi.fn(),
+      },
+    }
+
+    await expect(
+      (getOrCreateTitleSyncBatchInternal as any).handler(ctx, {
+        projectId: "project_1",
+        documents: [
+          { filePath: "valid.mdx", title: "Valid", githubSha: "e".repeat(40) },
+          { filePath: "guide.mdx", title: "a".repeat(513), githubSha: "f".repeat(40) },
+        ],
+      }),
+    ).rejects.toThrow("title")
+    expect(ctx.db.query).not.toHaveBeenCalled()
+    expect(ctx.db.insert).not.toHaveBeenCalled()
   })
 })
