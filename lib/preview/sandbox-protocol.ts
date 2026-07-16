@@ -2,41 +2,35 @@ import { z } from "zod"
 import { previewDiagnosticSchema } from "./contracts"
 
 export const SANDBOX_PROTOCOL_VERSION = 1 as const
-
-/** Maximum encoded size of one sandbox-to-host protocol message. */
 export const SANDBOX_MAX_MESSAGE_BYTES = 64 * 1024
-/** Maximum encoded size of any string value or object key. */
 export const SANDBOX_MAX_STRING_BYTES = 32 * 1024
-/** Maximum entries in any one array or object. */
 export const SANDBOX_MAX_COLLECTION_ITEMS = 64
-/** Maximum nesting below the message root. */
 export const SANDBOX_MAX_DATA_DEPTH = 12
-/** Maximum values visited while validating one message. */
 export const SANDBOX_MAX_DATA_NODES = 1_024
 
 /**
- * Fixed-window inbound rate policy. The first 32 messages in a 1,000 ms
- * window are accepted. A timestamp exactly on the next boundary opens a new
- * window, so rejected senders recover without timers or hidden mutable state.
+ * Fixed-window inbound policy. Every attempted message, valid or invalid,
+ * consumes one of 32 slots. The 33rd attempt is rejected before message
+ * traversal. A timestamp exactly 1,000 ms after the window start opens a new
+ * window.
  */
 export const SANDBOX_RATE_WINDOW_MS = 1_000
 export const SANDBOX_RATE_BURST = 32
 
-/** Bootstrap capabilities expire at this boundary and are never reusable. */
 export const SANDBOX_BOOTSTRAP_TTL_MS = 30_000
+export const SANDBOX_MAX_ACTIVE_CAPABILITIES = 16
+export const SANDBOX_CAPABILITY_COLLISION_ATTEMPTS = 4
 
 type JsonPrimitive = boolean | number | string | null
 export type SandboxData = JsonPrimitive | SandboxData[] | { [key: string]: SandboxData }
 
 const positiveSafeIntegerSchema = z.number().int().positive().safe()
-
 const baseMessageFields = {
   protocolVersion: z.literal(SANDBOX_PROTOCOL_VERSION),
   sessionId: z.string().min(1),
   snapshotVersion: positiveSafeIntegerSchema,
   sequence: positiveSafeIntegerSchema,
 }
-
 const emptyPayloadSchema = z.object({}).strict()
 
 export const sandboxMessageSchema = z.discriminatedUnion("type", [
@@ -97,26 +91,200 @@ export type SandboxSessionState = Readonly<{
   }>
 }>
 
-type ClockOptions = Readonly<{ now?: number }>
+export type SandboxRefusalCode =
+  | "INVALID_STATE"
+  | "SESSION_INVALIDATED"
+  | "CLOCK_INVALID"
+  | "RATE_LIMIT"
+  | "MALFORMED_MESSAGE"
+  | "MESSAGE_TOO_LARGE"
+  | "MESSAGE_TOO_COMPLEX"
+  | "SCHEMA_INVALID"
+  | "SESSION_MISMATCH"
+  | "SNAPSHOT_MISMATCH"
+  | "SEQUENCE_MISMATCH"
 
-type BootstrapCapabilityOptions = ClockOptions &
-  Readonly<{
-    rotate?: string
-  }>
+export type SandboxValidationSuccess = Readonly<{
+  accepted: true
+  message: SandboxMessage
+  nextState: SandboxSessionState
+}>
 
-type BootstrapAttempt = ClockOptions &
-  Readonly<{
-    expectedWindow: unknown
-    eventSource: unknown
-    capability: unknown
-    /** Opaque iframe origins are normally "null". This is metadata, never authentication. */
-    origin?: unknown
-  }>
+export type SandboxValidationFailure = Readonly<{
+  accepted: false
+  code: SandboxRefusalCode
+  nextState: SandboxSessionState
+}>
 
-type CapabilityRecord = Readonly<{ expiresAt: number }>
+export type SandboxValidationResult = SandboxValidationSuccess | SandboxValidationFailure
+
+const activeSessionStates = new WeakSet<object>()
+const successfulValidations = new WeakSet<object>()
+
+function isSafeTimestamp(value: number): boolean {
+  return Number.isSafeInteger(value) && value >= 0
+}
+
+function currentTimestamp(): number | null {
+  const now = Date.now()
+  return isSafeTimestamp(now) ? now : null
+}
+
+function makeSessionState(input: SandboxSessionState): SandboxSessionState {
+  const rateLimit = Object.freeze({ ...input.rateLimit })
+  const state = Object.freeze({
+    sessionId: input.sessionId,
+    snapshotVersion: input.snapshotVersion,
+    sequence: input.sequence,
+    invalidated: input.invalidated,
+    rateLimit,
+  })
+  activeSessionStates.add(state)
+  return state
+}
+
+const INVALID_SESSION_STATE = makeSessionState({
+  sessionId: "invalid",
+  snapshotVersion: 1,
+  sequence: 0,
+  invalidated: true,
+  rateLimit: { windowStartedAt: 0, acceptedMessages: 0 },
+})
+
+function isActiveState(state: unknown): state is SandboxSessionState {
+  return typeof state === "object" && state !== null && activeSessionStates.has(state)
+}
+
+function makeFailure(code: SandboxRefusalCode, nextState: SandboxSessionState): SandboxValidationFailure {
+  return Object.freeze({ accepted: false, code, nextState })
+}
+
+function makeSuccess(message: SandboxMessage, nextState: SandboxSessionState): SandboxValidationSuccess {
+  const result = Object.freeze({ accepted: true as const, message, nextState })
+  successfulValidations.add(result)
+  return result
+}
+
+function isPositiveSafeInteger(value: number): boolean {
+  return Number.isSafeInteger(value) && value > 0
+}
+
+function measureString(value: string): { rawBytes: number; jsonBytes: number } {
+  let rawBytes = 0
+  let jsonBytes = 2
+  for (let index = 0; index < value.length; index += 1) {
+    const unit = value.charCodeAt(index)
+    if (unit === 0x22 || unit === 0x5c) {
+      rawBytes += 1
+      jsonBytes += 2
+      continue
+    }
+    if (unit <= 0x1f) {
+      rawBytes += 1
+      jsonBytes += unit === 0x08 || unit === 0x09 || unit === 0x0a || unit === 0x0c || unit === 0x0d ? 2 : 6
+      continue
+    }
+    if (unit <= 0x7f) {
+      rawBytes += 1
+      jsonBytes += 1
+      continue
+    }
+    if (unit <= 0x7ff) {
+      rawBytes += 2
+      jsonBytes += 2
+      continue
+    }
+    if (unit >= 0xd800 && unit <= 0xdbff) {
+      const next = value.charCodeAt(index + 1)
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        rawBytes += 4
+        jsonBytes += 4
+        index += 1
+      } else {
+        rawBytes += 3
+        jsonBytes += 6
+      }
+      continue
+    }
+    if (unit >= 0xdc00 && unit <= 0xdfff) {
+      rawBytes += 3
+      jsonBytes += 6
+      continue
+    }
+    rawBytes += 3
+    jsonBytes += 3
+  }
+  return { rawBytes, jsonBytes }
+}
+
+function isValidSessionId(value: unknown): value is string {
+  if (typeof value !== "string" || value.length === 0) return false
+  return measureString(value).rawBytes <= 256
+}
+
+export function createSandboxSessionState(input: { sessionId: string; snapshotVersion: number }): SandboxSessionState {
+  const now = currentTimestamp()
+  if (now === null) throw new TypeError("A safe host clock is required")
+  if (!isValidSessionId(input.sessionId)) throw new TypeError("A bounded non-empty sessionId is required")
+  if (!isPositiveSafeInteger(input.snapshotVersion)) {
+    throw new TypeError("A positive safe snapshotVersion is required")
+  }
+  return makeSessionState({
+    sessionId: input.sessionId,
+    snapshotVersion: input.snapshotVersion,
+    sequence: 0,
+    invalidated: false,
+    rateLimit: { windowStartedAt: now, acceptedMessages: 0 },
+  })
+}
+
+export function rotateSandboxSnapshot(
+  state: SandboxSessionState,
+  input: { snapshotVersion: number },
+): SandboxSessionState {
+  const now = currentTimestamp()
+  if (!isActiveState(state) || state.invalidated) throw new TypeError("An active sandbox session is required")
+  if (now === null) throw new TypeError("A safe host clock is required")
+  if (!isPositiveSafeInteger(input.snapshotVersion) || input.snapshotVersion <= state.snapshotVersion) {
+    throw new TypeError("Snapshot rotation requires a higher positive safe version")
+  }
+  return makeSessionState({
+    sessionId: state.sessionId,
+    snapshotVersion: input.snapshotVersion,
+    sequence: 0,
+    invalidated: false,
+    rateLimit: { windowStartedAt: now, acceptedMessages: 0 },
+  })
+}
+
+type BootstrapCapabilityOptions = Readonly<{
+  expectedWindow: unknown
+  sessionId: string
+  rotate?: string
+}>
+
+type BootstrapAttempt = Readonly<{
+  expectedWindow: unknown
+  eventSource: unknown
+  capability: unknown
+  sessionId: unknown
+  /** Opaque iframe origins are normally "null". This metadata is never authentication. */
+  origin?: unknown
+}>
+
+type CapabilityRecord = Readonly<{
+  expectedWindow: object
+  sessionId: string
+  issuedAt: number
+  expiresAt: number
+}>
+
 const bootstrapCapabilities = new Map<string, CapabilityRecord>()
-
 const BASE64URL_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+
+function isWindowIdentity(value: unknown): value is object {
+  return value !== null && (typeof value === "object" || typeof value === "function")
+}
 
 function encodeBase64Url(bytes: Uint8Array): string {
   let output = ""
@@ -134,135 +302,179 @@ function encodeBase64Url(bytes: Uint8Array): string {
   return output
 }
 
-function resolvedNow(now: number | undefined): number {
-  return now ?? Date.now()
-}
-
-function isValidTimestamp(value: number): boolean {
-  return Number.isSafeInteger(value) && value >= 0
-}
-
 function pruneExpiredCapabilities(now: number): void {
   for (const [capability, record] of bootstrapCapabilities) {
     if (now >= record.expiresAt) bootstrapCapabilities.delete(capability)
   }
 }
 
-/**
- * Creates a 256-bit, single-use bootstrap capability with Web Crypto only.
- * Send it in the one-time bootstrap message, never in an iframe URL. Passing
- * `rotate` atomically invalidates a prior capability before issuing the next.
- */
-export function createBootstrapCapability(options: BootstrapCapabilityOptions = {}): string {
-  const now = resolvedNow(options.now)
-  if (!isValidTimestamp(now) || now > Number.MAX_SAFE_INTEGER - SANDBOX_BOOTSTRAP_TTL_MS) {
-    throw new TypeError("A safe, non-negative bootstrap timestamp is required")
+function invalidateCapabilitiesForSession(sessionId: string): void {
+  for (const [capability, record] of bootstrapCapabilities) {
+    if (record.sessionId === sessionId) bootstrapCapabilities.delete(capability)
   }
+}
 
-  if (typeof options.rotate === "string") bootstrapCapabilities.delete(options.rotate)
+/**
+ * Issues a 256-bit, single-use capability bound to one WindowProxy and session.
+ * It belongs only in the one-time bootstrap message, never in iframe URLs or
+ * serializable session state.
+ */
+export function createBootstrapCapability(options: BootstrapCapabilityOptions): string {
+  const now = currentTimestamp()
+  if (now === null || now > Number.MAX_SAFE_INTEGER - SANDBOX_BOOTSTRAP_TTL_MS) {
+    throw new TypeError("A safe host clock is required")
+  }
+  if (!isWindowIdentity(options.expectedWindow)) throw new TypeError("An intended WindowProxy is required")
+  if (!isValidSessionId(options.sessionId)) throw new TypeError("A bounded non-empty sessionId is required")
+
   pruneExpiredCapabilities(now)
+  if (typeof options.rotate === "string") bootstrapCapabilities.delete(options.rotate)
+  if (bootstrapCapabilities.size >= SANDBOX_MAX_ACTIVE_CAPABILITIES) {
+    throw new Error("Active bootstrap capability limit reached")
+  }
 
   const cryptoApi = globalThis.crypto
   if (!cryptoApi || typeof cryptoApi.getRandomValues !== "function") {
     throw new Error("Web Crypto is required to create a sandbox bootstrap capability")
   }
 
-  let capability = ""
-  do {
-    capability = encodeBase64Url(cryptoApi.getRandomValues(new Uint8Array(32)))
-  } while (bootstrapCapabilities.has(capability))
-
-  bootstrapCapabilities.set(capability, { expiresAt: now + SANDBOX_BOOTSTRAP_TTL_MS })
-  return capability
+  for (let attempt = 0; attempt < SANDBOX_CAPABILITY_COLLISION_ATTEMPTS; attempt += 1) {
+    const capability = encodeBase64Url(cryptoApi.getRandomValues(new Uint8Array(32)))
+    if (bootstrapCapabilities.has(capability)) continue
+    bootstrapCapabilities.set(capability, {
+      expectedWindow: options.expectedWindow,
+      sessionId: options.sessionId,
+      issuedAt: now,
+      expiresAt: now + SANDBOX_BOOTSTRAP_TTL_MS,
+    })
+    return capability
+  }
+  throw new Error("Unable to create a unique bootstrap capability")
 }
 
-/**
- * Authenticates only the exact iframe WindowProxy and a live single-use
- * capability. `origin` is intentionally ignored because an allow-scripts-only
- * iframe has an opaque origin.
- */
+export function invalidateBootstrapCapability(capability: unknown): boolean {
+  return typeof capability === "string" && bootstrapCapabilities.delete(capability)
+}
+
 export function acceptBootstrap(attempt: BootstrapAttempt): boolean {
   try {
-    const now = resolvedNow(attempt.now)
-    if (!isValidTimestamp(now)) return false
+    if (typeof attempt.capability !== "string") return false
+    const record = bootstrapCapabilities.get(attempt.capability)
+    if (!record) return false
+
+    const now = currentTimestamp()
+    if (now === null || now < record.issuedAt || now >= record.expiresAt) {
+      bootstrapCapabilities.delete(attempt.capability)
+      return false
+    }
     if (
-      attempt.expectedWindow === null ||
-      (typeof attempt.expectedWindow !== "object" && typeof attempt.expectedWindow !== "function")
+      attempt.expectedWindow !== record.expectedWindow ||
+      attempt.eventSource !== record.expectedWindow ||
+      attempt.sessionId !== record.sessionId
     ) {
       return false
     }
-    if (attempt.eventSource !== attempt.expectedWindow) return false
-    if (typeof attempt.capability !== "string") return false
 
-    const record = bootstrapCapabilities.get(attempt.capability)
-    if (!record) return false
     bootstrapCapabilities.delete(attempt.capability)
-    return now < record.expiresAt
+    return true
   } catch {
     return false
   }
 }
 
-type CloneContext = {
+type TraversalFailureCode = "MALFORMED_MESSAGE" | "MESSAGE_TOO_LARGE" | "MESSAGE_TOO_COMPLEX"
+type TraversalResult = { ok: true; value: SandboxData } | { ok: false; code: TraversalFailureCode }
+type TraversalContext = {
+  bytes: number
   nodes: number
   seen: WeakSet<object>
 }
 
-type CloneResult = { ok: true; value: SandboxData } | { ok: false }
-const INVALID_CLONE: CloneResult = { ok: false }
-
-function utf8Size(value: string): number {
-  return new TextEncoder().encode(value).byteLength
+function traversalFailure(code: TraversalFailureCode): TraversalResult {
+  return { ok: false, code }
 }
 
-function cloneBoundedPlainData(input: unknown, context: CloneContext, depth: number): CloneResult {
-  context.nodes += 1
-  if (context.nodes > SANDBOX_MAX_DATA_NODES || depth > SANDBOX_MAX_DATA_DEPTH) return INVALID_CLONE
+function chargeBytes(context: TraversalContext, bytes: number): boolean {
+  if (!Number.isSafeInteger(bytes) || bytes < 0 || context.bytes > SANDBOX_MAX_MESSAGE_BYTES - bytes) return false
+  context.bytes += bytes
+  return true
+}
 
-  if (input === null || typeof input === "boolean") return { ok: true, value: input }
-  if (typeof input === "number") return Number.isFinite(input) ? { ok: true, value: input } : INVALID_CLONE
-  if (typeof input === "string") {
-    return utf8Size(input) <= SANDBOX_MAX_STRING_BYTES ? { ok: true, value: input } : INVALID_CLONE
+function chargeString(context: TraversalContext, value: string): boolean {
+  const size = measureString(value)
+  return size.rawBytes <= SANDBOX_MAX_STRING_BYTES && chargeBytes(context, size.jsonBytes)
+}
+
+function traverseAndClone(input: unknown, context: TraversalContext, depth: number): TraversalResult {
+  context.nodes += 1
+  if (context.nodes > SANDBOX_MAX_DATA_NODES || depth > SANDBOX_MAX_DATA_DEPTH) {
+    return traversalFailure("MESSAGE_TOO_COMPLEX")
   }
-  if (typeof input !== "object") return INVALID_CLONE
-  if (context.seen.has(input)) return INVALID_CLONE
+
+  if (input === null) {
+    return chargeBytes(context, 4) ? { ok: true, value: null } : traversalFailure("MESSAGE_TOO_LARGE")
+  }
+  if (typeof input === "boolean") {
+    return chargeBytes(context, input ? 4 : 5) ? { ok: true, value: input } : traversalFailure("MESSAGE_TOO_LARGE")
+  }
+  if (typeof input === "number") {
+    if (!Number.isFinite(input)) return traversalFailure("MALFORMED_MESSAGE")
+    const serialized = Object.is(input, -0) ? "0" : String(input)
+    return chargeBytes(context, serialized.length) ? { ok: true, value: input } : traversalFailure("MESSAGE_TOO_LARGE")
+  }
+  if (typeof input === "string") {
+    return chargeString(context, input) ? { ok: true, value: input } : traversalFailure("MESSAGE_TOO_LARGE")
+  }
+  if (typeof input !== "object") return traversalFailure("MALFORMED_MESSAGE")
+  if (context.seen.has(input)) return traversalFailure("MALFORMED_MESSAGE")
   context.seen.add(input)
 
   if (Array.isArray(input)) {
-    if (input.length > SANDBOX_MAX_COLLECTION_ITEMS) return INVALID_CLONE
-    const descriptors = Object.getOwnPropertyDescriptors(input)
-    if (Object.getOwnPropertySymbols(input).length > 0) return INVALID_CLONE
-    const propertyNames = Object.getOwnPropertyNames(input)
-    if (propertyNames.length !== input.length + 1 || !Object.hasOwn(descriptors, "length")) return INVALID_CLONE
+    if (input.length > SANDBOX_MAX_COLLECTION_ITEMS) return traversalFailure("MESSAGE_TOO_COMPLEX")
+    if (!chargeBytes(context, 2 + Math.max(0, input.length - 1))) {
+      return traversalFailure("MESSAGE_TOO_LARGE")
+    }
+    const keys = Reflect.ownKeys(input)
+    if (keys.length !== input.length + 1 || keys.some((key) => typeof key === "symbol")) {
+      return traversalFailure("MALFORMED_MESSAGE")
+    }
 
     const output: SandboxData[] = []
     for (let index = 0; index < input.length; index += 1) {
-      const descriptor = descriptors[String(index)]
-      if (!descriptor || !("value" in descriptor) || !descriptor.enumerable) return INVALID_CLONE
-      const cloned = cloneBoundedPlainData(descriptor.value, context, depth + 1)
-      if (!cloned.ok) return cloned
-      output.push(cloned.value)
+      const descriptor = Object.getOwnPropertyDescriptor(input, String(index))
+      if (!descriptor || !("value" in descriptor) || !descriptor.enumerable) {
+        return traversalFailure("MALFORMED_MESSAGE")
+      }
+      const child = traverseAndClone(descriptor.value, context, depth + 1)
+      if (!child.ok) return child
+      output.push(child.value)
     }
     return { ok: true, value: output }
   }
 
   const prototype = Object.getPrototypeOf(input)
-  if (prototype !== Object.prototype && prototype !== null) return INVALID_CLONE
-  if (Object.getOwnPropertySymbols(input).length > 0) return INVALID_CLONE
-
-  const descriptors = Object.getOwnPropertyDescriptors(input)
-  const keys = Object.keys(descriptors)
-  if (keys.length > SANDBOX_MAX_COLLECTION_ITEMS) return INVALID_CLONE
+  if (prototype !== Object.prototype && prototype !== null) return traversalFailure("MALFORMED_MESSAGE")
+  const keys = Reflect.ownKeys(input)
+  if (keys.length > SANDBOX_MAX_COLLECTION_ITEMS) return traversalFailure("MESSAGE_TOO_COMPLEX")
+  if (keys.some((key) => typeof key === "symbol")) return traversalFailure("MALFORMED_MESSAGE")
+  if (!chargeBytes(context, 2 + Math.max(0, keys.length - 1))) {
+    return traversalFailure("MESSAGE_TOO_LARGE")
+  }
 
   const output: Record<string, SandboxData> = {}
   for (const key of keys) {
-    if (utf8Size(key) > SANDBOX_MAX_STRING_BYTES) return INVALID_CLONE
-    const descriptor = descriptors[key]
-    if (!("value" in descriptor) || !descriptor.enumerable) return INVALID_CLONE
-    const cloned = cloneBoundedPlainData(descriptor.value, context, depth + 1)
-    if (!cloned.ok) return cloned
+    if (typeof key !== "string") return traversalFailure("MALFORMED_MESSAGE")
+    const descriptor = Object.getOwnPropertyDescriptor(input, key)
+    if (!descriptor || !("value" in descriptor) || !descriptor.enumerable) {
+      return traversalFailure("MALFORMED_MESSAGE")
+    }
+    if (!chargeString(context, key) || !chargeBytes(context, 1)) {
+      return traversalFailure("MESSAGE_TOO_LARGE")
+    }
+    const child = traverseAndClone(descriptor.value, context, depth + 1)
+    if (!child.ok) return child
     Object.defineProperty(output, key, {
-      value: cloned.value,
+      value: child.value,
       enumerable: true,
       writable: true,
       configurable: true,
@@ -271,127 +483,91 @@ function cloneBoundedPlainData(input: unknown, context: CloneContext, depth: num
   return { ok: true, value: output }
 }
 
-function safelyCloneBounded(input: unknown): SandboxData | null {
+function cloneBoundedMessage(input: unknown): TraversalResult {
   try {
-    const result = cloneBoundedPlainData(input, { nodes: 0, seen: new WeakSet() }, 0)
-    return result.ok ? result.value : null
+    return traverseAndClone(input, { bytes: 0, nodes: 0, seen: new WeakSet() }, 0)
   } catch {
-    return null
+    return traversalFailure("MALFORMED_MESSAGE")
   }
 }
 
 function deepFreeze<T>(input: T): T {
   if (input !== null && typeof input === "object" && !Object.isFrozen(input)) {
-    for (const value of Object.values(input)) deepFreeze(value)
+    for (const key of Reflect.ownKeys(input)) {
+      const descriptor = Object.getOwnPropertyDescriptor(input, key)
+      if (descriptor && "value" in descriptor) deepFreeze(descriptor.value)
+    }
     Object.freeze(input)
   }
   return input
 }
 
-const sandboxSessionStateSchema = z
-  .object({
-    sessionId: z.string().min(1),
-    snapshotVersion: positiveSafeIntegerSchema,
-    sequence: z.number().int().nonnegative().safe(),
-    invalidated: z.boolean(),
-    rateLimit: z
-      .object({
-        windowStartedAt: z.number().int().nonnegative().safe(),
-        acceptedMessages: z.number().int().min(0).max(SANDBOX_RATE_BURST),
-      })
-      .strict(),
-  })
-  .strict()
-
-function parseState(input: unknown): SandboxSessionState | null {
-  const cloned = safelyCloneBounded(input)
-  if (cloned === null) return null
-  const parsed = sandboxSessionStateSchema.safeParse(cloned)
-  return parsed.success ? deepFreeze(parsed.data) : null
+function parseMessage(input: unknown): { ok: true; message: SandboxMessage } | { ok: false; code: SandboxRefusalCode } {
+  const traversed = cloneBoundedMessage(input)
+  if (!traversed.ok) return { ok: false, code: traversed.code }
+  const parsed = sandboxMessageSchema.safeParse(traversed.value)
+  return parsed.success ? { ok: true, message: deepFreeze(parsed.data) } : { ok: false, code: "SCHEMA_INVALID" }
 }
 
-function parseMessage(input: unknown): SandboxMessage | null {
-  const cloned = safelyCloneBounded(input)
-  if (cloned === null) return null
-
-  let encodedSize: number
-  try {
-    encodedSize = utf8Size(JSON.stringify(cloned))
-  } catch {
-    return null
-  }
-  if (encodedSize > SANDBOX_MAX_MESSAGE_BYTES) return null
-
-  const parsed = sandboxMessageSchema.safeParse(cloned)
-  return parsed.success ? deepFreeze(parsed.data) : null
-}
-
-function activeRateWindow(state: SandboxSessionState, now: number): SandboxSessionState["rateLimit"] | null {
-  if (!isValidTimestamp(now) || now < state.rateLimit.windowStartedAt) return null
+function rateWindowAt(state: SandboxSessionState, now: number): SandboxSessionState["rateLimit"] | null {
+  if (now < state.rateLimit.windowStartedAt) return null
   if (now - state.rateLimit.windowStartedAt >= SANDBOX_RATE_WINDOW_MS) {
     return { windowStartedAt: now, acceptedMessages: 0 }
   }
   return state.rateLimit
 }
 
-/** Validates schema, identity, replay ordering, teardown, size, and rate policy. */
-export function validateSandboxMessage(
-  input: unknown,
-  sessionState: SandboxSessionState,
-  options: ClockOptions = {},
-): SandboxMessage | null {
-  try {
-    const state = parseState(sessionState)
-    if (!state || state.invalidated) return null
-
-    const now = resolvedNow(options.now)
-    const rateLimit = activeRateWindow(state, now)
-    if (!rateLimit || rateLimit.acceptedMessages >= SANDBOX_RATE_BURST) return null
-
-    const message = parseMessage(input)
-    if (!message || message.sessionId !== state.sessionId) return null
-    if (message.snapshotVersion < state.snapshotVersion) return null
-    if (message.snapshotVersion === state.snapshotVersion && message.sequence <= state.sequence) return null
-    return message
-  } catch {
-    return null
-  }
-}
-
 /**
- * Returns a detached, deeply frozen state snapshot. A higher snapshot version
- * resets sequence ordering, matching the host preview session reducer.
+ * Atomically charges one inbound attempt before parsing and always returns the
+ * immutable state the caller must persist. Success state already includes the
+ * contiguous sequence transition, so Task 9 cannot accidentally omit it.
  */
-export function advanceSandboxSequence(
-  sessionState: SandboxSessionState,
-  input: unknown,
-  options: ClockOptions = {},
-): SandboxSessionState {
-  const now = resolvedNow(options.now)
-  const message = validateSandboxMessage(input, sessionState, { now })
-  if (!message) return sessionState
+export function validateSandboxMessage(input: unknown, state: SandboxSessionState): SandboxValidationResult {
+  if (!isActiveState(state)) return makeFailure("INVALID_STATE", INVALID_SESSION_STATE)
+  if (state.invalidated) return makeFailure("SESSION_INVALIDATED", state)
 
-  const state = parseState(sessionState)
-  if (!state) return sessionState
-  const rateLimit = activeRateWindow(state, now)
-  if (!rateLimit) return sessionState
+  const now = currentTimestamp()
+  if (now === null) return makeFailure("CLOCK_INVALID", state)
+  const window = rateWindowAt(state, now)
+  if (!window) return makeFailure("CLOCK_INVALID", state)
+  if (window.acceptedMessages >= SANDBOX_RATE_BURST) return makeFailure("RATE_LIMIT", state)
 
-  return deepFreeze({
-    sessionId: state.sessionId,
-    snapshotVersion: message.snapshotVersion,
-    sequence: message.sequence,
-    invalidated: message.type === "teardown",
+  const chargedState = makeSessionState({
+    ...state,
     rateLimit: {
-      windowStartedAt: rateLimit.windowStartedAt,
-      acceptedMessages: rateLimit.acceptedMessages + 1,
+      windowStartedAt: window.windowStartedAt,
+      acceptedMessages: window.acceptedMessages + 1,
     },
   })
+
+  const parsed = parseMessage(input)
+  if (!parsed.ok) return makeFailure(parsed.code, chargedState)
+  const message = parsed.message
+  if (message.sessionId !== state.sessionId) return makeFailure("SESSION_MISMATCH", chargedState)
+  if (message.snapshotVersion !== state.snapshotVersion) return makeFailure("SNAPSHOT_MISMATCH", chargedState)
+  if (state.sequence >= Number.MAX_SAFE_INTEGER || message.sequence !== state.sequence + 1) {
+    return makeFailure("SEQUENCE_MISMATCH", chargedState)
+  }
+
+  const nextState = makeSessionState({
+    ...chargedState,
+    sequence: message.sequence,
+    invalidated: message.type === "teardown",
+  })
+  if (nextState.invalidated) invalidateCapabilitiesForSession(nextState.sessionId)
+  return makeSuccess(message, nextState)
 }
 
-/** Invalidates a session snapshot. Repeated teardown is idempotent. */
-export function invalidateSandboxSession(sessionState: SandboxSessionState): SandboxSessionState {
-  const state = parseState(sessionState)
-  if (!state) return sessionState
-  if (state.invalidated) return sessionState
-  return deepFreeze({ ...state, invalidated: true })
+/** Returns the already charged/advanced state from an authentic successful validation. */
+export function advanceSandboxSequence(validation: SandboxValidationSuccess): SandboxSessionState {
+  if (!successfulValidations.has(validation)) throw new TypeError("A successful sandbox validation is required")
+  return validation.nextState
+}
+
+/** Terminal, idempotent host teardown; also disposes pending bootstrap capabilities for the session. */
+export function invalidateSandboxSession(state: SandboxSessionState): SandboxSessionState {
+  if (!isActiveState(state)) return INVALID_SESSION_STATE
+  if (state.invalidated) return state
+  invalidateCapabilitiesForSession(state.sessionId)
+  return makeSessionState({ ...state, invalidated: true })
 }
