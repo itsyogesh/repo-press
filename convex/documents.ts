@@ -72,16 +72,80 @@ function titleFromContent(filePath: string, content: string): string {
 function validateTitleSyncBatch(
   documents: readonly NormalizedTitleSyncDocument[],
 ): readonly NormalizedTitleSyncDocument[] {
-  if (!Array.isArray(documents) || documents.length > TITLE_SYNC_MAX_FILES) {
+  if (!Array.isArray(documents) || Object.getPrototypeOf(documents) !== Array.prototype) {
+    throw new Error("Invalid title document batch")
+  }
+
+  const lengthDescriptor = Object.getOwnPropertyDescriptor(documents, "length")
+  if (
+    !lengthDescriptor ||
+    !("value" in lengthDescriptor) ||
+    !Number.isSafeInteger(lengthDescriptor.value) ||
+    lengthDescriptor.value < 0 ||
+    lengthDescriptor.value > TITLE_SYNC_MAX_FILES ||
+    lengthDescriptor.enumerable !== false ||
+    lengthDescriptor.configurable !== false
+  ) {
     throw new Error(`title document batch exceeds ${TITLE_SYNC_MAX_FILES} entries`)
   }
 
+  const length = lengthDescriptor.value
+  const expectedArrayKeys = new Set<PropertyKey>(["length"])
+  for (let index = 0; index < length; index++) expectedArrayKeys.add(String(index))
+  const arrayKeys = Reflect.ownKeys(documents)
+  if (arrayKeys.length !== expectedArrayKeys.size || arrayKeys.some((key) => !expectedArrayKeys.has(key))) {
+    throw new Error("Invalid title document batch")
+  }
+
   const seenPaths = new Set<string>()
+  const snapshots: NormalizedTitleSyncDocument[] = []
   let totalPathBytes = 0
-  for (let index = 0; index < documents.length; index++) {
-    if (!Object.hasOwn(documents, index)) throw new Error("Invalid title document batch")
-    const document = documents[index]
-    const pathBytes = utf8Encoder.encode(document.filePath).byteLength
+  for (let index = 0; index < length; index++) {
+    const indexDescriptor = Object.getOwnPropertyDescriptor(documents, String(index))
+    if (!indexDescriptor || !("value" in indexDescriptor) || indexDescriptor.enumerable !== true) {
+      throw new Error("Invalid title document batch")
+    }
+
+    const document = indexDescriptor.value
+    if (document === null || typeof document !== "object" || Array.isArray(document)) {
+      throw new Error("Invalid title document batch")
+    }
+    const prototype = Object.getPrototypeOf(document)
+    if (prototype !== Object.prototype && prototype !== null) throw new Error("Invalid title document batch")
+
+    const expectedDocumentKeys = new Set<PropertyKey>(["filePath", "title", "githubSha"])
+    const documentKeys = Reflect.ownKeys(document)
+    if (
+      documentKeys.length !== expectedDocumentKeys.size ||
+      documentKeys.some((key) => !expectedDocumentKeys.has(key))
+    ) {
+      throw new Error("Invalid title document batch")
+    }
+
+    const filePathDescriptor = Object.getOwnPropertyDescriptor(document, "filePath")
+    const titleDescriptor = Object.getOwnPropertyDescriptor(document, "title")
+    const githubShaDescriptor = Object.getOwnPropertyDescriptor(document, "githubSha")
+    if (
+      !filePathDescriptor ||
+      !("value" in filePathDescriptor) ||
+      filePathDescriptor.enumerable !== true ||
+      typeof filePathDescriptor.value !== "string" ||
+      !titleDescriptor ||
+      !("value" in titleDescriptor) ||
+      titleDescriptor.enumerable !== true ||
+      typeof titleDescriptor.value !== "string" ||
+      !githubShaDescriptor ||
+      !("value" in githubShaDescriptor) ||
+      githubShaDescriptor.enumerable !== true ||
+      typeof githubShaDescriptor.value !== "string"
+    ) {
+      throw new Error("Invalid title document batch")
+    }
+
+    const filePathValue = filePathDescriptor.value
+    const titleValue = titleDescriptor.value
+    const githubShaValue = githubShaDescriptor.value
+    const pathBytes = utf8Encoder.encode(filePathValue).byteLength
     if (pathBytes > TITLE_SYNC_MAX_PATH_BYTES) {
       throw new Error(`content path exceeds ${TITLE_SYNC_MAX_PATH_BYTES} bytes`)
     }
@@ -90,21 +154,29 @@ function validateTitleSyncBatch(
       throw new Error(`total path bytes exceed ${TITLE_SYNC_MAX_TOTAL_PATH_BYTES}`)
     }
 
-    const filePath = assertContentPath(document.filePath)
-    if (filePath !== document.filePath || !/\.(?:md|mdx|markdown)$/i.test(filePath)) {
+    const filePath = assertContentPath(filePathValue)
+    if (filePath !== filePathValue || !/\.(?:md|mdx|markdown)$/i.test(filePath)) {
       throw new Error("Invalid title document path")
     }
     if (seenPaths.has(filePath)) throw new Error("Duplicate title document path")
     seenPaths.add(filePath)
-    assertGitHubCommitSha(document.githubSha, "file sha")
+    assertGitHubCommitSha(githubShaValue, "file sha")
 
-    const normalizedTitle = normalizeBoundedTitle(document.title)
-    if (normalizedTitle === null || normalizedTitle !== document.title) {
+    const normalizedTitle = normalizeBoundedTitle(titleValue)
+    if (normalizedTitle === null || normalizedTitle !== titleValue) {
       throw new Error("Invalid title document title")
     }
+
+    snapshots.push(
+      Object.freeze({
+        filePath,
+        title: normalizedTitle,
+        githubSha: githubShaValue,
+      }),
+    )
   }
 
-  return documents
+  return Object.freeze(snapshots)
 }
 
 function decodeTitleSyncContent(payload: {

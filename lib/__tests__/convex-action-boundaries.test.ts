@@ -1515,6 +1515,20 @@ describe("gallery scan batch persistence", () => {
 })
 
 describe("title sync batch persistence", () => {
+  function emptyTitleBatchCtx() {
+    const first = vi.fn().mockResolvedValue(null)
+    return {
+      db: {
+        query: vi.fn().mockReturnValue({
+          withIndex: vi.fn().mockReturnValue({
+            filter: vi.fn().mockReturnValue({ first }),
+          }),
+        }),
+        insert: vi.fn().mockResolvedValue("document_1"),
+      },
+    }
+  }
+
   it("gets or creates the validated title set idempotently in one mutation", async () => {
     const rows: Array<Record<string, unknown>> = [
       {
@@ -1583,6 +1597,72 @@ describe("title sync batch persistence", () => {
     )
   })
 
+  it("persists detached frozen snapshots when the source row changes after validation", async () => {
+    const sourceDocument = {
+      filePath: "guide.mdx",
+      title: "Guide",
+      githubSha: "f".repeat(40),
+    }
+    const sourceDocuments = [sourceDocument]
+    const indexFilters: Record<string, unknown> = {}
+    const insert = vi.fn().mockResolvedValue("document_1")
+    const ctx = {
+      db: {
+        query: vi.fn().mockImplementation(() => {
+          sourceDocument.filePath = "mutated.mdx"
+          sourceDocument.title = "a".repeat(513)
+          sourceDocument.githubSha = "invalid"
+          return {
+            withIndex: vi.fn().mockImplementation((_indexName, applyIndex) => {
+              const queryBuilder = {
+                eq(field: string, value: unknown) {
+                  indexFilters[field] = value
+                  return queryBuilder
+                },
+              }
+              applyIndex(queryBuilder)
+              return {
+                filter: vi.fn().mockReturnValue({
+                  first: vi.fn().mockResolvedValue(null),
+                }),
+              }
+            }),
+          }
+        }),
+        insert,
+      },
+    }
+    const freezeSpy = vi.spyOn(Object, "freeze")
+
+    const result = await (getOrCreateTitleSyncBatchInternal as any).handler(ctx, {
+      projectId: "project_1",
+      documents: sourceDocuments,
+    })
+    const frozenValues = freezeSpy.mock.results.map(({ value }) => value)
+    freezeSpy.mockRestore()
+    const snapshotRecord = frozenValues.find(
+      (value) => !Array.isArray(value) && value && typeof value === "object" && value.filePath === "guide.mdx",
+    )
+    const snapshotArray = frozenValues.find((value) => Array.isArray(value) && value[0] === snapshotRecord)
+
+    expect(result).toEqual({ inserted: 1, existing: 0 })
+    expect(indexFilters).toEqual({ projectId: "project_1", filePath: "guide.mdx" })
+    expect(insert).toHaveBeenCalledWith(
+      "documents",
+      expect.objectContaining({
+        filePath: "guide.mdx",
+        title: "Guide",
+        githubSha: "f".repeat(40),
+      }),
+    )
+    expect(snapshotRecord).toBeDefined()
+    expect(snapshotRecord).not.toBe(sourceDocument)
+    expect(Object.isFrozen(snapshotRecord)).toBe(true)
+    expect(snapshotArray).toBeDefined()
+    expect(snapshotArray).not.toBe(sourceDocuments)
+    expect(Object.isFrozen(snapshotArray)).toBe(true)
+  })
+
   it("rejects an oversized direct batch title before database access", async () => {
     const ctx = {
       db: {
@@ -1600,6 +1680,144 @@ describe("title sync batch persistence", () => {
         ],
       }),
     ).rejects.toThrow("title")
+    expect(ctx.db.query).not.toHaveBeenCalled()
+    expect(ctx.db.insert).not.toHaveBeenCalled()
+  })
+
+  it("rejects an accessor-backed array index without invoking its getter", async () => {
+    const ctx = emptyTitleBatchCtx()
+    const indexGetter = vi.fn(() => ({
+      filePath: "guide.mdx",
+      title: "Guide",
+      githubSha: "f".repeat(40),
+    }))
+    const documents: unknown[] = []
+    Object.defineProperty(documents, "0", {
+      enumerable: true,
+      configurable: true,
+      get: indexGetter,
+    })
+
+    await expect(
+      (getOrCreateTitleSyncBatchInternal as any).handler(ctx, {
+        projectId: "project_1",
+        documents,
+      }),
+    ).rejects.toThrow("Invalid title document batch")
+    expect(indexGetter).not.toHaveBeenCalled()
+    expect(ctx.db.query).not.toHaveBeenCalled()
+    expect(ctx.db.insert).not.toHaveBeenCalled()
+  })
+
+  it("rejects inherited title document fields before database access", async () => {
+    const ctx = emptyTitleBatchCtx()
+    const inheritedDocument = Object.create({
+      filePath: "guide.mdx",
+      title: "Guide",
+      githubSha: "f".repeat(40),
+    })
+
+    await expect(
+      (getOrCreateTitleSyncBatchInternal as any).handler(ctx, {
+        projectId: "project_1",
+        documents: [inheritedDocument],
+      }),
+    ).rejects.toThrow("Invalid title document batch")
+    expect(ctx.db.query).not.toHaveBeenCalled()
+    expect(ctx.db.insert).not.toHaveBeenCalled()
+  })
+
+  it("rejects an accessor-backed title field without invoking its getter", async () => {
+    const ctx = emptyTitleBatchCtx()
+    const pathGetter = vi.fn(() => "guide.mdx")
+    const document = Object.defineProperties(
+      {},
+      {
+        filePath: { enumerable: true, configurable: true, get: pathGetter },
+        title: { enumerable: true, configurable: true, value: "Guide" },
+        githubSha: { enumerable: true, configurable: true, value: "f".repeat(40) },
+      },
+    )
+
+    await expect(
+      (getOrCreateTitleSyncBatchInternal as any).handler(ctx, {
+        projectId: "project_1",
+        documents: [document],
+      }),
+    ).rejects.toThrow("Invalid title document batch")
+    expect(pathGetter).not.toHaveBeenCalled()
+    expect(ctx.db.query).not.toHaveBeenCalled()
+    expect(ctx.db.insert).not.toHaveBeenCalled()
+  })
+
+  it("rejects a stateful title getter before it can flip after validation", async () => {
+    const ctx = emptyTitleBatchCtx()
+    const titleGetter = vi
+      .fn()
+      .mockReturnValueOnce("Guide")
+      .mockReturnValueOnce("Guide")
+      .mockReturnValue("a".repeat(513))
+    const document = Object.defineProperties(
+      {},
+      {
+        filePath: { enumerable: true, configurable: true, value: "guide.mdx" },
+        title: { enumerable: true, configurable: true, get: titleGetter },
+        githubSha: { enumerable: true, configurable: true, value: "f".repeat(40) },
+      },
+    )
+
+    await expect(
+      (getOrCreateTitleSyncBatchInternal as any).handler(ctx, {
+        projectId: "project_1",
+        documents: [document],
+      }),
+    ).rejects.toThrow("Invalid title document batch")
+    expect(titleGetter).not.toHaveBeenCalled()
+    expect(ctx.db.query).not.toHaveBeenCalled()
+    expect(ctx.db.insert).not.toHaveBeenCalled()
+  })
+
+  it("rejects extra title document fields before database access", async () => {
+    const ctx = emptyTitleBatchCtx()
+
+    await expect(
+      (getOrCreateTitleSyncBatchInternal as any).handler(ctx, {
+        projectId: "project_1",
+        documents: [
+          {
+            filePath: "guide.mdx",
+            title: "Guide",
+            githubSha: "f".repeat(40),
+            unexpected: "field",
+          },
+        ],
+      }),
+    ).rejects.toThrow("Invalid title document batch")
+    expect(ctx.db.query).not.toHaveBeenCalled()
+    expect(ctx.db.insert).not.toHaveBeenCalled()
+  })
+
+  it("rejects noncanonical enumerable array keys before database access", async () => {
+    const ctx = emptyTitleBatchCtx()
+    const documents = [
+      {
+        filePath: "guide.mdx",
+        title: "Guide",
+        githubSha: "f".repeat(40),
+      },
+    ]
+    Object.defineProperty(documents, "metadata", {
+      enumerable: true,
+      configurable: true,
+      value: "unexpected",
+    })
+
+    await expect(
+      (getOrCreateTitleSyncBatchInternal as any).handler(ctx, {
+        projectId: "project_1",
+        documents,
+      }),
+    ).rejects.toThrow("Invalid title document batch")
     expect(ctx.db.query).not.toHaveBeenCalled()
     expect(ctx.db.insert).not.toHaveBeenCalled()
   })
