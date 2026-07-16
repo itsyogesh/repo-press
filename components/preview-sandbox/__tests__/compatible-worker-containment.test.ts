@@ -1,6 +1,8 @@
 // @vitest-environment node
 import vm from "node:vm"
 import { describe, expect, it } from "vitest"
+import { createSignedCompatibleFixture } from "@/lib/preview/__tests__/compatible-test-fixture"
+import { verifySignedCompatiblePreviewResolution } from "@/lib/preview/compatible-artifact"
 import {
   createCompatibleWorkerRenderer,
   createCompatibleWorkerSource,
@@ -189,5 +191,66 @@ describe("compatible worker containment", () => {
       fidelityLosses: [],
       tree: expect.arrayContaining([expect.objectContaining({ kind: "element", tag: "h1" })]),
     })
+  })
+
+  it("preserves signed fidelity accounting when repository code poisons intrinsics and hook properties", async () => {
+    const fixture = await createSignedCompatibleFixture({
+      documentSource: "<Poisoned />",
+      adapter: {
+        entryPath: "mdx-preview.tsx",
+        sources: {
+          "mdx-preview.tsx": `
+            import React from "react"
+            try { Set.prototype.add = () => undefined } catch {}
+            try { Array.from = () => [] } catch {}
+            try { Array.prototype.sort = () => [] } catch {}
+            try { Object.keys = () => [] } catch {}
+            try { Object.entries = () => [] } catch {}
+            try { React.useEffect = () => undefined } catch {}
+            try { React.useState = () => [0, () => undefined] } catch {}
+            function Poisoned() {
+              React.useEffect(() => undefined, [])
+              React.useState(0)
+              return <article><h2>Poison resistant</h2><a href="https://evil.test">Link</a></article>
+            }
+            export default { components: { Poisoned } }
+          `,
+        },
+      },
+    })
+    const verified = await verifySignedCompatiblePreviewResolution(fixture.wire, {
+      publicKey: fixture.publicKey,
+      expectedAuthority: fixture.expectedAuthority,
+    })
+    expect(verified).not.toBeNull()
+    const job = await prepareCompatibleWorkerJob(verified?.artifact ?? fixture.resolution.artifact)
+    const sent: unknown[] = []
+    const listeners: Array<(event: { data?: unknown; ports?: unknown[] }) => void | Promise<void>> = []
+    const port = {
+      onmessage: null as ((event: { data: unknown }) => void) | null,
+      close() {},
+      postMessage(message: unknown) {
+        sent.push(message)
+      },
+      start() {},
+    }
+    const context = vm.createContext({
+      addEventListener: (_type: string, listener: (event: { data?: unknown; ports?: unknown[] }) => void) =>
+        listeners.push(listener),
+      removeEventListener() {},
+    })
+    vm.runInContext(createCompatibleWorkerSource(), context, { timeout: 1_000 })
+    await listeners[0]({ ports: [port] })
+    port.onmessage?.({
+      data: { type: "repopress:render-compatible", requestId: "P".repeat(43), job },
+    })
+
+    expect(sent).toHaveLength(1)
+    expect(sent[0]).toMatchObject({
+      type: "repopress:rendered-compatible",
+      fidelityLosses: expect.arrayContaining(["STATIC_INERT_EFFECT", "STATIC_INERT_STATE", "STATIC_INERT_LINK"]),
+      tree: expect.arrayContaining([expect.objectContaining({ kind: "element", tag: "article" })]),
+    })
+    expect(JSON.stringify(sent[0])).not.toContain("evil.test")
   })
 })

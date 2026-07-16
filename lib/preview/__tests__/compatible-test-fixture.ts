@@ -1,4 +1,5 @@
 import {
+  type CompatibleSourceArtifact,
   computeCompatibleExecutableDigest,
   createCompatibleApprovalPayload,
   type SignedCompatiblePreviewResolution,
@@ -17,6 +18,7 @@ export async function createSignedCompatibleFixture(options?: {
   sessionId?: string
   snapshotVersion?: number
   documentSource?: string
+  adapter?: CompatibleSourceArtifact["adapter"]
   rendererProfile?: "static-inert-v1" | "unsupported-profile" | null
   keyPair?: CryptoKeyPair
 }) {
@@ -30,7 +32,7 @@ export async function createSignedCompatibleFixture(options?: {
   const artifact = {
     artifactId: "artifact-1",
     documentSource: options?.documentSource ?? "# Isolated",
-    adapter: null,
+    adapter: options?.adapter ?? null,
   }
   const now = Date.now()
   const rendererProfile = options?.rendererProfile === undefined ? "static-inert-v1" : options.rendererProfile

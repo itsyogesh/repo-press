@@ -130,13 +130,56 @@ function createRequestId(): string {
 function compatibleWorkerMain() {
   const root = globalThis as any
   const UnsafeFunction = Function
+  const uncurryThis = (fn: any) => Function.prototype.call.bind(fn)
+  const arrayFilter = uncurryThis(Array.prototype.filter)
+  const arrayFlatMap = uncurryThis(Array.prototype.flatMap)
+  const arrayIncludes = uncurryThis(Array.prototype.includes)
+  const arrayMap = uncurryThis(Array.prototype.map)
+  const arrayPush = uncurryThis(Array.prototype.push)
+  const arraySlice = uncurryThis(Array.prototype.slice)
+  const arraySome = uncurryThis(Array.prototype.some)
+  const arrayIsArray = Array.isArray
+  const numberIsSafeInteger = Number.isSafeInteger
+  const objectAssign = Object.assign
+  const objectCreate = Object.create
+  const objectDefineProperty = Object.defineProperty
+  const objectEntries = Object.entries
+  const objectFreeze = Object.freeze
+  const objectGetOwnPropertyDescriptor = Object.getOwnPropertyDescriptor
+  const objectGetPrototypeOf = Object.getPrototypeOf
+  const objectHasOwn = Object.hasOwn
+  const objectKeys = Object.keys
+  const setHas = uncurryThis(Set.prototype.has)
+  const weakSetAdd = uncurryThis(WeakSet.prototype.add)
+  const weakSetHas = uncurryThis(WeakSet.prototype.has)
+  const stringToLowerCase = uncurryThis(String.prototype.toLowerCase)
   const addGlobalListener = root.addEventListener.bind(root)
   const removeGlobalListener = root.removeEventListener.bind(root)
   let bootstrapped = false
-  const fidelityLosses = new Set<string>()
+  const fidelityLosses: string[] = []
+  const recordedFidelityLosses = objectCreate(null)
 
   function recordFidelityLoss(code: string) {
-    if (fidelityLosses.size < 32) fidelityLosses.add(code)
+    if (fidelityLosses.length >= 32 || objectHasOwn(recordedFidelityLosses, code)) return
+    recordedFidelityLosses[code] = true
+    arrayPush(fidelityLosses, code)
+  }
+
+  const frozenOwnedValues = new WeakSet<object>()
+  function deepFreezeOwned(value: any) {
+    if (
+      (typeof value !== "object" && typeof value !== "function") ||
+      value === null ||
+      weakSetHas(frozenOwnedValues, value)
+    ) {
+      return value
+    }
+    weakSetAdd(frozenOwnedValues, value)
+    for (const key of objectKeys(value)) {
+      const descriptor = objectGetOwnPropertyDescriptor(value, key)
+      if (descriptor && objectHasOwn(descriptor, "value")) deepFreezeOwned(descriptor.value)
+    }
+    return objectFreeze(value)
   }
 
   const blockedNames = [
@@ -180,13 +223,13 @@ function compatibleWorkerMain() {
   function lockDownRealm() {
     const constructors = [
       UnsafeFunction,
-      Object.getPrototypeOf(async () => {}).constructor,
-      Object.getPrototypeOf(function* () {}).constructor,
-      Object.getPrototypeOf(async function* () {}).constructor,
+      objectGetPrototypeOf(async () => {}).constructor,
+      objectGetPrototypeOf(function* () {}).constructor,
+      objectGetPrototypeOf(async function* () {}).constructor,
     ]
     for (const functionConstructor of constructors) {
       try {
-        Object.defineProperty(functionConstructor.prototype, "constructor", {
+        objectDefineProperty(functionConstructor.prototype, "constructor", {
           configurable: false,
           enumerable: false,
           writable: false,
@@ -196,7 +239,7 @@ function compatibleWorkerMain() {
     }
     for (const name of [...blockedNames, "eval"]) {
       try {
-        Object.defineProperty(root, name, {
+        objectDefineProperty(root, name, {
           configurable: false,
           enumerable: false,
           writable: false,
@@ -212,7 +255,7 @@ function compatibleWorkerMain() {
 
   const Fragment = Symbol("RepoPress.Fragment")
   function element(type: any, props: any, childrenOverride?: any[]) {
-    const propsValue = props && typeof props === "object" ? { ...props } : {}
+    const propsValue = props && typeof props === "object" ? objectAssign(objectCreate(null), props) : objectCreate(null)
     if (childrenOverride) propsValue.children = childrenOverride.length === 1 ? childrenOverride[0] : childrenOverride
     return { __repopressElement: 1, type, props: propsValue }
   }
@@ -241,13 +284,17 @@ function compatibleWorkerMain() {
   const React = {
     Fragment,
     Children: {
-      count: (children: any) => (Array.isArray(children) ? children.length : children == null ? 0 : 1),
+      count: (children: any) => (arrayIsArray(children) ? children.length : children == null ? 0 : 1),
       map: (children: any, callback: any) =>
-        (Array.isArray(children) ? children : children == null ? [] : [children]).map(callback),
-      toArray: (children: any) => (Array.isArray(children) ? children : children == null ? [] : [children]),
+        arrayMap(arrayIsArray(children) ? children : children == null ? [] : [children], callback),
+      toArray: (children: any) => (arrayIsArray(children) ? arraySlice(children) : children == null ? [] : [children]),
     },
     cloneElement: (value: any, props: any, ...children: any[]) =>
-      element(value.type, { ...(value.props || {}), ...(props || {}) }, children.length ? children : undefined),
+      element(
+        value.type,
+        objectAssign(objectCreate(null), value.props || {}, props || {}),
+        children.length ? children : undefined,
+      ),
     createContext,
     createElement,
     forwardRef,
@@ -304,6 +351,9 @@ function compatibleWorkerMain() {
     "@/lib/constants/docs": { DOCS_SETUP_MEDIA: {} },
     "@lib/constants/docs": { DOCS_SETUP_MEDIA: {} },
   }
+  deepFreezeOwned(React)
+  deepFreezeOwned(jsxRuntime)
+  deepFreezeOwned(shimModules)
 
   function evaluateAdapter(code: string | null) {
     if (!code) return {}
@@ -312,10 +362,10 @@ function compatibleWorkerMain() {
     const requireModule = (name: string) => {
       if (name === "react") return React
       if (name === "react/jsx-runtime" || name === "react/jsx-dev-runtime") return jsxRuntime
-      if (Object.hasOwn(shimModules, name)) return shimModules[name]
+      if (objectHasOwn(shimModules, name)) return shimModules[name]
       throw new Error(`Module ${name} is unavailable in compatible preview`)
     }
-    const values = blockedNames.map(() => undefined)
+    const values = arrayMap(blockedNames, () => undefined)
     const execute = UnsafeFunction("exports", "module", "require", "React", ...blockedNames, code)
     execute(exports, module, requireModule, React, ...values)
     const output = module.exports || exports
@@ -333,7 +383,7 @@ function compatibleWorkerMain() {
     const components = adapter.components && typeof adapter.components === "object" ? adapter.components : {}
     const scope = adapter.scope && typeof adapter.scope === "object" ? { ...adapter.scope } : {}
     const allowed = adapter.allowImports && typeof adapter.allowImports === "object" ? adapter.allowImports : {}
-    if (!Array.isArray(job.imports) || job.imports.length > 128) throw new Error("Too many compatible imports")
+    if (!arrayIsArray(job.imports) || job.imports.length > 128) throw new Error("Too many compatible imports")
     for (const imported of job.imports) {
       if (
         !imported ||
@@ -345,28 +395,33 @@ function compatibleWorkerMain() {
         throw new Error("Invalid compatible import binding")
       }
       const moduleValue = allowed[imported.source]
-      if (!moduleValue || !Object.hasOwn(moduleValue, imported.imported)) {
+      if (!moduleValue || !objectHasOwn(moduleValue, imported.imported)) {
         throw new Error(`Import ${imported.imported} from ${imported.source} is unavailable`)
       }
       scope[imported.local] = moduleValue[imported.imported]
     }
-    for (const [name, value] of Object.entries(components)) scope[name] = value
-    const pairs = Object.entries(scope)
-      .filter(([name]) => /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name))
-      .slice(0, 256)
+    for (const [name, value] of objectEntries(components)) scope[name] = value
+    const pairs = arraySlice(
+      arrayFilter(objectEntries(scope), ([name]: [string, any]) => /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name)),
+      0,
+      256,
+    )
     const missing = (name: string, component: boolean) => {
       recordFidelityLoss("STATIC_INERT_MISSING_REFERENCE")
       return component
         ? (props: any) => jsx("code", { children: [`<${name} />`, props?.children] })
         : `[Missing ${name}]`
     }
-    pairs.push(["_missingMdxReference", missing])
+    arrayPush(pairs, ["_missingMdxReference", missing])
     for (const name of blockedNames) {
-      if (!pairs.some(([key]) => key === name)) pairs.push([name, undefined])
+      if (!arraySome(pairs, ([key]: [string, any]) => key === name)) arrayPush(pairs, [name, undefined])
     }
-    const mdxConfig = { ...jsxRuntime, useMDXComponents: (value: any) => value || {}, _missingMdxReference: missing }
-    const execute = UnsafeFunction("_mdxConfig", ...pairs.map(([name]) => name), job.mdxCode)
-    const moduleValue = execute(mdxConfig, ...pairs.map(([, value]) => value))
+    const mdxConfig = objectAssign(objectCreate(null), jsxRuntime, {
+      useMDXComponents: (value: any) => value || {},
+      _missingMdxReference: missing,
+    })
+    const execute = UnsafeFunction("_mdxConfig", ...arrayMap(pairs, ([name]: [string, any]) => name), job.mdxCode)
+    const moduleValue = execute(mdxConfig, ...arrayMap(pairs, ([, value]: [string, any]) => value))
     if (!moduleValue || typeof moduleValue.default !== "function") throw new Error("Compatible MDX has no component")
     return moduleValue.default({ components })
   }
@@ -449,7 +504,7 @@ function compatibleWorkerMain() {
   const networkTags = new Set(["base", "link", "meta"])
   const activeContentTags = new Set(["math", "noscript", "script", "style", "svg", "template"])
   function safeProps(props: any) {
-    const output: any = {}
+    const output: any = objectCreate(null)
     if (!props || typeof props !== "object") return output
     const stringKeys = ["aria-description", "aria-label", "aria-live", "className", "role", "scope", "title"]
     for (const key of stringKeys) {
@@ -457,10 +512,10 @@ function compatibleWorkerMain() {
     }
     if (typeof props["aria-hidden"] === "boolean") output["aria-hidden"] = props["aria-hidden"]
     for (const key of ["colSpan", "rowSpan", "start"]) {
-      if (Number.isSafeInteger(props[key]) && props[key] >= 1 && props[key] <= 1_000) output[key] = props[key]
+      if (numberIsSafeInteger(props[key]) && props[key] >= 1 && props[key] <= 1_000) output[key] = props[key]
     }
     let inspected = 0
-    for (const key of Object.keys(props)) {
+    for (const key of objectKeys(props)) {
       inspected += 1
       if (inspected > 64) {
         recordFidelityLoss("STATIC_INERT_PROP")
@@ -470,7 +525,7 @@ function compatibleWorkerMain() {
       if (/^on[A-Z]/.test(key)) recordFidelityLoss("STATIC_INERT_EVENT")
       else if (key === "ref") recordFidelityLoss("STATIC_INERT_REF")
       else if (key === "style" || key === "dangerouslySetInnerHTML") recordFidelityLoss("STATIC_INERT_STYLE")
-      else if (![...stringKeys, "aria-hidden", "colSpan", "rowSpan", "start"].includes(key)) {
+      else if (!arrayIncludes([...stringKeys, "aria-hidden", "colSpan", "rowSpan", "start"], key)) {
         recordFidelityLoss("STATIC_INERT_PROP")
       }
     }
@@ -478,13 +533,13 @@ function compatibleWorkerMain() {
   }
 
   function recordTagLoss(tag: string) {
-    if (mediaTags.has(tag)) recordFidelityLoss("STATIC_INERT_MEDIA")
-    if (frameTags.has(tag)) recordFidelityLoss("STATIC_INERT_FRAME")
-    if (formTags.has(tag)) recordFidelityLoss("STATIC_INERT_FORM")
+    if (setHas(mediaTags, tag)) recordFidelityLoss("STATIC_INERT_MEDIA")
+    if (setHas(frameTags, tag)) recordFidelityLoss("STATIC_INERT_FRAME")
+    if (setHas(formTags, tag)) recordFidelityLoss("STATIC_INERT_FORM")
     if (tag === "a") recordFidelityLoss("STATIC_INERT_LINK")
     if (tag === "nav") recordFidelityLoss("STATIC_INERT_NAVIGATION")
-    if (networkTags.has(tag)) recordFidelityLoss("STATIC_INERT_NETWORK_ELEMENT")
-    if (activeContentTags.has(tag)) recordFidelityLoss("STATIC_INERT_ACTIVE_CONTENT")
+    if (setHas(networkTags, tag)) recordFidelityLoss("STATIC_INERT_NETWORK_ELEMENT")
+    if (setHas(activeContentTags, tag)) recordFidelityLoss("STATIC_INERT_ACTIVE_CONTENT")
   }
 
   function renderTree(value: any) {
@@ -492,9 +547,9 @@ function compatibleWorkerMain() {
     const visit = (node: any, depth: number): any[] => {
       if (depth > 32) throw new Error("Compatible render depth exceeded")
       if (node === null || node === undefined || typeof node === "boolean") return []
-      if (Array.isArray(node)) {
+      if (arrayIsArray(node)) {
         if (node.length > 128) throw new Error("Compatible child count exceeded")
-        return node.flatMap((child) => visit(child, depth + 1))
+        return arrayFlatMap(node, (child: any) => visit(child, depth + 1))
       }
       if (typeof node === "string" || typeof node === "number" || typeof node === "bigint") {
         const text = String(node)
@@ -518,13 +573,15 @@ function compatibleWorkerMain() {
         return visit(output, depth + 1)
       }
       if (typeof node.type !== "string") throw new Error("Unsupported compatible component type")
-      const tag = node.type.toLowerCase()
+      const tag = stringToLowerCase(node.type)
       recordTagLoss(tag)
       const sanitizedProps = safeProps(props)
-      if (dropTags.has(tag)) return []
+      if (setHas(dropTags, tag)) return []
       const children = visit(props.children, depth + 1)
-      if (!allowedTags.has(tag)) {
-        if (!formTags.has(tag) && !navigationTags.has(tag)) recordFidelityLoss("STATIC_INERT_UNSUPPORTED_ELEMENT")
+      if (!setHas(allowedTags, tag)) {
+        if (!setHas(formTags, tag) && !setHas(navigationTags, tag)) {
+          recordFidelityLoss("STATIC_INERT_UNSUPPORTED_ELEMENT")
+        }
         return children
       }
       return [{ kind: "element", tag, props: sanitizedProps, children }]
@@ -567,7 +624,7 @@ function compatibleWorkerMain() {
             type: "repopress:rendered-compatible",
             requestId,
             tree,
-            fidelityLosses: Array.from(fidelityLosses).sort().slice(0, 32),
+            fidelityLosses: arraySlice(fidelityLosses, 0, 32),
           })
         } catch {
           send({ type: "repopress:compatible-error", requestId, code: "COMPATIBLE_RENDER_FAILED" })
