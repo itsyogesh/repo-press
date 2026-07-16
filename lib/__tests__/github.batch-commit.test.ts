@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 const { mockOctokit } = vi.hoisted(() => {
@@ -13,6 +14,7 @@ const { mockOctokit } = vi.hoisted(() => {
         createRef: vi.fn(),
         deleteRef: vi.fn(),
         getBlob: vi.fn(),
+        getTree: vi.fn(),
       },
       repos: {
         getContent: vi.fn(),
@@ -38,6 +40,7 @@ import {
   findOpenPullRequestByHead,
   getDedicatedBranchState,
   getTextFilesAtCommit,
+  verifyBatchCommitTree,
 } from "../github"
 
 describe("batchCommit", () => {
@@ -300,5 +303,105 @@ describe("batchCommit", () => {
       base: "main",
       per_page: 10,
     })
+  })
+
+  it("proves an existing commit tree is exactly the reviewed operation set over the base", async () => {
+    const baseSha = "a".repeat(40)
+    const headSha = "b".repeat(40)
+    const content = "reviewed content\n"
+    const bytes = Buffer.from(content, "utf8")
+    const blobSha = createHash("sha1").update(`blob ${bytes.byteLength}\0`, "utf8").update(bytes).digest("hex")
+    mockOctokit.git.getTree
+      .mockResolvedValueOnce({
+        data: {
+          truncated: false,
+          tree: [{ path: "existing.txt", type: "blob", mode: "100644", sha: "c".repeat(40) }],
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          truncated: false,
+          tree: [
+            { path: "existing.txt", type: "blob", mode: "100644", sha: "c".repeat(40) },
+            { path: "components/callout.tsx", type: "blob", mode: "100644", sha: blobSha },
+          ],
+        },
+      })
+    await expect(
+      verifyBatchCommitTree("token", "owner", "repo", baseSha, headSha, [
+        { action: "create", path: "components/callout.tsx", content },
+      ]),
+    ).resolves.toBe(true)
+  })
+
+  it("rejects truncated trees and a matching planned change accompanied by any extra leaf", async () => {
+    const baseSha = "a".repeat(40)
+    const headSha = "b".repeat(40)
+    const content = "reviewed content\n"
+    const bytes = Buffer.from(content, "utf8")
+    const blobSha = createHash("sha1").update(`blob ${bytes.byteLength}\0`, "utf8").update(bytes).digest("hex")
+    mockOctokit.git.getTree.mockResolvedValueOnce({ data: { truncated: false, tree: [] } }).mockResolvedValueOnce({
+      data: {
+        truncated: false,
+        tree: [
+          { path: "components/callout.tsx", type: "blob", mode: "100644", sha: blobSha },
+          { path: "extra.txt", type: "blob", mode: "100644", sha: "d".repeat(40) },
+        ],
+      },
+    })
+    await expect(
+      verifyBatchCommitTree("token", "owner", "repo", baseSha, headSha, [
+        { action: "create", path: "components/callout.tsx", content },
+      ]),
+    ).resolves.toBe(false)
+
+    mockOctokit.git.getTree.mockReset().mockResolvedValue({ data: { truncated: true, tree: [] } })
+    await expect(
+      verifyBatchCommitTree("token", "owner", "repo", baseSha, headSha, [
+        { action: "create", path: "components/callout.tsx", content },
+      ]),
+    ).resolves.toBe(false)
+  })
+
+  it("never invokes operation or Git tree accessors while verifying a resumed commit", async () => {
+    const baseSha = "a".repeat(40)
+    const headSha = "b".repeat(40)
+    const operationGetter = vi.fn(() => {
+      throw new Error("operation getter executed")
+    })
+    const operation = Object.defineProperties(
+      {},
+      {
+        path: { enumerable: true, get: operationGetter },
+        action: { enumerable: true, value: "create" },
+        content: { enumerable: true, value: "safe" },
+      },
+    )
+    await expect(
+      verifyBatchCommitTree("token", "owner", "repo", baseSha, headSha, [operation as never]),
+    ).rejects.toThrow("own data")
+    expect(operationGetter).not.toHaveBeenCalled()
+
+    const treeGetter = vi.fn(() => {
+      throw new Error("tree getter executed")
+    })
+    const hostileEntry = Object.defineProperties(
+      {},
+      {
+        path: { enumerable: true, get: treeGetter },
+        type: { enumerable: true, value: "blob" },
+        mode: { enumerable: true, value: "100644" },
+        sha: { enumerable: true, value: "c".repeat(40) },
+      },
+    )
+    mockOctokit.git.getTree.mockReset().mockResolvedValue({
+      data: { truncated: false, tree: [hostileEntry] },
+    })
+    await expect(
+      verifyBatchCommitTree("token", "owner", "repo", baseSha, headSha, [
+        { action: "create", path: "safe.txt", content: "safe" },
+      ]),
+    ).resolves.toBe(false)
+    expect(treeGetter).not.toHaveBeenCalled()
   })
 })

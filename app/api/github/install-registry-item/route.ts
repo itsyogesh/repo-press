@@ -13,6 +13,7 @@ import {
   getBranchHeadSha,
   getDedicatedBranchState,
   getTextFilesAtCommit,
+  verifyBatchCommitTree,
 } from "@/lib/github"
 import { mintServerQueryToken } from "@/lib/project-access-token"
 import {
@@ -810,15 +811,26 @@ export async function POST(request: Request) {
       contentEncoding: "utf-8",
       action: change.before === null ? "create" : "update",
     }))
-    const matchingCommit = (state: Awaited<ReturnType<typeof getDedicatedBranchState>>): string | null => {
+    const matchingCommit = async (
+      state: Awaited<ReturnType<typeof getDedicatedBranchState>>,
+    ): Promise<string | null> => {
       if (!state?.commit) return null
-      return state.commit.parents.length === 1 &&
+      const metadataMatches =
+        state.commit.parents.length === 1 &&
         state.commit.parents[0] === baseSha &&
         state.commit.message === commitMessage
-        ? state.commit.sha
-        : null
+      if (!metadataMatches) return null
+      const treeMatches = await verifyBatchCommitTree(
+        auth.githubToken,
+        project.repoOwner,
+        project.repoName,
+        baseSha,
+        state.commit.sha,
+        operations,
+      )
+      return treeMatches ? state.commit.sha : null
     }
-    let commitSha = matchingCommit(branchState)
+    let commitSha = await matchingCommit(branchState)
     if (branchState && branchState.headSha !== baseSha && !commitSha) {
       throw new InstallRouteError("INSTALL_BRANCH_CONFLICT", 409, "Dedicated install branch contains different work", {
         branch,
@@ -848,7 +860,15 @@ export async function POST(request: Request) {
         } catch {
           recovered = null
         }
-        commitSha = matchingCommit(recovered)
+        commitSha = await matchingCommit(recovered)
+        if (recovered && recovered.headSha !== baseSha && !commitSha) {
+          throw new InstallRouteError(
+            "INSTALL_BRANCH_CONFLICT",
+            409,
+            "Dedicated install branch tree differs from the reviewed plan",
+            { branch },
+          )
+        }
         if (!commitSha) {
           throw new InstallRouteError("BATCH_COMMIT_FAILED", 502, "Registry batch commit failed", {
             branch,
@@ -871,7 +891,7 @@ export async function POST(request: Request) {
     if (pullRequest) reused = true
     if (!pullRequest) {
       try {
-        pullRequest = await createPullRequest(
+        const created = await createPullRequest(
           auth.githubToken,
           project.repoOwner,
           project.repoName,
@@ -880,7 +900,21 @@ export async function POST(request: Request) {
           title,
           pullRequestBody(plan, item.logicalId, version, digest),
         )
-      } catch {
+        if (
+          created.headSha !== commitSha ||
+          created.headRef !== branch ||
+          created.headRepoFullName !== `${project.repoOwner}/${project.repoName}` ||
+          created.baseRef !== project.branch
+        ) {
+          throw new InstallRouteError("PR_HEAD_DRIFT", 409, "Created pull request does not match the reviewed commit", {
+            branch,
+            commitSha,
+            recovery: "Inspect the retained branch and pull request before retrying.",
+          })
+        }
+        pullRequest = created
+      } catch (error) {
+        if (error instanceof InstallRouteError) throw error
         try {
           pullRequest = await findOpenPullRequestByHead(
             auth.githubToken,

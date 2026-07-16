@@ -33,6 +33,7 @@ vi.mock("@/lib/github", () => ({
   getBranchHeadSha: vi.fn(),
   getDedicatedBranchState: vi.fn(),
   getTextFilesAtCommit: vi.fn(),
+  verifyBatchCommitTree: vi.fn(),
 }))
 
 process.env.NEXT_PUBLIC_CONVEX_URL ||= "https://example.convex.cloud"
@@ -46,12 +47,17 @@ import {
   getBranchHeadSha,
   getDedicatedBranchState,
   getTextFilesAtCommit,
+  verifyBatchCommitTree,
 } from "@/lib/github"
 import { RouteAuthError, resolveRouteAuth } from "@/lib/route-auth"
 import { POST } from "../route"
 
 const BASE_SHA = "a".repeat(40)
 const COMMIT_SHA = "b".repeat(40)
+const INSTALL_BRANCH = `repopress/install/callout-${BASE_SHA.slice(0, 12)}-${createHash("sha256")
+  .update("install-callout-001")
+  .digest("hex")
+  .slice(0, 12)}`
 const source = '"use client"\nexport function Callout() { return null }\n'
 const fixture = "<Callout>Safe fixture</Callout>\n"
 const sourcePath = "registry/repopress/callout/callout.tsx"
@@ -220,10 +226,15 @@ describe("POST /api/github/install-registry-item", () => {
       number: 42,
       url: "https://api.github.test/pulls/42",
       htmlUrl: "https://github.com/acme/docs/pull/42",
+      headSha: COMMIT_SHA,
+      headRef: INSTALL_BRANCH,
+      headRepoFullName: "acme/docs",
+      baseRef: "main",
     })
     vi.mocked(deleteBranchRef).mockResolvedValue(undefined)
     vi.mocked(getDedicatedBranchState).mockResolvedValue({ headSha: BASE_SHA, commit: null })
     vi.mocked(findOpenPullRequestByHead).mockResolvedValue(null)
+    vi.mocked(verifyBatchCommitTree).mockResolvedValue(true)
     mockRegistryFetch()
   })
 
@@ -725,6 +736,35 @@ describe("POST /api/github/install-registry-item", () => {
     expect(payload).toMatchObject({ reused: true, commitSha: COMMIT_SHA, pullRequest: { number: 42 } })
     expect(batchCommitAtExpectedHead).not.toHaveBeenCalled()
     expect(createPullRequest).not.toHaveBeenCalled()
+    expect(verifyBatchCommitTree).toHaveBeenCalledWith(
+      "gh-token",
+      "acme",
+      "docs",
+      BASE_SHA,
+      COMMIT_SHA,
+      expect.arrayContaining([expect.objectContaining({ path: "components/repopress/callout.tsx" })]),
+    )
+  })
+
+  it("rejects a copied plan message when the resumed commit tree has extra or different changes", async () => {
+    const reviewed = await reviewedPublishBody()
+    vi.mocked(createBranchFromSha).mockRejectedValue({ status: 422 })
+    vi.mocked(getDedicatedBranchState).mockResolvedValue({
+      headSha: COMMIT_SHA,
+      commit: {
+        sha: COMMIT_SHA,
+        parents: [BASE_SHA],
+        message: `Install @repopress/callout@1.0.0 via RepoPress\n\nPlan-Digest: ${reviewed.expectedPlanDigest}`,
+      },
+    })
+    vi.mocked(verifyBatchCommitTree).mockResolvedValue(false)
+    const response = await POST(request(reviewed))
+    const payload = await response.json()
+    expect(response.status).toBe(409)
+    expect(payload.code).toBe("INSTALL_BRANCH_CONFLICT")
+    expect(batchCommitAtExpectedHead).not.toHaveBeenCalled()
+    expect(createPullRequest).not.toHaveBeenCalled()
+    expect(findOpenPullRequestByHead).not.toHaveBeenCalled()
   })
 
   it("rejects a deterministic branch containing a mismatched commit", async () => {
@@ -836,5 +876,23 @@ describe("POST /api/github/install-registry-item", () => {
     expect(payload.code).toBe("PULL_REQUEST_FAILED")
     expect(payload.branch).toMatch(/^repopress\/install\//u)
     expect(deleteBranchRef).not.toHaveBeenCalled()
+  })
+
+  it("rejects a newly-created PR whose returned head advanced beyond the reviewed commit", async () => {
+    const reviewed = await reviewedPublishBody()
+    vi.mocked(createPullRequest).mockResolvedValue({
+      number: 42,
+      url: "https://api.github.test/pulls/42",
+      htmlUrl: "https://github.com/acme/docs/pull/42",
+      headSha: "d".repeat(40),
+      headRef: INSTALL_BRANCH,
+      headRepoFullName: "acme/docs",
+      baseRef: "main",
+    })
+    const response = await POST(request(reviewed))
+    const payload = await response.json()
+    expect(response.status).toBe(409)
+    expect(payload).toMatchObject({ code: "PR_HEAD_DRIFT", branch: INSTALL_BRANCH, commitSha: COMMIT_SHA })
+    expect(createPullRequest).toHaveBeenCalledOnce()
   })
 })

@@ -390,6 +390,8 @@ const MAX_BATCH_BYTES = 32 * 1024 * 1024
 const MAX_SNAPSHOT_FILES = 2_048
 const MAX_SNAPSHOT_FILE_BYTES = 2 * 1024 * 1024
 const MAX_SNAPSHOT_BYTES = 64 * 1024 * 1024
+const MAX_VERIFY_TREE_ENTRIES = 100_000
+const MAX_VERIFY_TREE_PATH_BYTES = 16 * 1024 * 1024
 
 function assertRepository(owner: string, repo: string): void {
   if (!GITHUB_REPOSITORY_PART.test(owner) || !GITHUB_REPOSITORY_PART.test(repo)) {
@@ -446,33 +448,59 @@ function assertRepositoryPath(path: string): void {
   }
 }
 
+function ownOptionalData(object: object, key: string, label: string): unknown {
+  const descriptor = Object.getOwnPropertyDescriptor(object, key)
+  if (!descriptor) return undefined
+  if (!("value" in descriptor)) throw new TypeError(`${label} must be an own data property`)
+  return descriptor.value
+}
+
 function validateBatchOperations(operations: readonly BatchOperation[]): BatchOperation[] {
   if (!Array.isArray(operations) || operations.length === 0 || operations.length > MAX_BATCH_OPERATIONS) {
     throw new TypeError("Batch operations must be a non-empty bounded array")
   }
   const paths = new Set<string>()
   let bytes = 0
-  return operations.map((operation) => {
-    assertRepositoryPath(operation.path)
-    const identity = operation.path.normalize("NFC").toLocaleLowerCase("en-US")
-    if (paths.has(identity)) throw new TypeError(`Duplicate batch operation path ${operation.path}`)
+  return operations.map((rawOperation) => {
+    if (!rawOperation || typeof rawOperation !== "object" || Array.isArray(rawOperation)) {
+      throw new TypeError("Batch operation must be an object")
+    }
+    const path = ownOptionalData(rawOperation, "path", "Batch operation path")
+    const action = ownOptionalData(rawOperation, "action", "Batch operation action")
+    const content = ownOptionalData(rawOperation, "content", "Batch operation content")
+    const contentEncoding = ownOptionalData(rawOperation, "contentEncoding", "Batch operation contentEncoding")
+    const blobSha = ownOptionalData(rawOperation, "blobSha", "Batch operation blobSha")
+    if (typeof path !== "string") throw new TypeError("Batch operation path must be a string")
+    assertRepositoryPath(path)
+    const identity = path.normalize("NFC").toLocaleLowerCase("en-US")
+    if (paths.has(identity)) throw new TypeError(`Duplicate batch operation path ${path}`)
     paths.add(identity)
-    if (operation.action !== "create" && operation.action !== "update" && operation.action !== "delete") {
+    if (action !== "create" && action !== "update" && action !== "delete") {
       throw new TypeError("Invalid batch operation action")
     }
-    if (operation.action === "delete") {
-      if (operation.content !== undefined || operation.blobSha !== undefined)
+    if (contentEncoding !== undefined && contentEncoding !== "utf-8" && contentEncoding !== "base64") {
+      throw new TypeError("Invalid batch operation content encoding")
+    }
+    if (content !== undefined && typeof content !== "string") {
+      throw new TypeError("Batch operation content must be a string")
+    }
+    if (action === "delete") {
+      if (content !== undefined || blobSha !== undefined)
         throw new TypeError("Delete operation must not contain content")
-    } else if (operation.blobSha) {
-      assertSha(operation.blobSha)
-    } else if (typeof operation.content !== "string") {
+    } else if (blobSha !== undefined) {
+      if (typeof blobSha !== "string") throw new TypeError("Batch operation blob SHA must be a string")
+      assertSha(blobSha)
+    } else if (typeof content !== "string") {
       throw new TypeError("Create and update operations require content")
     }
-    bytes += operation.content
-      ? Buffer.byteLength(operation.content, operation.contentEncoding === "base64" ? "base64" : "utf8")
-      : 0
+    bytes +=
+      typeof content === "string" ? Buffer.byteLength(content, contentEncoding === "base64" ? "base64" : "utf8") : 0
     if (bytes > MAX_BATCH_BYTES) throw new TypeError("Batch operation content exceeds byte limit")
-    return { ...operation }
+    const operation: BatchOperation = { path, action }
+    if (content !== undefined) operation.content = content
+    if (contentEncoding !== undefined) operation.contentEncoding = contentEncoding
+    if (blobSha !== undefined) operation.blobSha = blobSha as string
+    return operation
   })
 }
 
@@ -686,6 +714,112 @@ export async function batchCommitAtExpectedHead(
   return { commitSha: newCommit.sha, treeSha: newTree.sha }
 }
 
+type GitLeaf = Readonly<{ mode: string; type: string; sha: string }>
+
+function ownData(object: object, key: string): unknown {
+  const descriptor = Object.getOwnPropertyDescriptor(object, key)
+  if (!descriptor || !("value" in descriptor)) throw new TypeError(`Git tree ${key} must be an own data property`)
+  return descriptor.value
+}
+
+function indexGitLeaves(data: unknown): Map<string, GitLeaf> | null {
+  try {
+    if (!data || typeof data !== "object" || Array.isArray(data)) return null
+    if (ownData(data, "truncated") !== false) return null
+    const rawTree = ownData(data, "tree")
+    if (!Array.isArray(rawTree) || rawTree.length > MAX_VERIFY_TREE_ENTRIES) return null
+    const leaves = new Map<string, GitLeaf>()
+    let pathBytes = 0
+    for (let index = 0; index < rawTree.length; index += 1) {
+      const descriptor = Object.getOwnPropertyDescriptor(rawTree, String(index))
+      if (!descriptor || !("value" in descriptor)) return null
+      const entry = descriptor.value
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null
+      const path = ownData(entry, "path")
+      const type = ownData(entry, "type")
+      const mode = ownData(entry, "mode")
+      const sha = ownData(entry, "sha")
+      if (typeof path !== "string" || typeof type !== "string" || typeof mode !== "string" || typeof sha !== "string")
+        return null
+      assertRepositoryPath(path)
+      assertSha(sha)
+      pathBytes += Buffer.byteLength(path, "utf8")
+      if (pathBytes > MAX_VERIFY_TREE_PATH_BYTES || !/^[0-7]{6}$/u.test(mode)) return null
+      if (type === "tree") continue
+      if ((type !== "blob" && type !== "commit") || leaves.has(path)) return null
+      leaves.set(path, { mode, type, sha })
+    }
+    return leaves
+  } catch {
+    return null
+  }
+}
+
+function operationBytes(operation: BatchOperation): Buffer | null {
+  if (operation.blobSha) return null
+  const content = operation.content as string
+  if (operation.contentEncoding !== "base64") return Buffer.from(content, "utf8")
+  if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(content)) return null
+  const bytes = Buffer.from(content, "base64")
+  return bytes.toString("base64") === content ? bytes : null
+}
+
+async function gitBlobSha(bytes: Buffer): Promise<string> {
+  const prefix = new TextEncoder().encode(`blob ${bytes.byteLength}\0`)
+  const input = new Uint8Array(prefix.byteLength + bytes.byteLength)
+  input.set(prefix)
+  input.set(bytes, prefix.byteLength)
+  const digest = await globalThis.crypto.subtle.digest("SHA-1", input)
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")
+}
+
+export async function verifyBatchCommitTree(
+  accessToken: string,
+  owner: string,
+  repo: string,
+  baseSha: string,
+  headSha: string,
+  rawOperations: readonly BatchOperation[],
+): Promise<boolean> {
+  assertRepository(owner, repo)
+  assertSha(baseSha)
+  assertSha(headSha)
+  if (baseSha === headSha) return false
+  const operations = validateBatchOperations(rawOperations)
+  const octokit = createGitHubClient(accessToken)
+  const [{ data: baseTree }, { data: headTree }] = await Promise.all([
+    octokit.git.getTree({ owner, repo, tree_sha: baseSha, recursive: "1" }),
+    octokit.git.getTree({ owner, repo, tree_sha: headSha, recursive: "1" }),
+  ])
+  const expected = indexGitLeaves(baseTree)
+  const actual = indexGitLeaves(headTree)
+  if (!expected || !actual) return false
+  for (const operation of operations) {
+    const exists = expected.has(operation.path)
+    if (operation.action === "create" && exists) return false
+    if ((operation.action === "update" || operation.action === "delete") && !exists) return false
+    if (operation.action === "delete") {
+      expected.delete(operation.path)
+      continue
+    }
+    let sha: string
+    if (operation.blobSha) sha = operation.blobSha
+    else {
+      const bytes = operationBytes(operation)
+      if (!bytes) return false
+      sha = await gitBlobSha(bytes)
+    }
+    expected.set(operation.path, { mode: "100644", type: "blob", sha })
+  }
+  if (expected.size !== actual.size) return false
+  for (const [path, leaf] of expected) {
+    const candidate = actual.get(path)
+    if (!candidate || candidate.mode !== leaf.mode || candidate.type !== leaf.type || candidate.sha !== leaf.sha)
+      return false
+  }
+  return true
+}
+
 export interface GitHubTextFileSnapshot {
   path: string
   content: string
@@ -838,7 +972,15 @@ export async function createPullRequest(
   base: string,
   title: string,
   body?: string,
-): Promise<{ number: number; url: string; htmlUrl: string }> {
+): Promise<{
+  number: number
+  url: string
+  htmlUrl: string
+  headSha: string
+  headRef: string
+  headRepoFullName: string
+  baseRef: string
+}> {
   const octokit = createGitHubClient(accessToken)
   const { data } = await octokit.pulls.create({
     owner,
@@ -848,7 +990,15 @@ export async function createPullRequest(
     title,
     body,
   })
-  return { number: data.number, url: data.url, htmlUrl: data.html_url }
+  return {
+    number: data.number,
+    url: data.url,
+    htmlUrl: data.html_url,
+    headSha: data.head.sha,
+    headRef: data.head.ref,
+    headRepoFullName: data.head.repo?.full_name ?? "",
+    baseRef: data.base.ref,
+  }
 }
 
 export async function updatePullRequest(
