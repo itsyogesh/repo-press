@@ -454,6 +454,87 @@ describe("review regression guards", () => {
     ).toEqual([])
   })
 
+  it.each([
+    [`declare const require: (specifier: string) => unknown`, `require(target)`],
+    [`declare function require(specifier: string): unknown`, `require(target)`],
+    [`export declare const module: { require(specifier: string): unknown }`, `module.require(target)`],
+    [`export declare const globalThis: { require(specifier: string): unknown }`, `globalThis.require(target)`],
+    [`export declare function require(specifier: string): unknown`, `require(target)`],
+    [`declare class module { static require(specifier: string): unknown }`, `module.require(target)`],
+    [`declare enum module { Placeholder }`, `module.require(target)`],
+    [`declare namespace globalThis { function require(specifier: string): unknown }`, `globalThis.require(target)`],
+    [`declare module require {}`, `require(target)`],
+    [`function require(specifier: string): unknown`, `require(target)`],
+  ])("ignores declaration-only loader shadow %#", (declaration, invocation) => {
+    const violations = findHostExecutionViolationsInSource(
+      "lib/declaration-only-loader-probe.ts",
+      `
+        ${declaration}
+        const target = "@/components/preview-sandbox/compatible-worker"
+        ${invocation}
+      `,
+    )
+
+    expect(violations.filter((violation) => violation.includes("preview sandbox module"))).toHaveLength(1)
+  })
+
+  it.each([
+    [`import type { Loader as require } from "./loader-types"`, `require(target)`],
+    [`import { type Loader as require } from "./loader-types"`, `require(target)`],
+    [`import type module from "./loader-types"`, `module.require(target)`],
+    [`import { type ModuleLike as globalThis } from "./loader-types"`, `globalThis.require(target)`],
+    [`import type require = require("./loader-types")`, `require(target)`],
+  ])("ignores type-only imported loader shadow %#", (declaration, invocation) => {
+    const violations = findHostExecutionViolationsInSource(
+      "lib/type-only-loader-probe.ts",
+      `
+        ${declaration}
+        const target = "@/components/preview-sandbox/compatible-worker"
+        ${invocation}
+      `,
+    )
+
+    expect(violations.filter((violation) => violation.includes("preview sandbox module"))).toHaveLength(1)
+  })
+
+  it.each([
+    [`const require = (specifier: string) => specifier`, `require(target)`],
+    [`function require(specifier: string) { return specifier }`, `require(target)`],
+    [
+      `function require(specifier: string): string
+       function require(specifier: string) { return specifier }`,
+      `require(target)`,
+    ],
+    [`class module { static require(specifier: string) { return specifier } }`, `module.require(target)`],
+    [`import module from "./runtime-loader"`, `module.require(target)`],
+    [`import { globalThis } from "./runtime-loader"`, `globalThis.require(target)`],
+    [`import { require } from "./runtime-loader"`, `require(target)`],
+  ])("retains runtime loader shadow %#", (declaration, invocation) => {
+    expect(
+      findHostExecutionViolationsInSource(
+        "lib/runtime-loader-shadow-probe.ts",
+        `
+          ${declaration}
+          const target = "@/components/preview-sandbox/compatible-worker"
+          ${invocation}
+        `,
+      ),
+    ).toEqual([])
+  })
+
+  it("retains catch loader shadows", () => {
+    expect(
+      findHostExecutionViolationsInSource(
+        "lib/runtime-catch-loader-shadow-probe.ts",
+        `
+          const target = "@/components/preview-sandbox/compatible-worker"
+          try { throw { require: (specifier: string) => specifier } }
+          catch (module) { module.require(target) }
+        `,
+      ),
+    ).toEqual([])
+  })
+
   it("allows only the inert type edge and the exact sandbox route runtime entry", () => {
     expect(
       findHostExecutionViolationsInSource(

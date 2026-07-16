@@ -149,29 +149,50 @@ function bindingNameIncludes(name: ts.BindingName, identifier: string): boolean 
   )
 }
 
-function statementDeclaresIdentifier(statement: ts.Statement, identifier: string): boolean {
-  if (
-    (ts.isFunctionDeclaration(statement) ||
-      ts.isClassDeclaration(statement) ||
-      ts.isEnumDeclaration(statement) ||
-      ts.isModuleDeclaration(statement)) &&
-    statement.name &&
-    ts.isIdentifier(statement.name)
-  ) {
-    return statement.name.text === identifier
+function hasDeclareModifier(node: ts.Node): boolean {
+  return (
+    ts.canHaveModifiers(node) &&
+    Boolean(ts.getModifiers(node)?.some((modifier) => modifier.kind === ts.SyntaxKind.DeclareKeyword))
+  )
+}
+
+function isDeclarationOnlyContext(node: ts.Node): boolean {
+  let current: ts.Node | undefined = node
+  while (current) {
+    if (ts.isSourceFile(current)) return current.isDeclarationFile
+    if (hasDeclareModifier(current)) return true
+    current = current.parent
   }
-  if (ts.isVariableStatement(statement)) {
+  return false
+}
+
+function statementDeclaresIdentifier(statement: ts.Statement, identifier: string): boolean {
+  if (ts.isFunctionDeclaration(statement)) {
+    return statement.name?.text === identifier && statement.body !== undefined && !isDeclarationOnlyContext(statement)
+  }
+  if (ts.isClassDeclaration(statement) || ts.isEnumDeclaration(statement) || ts.isModuleDeclaration(statement)) {
+    return (
+      statement.name !== undefined &&
+      ts.isIdentifier(statement.name) &&
+      statement.name.text === identifier &&
+      !isDeclarationOnlyContext(statement)
+    )
+  }
+  if (ts.isVariableStatement(statement) && !isDeclarationOnlyContext(statement)) {
     return statement.declarationList.declarations.some((declaration) =>
       bindingNameIncludes(declaration.name, identifier),
     )
   }
-  if (ts.isImportEqualsDeclaration(statement)) return statement.name.text === identifier
+  if (ts.isImportEqualsDeclaration(statement)) {
+    return !statement.isTypeOnly && !isDeclarationOnlyContext(statement) && statement.name.text === identifier
+  }
   if (ts.isImportDeclaration(statement) && statement.importClause) {
     const clause = statement.importClause
+    if (clause.isTypeOnly) return false
     if (clause.name?.text === identifier) return true
     if (clause.namedBindings) {
       if (ts.isNamespaceImport(clause.namedBindings)) return clause.namedBindings.name.text === identifier
-      return clause.namedBindings.elements.some((element) => element.name.text === identifier)
+      return clause.namedBindings.elements.some((element) => !element.isTypeOnly && element.name.text === identifier)
     }
   }
   return false
