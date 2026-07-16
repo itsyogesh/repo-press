@@ -2,6 +2,7 @@
 
 import { Eye, Maximize2, Minimize2 } from "lucide-react"
 import * as React from "react"
+import { CompatiblePreviewFrame } from "@/components/mdx-runtime/CompatiblePreviewFrame"
 import { GenericPreview } from "@/components/mdx-runtime/GenericPreview"
 import { PreviewStatus } from "@/components/mdx-runtime/PreviewStatus"
 import { Badge } from "@/components/ui/badge"
@@ -74,6 +75,7 @@ interface PreviewProps {
   scrollContainerRef?: React.RefObject<HTMLDivElement | null>
   onScroll?: () => void
   onCompilingChange?: (isCompiling: boolean) => void
+  previewFidelity?: "generic" | "compatible"
 }
 
 export function Preview({
@@ -87,6 +89,7 @@ export function Preview({
   scrollContainerRef,
   onScroll,
   onCompilingChange,
+  previewFidelity = "generic",
 }: PreviewProps) {
   const [viewport, setViewport] = React.useState<Viewport>("desktop")
   const [isFullScreen, setIsFullScreen] = React.useState(false)
@@ -225,14 +228,20 @@ export function Preview({
           </div>
         )}
 
-        <div className="px-5 py-6 md:px-7 md:py-8">
-          <div
-            data-scroll-sync-root="preview"
-            className={cn("typeset typeset-preview max-w-none", "[&_h1]:scroll-mt-4 [&_h2]:scroll-mt-4")}
-          >
-            <GenericPreview model={genericRenderModel} resolveAssetUrl={resolveAssetUrl} />
+        {previewFidelity === "compatible" ? (
+          <div className="min-h-96 p-4 md:p-6">
+            <CompatiblePreviewFrame />
           </div>
-        </div>
+        ) : (
+          <div className="px-5 py-6 md:px-7 md:py-8">
+            <div
+              data-scroll-sync-root="preview"
+              className={cn("typeset typeset-preview max-w-none", "[&_h1]:scroll-mt-4 [&_h2]:scroll-mt-4")}
+            >
+              <GenericPreview model={genericRenderModel} resolveAssetUrl={resolveAssetUrl} />
+            </div>
+          </div>
+        )}
       </div>
     </article>
   )
