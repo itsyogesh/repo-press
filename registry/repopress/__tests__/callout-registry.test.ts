@@ -81,6 +81,7 @@ describe("official Callout registry item", () => {
       name: "callout",
       title: "Callout",
       type: "registry:component",
+      dependencies: ["react"],
       files: [{ path: SOURCE_PATH, target: INSTALL_TARGET, type: "registry:component" }],
     })
     expect(catalog).toHaveLength(1)

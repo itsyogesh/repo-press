@@ -9,7 +9,7 @@
       "type": "registry:component",
       "title": "Callout",
       "description": "A semantic callout for highlighting Markdown content.",
-      "dependencies": [],
+      "dependencies": ["react"],
       "registryDependencies": [],
       "files": [
         {
@@ -80,7 +80,7 @@
               "source": "registry",
               "registryItem": "@repopress/callout",
               "version": "1.0.0",
-              "integrity": "sha256-eluk4Km/3Gb/yIZhHVAzXl3tgRMe2d9J2GA8Fk2VpMM="
+              "integrity": "sha256-GjmmLbAn/5o4dsRNKJJuaurVeMw5Cd7ZklMphPxCD6U="
             }
           }
         }

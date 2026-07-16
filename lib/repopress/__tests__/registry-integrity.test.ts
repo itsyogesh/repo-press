@@ -103,6 +103,8 @@ describe("computeRegistryItemIntegrity", () => {
   it("gives source and built shadcn items the same digest when embedded install bytes match", () => {
     const sourceItem = registryItem()
     const builtItem = clone(sourceItem)
+    expect(sourceItem.dependencies).toEqual(["react"])
+    builtItem.dependencies = ["react"]
     builtItem.files[0].content = referencedFiles()[0].content
 
     expect(computeRegistryItemIntegrity({ item: builtItem, files: referencedFiles() })).toBe(
