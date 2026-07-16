@@ -1,17 +1,18 @@
-import type { ComponentPropsWithoutRef, ReactNode } from "react"
+"use client"
+
+import { type ComponentPropsWithoutRef, type ReactNode, useId } from "react"
 
 const variantClasses = {
   default: "border-border bg-muted/50",
   accent: "border-primary/30 bg-primary/5",
 } as const
 
-type CalloutTitle = { title?: undefined; titleId?: undefined } | { title: string; titleId: string }
-
-export type CalloutProps = Omit<ComponentPropsWithoutRef<"aside">, "title"> &
-  CalloutTitle & {
-    variant?: "default" | "accent"
-    children: ReactNode
-  }
+export interface CalloutProps extends Omit<ComponentPropsWithoutRef<"aside">, "title"> {
+  title?: string
+  titleId?: string
+  variant?: "default" | "accent"
+  children: ReactNode
+}
 
 function mergeClassNames(...classes: Array<string | undefined>): string {
   return classes.filter(Boolean).join(" ")
@@ -26,6 +27,9 @@ export function Callout({
   "aria-labelledby": ariaLabelledby,
   ...asideProps
 }: CalloutProps) {
+  const generatedTitleId = useId()
+  const resolvedTitleId = title ? (titleId ?? generatedTitleId) : undefined
+
   return (
     <aside
       {...asideProps}
@@ -34,10 +38,10 @@ export function Callout({
         variantClasses[variant],
         className,
       )}
-      aria-labelledby={title ? titleId : ariaLabelledby}
+      aria-labelledby={resolvedTitleId ?? ariaLabelledby}
     >
       {title ? (
-        <div id={titleId} className="mb-1 text-sm font-medium">
+        <div id={resolvedTitleId} className="mb-1 text-sm font-medium">
           {title}
         </div>
       ) : null}

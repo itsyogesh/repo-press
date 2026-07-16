@@ -162,14 +162,19 @@ describe("official Callout registry item", () => {
 
   it("keeps the implementation browser-safe, semantic, and token-based", () => {
     const source = read(SOURCE_PATH)
+    const hooks = [...source.matchAll(/\b(use[A-Z]\w*)\s*\(/gu)].map((match) => match[1])
+    expect(source.startsWith('"use client"')).toBe(true)
     expect(source).toContain("<aside")
     expect(source).toContain("{...asideProps}")
     expect(source.indexOf("{...asideProps}")).toBeLessThan(source.indexOf("className="))
-    expect(source).toContain("titleId: string")
-    expect(source).toContain("aria-labelledby={title ? titleId : ariaLabelledby}")
-    expect(source).toContain("id={titleId}")
+    expect(source).toContain("titleId?: string")
+    expect(source).toContain("const generatedTitleId = useId()")
+    expect(source).toContain("const resolvedTitleId = title ? (titleId ?? generatedTitleId) : undefined")
+    expect(source).toContain("aria-labelledby={resolvedTitleId ?? ariaLabelledby}")
+    expect(source).toContain("id={resolvedTitleId}")
+    expect(hooks).toEqual(["useId"])
     expect(source).not.toMatch(/(?:bg|text|border)-(?:white|black|gray|slate|red|amber|blue)-/u)
-    expect(source).not.toMatch(/dangerouslySetInnerHTML|\buse[A-Z]\w*\s*\(|\bfetch\s*\(|\bWebSocket\b|createPortal/u)
+    expect(source).not.toMatch(/dangerouslySetInnerHTML|\bfetch\s*\(|\bWebSocket\b|createPortal/u)
     expect(source).not.toMatch(/from\s+["']@\//u)
   })
 
