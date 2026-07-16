@@ -11,13 +11,13 @@ export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl
   const owner = searchParams.get("owner")
   const repo = searchParams.get("repo")
-  const branch = searchParams.get("branch") ?? "main"
+  const ref = searchParams.get("ref") ?? searchParams.get("branch") ?? "main"
   const contentRoot = searchParams.get("contentRoot") ?? ""
 
   if (!owner || !repo) {
     return Response.json({ error: "Missing required params: owner and repo" }, { status: 400 })
   }
 
-  const tree = await getContentTree(token, owner, repo, branch, contentRoot)
+  const tree = await getContentTree(token, owner, repo, ref, contentRoot)
   return Response.json(tree)
 }

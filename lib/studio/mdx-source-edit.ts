@@ -2,10 +2,11 @@ import { parseRepoPressMdxSyntax, type RepoPressMdxSyntaxNode } from "../preview
 import { type AuthoringComponent, assertSafeAuthoringPropName, assertSafeMdxName } from "./authoring-catalog"
 import { formatSafeLiteralPropValue } from "./component-serializer"
 
-export const MDX_SOURCE_EDIT_LIMITS = Object.freeze({ maxChanges: 128 })
+export const MDX_SOURCE_EDIT_LIMITS = Object.freeze({ maxChanges: 128, maxIdentityBytes: 65_536 })
 
 export type MdxComponentEditTarget = Readonly<{
   name: string
+  kind: "flow" | "text"
   /** Child indexes from the parser root. This disambiguates duplicate and nested components. */
   path: readonly number[]
   /** UTF-16 code-unit offsets, matching JavaScript slice and the owned MDX parser. */
@@ -13,6 +14,9 @@ export type MdxComponentEditTarget = Readonly<{
   end: number
   /** Exact bytes/code units used for optimistic concurrency and stale-target detection. */
   openingTag: string
+  /** Exact full component source retained for safe fresh reacquisition. */
+  nodeSource: string
+  nodeEnd: number
   /** Shared immutable snapshot; exact equality detects edits anywhere in the document. */
   sourceSnapshot: string
 }>
@@ -34,6 +38,26 @@ export type PreparedComponentPropEdit = Readonly<{
   initialProps: Readonly<Record<string, string | number | boolean | undefined>>
   editablePropNames: readonly string[]
 }>
+
+export type MdxComponentEditIdentity = Readonly<{
+  name: string
+  kind: "flow" | "text"
+  /** Exact bounded opening-tag bytes retained by the rendered node control. */
+  openingTag: string
+  /** Exact bounded full-node bytes distinguish reassigned component bodies. */
+  nodeSource: string
+}>
+
+export type CaptureComponentEditIdentityResult =
+  | Readonly<{ ok: true; identity: MdxComponentEditIdentity }>
+  | MdxSourceEditRefusal
+
+export type ComponentEditIdentityIndexResult =
+  | Readonly<{
+      ok: true
+      capture: (anchor: unknown) => CaptureComponentEditIdentityResult
+    }>
+  | MdxSourceEditRefusal
 
 type OffsetPosition = { start?: { offset?: number }; end?: { offset?: number } }
 type MdxAttribute = {
@@ -102,13 +126,24 @@ function collectTargets(source: string, root: RepoPressMdxSyntaxNode): readonly 
         }
         const opening = openingTagFor(source, node)
         if (!opening) return null
+        const nodeEnd = node.position?.end?.offset
+        if (
+          !Number.isSafeInteger(nodeEnd) ||
+          (nodeEnd as number) < opening.end ||
+          (nodeEnd as number) > source.length
+        ) {
+          return null
+        }
         targets.push(
           Object.freeze({
             name: node.name,
+            kind: node.type === "mdxJsxFlowElement" ? ("flow" as const) : ("text" as const),
             path: Object.freeze([...entry.path]),
             start: opening.start,
             end: opening.end,
             openingTag: opening.source,
+            nodeSource: source.slice(opening.start, nodeEnd as number),
+            nodeEnd: nodeEnd as number,
             sourceSnapshot: source,
           }),
         )
@@ -135,10 +170,13 @@ function normalizeTarget(target: unknown): MdxComponentEditTarget | null {
   try {
     if (!isPlainDataRecord(target)) return null
     const name = dataValue(target, "name")
+    const kind = dataValue(target, "kind")
     const rawPath = dataValue(target, "path")
     const start = dataValue(target, "start")
     const end = dataValue(target, "end")
     const openingTag = dataValue(target, "openingTag")
+    const nodeSource = dataValue(target, "nodeSource")
+    const nodeEnd = dataValue(target, "nodeEnd")
     const sourceSnapshot = dataValue(target, "sourceSnapshot")
     if (!Array.isArray(rawPath) || Object.getPrototypeOf(rawPath) !== Array.prototype || rawPath.length > 128) {
       return null
@@ -151,16 +189,30 @@ function normalizeTarget(target: unknown): MdxComponentEditTarget | null {
     }
     if (
       typeof name !== "string" ||
+      (kind !== "flow" && kind !== "text") ||
       !Number.isSafeInteger(start) ||
       (start as number) < 0 ||
       !Number.isSafeInteger(end) ||
       (end as number) <= (start as number) ||
       typeof openingTag !== "string" ||
+      typeof nodeSource !== "string" ||
+      !Number.isSafeInteger(nodeEnd) ||
+      (nodeEnd as number) < (end as number) ||
       typeof sourceSnapshot !== "string"
     ) {
       return null
     }
-    return { name, path, start: start as number, end: end as number, openingTag, sourceSnapshot }
+    return {
+      name,
+      kind,
+      path,
+      start: start as number,
+      end: end as number,
+      openingTag,
+      nodeSource,
+      nodeEnd: nodeEnd as number,
+      sourceSnapshot,
+    }
   } catch {
     return null
   }
@@ -169,9 +221,12 @@ function normalizeTarget(target: unknown): MdxComponentEditTarget | null {
 function sameTarget(candidate: MdxComponentEditTarget, target: MdxComponentEditTarget): boolean {
   return (
     candidate.name === target.name &&
+    candidate.kind === target.kind &&
     candidate.start === target.start &&
     candidate.end === target.end &&
     candidate.openingTag === target.openingTag &&
+    candidate.nodeSource === target.nodeSource &&
+    candidate.nodeEnd === target.nodeEnd &&
     candidate.sourceSnapshot === target.sourceSnapshot &&
     candidate.path.length === target.path.length &&
     candidate.path.every((part, index) => part === target.path[index])
@@ -209,6 +264,52 @@ function normalizeEditAnchor(anchor: unknown): { name: string; start: number; so
   }
 }
 
+function normalizePositionAnchor(anchor: unknown): { name: string; start: number } | null {
+  try {
+    if (!isPlainDataRecord(anchor)) return null
+    const name = dataValue(anchor, "name")
+    const start = dataValue(anchor, "start")
+    if (typeof name !== "string" || !Number.isSafeInteger(start) || (start as number) < 0) return null
+    assertSafeMdxName(name)
+    return { name, start: start as number }
+  } catch {
+    return null
+  }
+}
+
+function normalizeEditIdentity(identity: unknown): MdxComponentEditIdentity | null {
+  try {
+    if (!isPlainDataRecord(identity)) return null
+    const name = dataValue(identity, "name")
+    const kind = dataValue(identity, "kind")
+    const openingTag = dataValue(identity, "openingTag")
+    const nodeSource = dataValue(identity, "nodeSource")
+    if (
+      typeof name !== "string" ||
+      (kind !== "flow" && kind !== "text") ||
+      typeof openingTag !== "string" ||
+      typeof nodeSource !== "string" ||
+      openingTag.length === 0 ||
+      nodeSource.length === 0 ||
+      !isWithinIdentityBudget(openingTag, nodeSource)
+    ) {
+      return null
+    }
+    assertSafeMdxName(name)
+    if (!openingTag.startsWith(`<${name}`)) return null
+    if (!nodeSource.startsWith(openingTag)) return null
+    return Object.freeze({ name, kind, openingTag, nodeSource })
+  } catch {
+    return null
+  }
+}
+
+function isWithinIdentityBudget(openingTag: string, nodeSource: string): boolean {
+  const limit = MDX_SOURCE_EDIT_LIMITS.maxIdentityBytes
+  if (openingTag.length > limit || nodeSource.length > limit) return false
+  return new TextEncoder().encode(openingTag).byteLength + new TextEncoder().encode(nodeSource).byteLength <= limit
+}
+
 /**
  * MDXEditor trims its initial Markdown before producing MDAST positions while
  * its imperative getMarkdown() initially exposes the untrimmed value. Later
@@ -229,6 +330,52 @@ function resolveEditAnchorStart(source: string, anchor: Readonly<{ name: string;
   return candidates.size === 1 ? (candidates.values().next().value ?? null) : null
 }
 
+/** Capture a bounded source identity for one exact rendered MDAST component. */
+function captureIdentityFromTargets(
+  source: string,
+  targets: readonly MdxComponentEditTarget[],
+  anchor: unknown,
+): CaptureComponentEditIdentityResult {
+  const normalizedAnchor = normalizePositionAnchor(anchor)
+  if (!normalizedAnchor) return refuse(source)
+  const coordinateCandidates = new Set<number>([normalizedAnchor.start])
+  coordinateCandidates.add(normalizedAnchor.start + (source.length - source.trimStart().length))
+  const matches = targets.filter(
+    (target) => target.name === normalizedAnchor.name && coordinateCandidates.has(target.start),
+  )
+  if (matches.length !== 1 || !isWithinIdentityBudget(matches[0].openingTag, matches[0].nodeSource)) {
+    return refuse(source)
+  }
+  return {
+    ok: true,
+    identity: Object.freeze({
+      name: matches[0].name,
+      kind: matches[0].kind,
+      openingTag: matches[0].openingTag,
+      nodeSource: matches[0].nodeSource,
+    }),
+  }
+}
+
+/** Build one bounded parse index that all rendered component controls can share. */
+export function buildComponentEditIdentityIndex(source: string): ComponentEditIdentityIndexResult {
+  if (typeof source !== "string") return refuse("")
+  const parsed = parseRepoPressMdxSyntax(source)
+  if (!parsed.ok) return refuse(source)
+  const discovered = collectTargets(source, parsed.root)
+  if (!discovered) return refuse(source)
+  return Object.freeze({
+    ok: true as const,
+    capture: (anchor: unknown) => captureIdentityFromTargets(source, discovered, anchor),
+  })
+}
+
+/** Capture one rendered component identity; prefer the shared index in UI code. */
+export function captureComponentEditIdentity(source: string, anchor: unknown): CaptureComponentEditIdentityResult {
+  const index = buildComponentEditIdentityIndex(source)
+  return index.ok ? index.capture(anchor) : index
+}
+
 /** Prepare an exact clicked component for literal-only, source-preserving prop editing. */
 export function prepareComponentPropEdit(
   source: string,
@@ -236,18 +383,30 @@ export function prepareComponentPropEdit(
   component: AuthoringComponent,
 ): PreparedComponentPropEdit | MdxSourceEditRefusal {
   if (typeof source !== "string") return refuse("")
-  const normalizedAnchor = normalizeEditAnchor(anchor)
-  if (!normalizedAnchor || component.mdxName !== normalizedAnchor.name || component.schemaStatus !== "complete") {
+  const identity = normalizeEditIdentity(anchor)
+  const positionedAnchor = identity ? null : normalizeEditAnchor(anchor)
+  const requestedName = identity?.name ?? positionedAnchor?.name
+  if (!requestedName || component.mdxName !== requestedName || component.schemaStatus !== "complete") {
     return refuse(source)
   }
-  if (normalizedAnchor.sourceSnapshot !== source) return refuse(source)
-  const resolvedStart = resolveEditAnchorStart(source, normalizedAnchor)
-  if (resolvedStart === null) return refuse(source)
+  let resolvedStart: number | null = null
+  if (positionedAnchor) {
+    if (positionedAnchor.sourceSnapshot !== source) return refuse(source)
+    resolvedStart = resolveEditAnchorStart(source, positionedAnchor)
+    if (resolvedStart === null) return refuse(source)
+  }
   const parsed = parseRepoPressMdxSyntax(source)
   if (!parsed.ok) return refuse(source)
   const discovered = collectTargets(source, parsed.root)
   if (!discovered) return refuse(source)
-  const matches = discovered.filter((target) => target.name === normalizedAnchor.name && target.start === resolvedStart)
+  const matches = discovered.filter((target) =>
+    identity
+      ? target.name === identity.name &&
+        target.kind === identity.kind &&
+        target.openingTag === identity.openingTag &&
+        target.nodeSource === identity.nodeSource
+      : target.name === positionedAnchor?.name && target.start === resolvedStart,
+  )
   if (matches.length !== 1) return refuse(source)
   const target = matches[0]
   const node = findNodeAtPath(parsed.root, target.path)

@@ -44,6 +44,7 @@ interface ImageSelectorDialogProps {
   owner?: string
   repo?: string
   branch?: string
+  baseCommitSha: string
   pathHint: string
   selectedFilePath?: string
   contentRoot?: string
@@ -62,6 +63,7 @@ function ImageSelectorDialog({
   owner,
   repo,
   branch,
+  baseCommitSha,
   pathHint,
   selectedFilePath,
   contentRoot,
@@ -208,6 +210,7 @@ function ImageSelectorDialog({
                 owner={owner}
                 repo={repo}
                 branch={branch}
+                baseCommitSha={baseCommitSha}
                 projectAccessToken={projectAccessToken}
                 selectedFilePath={selectedFilePath}
                 contentRoot={contentRoot}
@@ -281,6 +284,7 @@ export function ImageFieldControl({
   const repo = repoContext?.repo ?? studio.repo
   const branch = repoContext?.branch ?? studio.branch
   const projectAccessToken = studio.projectAccessToken
+  const baseCommitSha = studio.baseCommitSha
   const selectedFilePath = selectedFilePathProp ?? studio.selectedFilePath
   const [browserOpen, setBrowserOpen] = React.useState(false)
   const [editValue, setEditValue] = React.useState(value)
@@ -374,6 +378,7 @@ export function ImageFieldControl({
           owner={owner}
           repo={repo}
           branch={branch}
+          baseCommitSha={baseCommitSha}
           pathHint={pathHint}
           selectedFilePath={selectedFilePath}
           contentRoot={studio.contentRoot}
@@ -410,6 +415,7 @@ export function ImageFieldControl({
         owner={owner}
         repo={repo}
         branch={branch}
+        baseCommitSha={baseCommitSha}
         pathHint={pathHint}
         selectedFilePath={selectedFilePath}
         contentRoot={studio.contentRoot}

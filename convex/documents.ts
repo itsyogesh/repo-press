@@ -587,6 +587,7 @@ export const syncTreeTitles = action({
     owner: v.string(),
     repo: v.string(),
     branch: v.string(),
+    readRef: v.string(),
     contentRoot: v.string(),
     files: v.array(v.object({ path: v.string(), repoPath: v.string(), sha: v.string() })),
     githubToken: v.string(),
@@ -617,7 +618,7 @@ export const syncTreeTitles = action({
         batch.map(async (file) => {
           try {
             const response = await fetch(
-              `https://api.github.com/repos/${args.owner}/${args.repo}/contents/${encodeURIComponent(file.repoPath)}?ref=${args.branch}`,
+              `https://api.github.com/repos/${args.owner}/${args.repo}/contents/${encodeURIComponent(file.repoPath)}?ref=${encodeURIComponent(args.readRef)}`,
               {
                 headers: {
                   Authorization: `token ${args.githubToken}`,

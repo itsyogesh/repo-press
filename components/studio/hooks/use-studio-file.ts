@@ -51,7 +51,7 @@ function parseFileSnapshot(rawContent: string, sha: string | null): CachedFileSn
 }
 
 export function useStudioFile(initialFile: InitialFile | null | undefined, currentPath: string) {
-  const { owner, repo, branch, projectId, tree } = useStudio()
+  const { owner, repo, branch, baseCommitSha, projectId, tree } = useStudio()
   const openFilesStorageKey = React.useMemo(
     () => `studio:openFiles:${owner}:${repo}:${branch}:${projectId || "none"}`,
     [owner, repo, branch, projectId],
@@ -218,7 +218,7 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
           owner,
           repo,
           path: filePath,
-          branch,
+          ref: baseCommitSha,
         })
 
         const response = await fetch(`/api/github/file?${params.toString()}`, {
@@ -250,7 +250,7 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
         setIsFileLoading(false)
       }
     },
-    [owner, repo, branch, syncBrowserUrl, applySnapshot, resolveFileNode, trackRecentFile],
+    [owner, repo, baseCommitSha, syncBrowserUrl, applySnapshot, resolveFileNode, trackRecentFile],
   )
 
   const readPathFromUrl = React.useCallback(() => {

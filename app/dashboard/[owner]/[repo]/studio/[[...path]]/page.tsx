@@ -4,7 +4,7 @@ import { StudioPageThemeToggle } from "@/components/studio/studio-page-theme-tog
 import { api } from "@/convex/_generated/api"
 import type { Doc, Id } from "@/convex/_generated/dataModel"
 import { getGitHubToken } from "@/lib/auth-server"
-import { createGitHubClient, getFile } from "@/lib/github"
+import { createGitHubClient, getBranchHeadSha, getFile } from "@/lib/github"
 import { resolveRepoRole } from "@/lib/github-permissions"
 import { resolveProjectAccessRole } from "@/lib/project-access-role"
 import { mintProjectAccessToken } from "@/lib/project-access-token"
@@ -83,6 +83,10 @@ export default async function StudioPage({
     redirect("/dashboard")
   }
 
+  // Resolve one immutable read authority for the entire Studio session. Branch
+  // remains the write target, but lock metadata and content reads share this SHA.
+  const baseCommitSha = await getBranchHeadSha(token, owner, repo, currentBranch)
+
   // Always mint projectAccessToken with role (fixes OAuth bug)
   const projectAccessToken =
     project && actingUserId
@@ -120,7 +124,7 @@ export default async function StudioPage({
   let registryAuthoringDiagnostics: readonly string[] = Object.freeze([])
   if (project) {
     try {
-      const installed = await loadProjectLockAuthoringMetadata({ accessToken: token, project })
+      const installed = await loadProjectLockAuthoringMetadata({ accessToken: token, project, baseSha: baseCommitSha })
       registryAuthoringMetadata = installed.metadata
       registryAuthoringDiagnostics = installed.diagnostics
     } catch {
@@ -133,7 +137,7 @@ export default async function StudioPage({
   let fileData = null
   try {
     if (currentPath) {
-      fileData = await getFile(token, owner, repo, currentPath, currentBranch)
+      fileData = await getFile(token, owner, repo, currentPath, baseCommitSha)
     }
   } catch {
     // Non-critical: editor opens with empty content; user can reload from the file tree
@@ -161,6 +165,7 @@ export default async function StudioPage({
           owner={owner}
           repo={repo}
           branch={currentBranch}
+          baseCommitSha={baseCommitSha}
           currentPath={currentPath}
           projectId={project?._id}
           projectAccessToken={projectAccessToken}

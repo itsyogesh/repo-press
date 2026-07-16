@@ -7,6 +7,7 @@ interface StudioContextValue {
   owner: string
   repo: string
   branch: string
+  baseCommitSha: string
   projectId?: string
   projectAccessToken?: string
   userId?: string

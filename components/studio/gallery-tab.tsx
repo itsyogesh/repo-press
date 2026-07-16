@@ -1,6 +1,6 @@
 "use client"
 
-import { useAction, useConvex, useMutation, useQuery } from "convex/react"
+import { useConvex, useMutation, useQuery } from "convex/react"
 import { Check, ImageIcon, RefreshCw, Search, X } from "lucide-react"
 import * as React from "react"
 import { toast } from "sonner"
@@ -23,6 +23,7 @@ interface GalleryTabProps {
   owner: string
   repo: string
   branch: string
+  baseCommitSha: string
   projectAccessToken?: string
   selectedFilePath?: string
   contentRoot?: string
@@ -50,7 +51,7 @@ function deriveSectionSlug(filePath: string | undefined, contentRoot: string | u
   if (!filePath) return undefined
 
   const normalizedRoot = contentRoot ? contentRoot.replace(/\/+$/, "") : ""
-  const root = normalizedRoot ? normalizedRoot + "/" : ""
+  const root = normalizedRoot ? `${normalizedRoot}/` : ""
 
   let relative: string
   if (root && filePath.startsWith(root)) {
@@ -77,6 +78,7 @@ export function GalleryTab({
   owner,
   repo,
   branch,
+  baseCommitSha,
   projectAccessToken,
   selectedFilePath,
   contentRoot,
@@ -170,7 +172,7 @@ export function GalleryTab({
   // ── Sync alt text draft to selection ─────────────────────────────
   React.useEffect(() => {
     if (selectedAsset) setAltTextDraft(selectedAsset.altText ?? "")
-  }, [selectedAsset?._id])
+  }, [selectedAsset])
 
   // ── Load More ─────────────────────────────────────────────────────
   const handleLoadMore = React.useCallback(async () => {
@@ -224,7 +226,7 @@ export function GalleryTab({
       const res = await fetch("/api/media/scan-gallery", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, owner, repo, branch }),
+        body: JSON.stringify({ projectId, owner, repo, branch, readRef: baseCommitSha }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? "Scan failed")
@@ -246,7 +248,7 @@ export function GalleryTab({
     } finally {
       setIsScanning(false)
     }
-  }, [projectId, owner, repo, branch])
+  }, [projectId, owner, repo, branch, baseCommitSha])
 
   // ── Select image ──────────────────────────────────────────────────
   const handleUseImage = React.useCallback(

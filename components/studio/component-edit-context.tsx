@@ -3,16 +3,18 @@
 import * as React from "react"
 import type { AuthoringCatalog, AuthoringComponent } from "@/lib/studio/authoring-catalog"
 import {
+  buildComponentEditIdentityIndex,
   editComponentProp,
+  type MdxComponentEditIdentity,
   type PreparedComponentPropEdit,
   prepareComponentPropEdit,
 } from "@/lib/studio/mdx-source-edit"
 import { ComponentEditModal } from "./component-edit-modal"
 
-type ComponentEditAnchor = Readonly<{ name: string; start: number; sourceSnapshot: string }>
-type ComponentEditRequest = (anchor: ComponentEditAnchor) => void
+type ComponentEditPosition = Readonly<{ name: string; start: number }>
+type ComponentEditRequest = (identity: MdxComponentEditIdentity) => void
 type ComponentEditBridge = Readonly<{
-  captureSourceSnapshot: () => string
+  captureIdentity: (position: ComponentEditPosition) => MdxComponentEditIdentity | null
   requestEdit: ComponentEditRequest
 }>
 
@@ -37,22 +39,21 @@ export function ComponentEditProvider({
 }) {
   const [session, setSession] = React.useState<EditSession | null>(null)
   const [refusal, setRefusal] = React.useState<string | null>(null)
+  const identityIndexCache = React.useRef<{
+    source: string
+    index: ReturnType<typeof buildComponentEditIdentityIndex>
+  } | null>(null)
 
   const requestEdit = React.useCallback<ComponentEditRequest>(
-    (anchor) => {
+    (identity) => {
       setRefusal(null)
-      const component = authoringCatalog.find((candidate) => candidate.mdxName === anchor.name)
+      const component = authoringCatalog.find((candidate) => candidate.mdxName === identity.name)
       const source = getSource()
-      if (anchor.sourceSnapshot !== source) {
-        setSession(null)
-        setRefusal("The source changed since this component was selected. Reopen it and try again.")
-        return
-      }
       if (!component) {
         setRefusal("This component cannot be edited safely from the current source.")
         return
       }
-      const prepared = prepareComponentPropEdit(source, anchor, component)
+      const prepared = prepareComponentPropEdit(source, identity, component)
       if (!prepared.ok) {
         setRefusal("This component cannot be edited safely because its position or props are ambiguous.")
         return
@@ -62,9 +63,22 @@ export function ComponentEditProvider({
     [authoringCatalog, getSource],
   )
 
+  const captureIdentity = React.useCallback(
+    (position: ComponentEditPosition): MdxComponentEditIdentity | null => {
+      const source = getSource()
+      if (identityIndexCache.current?.source !== source) {
+        identityIndexCache.current = { source, index: buildComponentEditIdentityIndex(source) }
+      }
+      const index = identityIndexCache.current.index
+      const captured = index.ok ? index.capture(position) : index
+      return captured.ok ? captured.identity : null
+    },
+    [getSource],
+  )
+
   const editBridge = React.useMemo<ComponentEditBridge>(
-    () => Object.freeze({ captureSourceSnapshot: getSource, requestEdit }),
-    [getSource, requestEdit],
+    () => Object.freeze({ captureIdentity, requestEdit }),
+    [captureIdentity, requestEdit],
   )
 
   const submit = React.useCallback(

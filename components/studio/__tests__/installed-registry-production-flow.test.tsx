@@ -2,7 +2,7 @@ import fs from "node:fs"
 import path from "node:path"
 import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { getBranchHeadSha, getTextFilesAtCommit } from "@/lib/github"
+import { getTextFilesAtCommit } from "@/lib/github"
 import { loadProjectLockAuthoringMetadata } from "@/lib/repopress/project-lock-snapshot"
 import { normalizeRegistryAuthoringMetadata, registryItemSchema } from "@/lib/repopress/registry-schema"
 import { buildStudioAuthoringCatalog } from "@/lib/studio/studio-authoring-catalog"
@@ -11,7 +11,6 @@ import { createStudioAdapterState, StudioAdapterProvider } from "../studio-adapt
 import { StudioProvider } from "../studio-context"
 
 vi.mock("@/lib/github", () => ({
-  getBranchHeadSha: vi.fn(),
   getTextFilesAtCommit: vi.fn(),
 }))
 
@@ -56,7 +55,6 @@ afterEach(() => {
 describe("installed registry authoring in production Studio", () => {
   it("loads the authorized project lock at its exact head SHA and drives the real palette", async () => {
     const baseSha = "a".repeat(40)
-    vi.mocked(getBranchHeadSha).mockResolvedValue(baseSha)
     vi.mocked(getTextFilesAtCommit).mockResolvedValue([
       { path: "apps/docs/repopress.lock.json", content: officialCalloutLock() },
     ])
@@ -69,9 +67,9 @@ describe("installed registry authoring in production Studio", () => {
         branch: "release",
         contentRoot: "apps/docs/content",
       },
+      baseSha,
     })
 
-    expect(getBranchHeadSha).toHaveBeenCalledWith("github-token", "acme", "docs", "release")
     expect(getTextFilesAtCommit).toHaveBeenCalledWith("github-token", "acme", "docs", baseSha, [
       "apps/docs/repopress.lock.json",
       "apps/repopress.lock.json",
@@ -107,6 +105,7 @@ describe("installed registry authoring in production Studio", () => {
           owner: "acme",
           repo: "docs",
           branch: "release",
+          baseCommitSha: baseSha,
           contentRoot: "apps/docs/content",
           tree: [],
           role: "owner",
@@ -120,5 +119,30 @@ describe("installed registry authoring in production Studio", () => {
     fireEvent.click(screen.getByRole("button", { name: /Callout/i }))
     expect(await screen.findByRole("combobox", { name: "Variant" })).toHaveTextContent("default")
     expect(screen.getByRole("textbox", { name: "Children" })).toBeRequired()
+  })
+
+  it("retains the page-resolved base SHA when the lock is missing or invalid", async () => {
+    const baseSha = "e".repeat(40)
+    const project = {
+      repoOwner: "acme",
+      repoName: "docs",
+      branch: "release",
+      contentRoot: "apps/docs/content",
+    }
+
+    vi.mocked(getTextFilesAtCommit).mockResolvedValueOnce([])
+    const missing = await loadProjectLockAuthoringMetadata({ accessToken: "github-token", project, baseSha })
+    expect(missing).toMatchObject({ baseSha, lockPath: null, metadata: {}, diagnostics: [] })
+
+    vi.mocked(getTextFilesAtCommit).mockResolvedValueOnce([
+      { path: "apps/docs/repopress.lock.json", content: "not json" },
+    ])
+    const invalid = await loadProjectLockAuthoringMetadata({ accessToken: "github-token", project, baseSha })
+    expect(invalid).toMatchObject({
+      baseSha,
+      lockPath: "apps/docs/repopress.lock.json",
+      metadata: {},
+      diagnostics: ["Invalid registry lock snapshot at apps/docs/repopress.lock.json"],
+    })
   })
 })

@@ -19,9 +19,10 @@ export async function syncProjectsServerSide(
   {
     runOrphanDetection = true,
     restoredConfigProjectIds,
-  }: { runOrphanDetection?: boolean; restoredConfigProjectIds?: string[] } = {},
+    configRef,
+  }: { runOrphanDetection?: boolean; restoredConfigProjectIds?: string[]; configRef?: string } = {},
 ): Promise<{ synced: string[]; created: string[]; unchanged: string[]; orphaned?: string[] } | null> {
-  const { config } = await fetchRepoConfig(token, owner, repo, branch)
+  const { config } = await fetchRepoConfig(token, owner, repo, configRef ?? branch)
   if (!config) return null
 
   const projectsToSync = config.projects.map((p) => ({

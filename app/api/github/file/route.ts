@@ -13,7 +13,7 @@ export async function GET(request: Request) {
   const owner = searchParams.get("owner")
   const repo = searchParams.get("repo")
   const path = searchParams.get("path")
-  const branch = searchParams.get("branch") || undefined
+  const ref = searchParams.get("ref") || searchParams.get("branch") || undefined
 
   if (!owner || !repo || !path) {
     return NextResponse.json({ error: "Missing required query params: owner, repo, path" }, { status: 400 })
@@ -30,7 +30,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const file = await getFile(token, owner, repo, path, branch)
+    const file = await getFile(token, owner, repo, path, ref)
     if (!file) {
       return NextResponse.json({ error: "File not found" }, { status: 404 })
     }

@@ -97,7 +97,7 @@ describe("position-bound Studio component editing", () => {
     expect(stale.applySource).not.toHaveBeenCalled()
   })
 
-  it("refuses a retained JSX node position when duplicate components changed underneath it", async () => {
+  it("refuses to rebind a retained opening tag to a duplicate with different children", async () => {
     const source =
       '<Callout title="Alpha" variant="accent">One</Callout>\n<Callout title="Bravo" variant="accent">Two</Callout>'
     const swapped =
@@ -107,7 +107,54 @@ describe("position-bound Studio component editing", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Edit Callout" }))
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("source changed")
+    expect(await screen.findByRole("alert")).toHaveTextContent("ambiguous")
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+    expect(editor.applySource).not.toHaveBeenCalled()
+  })
+
+  it("reacquires the intended unique Callout after an unrelated preceding edit", async () => {
+    const source =
+      '<Callout title="First" variant="accent">One</Callout>\n<Callout title="Second" variant="accent">Two</Callout>'
+    const editor = renderEditor(source, 1)
+    const latest = `A newly inserted introduction.\n\n${source}`
+    editor.setCurrentSource(latest)
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit Callout" }))
+
+    expect(await screen.findByLabelText("Title")).toHaveValue("Second")
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Changed" } })
+    fireEvent.click(screen.getByRole("button", { name: "Update Component" }))
+    expect(editor.applySource).toHaveBeenCalledWith(latest.replace('title="Second"', 'title="Changed"'))
+  })
+
+  it("distinguishes identical opening tags by their retained full-node source", async () => {
+    const source =
+      '<Callout title="Same" variant="accent">One</Callout>\n<Callout title="Same" variant="accent">Two</Callout>'
+    const editor = renderEditor(source, 1)
+    const latest = `Unrelated preface\n\n${source}`
+    editor.setCurrentSource(latest)
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit Callout" }))
+
+    expect(await screen.findByLabelText("Title")).toHaveValue("Same")
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Changed" } })
+    fireEvent.click(screen.getByRole("button", { name: "Update Component" }))
+    const secondStart = latest.lastIndexOf('<Callout title="Same"')
+    const expected = `${latest.slice(0, secondStart)}${latest
+      .slice(secondStart)
+      .replace('title="Same"', 'title="Changed"')}`
+    expect(editor.applySource).toHaveBeenCalledWith(expected)
+  })
+
+  it("refuses fresh reacquisition when duplicate full-node identities are identical", async () => {
+    const source =
+      '<Callout title="Same" variant="accent">Same body</Callout>\n<Callout title="Same" variant="accent">Same body</Callout>'
+    const editor = renderEditor(source, 1)
+    editor.setCurrentSource(`Unrelated preface\n\n${source}`)
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit Callout" }))
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("ambiguous")
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
     expect(editor.applySource).not.toHaveBeenCalled()
   })

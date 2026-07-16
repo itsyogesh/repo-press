@@ -71,6 +71,7 @@ async function syncTitlesForTree(
     owner: string
     repo: string
     branch: string
+    readRef: string
     files: { path: string; sha: string }[]
   },
 ) {
@@ -105,6 +106,7 @@ function subscribeTitleSync(
     owner: string
     repo: string
     branch: string
+    readRef: string
     files: { path: string; sha: string }[]
   } | null,
   listener: () => void,
@@ -135,6 +137,7 @@ export function useStudioQueries(
     owner?: string
     repo?: string
     branch?: string
+    baseCommitSha?: string
     projectAccessToken?: string
   },
 ) {
@@ -145,6 +148,7 @@ export function useStudioQueries(
   const owner = overrides?.owner ?? context.owner
   const repo = overrides?.repo ?? context.repo
   const branch = overrides?.branch ?? context.branch
+  const baseCommitSha = overrides?.baseCommitSha ?? context.baseCommitSha
   const projectAccessToken = overrides?.projectAccessToken ?? context.projectAccessToken
 
   const user = useQuery(api.auth.getCurrentUser)
@@ -277,9 +281,10 @@ export function useStudioQueries(
       owner,
       repo,
       branch,
+      readRef: baseCommitSha,
       files: treeFiles,
     })
-  }, [projectId, owner, repo, branch, treeFiles])
+  }, [projectId, owner, repo, branch, baseCommitSha, treeFiles])
 
   React.useSyncExternalStore(
     (listener) =>
@@ -291,6 +296,7 @@ export function useStudioQueries(
               owner,
               repo,
               branch,
+              readRef: baseCommitSha,
               files: treeFiles,
             }
           : null,

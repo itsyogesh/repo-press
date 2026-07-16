@@ -149,13 +149,14 @@ export function ComponentPropForm({
             className="min-h-[80px] font-mono text-sm"
             required={def.slots.some((slot) => slot.name === "children" && slot.required)}
             aria-invalid={errors.children ? true : undefined}
+            aria-errormessage={errors.children ? "__children-error" : undefined}
             aria-describedby={errors.children ? "__children-error" : "__children-description"}
           />
           <p id="__children-description" className="text-xs text-muted-foreground">
             MDX content placed between open/close tags.
           </p>
           {errors.children ? (
-            <p id="__children-error" className="text-xs text-destructive">
+            <p id="__children-error" role="alert" className="text-xs text-destructive">
               {errors.children}
             </p>
           ) : null}
@@ -215,7 +216,7 @@ function PropField({
   ) : null
 
   const errorEl = error ? (
-    <p id={errorId} className="text-xs text-destructive">
+    <p id={errorId} role="alert" className="text-xs text-destructive">
       {error}
     </p>
   ) : null
@@ -234,6 +235,8 @@ function PropField({
             aria-labelledby={labelId}
             aria-describedby={describedBy || undefined}
             aria-invalid={error ? true : undefined}
+            aria-errormessage={error ? errorId : undefined}
+            aria-required={propDef.required || undefined}
             className={cn("h-9", errorClass)}
           >
             <SelectValue placeholder={placeholder ?? "Select..."} />
@@ -269,6 +272,8 @@ function PropField({
                 aria-labelledby={labelId}
                 aria-describedby={describedBy || undefined}
                 aria-invalid={error ? true : undefined}
+                aria-errormessage={error ? errorId : undefined}
+                aria-required="true"
                 className={cn("h-9", errorClass)}
               >
                 <SelectValue placeholder="Select..." />
@@ -292,6 +297,7 @@ function PropField({
             onCheckedChange={(checked) => onChange(checked)}
             aria-describedby={describedBy || undefined}
             aria-invalid={error ? true : undefined}
+            aria-errormessage={error ? errorId : undefined}
           />
           {descriptionEl}
           {errorEl}
@@ -311,6 +317,8 @@ function PropField({
             className={errorClass}
             aria-describedby={describedBy || undefined}
             aria-invalid={error ? true : undefined}
+            aria-errormessage={error ? errorId : undefined}
+            required={propDef.required}
           />
           {descriptionEl}
           {errorEl}
@@ -332,6 +340,8 @@ function PropField({
             className={`font-mono text-sm ${errorClass}`}
             aria-describedby={describedBy || undefined}
             aria-invalid={error ? true : undefined}
+            aria-errormessage={error ? errorId : undefined}
+            required={propDef.required}
           />
           {descriptionEl || (
             <p className="text-xs text-muted-foreground">
@@ -376,6 +386,8 @@ function PropField({
             className={errorClass}
             aria-describedby={describedBy || undefined}
             aria-invalid={error ? true : undefined}
+            aria-errormessage={error ? errorId : undefined}
+            required={propDef.required}
           />
           {descriptionEl}
           {errorEl}

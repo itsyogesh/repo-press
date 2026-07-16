@@ -17,10 +17,13 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json()
-    const { projectId, owner, repo, branch, files } = body
+    const { projectId, owner, repo, branch, readRef, files } = body
 
-    if (!projectId || !owner || !repo || !branch || !files) {
+    if (!projectId || !owner || !repo || !branch || !readRef || !files) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
+    }
+    if (typeof readRef !== "string" || !/^[0-9a-f]{40}$/i.test(readRef)) {
+      return NextResponse.json({ error: "Invalid read ref" }, { status: 400 })
     }
 
     // P1 fix: Verify the caller has at least viewer access to the repo
@@ -49,6 +52,7 @@ export async function POST(request: Request) {
       owner,
       repo,
       branch,
+      readRef,
       contentRoot: project.contentRoot,
       files: prepareTitleSyncFiles(project.contentRoot, files),
       githubToken: token,

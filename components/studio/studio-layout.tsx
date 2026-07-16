@@ -91,6 +91,7 @@ export interface StudioLayoutProps {
   owner: string
   repo: string
   branch: string
+  baseCommitSha: string
   currentPath: string
   projectId?: string
   projectAccessToken?: string
@@ -464,7 +465,7 @@ function StudioLayoutInner({
   studioFile: ReturnType<typeof useStudioFile>
   studioQueries: ReturnType<typeof useStudioQueries>
 }) {
-  const { projectId, projectAccessToken, contentRoot, owner, repo, branch } = useStudio()
+  const { projectId, projectAccessToken, contentRoot, owner, repo, branch, baseCommitSha } = useStudio()
   const { diagnostics: authoringDiagnostics } = useStudioAdapter()
 
   // Framework adapter for file naming / frontmatter - uses the project's detectedFramework string
@@ -873,7 +874,7 @@ function StudioLayoutInner({
         owner,
         repo,
         path: oldPath,
-        branch,
+        ref: baseCommitSha,
       })
       const response = await fetch(`/api/github/file?${params.toString()}`)
       if (!response.ok) {
@@ -901,7 +902,7 @@ function StudioLayoutInner({
         pendingCreateOpId: undefined as Id<"explorerOps"> | undefined,
       }
     },
-    [selectedFile?.path, frontmatter, content, sha, pendingOps, owner, repo, branch, contentRoot],
+    [selectedFile?.path, frontmatter, content, sha, pendingOps, owner, repo, baseCommitSha, contentRoot],
   )
 
   const stageRelocateFile = React.useCallback(
@@ -1808,6 +1809,7 @@ function StudioLayoutInner({
           owner={owner}
           repo={repo}
           branch={branch}
+          baseCommitSha={baseCommitSha}
           onConfirm={({ fileName, parentPath, frontmatter }) => handleConfirmCreate(fileName, parentPath, frontmatter)}
         />
 
@@ -1884,6 +1886,7 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
     owner,
     repo,
     branch,
+    baseCommitSha,
     projectId,
     projectAccessToken,
     contentRoot = "",
@@ -1901,12 +1904,12 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
   const [tree, setTree] = React.useState<FileTreeNode[]>(initialTree)
   React.useEffect(() => {
     if (initialTree.length > 0) return
-    const qp = new URLSearchParams({ owner, repo, branch: branch ?? "main", contentRoot })
+    const qp = new URLSearchParams({ owner, repo, ref: baseCommitSha, contentRoot })
     fetch(`/api/github/tree?${qp}`)
       .then((res) => (res.ok ? res.json() : Promise.reject(res)))
       .then((data: FileTreeNode[]) => setTree(data))
       .catch(() => {}) // non-critical: empty tree is an acceptable fallback
-  }, [owner, repo, branch, contentRoot, initialTree.length])
+  }, [owner, repo, baseCommitSha, contentRoot, initialTree.length])
 
   // 1. File state hook
   const studioFile = useStudioFile(initialFile, currentPath)
@@ -1932,10 +1935,10 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
   // 3. Auto-sync config logic
   React.useEffect(() => {
     if (!owner || !repo || !branch) return
-    syncProjectsFromConfigAction(owner, repo, branch).catch((err) => {
+    syncProjectsFromConfigAction(owner, repo, branch, baseCommitSha).catch((err) => {
       console.warn("Background config sync failed:", err)
     })
-  }, [owner, repo, branch])
+  }, [owner, repo, branch, baseCommitSha])
 
   const authoringState = React.useMemo(() => {
     try {
@@ -1987,6 +1990,7 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
       owner,
       repo,
       branch,
+      baseCommitSha,
       projectId,
       projectAccessToken,
       userId,
@@ -1995,7 +1999,19 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
       tree,
       role,
     }),
-    [owner, repo, branch, projectId, projectAccessToken, userId, selectedFile?.path, contentRoot, tree, role],
+    [
+      owner,
+      repo,
+      branch,
+      baseCommitSha,
+      projectId,
+      projectAccessToken,
+      userId,
+      selectedFile?.path,
+      contentRoot,
+      tree,
+      role,
+    ],
   )
 
   return (
@@ -2008,13 +2024,24 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
 }
 
 export function StudioLayout(props: StudioLayoutProps) {
-  const { owner, repo, branch, projectId, projectAccessToken, contentRoot = "", tree, role = "owner" } = props
+  const {
+    owner,
+    repo,
+    branch,
+    baseCommitSha,
+    projectId,
+    projectAccessToken,
+    contentRoot = "",
+    tree,
+    role = "owner",
+  } = props
 
   const baseContextValue = React.useMemo(
     () => ({
       owner,
       repo,
       branch,
+      baseCommitSha,
       projectId,
       projectAccessToken,
       userId: undefined,
@@ -2023,7 +2050,7 @@ export function StudioLayout(props: StudioLayoutProps) {
       tree,
       role,
     }),
-    [owner, repo, branch, projectId, projectAccessToken, contentRoot, tree, role],
+    [owner, repo, branch, baseCommitSha, projectId, projectAccessToken, contentRoot, tree, role],
   )
 
   return (

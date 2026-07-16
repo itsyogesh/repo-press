@@ -69,6 +69,99 @@ describe("source-preserving MDX component prop edits", () => {
     })
   })
 
+  it("reacquires one unique retained opening-tag identity after an unrelated preceding edit", () => {
+    const source = '<Callout title="First" />\n<Callout title="Second" variant="accent">Body</Callout>'
+    const latest = `Unrelated preface\n\n${source}`
+    const retained = targetFor(source, "Callout", 1)
+    const def = buildAuthoringCatalog({
+      metadata: {
+        Callout: {
+          props: [
+            { name: "title", type: "string" },
+            { name: "variant", type: "string" },
+          ],
+          slots: [{ name: "children", accepts: "mdx", required: true }],
+        },
+      },
+    })[0]
+
+    expect(
+      prepareComponentPropEdit(
+        latest,
+        {
+          name: retained.name,
+          kind: retained.kind,
+          openingTag: retained.openingTag,
+          nodeSource: retained.nodeSource,
+        },
+        def,
+      ),
+    ).toMatchObject({
+      ok: true,
+      initialProps: { title: "Second", variant: "accent" },
+      target: { start: latest.lastIndexOf("<Callout"), sourceSnapshot: latest },
+    })
+  })
+
+  it("refuses to rebind a retained opening tag to a different component body", () => {
+    const original =
+      '<Callout title="Alpha" variant="accent">One</Callout>\n<Callout title="Bravo" variant="accent">Two</Callout>'
+    const latest =
+      '<Callout title="Bravo" variant="accent">One</Callout>\n<Callout title="Alpha" variant="accent">Two</Callout>'
+    const retained = targetFor(original, "Callout", 1)
+    const def = buildAuthoringCatalog({
+      metadata: {
+        Callout: {
+          props: [
+            { name: "title", type: "string" },
+            { name: "variant", type: "string" },
+          ],
+          slots: [{ name: "children", accepts: "mdx", required: true }],
+        },
+      },
+    })[0]
+
+    expect(
+      prepareComponentPropEdit(
+        latest,
+        {
+          name: retained.name,
+          kind: retained.kind,
+          openingTag: retained.openingTag,
+          nodeSource: retained.nodeSource,
+        },
+        def,
+      ),
+    ).toEqual({ ok: false, source: latest, code: "UNSAFE_TO_PRESERVE" })
+  })
+
+  it("distinguishes equal opening tags by exact retained full-node source", () => {
+    const source = '<Callout title="Same">One</Callout>\n<Callout title="Same">Two</Callout>'
+    const latest = `Unrelated preface\n\n${source}`
+    const retained = targetFor(source, "Callout", 1)
+    const def = buildAuthoringCatalog({
+      metadata: {
+        Callout: {
+          props: [{ name: "title", type: "string" }],
+          slots: [{ name: "children", accepts: "mdx", required: true }],
+        },
+      },
+    })[0]
+
+    expect(
+      prepareComponentPropEdit(
+        latest,
+        {
+          name: retained.name,
+          kind: retained.kind,
+          openingTag: retained.openingTag,
+          nodeSource: retained.nodeSource,
+        },
+        def,
+      ),
+    ).toMatchObject({ ok: true, target: { start: latest.lastIndexOf("<Callout"), sourceSnapshot: latest } })
+  })
+
   it("maps an initial MDXEditor offset from its trimmed parser source without confusing duplicates", () => {
     const source = '\n\n<Callout title="First" />\n<Callout title="Second" />\n'
     const importedSource = source.trim()

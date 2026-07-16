@@ -1,4 +1,4 @@
-import { type GitHubTextFileSnapshot, getBranchHeadSha, getTextFilesAtCommit } from "@/lib/github"
+import { type GitHubTextFileSnapshot, getTextFilesAtCommit } from "@/lib/github"
 import { repoPressLockSchema } from "./lock-schema"
 import { compareCodeUnits, deepFreeze, type NormalizedAuthoringMetadata } from "./registry-schema"
 
@@ -152,12 +152,13 @@ export function projectLockAuthoringFromSnapshots(
 export async function loadProjectLockAuthoringMetadata({
   accessToken,
   project,
+  baseSha,
 }: {
   accessToken: string
   project: ProjectLockAuthority
+  baseSha: string
 }): Promise<ProjectLockAuthoringResult> {
   const candidatePaths = projectLockCandidatePaths(project.contentRoot)
-  const baseSha = await getBranchHeadSha(accessToken, project.repoOwner, project.repoName, project.branch)
   const snapshots = await getTextFilesAtCommit(
     accessToken,
     project.repoOwner,

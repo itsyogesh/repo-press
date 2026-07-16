@@ -45,6 +45,7 @@ export function ImageField({
     owner,
     repo,
     branch,
+    baseCommitSha,
     contentRoot,
     projectAccessToken,
   } = useStudio()
@@ -139,6 +140,7 @@ export function ImageField({
           owner={owner}
           repo={repo}
           branch={branch}
+          baseCommitSha={baseCommitSha}
           pathHint={pathHint}
           selectedFilePath={selectedFilePath}
           authoredValueUsage="frontmatter"
@@ -175,6 +177,7 @@ export function ImageField({
         owner={owner}
         repo={repo}
         branch={branch}
+        baseCommitSha={baseCommitSha}
         pathHint={pathHint}
         selectedFilePath={selectedFilePath}
         contentRoot={contentRoot}
@@ -196,6 +199,7 @@ interface ImageSelectorDialogProps {
   owner?: string
   repo?: string
   branch?: string
+  baseCommitSha: string
   pathHint: string
   selectedFilePath?: string
   contentRoot?: string
@@ -214,6 +218,7 @@ function ImageSelectorDialog({
   owner,
   repo,
   branch,
+  baseCommitSha,
   pathHint,
   selectedFilePath,
   contentRoot,
@@ -368,6 +373,7 @@ function ImageSelectorDialog({
                 owner={owner ?? ""}
                 repo={repo ?? ""}
                 branch={branch ?? "main"}
+                baseCommitSha={baseCommitSha}
                 projectAccessToken={projectAccessToken}
                 selectedFilePath={selectedFilePath}
                 contentRoot={contentRoot}

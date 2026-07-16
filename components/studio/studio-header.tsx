@@ -59,7 +59,7 @@ export function StudioHeader({
   onSave,
   isSaving,
 }: StudioHeaderProps) {
-  const { owner, repo, branch, projectId } = useStudio()
+  const { owner, repo, branch, baseCommitSha, projectId } = useStudio()
   const { viewMode, setViewMode, sidebarState, setSidebarState } = useViewMode()
   const [isPending, startTransition] = React.useTransition()
 
@@ -69,7 +69,7 @@ export function StudioHeader({
   const handleSyncConfig = () => {
     startTransition(async () => {
       try {
-        const res = await syncProjectsFromConfigAction(owner, repo, branch)
+        const res = await syncProjectsFromConfigAction(owner, repo, branch, baseCommitSha)
         if (res.success) {
           toast.success("Project configuration synced from repository")
         } else {

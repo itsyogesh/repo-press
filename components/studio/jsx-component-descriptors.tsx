@@ -3,18 +3,18 @@ import * as React from "react"
 import { Button } from "@/components/ui/button"
 import type { AuthoringCatalog, AuthoringComponent } from "@/lib/studio/authoring-catalog"
 import { componentAcceptsChildren } from "@/lib/studio/authoring-catalog"
+import type { MdxComponentEditIdentity } from "@/lib/studio/mdx-source-edit"
 import { useComponentEditRequest } from "./component-edit-context"
 
 export function GenericJsxEditor({ descriptor, mdastNode }: JsxEditorProps) {
   const editBridge = useComponentEditRequest()
-  const sourceSnapshotRef = React.useRef<string | null>(null)
-  if (sourceSnapshotRef.current === null && editBridge) {
-    sourceSnapshotRef.current = editBridge.captureSourceSnapshot()
-  }
   const name = typeof mdastNode.name === "string" ? mdastNode.name : descriptor.name
   const start = mdastNode.position?.start.offset
-  const canRequestEdit =
-    editBridge !== null && sourceSnapshotRef.current !== null && typeof name === "string" && Number.isSafeInteger(start)
+  const identityRef = React.useRef<MdxComponentEditIdentity | null | undefined>(undefined)
+  if (identityRef.current === undefined && editBridge && typeof name === "string" && Number.isSafeInteger(start)) {
+    identityRef.current = editBridge.captureIdentity({ name, start: start as number })
+  }
+  const canRequestEdit = editBridge !== null && identityRef.current != null
   return (
     <div
       style={{
@@ -43,11 +43,7 @@ export function GenericJsxEditor({ descriptor, mdastNode }: JsxEditorProps) {
         disabled={!canRequestEdit}
         onClick={() => {
           if (canRequestEdit) {
-            editBridge.requestEdit({
-              name,
-              start: start as number,
-              sourceSnapshot: sourceSnapshotRef.current as string,
-            })
+            editBridge.requestEdit(identityRef.current as MdxComponentEditIdentity)
           }
         }}
       >

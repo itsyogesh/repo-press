@@ -64,6 +64,7 @@ function renderModal(catalog: AuthoringCatalog, onInsert = vi.fn()) {
           owner: "repo-owner",
           repo: "docs",
           branch: "main",
+          baseCommitSha: "a".repeat(40),
           contentRoot: "",
           tree: [],
           role: "owner",

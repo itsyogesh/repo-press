@@ -83,6 +83,7 @@ export const scanImagesFromGitHub = action({
     owner: v.string(),
     repo: v.string(),
     branch: v.string(),
+    readRef: v.string(),
     githubToken: v.string(),
     userId: v.optional(v.string()),
     projectAccessToken: v.optional(v.string()),
@@ -95,7 +96,7 @@ export const scanImagesFromGitHub = action({
     })
     if (!hasAccess) throw new Error("Unauthorized")
 
-    const treeUrl = `https://api.github.com/repos/${args.owner}/${args.repo}/git/trees/${encodeURIComponent(args.branch)}?recursive=1`
+    const treeUrl = `https://api.github.com/repos/${args.owner}/${args.repo}/git/trees/${encodeURIComponent(args.readRef)}?recursive=1`
     const treeRes = await fetch(treeUrl, {
       headers: {
         Authorization: `token ${args.githubToken}`,

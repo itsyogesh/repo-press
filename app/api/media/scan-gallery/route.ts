@@ -12,10 +12,13 @@ const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { projectId, owner, repo, branch } = body
+    const { projectId, owner, repo, branch, readRef } = body
 
-    if (!projectId || !owner || !repo || !branch) {
+    if (!projectId || !owner || !repo || !branch || !readRef) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
+    }
+    if (typeof readRef !== "string" || !/^[0-9a-f]{40}$/i.test(readRef)) {
+      return NextResponse.json({ error: "Invalid read ref" }, { status: 400 })
     }
 
     // Verify project exists and the request context matches
@@ -49,6 +52,7 @@ export async function POST(request: Request) {
       owner,
       repo,
       branch,
+      readRef,
       githubToken,
       userId: actingUserId,
       projectAccessToken,
