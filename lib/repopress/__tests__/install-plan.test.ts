@@ -695,6 +695,34 @@ describe("planRegistryInstall", () => {
     expect(cssResult.lockSnapshot.items["@example/css-output-limit"].managedCss).toEqual([])
   })
 
+  it("rolls back a runtime-map adaptation that exceeds the accepted output limit", () => {
+    const item = registrySource({ id: "@example/runtime-output-limit" })
+    const runtimeBase = "export const components = {}\n"
+    const runtime = `${" ".repeat(2 * 1024 * 1024 - runtimeBase.length - 8)}${runtimeBase}`
+    const result = plan([item], { currentFiles: [{ path: "mdx-components.tsx", content: runtime }] })
+
+    expect(result.conflicts).toContainEqual(
+      expect.objectContaining({ code: "OUTPUT_LIMIT_EXCEEDED", path: "mdx-components.tsx" }),
+    )
+    expect(result.runtimeMapEdit).toEqual({ path: "mdx-components.tsx", before: runtime, after: runtime })
+    expect(result.fileChanges.find((change) => change.kind === "runtime-map")).toBeUndefined()
+  })
+
+  it("keeps the largest accepted runtime-map adaptation self-acceptable on repeat", () => {
+    const item = registrySource({ id: "@example/runtime-repeat" })
+    const runtimeBase = "export const components = {}\n"
+    const runtime = `${" ".repeat(2 * 1024 * 1024 - runtimeBase.length - 256)}${runtimeBase}`
+    const initial = plan([item], { currentFiles: [{ path: "mdx-components.tsx", content: runtime }] })
+    expect(initial.conflicts).toEqual([])
+    expect(new TextEncoder().encode(initial.runtimeMapEdit.after).byteLength).toBeLessThanOrEqual(2 * 1024 * 1024)
+
+    const repeated = plan([item], { currentFiles: filesFromPlan(initial), currentLock: initial.lockSnapshot })
+    expect(repeated.conflicts).toEqual([])
+    expect(repeated.runtimeMapEdit.before).toBe(initial.runtimeMapEdit.after)
+    expect(repeated.runtimeMapEdit.after).toBe(initial.runtimeMapEdit.after)
+    expect(repeated.fileChanges.find((change) => change.kind === "runtime-map")).toBeUndefined()
+  })
+
   it("bounds aggregate package requests without emitting a partial package edit", () => {
     const sources = Array.from({ length: 5 }, (_, itemIndex) =>
       registrySource({

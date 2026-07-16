@@ -943,18 +943,32 @@ export function planRegistryInstall(input: PlanRegistryInstallInput): RegistryIn
     })
   } else {
     const runtimeResult = adaptRuntimeMap({ source: runtimeSnapshot.content, bindings: runtimeBindings })
-    runtimeMapEdit = { path: layout.runtimeMapPath, before: runtimeSnapshot.content, after: runtimeResult.source }
     if (!runtimeResult.ok) {
+      runtimeMapEdit = { path: layout.runtimeMapPath, before: runtimeSnapshot.content, after: runtimeResult.source }
       conflicts.push({ code: "RUNTIME_MAP_CONFLICT", path: layout.runtimeMapPath, message: runtimeResult.message })
-    } else if (runtimeResult.changed) {
-      fileChanges.push({
-        kind: "runtime-map",
-        owner: "@repopress/system",
+    } else if (new TextEncoder().encode(runtimeResult.source).byteLength > MAX_RUNTIME_MAP_BYTES) {
+      runtimeMapEdit = {
         path: layout.runtimeMapPath,
         before: runtimeSnapshot.content,
-        after: runtimeResult.source,
-        digest: sha256(runtimeResult.source),
+        after: runtimeSnapshot.content,
+      }
+      conflicts.push({
+        code: "OUTPUT_LIMIT_EXCEEDED",
+        path: layout.runtimeMapPath,
+        message: "Planned runtime-map output exceeds the supported byte limit",
       })
+    } else {
+      runtimeMapEdit = { path: layout.runtimeMapPath, before: runtimeSnapshot.content, after: runtimeResult.source }
+      if (runtimeResult.changed) {
+        fileChanges.push({
+          kind: "runtime-map",
+          owner: "@repopress/system",
+          path: layout.runtimeMapPath,
+          before: runtimeSnapshot.content,
+          after: runtimeResult.source,
+          digest: sha256(runtimeResult.source),
+        })
+      }
     }
   }
 
