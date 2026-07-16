@@ -1,7 +1,11 @@
 // @vitest-environment node
 import vm from "node:vm"
 import { describe, expect, it } from "vitest"
-import { createCompatibleWorkerSource, prepareCompatibleWorkerJob } from "../compatible-worker"
+import {
+  createCompatibleWorkerRenderer,
+  createCompatibleWorkerSource,
+  prepareCompatibleWorkerJob,
+} from "../compatible-worker"
 
 describe("compatible worker containment", () => {
   it("runs repository components without a DOM/navigation realm and returns only inert output", async () => {
@@ -15,6 +19,10 @@ describe("compatible worker containment", () => {
             import React from "react"
             function Escape() {
               React.useEffect(() => { globalThis.location.href = "https://evil.test/effect" }, [])
+              React.useLayoutEffect(() => {}, [])
+              React.useState(0)
+              React.useReducer((value) => value, 0)
+              React.useRef(null)
               const constructor = (() => {}).constructor
               if (constructor) constructor("globalThis.location.href='https://evil.test/constructor'")()
               const asyncConstructor = Object.getPrototypeOf(async function () {}).constructor
@@ -24,8 +32,9 @@ describe("compatible worker containment", () => {
               return <a
                 href="https://evil.test/link"
                 style={{ backgroundImage: "url(https://evil.test/style)" }}
+                onClick={() => { globalThis.location.href = "https://evil.test/event" }}
                 ref={() => { globalThis.location.href = "https://evil.test/ref" }}
-              >Contained</a>
+              ><img src="https://evil.test/image" />Contained</a>
             }
             export default { components: { Escape } }
           `,
@@ -76,6 +85,57 @@ describe("compatible worker containment", () => {
     const serialized = JSON.stringify(sent[0])
     expect(serialized).toContain("Contained")
     expect(serialized).not.toMatch(/evil\.test|href|style|ref/)
+    expect(sent[0]).toMatchObject({
+      fidelityLosses: expect.arrayContaining([
+        "STATIC_INERT_EFFECT",
+        "STATIC_INERT_LAYOUT_EFFECT",
+        "STATIC_INERT_STATE",
+        "STATIC_INERT_REDUCER",
+        "STATIC_INERT_REF",
+        "STATIC_INERT_EVENT",
+        "STATIC_INERT_LINK",
+        "STATIC_INERT_MEDIA",
+        "STATIC_INERT_STYLE",
+      ]),
+    })
+  })
+
+  it("reports timeout and worker errors with closed bounded pipeline codes", async () => {
+    const job = await prepareCompatibleWorkerJob({ artifactId: "artifact", documentSource: "# Static", adapter: null })
+    const unresponsivePort = {
+      onmessage: null as ((event: MessageEvent) => void) | null,
+      close() {},
+      postMessage() {},
+      start() {},
+    }
+    const timeoutRenderer = createCompatibleWorkerRenderer({
+      createWorker: () => ({ postMessage() {}, terminate() {} }),
+      createMessageChannel: () => ({ port1: unresponsivePort, port2: {} as Transferable }),
+      createRequestId: () => "T".repeat(43),
+      timeoutMs: 1,
+    })
+    await expect(timeoutRenderer.render(job)).rejects.toMatchObject({ code: "COMPATIBLE_WORKER_TIMEOUT" })
+
+    const errorPort = {
+      onmessage: null as ((event: MessageEvent) => void) | null,
+      close() {},
+      postMessage() {
+        this.onmessage?.({
+          data: {
+            type: "repopress:compatible-error",
+            requestId: "E".repeat(43),
+            code: "COMPATIBLE_EXECUTION_FAILED",
+          },
+        } as MessageEvent)
+      },
+      start() {},
+    }
+    const errorRenderer = createCompatibleWorkerRenderer({
+      createWorker: () => ({ postMessage() {}, terminate() {} }),
+      createMessageChannel: () => ({ port1: errorPort, port2: {} as Transferable }),
+      createRequestId: () => "E".repeat(43),
+    })
+    await expect(errorRenderer.render(job)).rejects.toMatchObject({ code: "COMPATIBLE_EXECUTION_FAILED" })
   })
 
   it("rejects dynamic imports before any repository code reaches the worker", async () => {
@@ -94,5 +154,40 @@ describe("compatible worker containment", () => {
         },
       }),
     ).rejects.toThrow("Dynamic imports are unavailable")
+  })
+
+  it("keeps ordinary supported semantic static content lossless", async () => {
+    const job = await prepareCompatibleWorkerJob({
+      artifactId: "artifact-static",
+      documentSource: "# Static heading\n\nA supported paragraph.",
+      adapter: null,
+    })
+    const sent: unknown[] = []
+    const listeners: Array<(event: { data?: unknown; ports?: unknown[] }) => void | Promise<void>> = []
+    const port = {
+      onmessage: null as ((event: { data: unknown }) => void) | null,
+      close() {},
+      postMessage(message: unknown) {
+        sent.push(message)
+      },
+      start() {},
+    }
+    const context = vm.createContext({
+      addEventListener: (_type: string, listener: (event: { data?: unknown; ports?: unknown[] }) => void) =>
+        listeners.push(listener),
+      removeEventListener() {},
+    })
+    vm.runInContext(createCompatibleWorkerSource(), context, { timeout: 1_000 })
+    await listeners[0]({ ports: [port] })
+    port.onmessage?.({
+      data: { type: "repopress:render-compatible", requestId: "S".repeat(43), job },
+    })
+
+    expect(sent).toHaveLength(1)
+    expect(sent[0]).toMatchObject({
+      type: "repopress:rendered-compatible",
+      fidelityLosses: [],
+      tree: expect.arrayContaining([expect.objectContaining({ kind: "element", tag: "h1" })]),
+    })
   })
 })

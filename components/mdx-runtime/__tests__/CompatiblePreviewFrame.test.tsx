@@ -60,6 +60,7 @@ const authorityContext: CompatiblePreviewAuthorityContext = {
 }
 let serverResolution: VerifiedCompatiblePreviewResolution
 let serverWire: string
+let changedServerWire: string
 let secondSessionResolution: VerifiedCompatiblePreviewResolution
 let secondSessionAuthority: CompatiblePreviewAuthorityContext
 let secondSnapshotResolution: VerifiedCompatiblePreviewResolution
@@ -77,6 +78,8 @@ beforeAll(async () => {
   })
   if (!verified) throw new Error("Expected signed fixture to verify")
   serverResolution = verified
+  changedServerWire = (await createSignedCompatibleFixture({ documentSource: "# Changed", keyPair: fixture.keyPair }))
+    .wire
   const secondSession = await createSignedCompatibleFixture({ sessionId: "session-2", keyPair: fixture.keyPair })
   secondSessionAuthority = secondSession.expectedAuthority
   const verifiedSecondSession = await verifySignedCompatiblePreviewResolution(secondSession.wire, {
@@ -615,6 +618,74 @@ describe("CompatiblePreviewFrame", () => {
         compatibleResolution={serverWire}
         compatibleAuthority={authorityContext}
       />,
+    )
+    expect(await screen.findByTitle("Compatible component preview")).toBeInTheDocument()
+  })
+
+  it("downgrades through the authenticated frame channel, blocks the same attempt, and retries a changed approval", async () => {
+    vi.stubEnv("NEXT_PUBLIC_PREVIEW_ORIGIN", "https://preview.repopress.test")
+    const channels: FakeMessageChannel[] = []
+    vi.stubGlobal(
+      "MessageChannel",
+      class extends FakeMessageChannel {
+        constructor() {
+          super()
+          channels.push(this)
+        }
+      },
+    )
+    const props = {
+      content: "# Generic fallback",
+      frontmatter: { title: "Document" },
+      previewFidelity: "compatible" as const,
+      compatibleResolution: serverWire,
+      compatibleAuthority: authorityContext,
+    }
+    const { rerender } = render(<Preview {...props} />)
+    const frame = (await screen.findByTitle("Compatible component preview")) as HTMLIFrameElement
+    const frameWindow = frame.contentWindow as Window
+    const postMessage = vi.spyOn(frameWindow, "postMessage")
+    fireEvent.load(frame)
+    const offer = JSON.parse(postMessage.mock.calls[0][0] as string)
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        source: frameWindow,
+        data: JSON.stringify({ ...offer, type: "repopress:bootstrap-accept" }),
+      }),
+    )
+    channels[0].port1.emit(
+      serializeSandboxMessage({
+        protocolVersion: 1,
+        type: "diagnostics",
+        sessionId: "session-1",
+        snapshotVersion: 1,
+        sequence: 1,
+        payload: {
+          diagnostics: [
+            {
+              stage: "render",
+              severity: "warning",
+              code: "STATIC_INERT_LINK",
+              message: "untrusted text is ignored",
+              recoverable: true,
+              fidelityImpact: "compatible",
+            },
+          ],
+        },
+      }),
+    )
+
+    expect(await screen.findByRole("heading", { name: "Generic fallback" })).toBeInTheDocument()
+    expect(screen.getByText("Links are unavailable in static-inert-v1.")).toBeInTheDocument()
+    expect(screen.queryByTitle("Compatible component preview")).not.toBeInTheDocument()
+    expect(channels[0].port1.closed).toBe(true)
+
+    rerender(<Preview {...props} compatibleAuthority={{ ...authorityContext }} />)
+    await waitFor(() => expect(screen.queryByTitle("Compatible component preview")).not.toBeInTheDocument())
+    expect(channels).toHaveLength(1)
+
+    rerender(
+      <Preview {...props} compatibleResolution={changedServerWire} compatibleAuthority={{ ...authorityContext }} />,
     )
     expect(await screen.findByTitle("Compatible component preview")).toBeInTheDocument()
   })

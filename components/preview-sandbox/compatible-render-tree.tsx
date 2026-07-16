@@ -1,4 +1,5 @@
 import * as React from "react"
+import { type CompatibleFidelityLossCode, mergeCompatibleFidelityLosses } from "./compatible-diagnostics"
 
 export const COMPATIBLE_RENDER_MAX_NODES = 2_048
 export const COMPATIBLE_RENDER_MAX_DEPTH = 32
@@ -68,6 +69,23 @@ const DROP_CONTENT_TAGS = new Set([
   "track",
   "video",
 ])
+const MEDIA_TAGS = new Set(["audio", "canvas", "img", "source", "track", "video"])
+const FRAME_TAGS = new Set(["embed", "iframe", "object"])
+const FORM_TAGS = new Set([
+  "button",
+  "datalist",
+  "fieldset",
+  "form",
+  "input",
+  "label",
+  "legend",
+  "option",
+  "select",
+  "textarea",
+])
+const NAVIGATION_TAGS = new Set(["a", "nav"])
+const NETWORK_TAGS = new Set(["base", "link", "meta"])
+const ACTIVE_CONTENT_TAGS = new Set(["math", "noscript", "script", "style", "svg", "template"])
 
 const ALLOWED_STRING_ATTRIBUTES = new Set([
   "aria-description",
@@ -130,7 +148,10 @@ function sanitizeClassName(value: string): string | null {
   return tokens.every((token) => token.length <= 64 && CLASS_TOKEN_PATTERN.test(token)) ? tokens.join(" ") : null
 }
 
-function sanitizeProps(input: unknown): Readonly<Record<string, string | number | boolean>> {
+function sanitizeProps(
+  input: unknown,
+  losses: Set<CompatibleFidelityLossCode>,
+): Readonly<Record<string, string | number | boolean>> {
   if (!isPlainRecord(input)) return Object.freeze({})
   const output: Record<string, string | number | boolean> = Object.create(null)
   let attributeCount = 0
@@ -140,11 +161,24 @@ function sanitizeProps(input: unknown): Readonly<Record<string, string | number 
     if (attributeCount > COMPATIBLE_RENDER_MAX_ATTRIBUTES) throw new RangeError("Too many render attributes")
     if (key === "__proto__" || key === "prototype" || key === "constructor") continue
     const value = ownData(input, key)
+    if (/^on[A-Z]/.test(key)) {
+      losses.add("STATIC_INERT_EVENT")
+      continue
+    }
+    if (key === "ref") {
+      losses.add("STATIC_INERT_REF")
+      continue
+    }
+    if (key === "style" || key === "dangerouslySetInnerHTML") {
+      losses.add("STATIC_INERT_STYLE")
+      continue
+    }
     if (ALLOWED_STRING_ATTRIBUTES.has(key) && typeof value === "string") {
       if (utf8BytesWithin(value, COMPATIBLE_RENDER_MAX_ATTRIBUTE_BYTES) === null) continue
       if (key === "className") {
         const className = sanitizeClassName(value)
         if (className) output.className = className
+        else losses.add("STATIC_INERT_CLASS")
       } else {
         output[key] = value
       }
@@ -158,6 +192,8 @@ function sanitizeProps(input: unknown): Readonly<Record<string, string | number 
       value <= 1_000
     ) {
       output[key] = value
+    } else {
+      losses.add("STATIC_INERT_PROP")
     }
   }
   return Object.freeze(output)
@@ -171,9 +207,12 @@ function deepFreezeNode(node: CompatibleRenderNode): CompatibleRenderNode {
   return Object.freeze(node)
 }
 
-export function sanitizeCompatibleRenderTree(input: unknown): CompatibleRenderTree | null {
+export function sanitizeCompatibleRenderTreeWithDiagnostics(
+  input: unknown,
+): Readonly<{ tree: CompatibleRenderTree; fidelityLosses: readonly CompatibleFidelityLossCode[] }> | null {
   if (!Array.isArray(input)) return null
   const budget = { nodes: 0, textBytes: 0 }
+  const losses = new Set<CompatibleFidelityLossCode>()
 
   const visit = (value: unknown, depth: number): CompatibleRenderNode[] => {
     if (depth > COMPATIBLE_RENDER_MAX_DEPTH) throw new RangeError("Compatible render tree is too deep")
@@ -199,11 +238,22 @@ export function sanitizeCompatibleRenderTree(input: unknown): CompatibleRenderTr
     if (childValues.length > COMPATIBLE_RENDER_MAX_CHILDREN) {
       throw new RangeError("Compatible render node has too many children")
     }
-    if (DROP_CONTENT_TAGS.has(tagValue.toLowerCase())) return []
+    const rawTag = tagValue.toLowerCase()
+    if (MEDIA_TAGS.has(rawTag)) losses.add("STATIC_INERT_MEDIA")
+    if (FRAME_TAGS.has(rawTag)) losses.add("STATIC_INERT_FRAME")
+    if (FORM_TAGS.has(rawTag)) losses.add("STATIC_INERT_FORM")
+    if (NAVIGATION_TAGS.has(rawTag)) losses.add("STATIC_INERT_LINK")
+    if (rawTag === "nav") losses.add("STATIC_INERT_NAVIGATION")
+    if (NETWORK_TAGS.has(rawTag)) losses.add("STATIC_INERT_NETWORK_ELEMENT")
+    if (ACTIVE_CONTENT_TAGS.has(rawTag)) losses.add("STATIC_INERT_ACTIVE_CONTENT")
+    const props = sanitizeProps(ownData(value, "props"), losses)
+    if (DROP_CONTENT_TAGS.has(rawTag)) return []
     const children = childValues.flatMap((child) => visit(child, depth + 1))
-    const tag = tagValue.toLowerCase()
-    if (!ALLOWED_TAGS.has(tag)) return children
-    const props = sanitizeProps(ownData(value, "props"))
+    const tag = rawTag
+    if (!ALLOWED_TAGS.has(tag)) {
+      if (!NAVIGATION_TAGS.has(tag) && !FORM_TAGS.has(tag)) losses.add("STATIC_INERT_UNSUPPORTED_ELEMENT")
+      return children
+    }
     return [{ kind: "element", tag, props, children }]
   }
 
@@ -211,10 +261,14 @@ export function sanitizeCompatibleRenderTree(input: unknown): CompatibleRenderTr
     if (input.length > COMPATIBLE_RENDER_MAX_CHILDREN) return null
     const tree = input.flatMap((node) => visit(node, 1))
     for (const node of tree) deepFreezeNode(node)
-    return Object.freeze(tree)
+    return Object.freeze({ tree: Object.freeze(tree), fidelityLosses: mergeCompatibleFidelityLosses([...losses]) })
   } catch {
     return null
   }
+}
+
+export function sanitizeCompatibleRenderTree(input: unknown): CompatibleRenderTree | null {
+  return sanitizeCompatibleRenderTreeWithDiagnostics(input)?.tree ?? null
 }
 
 function renderNode(node: CompatibleRenderNode, key: string): React.ReactNode {

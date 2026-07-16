@@ -1,6 +1,11 @@
 import type { ExtractedImport } from "@/components/mdx-runtime/transformImports"
 import type { CompatibleSourceArtifact } from "@/lib/preview/compatible-artifact"
-import { type CompatibleRenderTree, sanitizeCompatibleRenderTree } from "./compatible-render-tree"
+import {
+  type CompatibleFidelityLossCode,
+  mergeCompatibleFidelityLosses,
+  parseCompatibleFidelityLosses,
+} from "./compatible-diagnostics"
+import { type CompatibleRenderTree, sanitizeCompatibleRenderTreeWithDiagnostics } from "./compatible-render-tree"
 import { compileMdx } from "./compileMdx"
 import { transpileAdapter } from "./esbuild-browser"
 
@@ -16,6 +21,27 @@ export type CompatibleWorkerJob = Readonly<{
   mdxCode: string
   imports: readonly ExtractedImport[]
 }>
+export type CompatibleWorkerRenderResult = Readonly<{
+  tree: CompatibleRenderTree
+  fidelityLosses: readonly CompatibleFidelityLossCode[]
+}>
+
+export type CompatibleWorkerFailureCode =
+  | "COMPATIBLE_WORKER_TIMEOUT"
+  | "COMPATIBLE_WORKER_PROTOCOL_FAILED"
+  | "COMPATIBLE_EXECUTION_FAILED"
+  | "COMPATIBLE_RENDER_FAILED"
+  | "COMPATIBLE_INERT_TREE_INVALID"
+
+export class CompatibleWorkerPipelineError extends Error {
+  readonly code: CompatibleWorkerFailureCode
+
+  constructor(code: CompatibleWorkerFailureCode) {
+    super(code)
+    this.name = "CompatibleWorkerPipelineError"
+    this.code = code
+  }
+}
 
 type WorkerLike = Pick<Worker, "postMessage" | "terminate">
 type MessagePortLike = Pick<MessagePort, "close" | "postMessage" | "start"> & {
@@ -107,6 +133,11 @@ function compatibleWorkerMain() {
   const addGlobalListener = root.addEventListener.bind(root)
   const removeGlobalListener = root.removeEventListener.bind(root)
   let bootstrapped = false
+  const fidelityLosses = new Set<string>()
+
+  function recordFidelityLoss(code: string) {
+    if (fidelityLosses.size < 32) fidelityLosses.add(code)
+  }
 
   const blockedNames = [
     "window",
@@ -192,11 +223,13 @@ function compatibleWorkerMain() {
     return element(type, props)
   }
   function forwardRef(render: any) {
+    recordFidelityLoss("STATIC_INERT_REF")
     return function RepoPressForwardRef(props: any) {
       return render(props, null)
     }
   }
   function createContext(defaultValue: any) {
+    recordFidelityLoss("STATIC_INERT_UNSUPPORTED_HOOK")
     const context: any = { _currentValue: defaultValue }
     context.Provider = ({ value, children }: any) => {
       context._currentValue = value
@@ -219,20 +252,32 @@ function compatibleWorkerMain() {
     createElement,
     forwardRef,
     isValidElement: (value: any) => Boolean(value && value.__repopressElement === 1),
-    memo: (component: any) => component,
+    memo: (component: any) => {
+      recordFidelityLoss("STATIC_INERT_UNSUPPORTED_COMPONENT")
+      return component
+    },
     useCallback: (callback: any) => callback,
-    useContext: (context: any) => context?._currentValue,
-    useEffect: () => undefined,
+    useContext: (context: any) => {
+      recordFidelityLoss("STATIC_INERT_UNSUPPORTED_HOOK")
+      return context?._currentValue
+    },
+    useEffect: () => recordFidelityLoss("STATIC_INERT_EFFECT"),
     useId: () => "repopress-static-id",
-    useInsertionEffect: () => undefined,
-    useLayoutEffect: () => undefined,
+    useInsertionEffect: () => recordFidelityLoss("STATIC_INERT_INSERTION_EFFECT"),
+    useLayoutEffect: () => recordFidelityLoss("STATIC_INERT_LAYOUT_EFFECT"),
     useMemo: (factory: any) => factory(),
-    useReducer: (_reducer: any, initial: any, initializer: any) => [
-      initializer ? initializer(initial) : initial,
-      () => {},
-    ],
-    useRef: (initial: any) => ({ current: initial }),
-    useState: (initial: any) => [typeof initial === "function" ? initial() : initial, () => {}],
+    useReducer: (_reducer: any, initial: any, initializer: any) => {
+      recordFidelityLoss("STATIC_INERT_REDUCER")
+      return [initializer ? initializer(initial) : initial, () => {}]
+    },
+    useRef: (initial: any) => {
+      recordFidelityLoss("STATIC_INERT_REF")
+      return { current: initial }
+    },
+    useState: (initial: any) => {
+      recordFidelityLoss("STATIC_INERT_STATE")
+      return [typeof initial === "function" ? initial() : initial, () => {}]
+    },
   }
   const jsxRuntime = { Fragment, jsx, jsxs: jsx, jsxDEV: jsx }
 
@@ -240,12 +285,14 @@ function compatibleWorkerMain() {
     return jsx("aside", { className: "repopress-callout", role: "note", children: props.children })
   }
   function DocsImage(props: any) {
+    recordFidelityLoss("STATIC_INERT_MEDIA")
     return jsx("figure", {
       className: "repopress-media-placeholder",
       children: jsx("figcaption", { children: props.alt || props.caption || "Image unavailable in static preview" }),
     })
   }
   function DocsVideo(props: any) {
+    recordFidelityLoss("STATIC_INERT_MEDIA")
     return jsx("figure", {
       className: "repopress-media-placeholder",
       children: jsx("figcaption", { children: props.title || "Video unavailable in static preview" }),
@@ -307,8 +354,12 @@ function compatibleWorkerMain() {
     const pairs = Object.entries(scope)
       .filter(([name]) => /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name))
       .slice(0, 256)
-    const missing = (name: string, component: boolean) =>
-      component ? (props: any) => jsx("code", { children: [`<${name} />`, props?.children] }) : `[Missing ${name}]`
+    const missing = (name: string, component: boolean) => {
+      recordFidelityLoss("STATIC_INERT_MISSING_REFERENCE")
+      return component
+        ? (props: any) => jsx("code", { children: [`<${name} />`, props?.children] })
+        : `[Missing ${name}]`
+    }
     pairs.push(["_missingMdxReference", missing])
     for (const name of blockedNames) {
       if (!pairs.some(([key]) => key === name)) pairs.push([name, undefined])
@@ -380,6 +431,23 @@ function compatibleWorkerMain() {
     "track",
     "video",
   ])
+  const mediaTags = new Set(["audio", "canvas", "img", "source", "track", "video"])
+  const frameTags = new Set(["embed", "iframe", "object"])
+  const formTags = new Set([
+    "button",
+    "datalist",
+    "fieldset",
+    "form",
+    "input",
+    "label",
+    "legend",
+    "option",
+    "select",
+    "textarea",
+  ])
+  const navigationTags = new Set(["a", "nav"])
+  const networkTags = new Set(["base", "link", "meta"])
+  const activeContentTags = new Set(["math", "noscript", "script", "style", "svg", "template"])
   function safeProps(props: any) {
     const output: any = {}
     if (!props || typeof props !== "object") return output
@@ -391,7 +459,32 @@ function compatibleWorkerMain() {
     for (const key of ["colSpan", "rowSpan", "start"]) {
       if (Number.isSafeInteger(props[key]) && props[key] >= 1 && props[key] <= 1_000) output[key] = props[key]
     }
+    let inspected = 0
+    for (const key of Object.keys(props)) {
+      inspected += 1
+      if (inspected > 64) {
+        recordFidelityLoss("STATIC_INERT_PROP")
+        break
+      }
+      if (key === "children" || key === "key") continue
+      if (/^on[A-Z]/.test(key)) recordFidelityLoss("STATIC_INERT_EVENT")
+      else if (key === "ref") recordFidelityLoss("STATIC_INERT_REF")
+      else if (key === "style" || key === "dangerouslySetInnerHTML") recordFidelityLoss("STATIC_INERT_STYLE")
+      else if (![...stringKeys, "aria-hidden", "colSpan", "rowSpan", "start"].includes(key)) {
+        recordFidelityLoss("STATIC_INERT_PROP")
+      }
+    }
     return output
+  }
+
+  function recordTagLoss(tag: string) {
+    if (mediaTags.has(tag)) recordFidelityLoss("STATIC_INERT_MEDIA")
+    if (frameTags.has(tag)) recordFidelityLoss("STATIC_INERT_FRAME")
+    if (formTags.has(tag)) recordFidelityLoss("STATIC_INERT_FORM")
+    if (tag === "a") recordFidelityLoss("STATIC_INERT_LINK")
+    if (tag === "nav") recordFidelityLoss("STATIC_INERT_NAVIGATION")
+    if (networkTags.has(tag)) recordFidelityLoss("STATIC_INERT_NETWORK_ELEMENT")
+    if (activeContentTags.has(tag)) recordFidelityLoss("STATIC_INERT_ACTIVE_CONTENT")
   }
 
   function renderTree(value: any) {
@@ -418,6 +511,7 @@ function compatibleWorkerMain() {
       if (typeof node.type === "function") {
         let output: any
         if (node.type.prototype && typeof node.type.prototype.render === "function") {
+          recordFidelityLoss("STATIC_INERT_UNSUPPORTED_COMPONENT")
           const instance = new node.type(props)
           output = instance.render()
         } else output = node.type(props)
@@ -425,10 +519,15 @@ function compatibleWorkerMain() {
       }
       if (typeof node.type !== "string") throw new Error("Unsupported compatible component type")
       const tag = node.type.toLowerCase()
+      recordTagLoss(tag)
+      const sanitizedProps = safeProps(props)
       if (dropTags.has(tag)) return []
       const children = visit(props.children, depth + 1)
-      if (!allowedTags.has(tag)) return children
-      return [{ kind: "element", tag, props: safeProps(props), children }]
+      if (!allowedTags.has(tag)) {
+        if (!formTags.has(tag) && !navigationTags.has(tag)) recordFidelityLoss("STATIC_INERT_UNSUPPORTED_ELEMENT")
+        return children
+      }
+      return [{ kind: "element", tag, props: sanitizedProps, children }]
     }
     return visit(value, 1)
   }
@@ -462,11 +561,19 @@ function compatibleWorkerMain() {
       try {
         const adapter = evaluateAdapter(job.adapterCode)
         const rendered = evaluateDocument(job, adapter)
-        const tree = renderTree(rendered)
-        send({ type: "repopress:rendered-compatible", requestId, tree })
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Compatible worker failed"
-        send({ type: "repopress:compatible-error", requestId, message: message.slice(0, 1_024) })
+        try {
+          const tree = renderTree(rendered)
+          send({
+            type: "repopress:rendered-compatible",
+            requestId,
+            tree,
+            fidelityLosses: Array.from(fidelityLosses).sort().slice(0, 32),
+          })
+        } catch {
+          send({ type: "repopress:compatible-error", requestId, code: "COMPATIBLE_RENDER_FAILED" })
+        }
+      } catch {
+        send({ type: "repopress:compatible-error", requestId, code: "COMPATIBLE_EXECUTION_FAILED" })
       } finally {
         port.close()
       }
@@ -510,7 +617,7 @@ export function createCompatibleWorkerRenderer(
   }
 
   return Object.freeze({
-    async render(job: CompatibleWorkerJob): Promise<CompatibleRenderTree> {
+    async render(job: CompatibleWorkerJob): Promise<CompatibleWorkerRenderResult> {
       if (disposed || activeWorker || activePort) throw new Error("Compatible worker renderer is unavailable")
       const requestId = (options.createRequestId ?? createRequestId)()
       if (!REQUEST_ID_PATTERN.test(requestId)) throw new Error("Invalid compatible worker request ID")
@@ -519,7 +626,7 @@ export function createCompatibleWorkerRenderer(
       activeWorker = worker
       activePort = channel.port1
 
-      return await new Promise<CompatibleRenderTree>((resolve, reject) => {
+      return await new Promise<CompatibleWorkerRenderResult>((resolve, reject) => {
         let settled = false
         const finish = (callback: () => void) => {
           if (settled) return
@@ -533,7 +640,7 @@ export function createCompatibleWorkerRenderer(
           callback()
         }
         const timeout = setTimeout(
-          () => finish(() => reject(new Error("Compatible worker timed out"))),
+          () => finish(() => reject(new CompatibleWorkerPipelineError("COMPATIBLE_WORKER_TIMEOUT"))),
           options.timeoutMs ?? COMPATIBLE_WORKER_TIMEOUT_MS,
         )
         channel.port1.onmessage = (event) => {
@@ -547,17 +654,27 @@ export function createCompatibleWorkerRenderer(
             return
           }
           if ((response as Record<string, unknown>).type === "repopress:compatible-error") {
-            const message = (response as Record<string, unknown>).message
-            finish(() => reject(new Error(typeof message === "string" ? message.slice(0, 1_024) : "Worker failed")))
+            const code = (response as Record<string, unknown>).code
+            if (code !== "COMPATIBLE_EXECUTION_FAILED" && code !== "COMPATIBLE_RENDER_FAILED") {
+              finish(() => reject(new CompatibleWorkerPipelineError("COMPATIBLE_WORKER_PROTOCOL_FAILED")))
+              return
+            }
+            finish(() => reject(new CompatibleWorkerPipelineError(code)))
             return
           }
           if ((response as Record<string, unknown>).type !== "repopress:rendered-compatible") return
-          const tree = sanitizeCompatibleRenderTree((response as Record<string, unknown>).tree)
-          if (!tree) {
-            finish(() => reject(new Error("Compatible worker returned an invalid render tree")))
+          const workerLosses = parseCompatibleFidelityLosses((response as Record<string, unknown>).fidelityLosses)
+          const sanitized = sanitizeCompatibleRenderTreeWithDiagnostics((response as Record<string, unknown>).tree)
+          if (!workerLosses || !sanitized) {
+            finish(() => reject(new CompatibleWorkerPipelineError("COMPATIBLE_INERT_TREE_INVALID")))
             return
           }
-          finish(() => resolve(tree))
+          finish(() =>
+            resolve({
+              tree: sanitized.tree,
+              fidelityLosses: mergeCompatibleFidelityLosses(workerLosses, sanitized.fidelityLosses),
+            }),
+          )
         }
         channel.port1.start()
         worker.postMessage({ type: "repopress:compatible-worker-bootstrap" }, [channel.port2])

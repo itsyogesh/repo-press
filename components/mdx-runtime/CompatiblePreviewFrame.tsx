@@ -345,6 +345,7 @@ export interface CompatiblePreviewFrameProps {
   className?: string
   title?: string
   onMessage?: (message: SandboxMessage) => void
+  onUnavailable?: () => void
 }
 
 export function CompatiblePreviewFrame({
@@ -353,6 +354,7 @@ export function CompatiblePreviewFrame({
   className,
   title = "Compatible component preview",
   onMessage,
+  onUnavailable,
 }: CompatiblePreviewFrameProps) {
   const iframeRef = React.useRef<HTMLIFrameElement>(null)
   const hostRef = React.useRef<CompatiblePreviewHost | null>(null)
@@ -361,6 +363,7 @@ export function CompatiblePreviewFrame({
   const sessionId = authorityContext.sessionId
   const snapshotVersion = authorityContext.snapshotVersion
   const onMessageRef = React.useRef(onMessage)
+  const onUnavailableRef = React.useRef(onUnavailable)
   const [studioOrigin, setStudioOrigin] = React.useState<string | null>(null)
 
   React.useEffect(() => {
@@ -369,7 +372,8 @@ export function CompatiblePreviewFrame({
 
   React.useLayoutEffect(() => {
     onMessageRef.current = onMessage
-  }, [onMessage])
+    onUnavailableRef.current = onUnavailable
+  }, [onMessage, onUnavailable])
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: authority changes must synchronously dispose the prior channel.
   React.useLayoutEffect(() => {
@@ -396,6 +400,7 @@ export function CompatiblePreviewFrame({
       hostRef.current?.dispose()
       hostRef.current = null
       setFrameKilled(true)
+      onUnavailableRef.current?.()
       return
     }
     hasLoadedRef.current = true

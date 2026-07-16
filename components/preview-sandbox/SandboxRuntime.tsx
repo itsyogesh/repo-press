@@ -3,6 +3,7 @@
 import * as React from "react"
 import {
   COMPATIBLE_COMMAND_RATE_BURST,
+  COMPATIBLE_RENDERER_PROFILE,
   decodeCompatibleArtifactChunk,
   parseAssembledCompatibleResolution,
   parseCompatibleTransferCommand,
@@ -10,17 +11,39 @@ import {
   sha256Hex,
   verifyCompatibleExecutableDigest,
 } from "@/lib/preview/compatible-artifact"
+import type { PreviewDiagnostic } from "@/lib/preview/contracts"
 import { serializeSandboxMessage } from "@/lib/preview/sandbox-protocol"
+import {
+  COMPATIBLE_FAILURE_MESSAGES,
+  COMPATIBLE_FIDELITY_LOSS_MESSAGES,
+  type CompatibleFailureCode,
+} from "./compatible-diagnostics"
 import { type CompatibleRenderTree, CompatibleRenderTreeView } from "./compatible-render-tree"
-import { createCompatibleWorkerRenderer, prepareCompatibleWorkerJob } from "./compatible-worker"
+import {
+  CompatibleWorkerPipelineError,
+  createCompatibleWorkerRenderer,
+  prepareCompatibleWorkerJob,
+} from "./compatible-worker"
 
 const BOOTSTRAP_PROTOCOL_VERSION = 1 as const
 const BOOTSTRAP_WIRE_LIMIT = 2_048
 const CAPABILITY_PATTERN = /^[A-Za-z0-9_-]{43}$/
 
-function boundedErrorMessage(error: unknown): string {
-  const message = error instanceof Error ? error.message : "Compatible preview failed"
-  return message.slice(0, 1_024) || "Compatible preview failed"
+function compatibleFailure(
+  error: unknown,
+  phase: "compile" | "worker",
+): {
+  code: CompatibleFailureCode
+  message: string
+  recoverable: true
+} {
+  const code: CompatibleFailureCode =
+    error instanceof CompatibleWorkerPipelineError
+      ? error.code
+      : phase === "compile"
+        ? "COMPATIBLE_COMPILE_FAILED"
+        : "COMPATIBLE_EXECUTION_FAILED"
+  return { code, message: COMPATIBLE_FAILURE_MESSAGES[code], recoverable: true }
 }
 
 type SandboxWindow = Readonly<{
@@ -56,7 +79,8 @@ type BootstrapPort = Readonly<{
 export type SandboxRuntimeBridge = Readonly<{
   start(): void
   receiveWindowMessage(event: SandboxBootstrapEvent): boolean
-  reportStatus(status: "loading" | "rendering" | "ready"): void
+  reportStatus(status: "loading" | "rendering" | "ready", rendererProfile?: typeof COMPATIBLE_RENDERER_PROFILE): void
+  reportDiagnostics(diagnostics: readonly PreviewDiagnostic[]): void
   reportRendered(): void
   reportError(error: { code: string; message: string; recoverable: boolean }): void
   dispose(): void
@@ -84,7 +108,7 @@ export function createSandboxRuntimeBridge(options: {
   let disposed = false
 
   const send = (
-    type: "ready" | "status" | "rendered" | "error" | "teardown",
+    type: "ready" | "status" | "diagnostics" | "rendered" | "error" | "teardown",
     payload: Record<string, unknown> = {},
   ) => {
     if (!port || !offer) return
@@ -184,7 +208,15 @@ export function createSandboxRuntimeBridge(options: {
       }
       void Promise.all([sha256Hex(bytes), Promise.resolve(parseAssembledCompatibleResolution(bytes))])
         .then(async ([transportDigest, parsed]) => {
-          if (disposed || transportDigest !== completed.digest || !parsed) return
+          if (disposed) return
+          if (transportDigest !== completed.digest || !parsed) {
+            send("error", {
+              code: "SANDBOX_ARTIFACT_REJECTED",
+              message: COMPATIBLE_FAILURE_MESSAGES.SANDBOX_ARTIFACT_REJECTED,
+              recoverable: true,
+            })
+            return
+          }
           const verified = await verifyCompatibleExecutableDigest(parsed)
           if (
             !disposed &&
@@ -193,12 +225,18 @@ export function createSandboxRuntimeBridge(options: {
             verified.authority.snapshotVersion === offer.snapshotVersion
           ) {
             options.onResolution?.(verified)
+          } else if (!disposed) {
+            send("error", {
+              code: "SANDBOX_ARTIFACT_REJECTED",
+              message: COMPATIBLE_FAILURE_MESSAGES.SANDBOX_ARTIFACT_REJECTED,
+              recoverable: true,
+            })
           }
         })
         .catch(() => {
           send("error", {
             code: "SANDBOX_ARTIFACT_REJECTED",
-            message: "Compatible artifact verification failed.",
+            message: COMPATIBLE_FAILURE_MESSAGES.SANDBOX_ARTIFACT_REJECTED,
             recoverable: true,
           })
         })
@@ -224,8 +262,11 @@ export function createSandboxRuntimeBridge(options: {
       options.sandboxWindow.addEventListener("message", listener)
     },
     receiveWindowMessage,
-    reportStatus(status) {
-      send("status", { status })
+    reportStatus(status, rendererProfile) {
+      send("status", rendererProfile ? { status, rendererProfile } : { status })
+    },
+    reportDiagnostics(diagnostics) {
+      send("diagnostics", { diagnostics })
     },
     reportRendered() {
       send("rendered")
@@ -295,9 +336,35 @@ function parseBootstrapWire(input: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>
 }
 
+class CompatibleRenderErrorBoundary extends React.Component<
+  { children: React.ReactNode; onError: () => void },
+  { failed: boolean }
+> {
+  state = { failed: false }
+
+  static getDerivedStateFromError() {
+    return { failed: true }
+  }
+
+  componentDidCatch() {
+    this.props.onError()
+  }
+
+  render() {
+    return this.state.failed ? null : this.props.children
+  }
+}
+
 export function SandboxRuntime() {
   const [renderTree, setRenderTree] = React.useState<CompatibleRenderTree | null>(null)
   const [renderError, setRenderError] = React.useState<string | null>(null)
+  const bridgeRef = React.useRef<SandboxRuntimeBridge | null>(null)
+  const reportHostRenderFailure = React.useCallback(() => {
+    const code = "COMPATIBLE_HOST_RENDER_FAILED"
+    setRenderTree(null)
+    setRenderError(COMPATIBLE_FAILURE_MESSAGES[code])
+    bridgeRef.current?.reportError({ code, message: COMPATIBLE_FAILURE_MESSAGES[code], recoverable: true })
+  }, [])
 
   React.useEffect(() => {
     if (window.parent === window) return
@@ -308,43 +375,65 @@ export function SandboxRuntime() {
       sandboxWindow: window,
       parentWindow: window.parent,
       onResolution: (resolution) => {
-        bridge.reportStatus("loading")
+        bridge.reportStatus("loading", COMPATIBLE_RENDERER_PROFILE)
+        let phase: "compile" | "worker" = "compile"
         void prepareCompatibleWorkerJob(resolution.artifact)
           .then(async (job) => {
             if (!active) return null
+            phase = "worker"
             workerRenderer = createCompatibleWorkerRenderer()
             return await workerRenderer.render(job)
           })
-          .then((tree) => {
-            if (!tree) return
+          .then((result) => {
+            if (!result) return
             if (!active) return
-            bridge.reportStatus("rendering")
+            if (result.fidelityLosses.length > 0) {
+              const diagnostics = result.fidelityLosses.map(
+                (code): PreviewDiagnostic => ({
+                  stage: "render",
+                  severity: "warning",
+                  code,
+                  message: COMPATIBLE_FIDELITY_LOSS_MESSAGES[code],
+                  recoverable: true,
+                  fidelityImpact: "compatible",
+                }),
+              )
+              setRenderTree(null)
+              setRenderError("This artifact requires Generic preview because static-inert-v1 would lose fidelity.")
+              bridge.reportDiagnostics(diagnostics)
+              return
+            }
+            bridge.reportStatus("rendering", COMPATIBLE_RENDERER_PROFILE)
             setRenderError(null)
-            setRenderTree(tree)
-            bridge.reportStatus("ready")
+            setRenderTree(result.tree)
+            bridge.reportStatus("ready", COMPATIBLE_RENDERER_PROFILE)
             bridge.reportRendered()
           })
           .catch((error: unknown) => {
             if (!active) return
-            const message = boundedErrorMessage(error)
+            const failure = compatibleFailure(error, phase)
             setRenderTree(null)
-            setRenderError(message)
-            bridge.reportError({ code: "COMPATIBLE_RENDER_FAILED", message, recoverable: true })
+            setRenderError(failure.message)
+            bridge.reportError(failure)
           })
       },
     })
+    bridgeRef.current = bridge
     bridge.start()
     return () => {
       active = false
       workerRenderer?.dispose()
       bridge.dispose()
+      bridgeRef.current = null
     }
   }, [])
 
   return (
     <main className="min-h-screen bg-background p-6 text-foreground">
       {renderTree ? (
-        <CompatibleRenderTreeView tree={renderTree} />
+        <CompatibleRenderErrorBoundary onError={reportHostRenderFailure}>
+          <CompatibleRenderTreeView tree={renderTree} />
+        </CompatibleRenderErrorBoundary>
       ) : (
         <div
           data-repopress-sandbox-shell="inert"

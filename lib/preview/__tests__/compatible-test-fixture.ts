@@ -17,6 +17,7 @@ export async function createSignedCompatibleFixture(options?: {
   sessionId?: string
   snapshotVersion?: number
   documentSource?: string
+  rendererProfile?: "static-inert-v1" | "unsupported-profile" | null
   keyPair?: CryptoKeyPair
 }) {
   const keyPair =
@@ -32,6 +33,7 @@ export async function createSignedCompatibleFixture(options?: {
     adapter: null,
   }
   const now = Date.now()
+  const rendererProfile = options?.rendererProfile === undefined ? "static-inert-v1" : options.rendererProfile
   const authorityWithoutSignature = {
     kind: "signed-preview-resolution" as const,
     algorithm: "ECDSA-P256-SHA256" as const,
@@ -42,6 +44,7 @@ export async function createSignedCompatibleFixture(options?: {
     baseCommit: options?.baseCommit ?? "abc123",
     sessionId: options?.sessionId ?? "session-1",
     snapshotVersion: options?.snapshotVersion ?? 1,
+    ...(rendererProfile === null ? {} : { rendererProfile }),
     issuedAt: now,
     expiresAt: now + 60_000,
     executableDigest: await computeCompatibleExecutableDigest(artifact),
@@ -49,12 +52,12 @@ export async function createSignedCompatibleFixture(options?: {
   const signature = await crypto.subtle.sign(
     { name: "ECDSA", hash: "SHA-256" },
     keyPair.privateKey,
-    createCompatibleApprovalPayload({ authority: authorityWithoutSignature, artifact }) as BufferSource,
+    createCompatibleApprovalPayload({ authority: authorityWithoutSignature as never, artifact }) as BufferSource,
   )
-  const resolution: SignedCompatiblePreviewResolution = {
+  const resolution = {
     authority: { ...authorityWithoutSignature, signature: base64Url(new Uint8Array(signature)) },
     artifact,
-  }
+  } as unknown as SignedCompatiblePreviewResolution
   return {
     resolution,
     wire: JSON.stringify(resolution),

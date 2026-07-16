@@ -123,6 +123,53 @@ describe("SandboxRuntime", () => {
     expect(state.invalidated).toBe(true)
   })
 
+  it("emits bounded static-inert-v1 status and fidelity diagnostics over the authenticated port", () => {
+    const sandboxWindow = { addEventListener: vi.fn(), removeEventListener: vi.fn() }
+    const parentWindow = { postMessage: vi.fn() }
+    const port = new FakePort()
+    const bridge = createSandboxRuntimeBridge({ sandboxWindow, parentWindow })
+    const offer = {
+      protocolVersion: 1,
+      type: "repopress:bootstrap-offer",
+      sessionId: "session-1",
+      snapshotVersion: 3,
+      capability: "A".repeat(43),
+    }
+    bridge.start()
+    bridge.receiveWindowMessage({ data: JSON.stringify(offer), source: parentWindow, ports: [] })
+    bridge.receiveWindowMessage({
+      data: JSON.stringify({ protocolVersion: 1, type: "repopress:bootstrap-port", sessionId: "session-1" }),
+      source: parentWindow,
+      ports: [port as unknown as MessagePort],
+    })
+    bridge.reportStatus("loading", "static-inert-v1")
+    bridge.reportDiagnostics([
+      {
+        stage: "render",
+        severity: "warning",
+        code: "STATIC_INERT_LINK",
+        message: "Links are unavailable in static-inert-v1.",
+        recoverable: true,
+        fidelityImpact: "compatible",
+      },
+    ])
+
+    let state = createSandboxSessionState({ sessionId: "session-1", snapshotVersion: 3 })
+    const messages = port.sent.map((wire) => {
+      const result = validateSandboxMessage(wire, state)
+      state = advanceSandboxSequence(result)
+      return result.accepted ? result.message : null
+    })
+    expect(messages).toEqual([
+      expect.objectContaining({ type: "ready" }),
+      expect.objectContaining({ type: "status", payload: { status: "loading", rendererProfile: "static-inert-v1" } }),
+      expect.objectContaining({
+        type: "diagnostics",
+        payload: { diagnostics: [expect.objectContaining({ code: "STATIC_INERT_LINK" })] },
+      }),
+    ])
+  })
+
   it("assembles only ordered, digest-bound source from the authenticated port", async () => {
     const sandboxWindow = { addEventListener: vi.fn(), removeEventListener: vi.fn() }
     const parentWindow = { postMessage: vi.fn() }

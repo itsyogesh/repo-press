@@ -5,17 +5,25 @@ import * as React from "react"
 import { CompatiblePreviewFrame } from "@/components/mdx-runtime/CompatiblePreviewFrame"
 import { GenericPreview } from "@/components/mdx-runtime/GenericPreview"
 import { PreviewStatus } from "@/components/mdx-runtime/PreviewStatus"
+import {
+  COMPATIBLE_FAILURE_MESSAGES,
+  COMPATIBLE_FIDELITY_LOSS_MESSAGES,
+  isCompatibleFailureCode,
+  isCompatibleFidelityLossCode,
+} from "@/components/preview-sandbox/compatible-diagnostics"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import type { FieldVariantMap } from "@/lib/framework-adapters"
 import { resolveFieldValue } from "@/lib/framework-adapters"
 import {
+  COMPATIBLE_RENDERER_PROFILE,
   type CompatiblePreviewAuthorityContext,
   parseConfiguredPreviewApprovalKey,
   type VerifiedCompatiblePreviewResolution,
   verifySignedCompatiblePreviewResolution,
 } from "@/lib/preview/compatible-artifact"
 import { buildGenericRenderModel } from "@/lib/preview/generic-render-model"
+import type { SandboxMessage } from "@/lib/preview/sandbox-protocol"
 import { resolveStudioAssetUrl } from "@/lib/studio/media-resolve"
 import { cn } from "@/lib/utils"
 
@@ -90,6 +98,25 @@ type PreviewProps = PreviewBaseProps &
     | { compatibleResolution: string; compatibleAuthority: CompatiblePreviewAuthorityContext }
   )
 
+function compatibleAttemptKey(resolution: VerifiedCompatiblePreviewResolution): string {
+  const authority = resolution.authority
+  return JSON.stringify([
+    authority.tenantId,
+    authority.projectId,
+    authority.baseCommit,
+    authority.keyId,
+    authority.approvalId,
+    authority.executableDigest,
+    authority.signature,
+    authority.sessionId,
+    authority.snapshotVersion,
+    authority.issuedAt,
+    authority.expiresAt,
+    authority.rendererProfile,
+    resolution.artifact.artifactId,
+  ])
+}
+
 export function Preview({
   content,
   frontmatter,
@@ -108,13 +135,16 @@ export function Preview({
   const [viewport, setViewport] = React.useState<Viewport>("desktop")
   const [isFullScreen, setIsFullScreen] = React.useState(false)
   const [isCompiling, setIsCompiling] = React.useState(false)
-  const warnings = React.useMemo<string[]>(() => [], [])
 
   // Debounced content for preview (300ms delay)
   const [debouncedContent, setDebouncedContent] = React.useState(content)
   const genericRenderModel = React.useMemo(() => buildGenericRenderModel(debouncedContent), [debouncedContent])
   const [verifiedCompatibleResolution, setVerifiedCompatibleResolution] =
     React.useState<VerifiedCompatiblePreviewResolution | null>(null)
+  const [downgradedAttempt, setDowngradedAttempt] = React.useState<{
+    key: string
+    diagnostics: readonly string[]
+  } | null>(null)
   const approvalPublicKey = React.useMemo(
     () => parseConfiguredPreviewApprovalKey(process.env.NEXT_PUBLIC_PREVIEW_APPROVAL_PUBLIC_KEY_JWK),
     [],
@@ -134,6 +164,53 @@ export function Preview({
       active = false
     }
   }, [approvalPublicKey, compatibleAuthority, compatibleResolution])
+  const activeCompatibleAttemptKey = React.useMemo(
+    () => (verifiedCompatibleResolution ? compatibleAttemptKey(verifiedCompatibleResolution) : null),
+    [verifiedCompatibleResolution],
+  )
+  const compatibleDowngraded =
+    activeCompatibleAttemptKey !== null && downgradedAttempt?.key === activeCompatibleAttemptKey
+  const compatibleDiagnostics = compatibleDowngraded ? downgradedAttempt.diagnostics : []
+  const warnings = React.useMemo(
+    () =>
+      compatibleDowngraded
+        ? [...compatibleDiagnostics]
+        : activeCompatibleAttemptKey
+          ? [`${COMPATIBLE_RENDERER_PROFILE} renders only supported static, inert content.`]
+          : [],
+    [activeCompatibleAttemptKey, compatibleDiagnostics, compatibleDowngraded],
+  )
+  const handleCompatibleMessage = React.useCallback(
+    (message: SandboxMessage) => {
+      if (!activeCompatibleAttemptKey) return
+      if (message.type === "diagnostics") {
+        const diagnostics = message.payload.diagnostics.flatMap((diagnostic) =>
+          isCompatibleFidelityLossCode(diagnostic.code) ? [COMPATIBLE_FIDELITY_LOSS_MESSAGES[diagnostic.code]] : [],
+        )
+        if (diagnostics.length > 0) {
+          setDowngradedAttempt({
+            key: activeCompatibleAttemptKey,
+            diagnostics: Object.freeze([...new Set(diagnostics)]),
+          })
+        }
+        return
+      }
+      if (message.type === "error" && isCompatibleFailureCode(message.payload.code)) {
+        setDowngradedAttempt({
+          key: activeCompatibleAttemptKey,
+          diagnostics: Object.freeze([COMPATIBLE_FAILURE_MESSAGES[message.payload.code]]),
+        })
+      }
+    },
+    [activeCompatibleAttemptKey],
+  )
+  const handleCompatibleUnavailable = React.useCallback(() => {
+    if (!activeCompatibleAttemptKey) return
+    setDowngradedAttempt({
+      key: activeCompatibleAttemptKey,
+      diagnostics: Object.freeze([COMPATIBLE_FAILURE_MESSAGES.COMPATIBLE_FRAME_RELOADED]),
+    })
+  }, [activeCompatibleAttemptKey])
   const onCompilingChangeRef = React.useRef(onCompilingChange)
   onCompilingChangeRef.current = onCompilingChange
   const [compileStatusForwarder] = React.useState(() =>
@@ -263,12 +340,35 @@ export function Preview({
           </div>
         )}
 
-        {previewFidelity === "compatible" && verifiedCompatibleResolution && compatibleAuthority ? (
+        {previewFidelity === "compatible" &&
+        verifiedCompatibleResolution &&
+        compatibleAuthority &&
+        activeCompatibleAttemptKey &&
+        !compatibleDowngraded ? (
           <div className="min-h-96 p-4 md:p-6">
-            <CompatiblePreviewFrame resolution={verifiedCompatibleResolution} authorityContext={compatibleAuthority} />
+            <p className="mb-3 font-mono text-xs text-studio-fg-muted">
+              {COMPATIBLE_RENDERER_PROFILE} · static, inert rendering
+            </p>
+            <CompatiblePreviewFrame
+              key={activeCompatibleAttemptKey}
+              resolution={verifiedCompatibleResolution}
+              authorityContext={compatibleAuthority}
+              onMessage={handleCompatibleMessage}
+              onUnavailable={handleCompatibleUnavailable}
+            />
           </div>
         ) : (
           <div className="px-5 py-6 md:px-7 md:py-8">
+            {compatibleDiagnostics.length > 0 ? (
+              <output className="mb-4 rounded-lg border border-studio-attention/25 bg-studio-attention-muted/70 p-3 text-sm text-studio-attention">
+                <p className="font-medium">Compatible preview downgraded to Generic.</p>
+                {compatibleDiagnostics.map((diagnostic) => (
+                  <p key={diagnostic} className="mt-1 text-xs">
+                    {diagnostic}
+                  </p>
+                ))}
+              </output>
+            ) : null}
             <div
               data-scroll-sync-root="preview"
               className={cn("typeset typeset-preview max-w-none", "[&_h1]:scroll-mt-4 [&_h2]:scroll-mt-4")}

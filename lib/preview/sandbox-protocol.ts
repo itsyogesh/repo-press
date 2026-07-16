@@ -39,7 +39,12 @@ export const sandboxMessageSchema = z.discriminatedUnion("type", [
     .object({
       ...baseMessageFields,
       type: z.literal("status"),
-      payload: z.object({ status: z.enum(["loading", "rendering", "ready"]) }).strict(),
+      payload: z
+        .object({
+          status: z.enum(["loading", "rendering", "ready"]),
+          rendererProfile: z.literal("static-inert-v1").optional(),
+        })
+        .strict(),
     })
     .strict(),
   z

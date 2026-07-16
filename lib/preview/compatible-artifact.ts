@@ -9,6 +9,7 @@ export const COMPATIBLE_SOURCE_FILE_MAX_COUNT = 64
 export const COMPATIBLE_ARTIFACT_CHUNK_BYTES = 32 * 1024
 export const COMPATIBLE_ARTIFACT_MAX_CHUNKS = COMPATIBLE_ARTIFACT_MAX_BYTES / COMPATIBLE_ARTIFACT_CHUNK_BYTES
 export const COMPATIBLE_COMMAND_RATE_BURST = COMPATIBLE_ARTIFACT_MAX_CHUNKS + 2
+export const COMPATIBLE_RENDERER_PROFILE = "static-inert-v1" as const
 
 const digestSchema = z.string().regex(/^[a-f0-9]{64}$/)
 const sourcePathSchema = z
@@ -62,6 +63,7 @@ export const signedCompatiblePreviewResolutionSchema = z
         baseCommit: z.string().min(1).max(256),
         sessionId: z.string().min(1).max(256),
         snapshotVersion: z.number().int().positive().safe(),
+        rendererProfile: z.literal(COMPATIBLE_RENDERER_PROFILE),
         issuedAt: z.number().int().nonnegative().safe(),
         expiresAt: z.number().int().positive().safe(),
         executableDigest: digestSchema,
@@ -241,12 +243,14 @@ function preflightCompatibleResolutionWire(
     "projectId",
     "baseCommit",
     "sessionId",
+    "rendererProfile",
     "executableDigest",
     "signature",
   ]) {
     if (!isBoundedIdentifier(authority[field])) return null
   }
   if (
+    authority.rendererProfile !== COMPATIBLE_RENDERER_PROFILE ||
     authority.tenantId !== expected.tenantId ||
     authority.projectId !== expected.projectId ||
     authority.baseCommit !== expected.baseCommit ||

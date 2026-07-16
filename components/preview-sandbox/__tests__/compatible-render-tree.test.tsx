@@ -1,6 +1,10 @@
 import { render, screen } from "@testing-library/react"
 import { describe, expect, it } from "vitest"
-import { CompatibleRenderTreeView, sanitizeCompatibleRenderTree } from "../compatible-render-tree"
+import {
+  CompatibleRenderTreeView,
+  sanitizeCompatibleRenderTree,
+  sanitizeCompatibleRenderTreeWithDiagnostics,
+} from "../compatible-render-tree"
 
 describe("compatible inert render tree", () => {
   it("strips navigation, network, event, style URL, and active-content output", () => {
@@ -51,6 +55,25 @@ describe("compatible inert render tree", () => {
     expect(screen.getByRole("heading", { name: "Safe heading" })).toHaveTextContent("Rendered safely")
     expect(screen.queryByRole("link")).not.toBeInTheDocument()
     expect(document.querySelector("img, meta, script, iframe, form, style")).toBeNull()
+
+    expect(
+      sanitizeCompatibleRenderTreeWithDiagnostics([
+        {
+          kind: "element",
+          tag: "a",
+          props: { href: "https://evil.test", style: "color:red", onClick: "go", custom: "lost" },
+          children: [{ kind: "element", tag: "img", props: { src: "https://evil.test" }, children: [] }],
+        },
+      ]),
+    ).toMatchObject({
+      fidelityLosses: expect.arrayContaining([
+        "STATIC_INERT_LINK",
+        "STATIC_INERT_MEDIA",
+        "STATIC_INERT_STYLE",
+        "STATIC_INERT_EVENT",
+        "STATIC_INERT_PROP",
+      ]),
+    })
   })
 
   it("fails closed on excessive depth, nodes, or text instead of partially rendering", () => {

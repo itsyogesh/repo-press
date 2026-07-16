@@ -42,6 +42,27 @@ describe("compatible artifact transport", () => {
     }
   })
 
+  it("requires the signed static-inert-v1 renderer profile", async () => {
+    const approved = await createSignedCompatibleFixture()
+    const missing = await createSignedCompatibleFixture({ rendererProfile: null })
+    const wrong = await createSignedCompatibleFixture({ rendererProfile: "unsupported-profile" })
+
+    await expect(
+      verifySignedCompatiblePreviewResolution(approved.wire, {
+        publicKey: approved.publicKey,
+        expectedAuthority,
+      }),
+    ).resolves.not.toBeNull()
+    for (const fixture of [missing, wrong]) {
+      await expect(
+        verifySignedCompatiblePreviewResolution(fixture.wire, {
+          publicKey: fixture.publicKey,
+          expectedAuthority,
+        }),
+      ).resolves.toBeNull()
+    }
+  })
+
   it("rejects a structurally valid self-signed resolution from an untrusted key", async () => {
     const trusted = await createSignedCompatibleFixture()
     const forged = await createSignedCompatibleFixture()
