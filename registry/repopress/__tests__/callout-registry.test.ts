@@ -1,9 +1,9 @@
-import { createHash } from "node:crypto"
 import fs from "node:fs"
 import path from "node:path"
 import ts from "typescript"
 import { describe, expect, it } from "vitest"
 import { compileMdx } from "@/components/preview-sandbox/compileMdx"
+import { computeRegistryItemIntegrity } from "@/lib/repopress/registry-integrity"
 import { normalizeRegistryAuthoringMetadata, registryItemSchema } from "@/lib/repopress/registry-schema"
 import { buildAuthoringCatalog } from "@/lib/studio/authoring-catalog"
 
@@ -11,8 +11,7 @@ const ROOT = process.cwd()
 const REGISTRY_PATH = "registry.json"
 const SOURCE_PATH = "registry/repopress/callout/callout.tsx"
 const FIXTURE_PATH = "registry/repopress/callout/fixture.mdx"
-const INSTALL_TARGET = "components/repopress/callout.tsx"
-const IMPORT_SOURCE = "@/components/repopress/callout"
+const INSTALL_TARGET = "@components/repopress/callout.tsx"
 
 type RegistryRoot = {
   $schema: string
@@ -29,28 +28,9 @@ function readRegistry(): RegistryRoot {
   return JSON.parse(read(REGISTRY_PATH)) as RegistryRoot
 }
 
-function uint32Frame(byteLength: number): Buffer {
-  const frame = Buffer.alloc(4)
-  frame.writeUInt32BE(byteLength)
-  return frame
-}
-
-/**
- * Canonical integrity input for registry fixtures: sort by code-unit path,
- * then hash uint32(path byte length) + path bytes + uint32(content byte length)
- * + exact content bytes for each file. Length framing prevents ambiguity.
- */
-function fixtureIntegrity(files: Readonly<Record<string, string>>): string {
-  const hash = createHash("sha256")
-  for (const relativePath of Object.keys(files).sort()) {
-    const pathBytes = Buffer.from(relativePath, "utf8")
-    const contentBytes = Buffer.from(files[relativePath], "utf8")
-    hash.update(uint32Frame(pathBytes.byteLength))
-    hash.update(pathBytes)
-    hash.update(uint32Frame(contentBytes.byteLength))
-    hash.update(contentBytes)
-  }
-  return `sha256-${hash.digest("base64")}`
+function resolveComponentsTarget(target: string, componentsDirectory: string): string {
+  if (!target.startsWith("@components/")) throw new TypeError("Expected the portable @components target placeholder")
+  return `${componentsDirectory}/${target.slice("@components/".length)}`
 }
 
 function exportedNames(source: string): Set<string> {
@@ -111,12 +91,12 @@ describe("official Callout registry item", () => {
       displayName: "Callout",
       version: "1.0.0",
       exportName: "Callout",
-      import: { source: IMPORT_SOURCE, exportName: "Callout" },
       frameworks: ["fumadocs", "next"],
       runtime: "client",
       schemaStatus: "complete",
       props: [
         { name: "title", type: "string", label: "Title", required: false },
+        { name: "titleId", type: "string", label: "Title ID", required: false },
         {
           name: "variant",
           type: "string",
@@ -140,6 +120,7 @@ describe("official Callout registry item", () => {
     expect(Object.isFrozen(catalog[0].props)).toBe(true)
     expect(Object.isFrozen(catalog[0].slots)).toBe(true)
     expect(catalog[0].provenance.integrity).toBe(item.meta.repopress.authoring.provenance?.integrity)
+    expect(catalog[0].import).toBeUndefined()
   })
 
   it("binds source, fixture, install target, export, variants, and canonical integrity", () => {
@@ -148,23 +129,35 @@ describe("official Callout registry item", () => {
     const metadata = item.meta.repopress
     const source = read(SOURCE_PATH)
     const fixture = read(FIXTURE_PATH)
-    const inputs = { [SOURCE_PATH]: source, [FIXTURE_PATH]: fixture }
-    const integrity = fixtureIntegrity(inputs)
+    const integrity = computeRegistryItemIntegrity({
+      item,
+      files: [
+        { path: SOURCE_PATH, content: source },
+        { path: FIXTURE_PATH, content: fixture },
+      ],
+    })
 
     expect(item.files).toEqual([{ path: SOURCE_PATH, target: INSTALL_TARGET, type: "registry:component" }])
     expect(metadata.preview).toEqual({ fixtures: [FIXTURE_PATH], defaultFixture: FIXTURE_PATH })
-    expect(metadata.authoring.import).toEqual({ source: IMPORT_SOURCE, exportName: metadata.exportName })
-    expect(INSTALL_TARGET.replace(/^components\//u, "@/components/").replace(/\.tsx$/u, "")).toBe(IMPORT_SOURCE)
+    expect(metadata.authoring.import).toBeUndefined()
     for (const declaredPath of [...(item.files?.map((file) => file.path) ?? []), ...metadata.preview.fixtures]) {
       expect(fs.existsSync(path.join(ROOT, declaredPath)), declaredPath).toBe(true)
     }
     expect(metadata.authoring.provenance?.integrity).toBe(integrity)
     expect(integrity).toMatch(/^sha256-[A-Za-z0-9+/]{43}=$/u)
-    expect(fixtureIntegrity({ ...inputs, [SOURCE_PATH]: `${source}\n` })).not.toBe(integrity)
-    expect(fixtureIntegrity({ ...inputs, [FIXTURE_PATH]: `${fixture}\n` })).not.toBe(integrity)
     expect(exportedNames(source)).toContain(metadata.exportName)
     expect(source).toContain('variant?: "default" | "accent"')
     expect(metadata.authoring.props?.find((prop) => prop.name === "variant")?.options).toEqual(["default", "accent"])
+  })
+
+  it.each([
+    ["root components alias", "components"],
+    ["src components alias", "src/components"],
+    ["package-import or non-@ alias", "packages/docs/ui"],
+  ])("leaves project layout resolution to the portable target placeholder: %s", (_, componentsDirectory) => {
+    expect(resolveComponentsTarget(INSTALL_TARGET, componentsDirectory)).toBe(
+      `${componentsDirectory}/repopress/callout.tsx`,
+    )
   })
 
   it("keeps the implementation browser-safe, semantic, and token-based", () => {
@@ -172,25 +165,23 @@ describe("official Callout registry item", () => {
     expect(source).toContain("<aside")
     expect(source).toContain("{...asideProps}")
     expect(source.indexOf("{...asideProps}")).toBeLessThan(source.indexOf("className="))
+    expect(source).toContain("titleId: string")
+    expect(source).toContain("aria-labelledby={title ? titleId : ariaLabelledby}")
+    expect(source).toContain("id={titleId}")
     expect(source).not.toMatch(/(?:bg|text|border)-(?:white|black|gray|slate|red|amber|blue)-/u)
     expect(source).not.toMatch(/dangerouslySetInnerHTML|\buse[A-Z]\w*\s*\(|\bfetch\s*\(|\bWebSocket\b|createPortal/u)
     expect(source).not.toMatch(/from\s+["']@\//u)
   })
 
-  it("compiles the real MDX fixture against the declared import without evaluating it", async () => {
-    const [rawItem] = readRegistry().items
-    const item = registryItemSchema.parse(rawItem)
-    const importDeclaration = item.meta.repopress.authoring.import
-    expect(importDeclaration).toBeDefined()
-
-    const result = await compileMdx(read(FIXTURE_PATH), {
-      [importDeclaration?.source ?? ""]: [importDeclaration?.exportName ?? ""],
-    })
+  it("compiles the import-free MDX fixture without evaluating it or assuming a project alias", async () => {
+    const result = await compileMdx(read(FIXTURE_PATH), {})
 
     expect(result.error).toBeUndefined()
     expect(result.code).toBeDefined()
-    expect(result.imports).toEqual([{ source: IMPORT_SOURCE, imported: "Callout", local: "Callout" }])
+    expect(result.imports).toEqual([])
+    expect(read(FIXTURE_PATH)).not.toMatch(/^import\s/mu)
     expect(read(FIXTURE_PATH)).toContain('variant="accent"')
+    expect(read(FIXTURE_PATH)).toContain('titleId="migration-note-callout-title"')
     expect(read(FIXTURE_PATH)).toContain("**")
   })
 })

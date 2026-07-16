@@ -15,7 +15,7 @@
         {
           "path": "registry/repopress/callout/callout.tsx",
           "type": "registry:component",
-          "target": "components/repopress/callout.tsx"
+          "target": "@components/repopress/callout.tsx"
         }
       ],
       "meta": {
@@ -38,10 +38,6 @@
             "description": "Highlights important Markdown content in a semantic aside.",
             "category": "Content",
             "exportName": "Callout",
-            "import": {
-              "source": "@/components/repopress/callout",
-              "exportName": "Callout"
-            },
             "frameworks": ["next", "fumadocs"],
             "runtime": "client",
             "schemaStatus": "complete",
@@ -53,6 +49,13 @@
                 "label": "Title",
                 "required": false,
                 "description": "Optional heading and accessible label for the callout."
+              },
+              {
+                "name": "titleId",
+                "type": "string",
+                "label": "Title ID",
+                "required": false,
+                "description": "Stable document-unique ID that labels a titled callout."
               },
               {
                 "name": "variant",
@@ -77,12 +80,12 @@
               "source": "registry",
               "registryItem": "@repopress/callout",
               "version": "1.0.0",
-              "integrity": "sha256-EMN6TV4lqDVIuqV3Ha25KBi0qMQRO2MD+jFFGVBHQ/Q="
+              "integrity": "sha256-C4e8Qyrn4M+wZUHnmbTO1r/ValoER/7YxnmlwrGcIGU="
             }
           }
         }
       },
-      "docs": "Integrity hashes sorted source and fixture paths plus exact bytes with unsigned 32-bit big-endian length framing."
+      "docs": "Integrity uses the RepoPress v1 canonical manifest and exact referenced bytes. The @components target placeholder resolves through the consuming project's shadcn aliases."
     }
   ]
 }

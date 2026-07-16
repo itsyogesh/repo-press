@@ -5,11 +5,13 @@ const variantClasses = {
   accent: "border-primary/30 bg-primary/5",
 } as const
 
-export interface CalloutProps extends Omit<ComponentPropsWithoutRef<"aside">, "title"> {
-  title?: string
-  variant?: "default" | "accent"
-  children: ReactNode
-}
+type CalloutTitle = { title?: undefined; titleId?: undefined } | { title: string; titleId: string }
+
+export type CalloutProps = Omit<ComponentPropsWithoutRef<"aside">, "title"> &
+  CalloutTitle & {
+    variant?: "default" | "accent"
+    children: ReactNode
+  }
 
 function mergeClassNames(...classes: Array<string | undefined>): string {
   return classes.filter(Boolean).join(" ")
@@ -17,10 +19,11 @@ function mergeClassNames(...classes: Array<string | undefined>): string {
 
 export function Callout({
   title,
+  titleId,
   variant = "default",
   children,
   className,
-  "aria-label": ariaLabel,
+  "aria-labelledby": ariaLabelledby,
   ...asideProps
 }: CalloutProps) {
   return (
@@ -31,9 +34,13 @@ export function Callout({
         variantClasses[variant],
         className,
       )}
-      aria-label={ariaLabel ?? title}
+      aria-labelledby={title ? titleId : ariaLabelledby}
     >
-      {title ? <div className="mb-1 text-sm font-medium">{title}</div> : null}
+      {title ? (
+        <div id={titleId} className="mb-1 text-sm font-medium">
+          {title}
+        </div>
+      ) : null}
       <div className="text-sm leading-relaxed [&>p:last-child]:mb-0">{children}</div>
     </aside>
   )
