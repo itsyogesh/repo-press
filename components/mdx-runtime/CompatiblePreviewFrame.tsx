@@ -29,10 +29,15 @@ export type CompatiblePreviewOriginResult =
         | "PREVIEW_ORIGIN_INVALID"
         | "PREVIEW_ORIGIN_INSECURE"
         | "PREVIEW_ORIGIN_NOT_ISOLATED"
+        | "STUDIO_ORIGIN_MISSING"
+        | "STUDIO_ORIGIN_INVALID"
+        | "STUDIO_ORIGIN_INSECURE"
+        | "STUDIO_ORIGIN_MISMATCH"
     }>
 
 export function resolveCompatiblePreviewOrigin(input: {
   configuredOrigin: string | undefined
+  configuredStudioOrigin?: string
   studioOrigin: string
   environment: RuntimeEnvironment
 }): CompatiblePreviewOriginResult {
@@ -45,23 +50,41 @@ export function resolveCompatiblePreviewOrigin(input: {
   const result = normalizeOrigin(configured, input.environment)
   if (!result.ok) return result
 
-  let studioOrigin: string
-  try {
-    studioOrigin = new URL(input.studioOrigin).origin
-  } catch {
-    return { ok: false, code: "PREVIEW_ORIGIN_INVALID" }
-  }
-  if (input.environment === "production" && result.origin === studioOrigin) {
-    return { ok: false, code: "PREVIEW_ORIGIN_NOT_ISOLATED" }
+  if (input.environment === "production") {
+    const configuredStudio = input.configuredStudioOrigin?.trim()
+    if (!configuredStudio) return { ok: false, code: "STUDIO_ORIGIN_MISSING" }
+
+    const studioConfiguration = parseStrictOrigin(configuredStudio)
+    if (!studioConfiguration) return { ok: false, code: "STUDIO_ORIGIN_INVALID" }
+    if (studioConfiguration.protocol !== "https:") return { ok: false, code: "STUDIO_ORIGIN_INSECURE" }
+
+    const liveStudio = parseStrictOrigin(input.studioOrigin)
+    if (!liveStudio || liveStudio.protocol !== "https:" || liveStudio.origin !== studioConfiguration.origin) {
+      return { ok: false, code: "STUDIO_ORIGIN_MISMATCH" }
+    }
+    if (result.origin === studioConfiguration.origin) {
+      return { ok: false, code: "PREVIEW_ORIGIN_NOT_ISOLATED" }
+    }
   }
   return result
 }
 
 function normalizeOrigin(value: string, environment: RuntimeEnvironment): CompatiblePreviewOriginResult {
+  const parsed = parseStrictOrigin(value)
+  if (!parsed) return { ok: false, code: "PREVIEW_ORIGIN_INVALID" }
+  if (environment === "production" && parsed.protocol !== "https:") {
+    return { ok: false, code: "PREVIEW_ORIGIN_INSECURE" }
+  }
+  return { ok: true, origin: parsed.origin }
+}
+
+function parseStrictOrigin(value: string): { origin: string; protocol: "http:" | "https:" } | null {
   try {
-    const url = new URL(value)
-    const normalizedInput = value.endsWith("/") ? value.slice(0, -1) : value
+    const trimmed = value.trim()
+    const url = new URL(trimmed)
+    const normalizedInput = trimmed.endsWith("/") ? trimmed.slice(0, -1) : trimmed
     if (
+      (url.protocol !== "https:" && url.protocol !== "http:") ||
       url.origin === "null" ||
       url.username ||
       url.password ||
@@ -70,17 +93,11 @@ function normalizeOrigin(value: string, environment: RuntimeEnvironment): Compat
       (url.pathname !== "/" && url.pathname !== "") ||
       normalizedInput !== url.origin
     ) {
-      return { ok: false, code: "PREVIEW_ORIGIN_INVALID" }
+      return null
     }
-    if (environment === "production" && url.protocol !== "https:") {
-      return { ok: false, code: "PREVIEW_ORIGIN_INSECURE" }
-    }
-    if (url.protocol !== "https:" && url.protocol !== "http:") {
-      return { ok: false, code: "PREVIEW_ORIGIN_INVALID" }
-    }
-    return { ok: true, origin: url.origin }
+    return { origin: url.origin, protocol: url.protocol }
   } catch {
-    return { ok: false, code: "PREVIEW_ORIGIN_INVALID" }
+    return null
   }
 }
 
@@ -337,6 +354,7 @@ export function CompatiblePreviewFrame({
   const origin = studioOrigin
     ? resolveCompatiblePreviewOrigin({
         configuredOrigin: process.env.NEXT_PUBLIC_PREVIEW_ORIGIN,
+        configuredStudioOrigin: process.env.NEXT_PUBLIC_APP_URL,
         studioOrigin,
         environment,
       })

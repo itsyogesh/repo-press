@@ -1,10 +1,7 @@
 import type { Metadata } from "next"
 import { Geist, Geist_Mono } from "next/font/google"
 import type React from "react"
-import { AnalyticsWrapper } from "@/components/analytics-wrapper"
-import { CookieConsent } from "@/components/cookie-consent"
-import { Providers } from "@/components/providers"
-import { Toaster } from "@/components/ui/sonner"
+import { RootChrome } from "@/components/root-chrome"
 import "./globals.css"
 
 const _geist = Geist({ subsets: ["latin"] })
@@ -77,12 +74,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className="font-sans antialiased">
-        <Providers>
-          {children}
-          <Toaster />
-          <CookieConsent />
-          <AnalyticsWrapper />
-        </Providers>
+        <RootChrome>{children}</RootChrome>
       </body>
     </html>
   )

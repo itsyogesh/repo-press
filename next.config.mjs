@@ -1,18 +1,33 @@
 import { withSentryConfig } from "@sentry/nextjs"
 
-function normalizeConfiguredOrigin(value) {
+function normalizeConfiguredOrigin(value, environment) {
 	if (!value) return null
 	try {
-		const url = new URL(value)
-		return url.origin === "null" || url.username || url.password ? null : url.origin
+		const trimmed = value.trim()
+		const url = new URL(trimmed)
+		const normalizedInput = trimmed.endsWith("/") ? trimmed.slice(0, -1) : trimmed
+		if (
+			(url.protocol !== "https:" && url.protocol !== "http:") ||
+			(environment === "production" && url.protocol !== "https:") ||
+			url.origin === "null" ||
+			url.username ||
+			url.password ||
+			url.search ||
+			url.hash ||
+			(url.pathname !== "/" && url.pathname !== "") ||
+			normalizedInput !== url.origin
+		) {
+			return null
+		}
+		return url.origin
 	} catch {
 		return null
 	}
 }
 
-export function createPreviewSandboxHeaders(studioOriginValue) {
-	const studioOrigin = normalizeConfiguredOrigin(studioOriginValue)
-	const frameAncestor = studioOrigin ?? "'none'"
+export function createPreviewSandboxHeaders(studioOriginValue, environment = process.env.NODE_ENV) {
+	const studioOrigin = normalizeConfiguredOrigin(studioOriginValue, environment)
+	const frameAncestor = studioOrigin ?? (environment === "production" ? "'none'" : "'self'")
 	const headers = [
 		{ key: "Cache-Control", value: "no-store" },
 		{
@@ -85,7 +100,7 @@ export const nextConfig = {
 			},
 			{
 				source: "/preview/sandbox",
-				headers: createPreviewSandboxHeaders(process.env.NEXT_PUBLIC_APP_URL),
+				headers: createPreviewSandboxHeaders(process.env.NEXT_PUBLIC_APP_URL, process.env.NODE_ENV),
 			},
     ]
   },

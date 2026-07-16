@@ -61,16 +61,28 @@ describe("CompatiblePreviewFrame", () => {
 
   it("fails closed in production for missing, invalid, insecure, or same-origin configuration", () => {
     const studioOrigin = "https://studio.repopress.test"
+    const configuredStudioOrigin = `${studioOrigin}/`
 
     expect(
-      resolveCompatiblePreviewOrigin({ configuredOrigin: undefined, studioOrigin, environment: "production" }),
+      resolveCompatiblePreviewOrigin({
+        configuredOrigin: undefined,
+        configuredStudioOrigin,
+        studioOrigin,
+        environment: "production",
+      }),
     ).toEqual({ ok: false, code: "PREVIEW_ORIGIN_MISSING" })
     expect(
-      resolveCompatiblePreviewOrigin({ configuredOrigin: "not a URL", studioOrigin, environment: "production" }),
+      resolveCompatiblePreviewOrigin({
+        configuredOrigin: "not a URL",
+        configuredStudioOrigin,
+        studioOrigin,
+        environment: "production",
+      }),
     ).toEqual({ ok: false, code: "PREVIEW_ORIGIN_INVALID" })
     expect(
       resolveCompatiblePreviewOrigin({
         configuredOrigin: "http://preview.repopress.test",
+        configuredStudioOrigin,
         studioOrigin,
         environment: "production",
       }),
@@ -78,10 +90,39 @@ describe("CompatiblePreviewFrame", () => {
     expect(
       resolveCompatiblePreviewOrigin({
         configuredOrigin: `${studioOrigin}/`,
+        configuredStudioOrigin,
         studioOrigin,
         environment: "production",
       }),
     ).toEqual({ ok: false, code: "PREVIEW_ORIGIN_NOT_ISOLATED" })
+  })
+
+  it("requires the configured production Studio origin to be HTTPS and equal to the live origin", () => {
+    const base = {
+      configuredOrigin: "https://preview.repopress.test",
+      studioOrigin: "https://studio.repopress.test",
+      environment: "production" as const,
+    }
+
+    expect(resolveCompatiblePreviewOrigin({ ...base, configuredStudioOrigin: undefined })).toEqual({
+      ok: false,
+      code: "STUDIO_ORIGIN_MISSING",
+    })
+    expect(
+      resolveCompatiblePreviewOrigin({ ...base, configuredStudioOrigin: "https://studio.repopress.test/app" }),
+    ).toEqual({ ok: false, code: "STUDIO_ORIGIN_INVALID" })
+    expect(resolveCompatiblePreviewOrigin({ ...base, configuredStudioOrigin: "http://studio.repopress.test" })).toEqual(
+      { ok: false, code: "STUDIO_ORIGIN_INSECURE" },
+    )
+    expect(
+      resolveCompatiblePreviewOrigin({ ...base, configuredStudioOrigin: "https://www.studio.repopress.test" }),
+    ).toEqual({ ok: false, code: "STUDIO_ORIGIN_MISMATCH" })
+    expect(
+      resolveCompatiblePreviewOrigin({ ...base, configuredStudioOrigin: "https://studio.repopress.test/" }),
+    ).toEqual({
+      ok: true,
+      origin: "https://preview.repopress.test",
+    })
   })
 
   it("authenticates the exact WindowProxy before transferring one MessagePort", () => {
@@ -234,5 +275,31 @@ describe("preview sandbox response headers", () => {
         headers: [{ key: "X-Frame-Options", value: "DENY" }],
       }),
     )
+  })
+
+  it("uses the same strict Studio-origin policy for production headers and a local development fallback", () => {
+    const csp = (headers: Array<{ key: string; value: string }>) =>
+      headers.find((header) => header.key === "Content-Security-Policy")?.value
+    const cors = (headers: Array<{ key: string; value: string }>) =>
+      headers.find((header) => header.key === "Access-Control-Allow-Origin")?.value
+
+    for (const invalid of [
+      undefined,
+      "not a URL",
+      "http://studio.repopress.test",
+      "https://studio.repopress.test/app",
+    ]) {
+      const headers = createPreviewSandboxHeaders(invalid, "production")
+      expect(csp(headers)).toContain("frame-ancestors 'none'")
+      expect(cors(headers)).toBeUndefined()
+    }
+
+    const configured = createPreviewSandboxHeaders("https://studio.repopress.test/", "production")
+    expect(csp(configured)).toContain("frame-ancestors https://studio.repopress.test")
+    expect(cors(configured)).toBe("https://studio.repopress.test")
+
+    const local = createPreviewSandboxHeaders(undefined, "development")
+    expect(csp(local)).toContain("frame-ancestors 'self'")
+    expect(cors(local)).toBeUndefined()
   })
 })
