@@ -350,6 +350,49 @@ describe("review regression guards", () => {
     expect(violations).toEqual(expect.arrayContaining([expect.stringContaining("ambient CommonJS loader use")]))
   })
 
+  it.each([
+    `const { require: load } = globalThis`,
+    `const { require } = globalThis`,
+    `let load; ({ require: load } = globalThis)`,
+    `const { ["require"]: load } = globalThis`,
+    `const { require: load } = module`,
+    `const load = globalThis.require; export { load }`,
+    `const load = module.require; export { load }`,
+  ])("reports escaped ambient loader acquisition %#", (loaderAcquisition) => {
+    const violations = findHostExecutionViolationsInSource(
+      "lib/escaped-commonjs-loader-probe.ts",
+      loaderAcquisition,
+    ).filter((violation) => violation.includes("ambient CommonJS loader use"))
+
+    expect(violations).toHaveLength(1)
+  })
+
+  it.each([
+    `declare function consume(value: unknown): void
+     const { require: load } = globalThis
+     consume(load)`,
+    `function leak() {
+       const { require: load } = globalThis
+       return load
+     }`,
+    `const { require: load } = globalThis
+     const stored = { load, values: [load] }
+     export { stored }`,
+    `const { require: load } = globalThis
+     const stored: { load?: unknown } = {}
+     stored.load = load`,
+    `const { require: load } = globalThis
+     Reflect.apply(consume, undefined, [load])
+     declare function consume(value: unknown): void`,
+  ])("rejects pass, return, or storage of an escaped loader %#", (escapedLoaderUse) => {
+    const violations = findHostExecutionViolationsInSource(
+      "lib/escaped-commonjs-loader-use-probe.ts",
+      escapedLoaderUse,
+    ).filter((violation) => violation.includes("ambient CommonJS loader use"))
+
+    expect(violations).toHaveLength(1)
+  })
+
   it("keeps genuine local CommonJS-shaped values harmless", () => {
     expect(
       findHostExecutionViolationsInSource(
@@ -388,6 +431,25 @@ describe("review regression guards", () => {
           type AmbientLoader = typeof require
           interface LoaderShape { require(specifier: string): unknown }
           export { metadata }
+        `,
+      ),
+    ).toEqual([])
+  })
+
+  it("keeps destructuring from genuine local loader-shaped objects inert", () => {
+    expect(
+      findHostExecutionViolationsInSource(
+        "lib/local-loader-destructuring-probe.ts",
+        `
+          function inspect(
+            globalThis: { require(value: string): string },
+            module: { require(value: string): string },
+          ) {
+            const { require: first } = globalThis
+            let second: typeof first
+            ;({ require: second } = module)
+            return { require: "metadata", values: [first, second] }
+          }
         `,
       ),
     ).toEqual([])

@@ -405,6 +405,23 @@ export function findHostExecutionViolationsInSource(relativePath: string, source
     return undefined
   }
 
+  const objectBindingAcquiresRequire = (pattern: ts.ObjectBindingPattern): boolean =>
+    pattern.elements.some((element) => {
+      const propertyName = propertyNameText(element.propertyName)
+      return (
+        propertyName === "require" ||
+        (propertyName === undefined && ts.isIdentifier(element.name) && element.name.text === "require")
+      )
+    })
+
+  const objectAssignmentAcquiresRequire = (pattern: ts.ObjectLiteralExpression): boolean =>
+    pattern.properties.some((property) => propertyNameText(property.name) === "require")
+
+  const isAmbientLoaderContainer = (expression: ts.Expression): boolean => {
+    const target = resolve(expression)?.target
+    return target === "global" || target === "module"
+  }
+
   const resolveLoaderWrapper = (input: ts.Expression): ResolvedValue | undefined => {
     const expression = unwrapExpression(input)
     if (!ts.isArrowFunction(expression) && !ts.isFunctionExpression(expression)) return undefined
@@ -591,6 +608,26 @@ export function findHostExecutionViolationsInSource(relativePath: string, source
   }
 
   const visit = (node: ts.Node) => {
+    if (
+      !permitsCommonJsLoader &&
+      ts.isVariableDeclaration(node) &&
+      ts.isObjectBindingPattern(node.name) &&
+      node.initializer &&
+      objectBindingAcquiresRequire(node.name) &&
+      isAmbientLoaderContainer(node.initializer)
+    ) {
+      report(node, "ambient CommonJS loader use")
+    }
+    if (
+      !permitsCommonJsLoader &&
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+      ts.isObjectLiteralExpression(unwrapExpression(node.left)) &&
+      objectAssignmentAcquiresRequire(unwrapExpression(node.left) as ts.ObjectLiteralExpression) &&
+      isAmbientLoaderContainer(node.right)
+    ) {
+      report(node, "ambient CommonJS loader use")
+    }
     if (
       !permitsCommonJsLoader &&
       ts.isIdentifier(node) &&
