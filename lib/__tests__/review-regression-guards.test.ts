@@ -286,6 +286,103 @@ describe("review regression guards", () => {
     )
   })
 
+  it("detects import-equals and every CommonJS require route into the preview sandbox", () => {
+    const importEqualsViolations = findHostExecutionViolationsInSource(
+      "lib/import-equals-probe.cts",
+      `import worker = require("@/components/preview-sandbox/compatible-worker")`,
+    )
+    const commonJsViolations = findHostExecutionViolationsInSource(
+      "lib/commonjs-probe.cjs",
+      `
+        const target = "@/components/preview-" + "sandbox/compatible-render-tree"
+        require(target)
+        const globalLoad = globalThis.require
+        globalLoad(target)
+        module.require(target)
+        const moduleLoad = module.require
+        moduleLoad(target)
+        const { require: destructuredLoad } = module
+        destructuredLoad(target)
+        const boundLoad = module.require.bind(module)
+        boundLoad(target)
+      `,
+    )
+    const violations = [...importEqualsViolations, ...commonJsViolations].filter((violation) =>
+      violation.includes("preview sandbox module"),
+    )
+
+    expect(violations).toHaveLength(7)
+  })
+
+  it("does not treat ordinary local require or load functions as CommonJS loaders", () => {
+    expect(
+      findHostExecutionViolationsInSource(
+        "lib/local-loader-probe.cjs",
+        `
+          function require(specifier) { return specifier }
+          function load(specifier) { return specifier }
+          const target = "@/components/preview-" + "sandbox/compatible-worker"
+          require(target)
+          load(target)
+        `,
+      ),
+    ).toEqual([])
+  })
+
+  it("categorically forbids runtime imports of repository preview adapter modules", () => {
+    const staticViolations = findHostExecutionViolationsInSource(
+      "components/studio/repository-adapter-probe.tsx",
+      `
+        import adapterDefault from "@/.repopress/mdx-preview"
+        import { adapter as runtimeAdapter } from "@/.repopress/mdx-preview"
+        import { adapter } from "@/.repopress/mdx-preview"
+        export { adapterDefault, runtimeAdapter, adapter }
+      `,
+    )
+    const dynamicViolations = findHostExecutionViolationsInSource(
+      "lib/repository-adapter-probe.cjs",
+      `
+        const target = "@/.repopress/" + "mdx-preview"
+        require(target)
+        import(target)
+      `,
+    )
+
+    expect(
+      staticViolations.filter((violation) => violation.includes("repository preview adapter module")),
+    ).toHaveLength(3)
+    expect(
+      dynamicViolations.filter((violation) => violation.includes("repository preview adapter module")),
+    ).toHaveLength(2)
+  })
+
+  it("taints default, renamed, and direct repository adapter imports through assignment aliases", () => {
+    const violations = findHostExecutionViolationsInSource(
+      "components/studio/repository-adapter-bindings-probe.tsx",
+      `
+        import adapterDefault from "@/.repopress/mdx-preview"
+        import { adapter as runtimeAdapter } from "@/.repopress/mdx-preview"
+        import { adapter } from "@/.repopress/mdx-preview"
+        const adapterAlias = adapter
+        adapter.components.Hero({})
+        runtimeAdapter["componentsByContext"].docs.Callout({})
+        adapterDefault.RenderBindings.Callout({})
+        adapterAlias.components.Hero({})
+      `,
+    )
+
+    expect(violations.filter((violation) => violation.includes("executable adapter component-map"))).not.toHaveLength(0)
+  })
+
+  it("allows only inert type imports from the repository preview adapter schema", () => {
+    expect(
+      findHostExecutionViolationsInSource(
+        "lib/repository-adapter-schema-probe.ts",
+        `import type { MdxPreviewSchema } from "@/.repopress/mdx-preview/schema"`,
+      ),
+    ).toEqual([])
+  })
+
   it("allows only the inert type edge and the exact sandbox route runtime entry", () => {
     expect(
       findHostExecutionViolationsInSource(

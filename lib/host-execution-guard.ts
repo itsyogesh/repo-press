@@ -41,8 +41,10 @@ const forbiddenExecutionIdentifiers = new Set([
 ])
 const forbiddenExecutionModule = /(?:evaluateMdx|evaluate-adapter|esbuild-browser|execution-guard)(?:\.[cm]?[jt]sx?)?$/
 const previewSandboxModule = /(?:^|\/)(?:components\/)?preview-sandbox(?:\/|$)/
+const repositoryPreviewAdapterModule = /(?:^|\/)\.repopress\/mdx-preview(?:\/|$)/
 
-type ExecutionTarget = "adapter" | "component-map" | "eval" | "function" | "global" | "import" | "require"
+type ExecutionTarget = "adapter" | "component-map" | "eval" | "function" | "global" | "import" | "module" | "require"
+type ModuleTarget = "preview-sandbox" | "repository-adapter"
 
 interface ResolvedValue {
   stringValue?: string
@@ -106,6 +108,75 @@ function sameValue(left: ResolvedValue | undefined, right: ResolvedValue | undef
   return left?.stringValue === right?.stringValue && left?.target === right?.target
 }
 
+function classifyModuleTarget(specifier: string): ModuleTarget | null {
+  if (previewSandboxModule.test(specifier)) return "preview-sandbox"
+  if (repositoryPreviewAdapterModule.test(specifier)) return "repository-adapter"
+  return null
+}
+
+function isTypeOnlyImportDeclaration(node: ts.ImportDeclaration): boolean {
+  const clause = node.importClause
+  if (!clause) return false
+  if (clause.isTypeOnly) return true
+  return (
+    !clause.name &&
+    clause.namedBindings !== undefined &&
+    ts.isNamedImports(clause.namedBindings) &&
+    clause.namedBindings.elements.length > 0 &&
+    clause.namedBindings.elements.every((element) => element.isTypeOnly)
+  )
+}
+
+function importEqualsModuleSpecifier(node: ts.ImportEqualsDeclaration): string | null {
+  return ts.isExternalModuleReference(node.moduleReference) &&
+    node.moduleReference.expression &&
+    ts.isStringLiteralLike(node.moduleReference.expression)
+    ? node.moduleReference.expression.text
+    : null
+}
+
+function staticModuleSpecifier(
+  node: ts.ImportDeclaration | ts.ExportDeclaration | ts.ImportEqualsDeclaration,
+): string | null {
+  if (ts.isImportEqualsDeclaration(node)) return importEqualsModuleSpecifier(node)
+  return node.moduleSpecifier && ts.isStringLiteralLike(node.moduleSpecifier) ? node.moduleSpecifier.text : null
+}
+
+function bindingNameIncludes(name: ts.BindingName, identifier: string): boolean {
+  if (ts.isIdentifier(name)) return name.text === identifier
+  return name.elements.some(
+    (element) => !ts.isOmittedExpression(element) && bindingNameIncludes(element.name, identifier),
+  )
+}
+
+function statementDeclaresIdentifier(statement: ts.Statement, identifier: string): boolean {
+  if (
+    (ts.isFunctionDeclaration(statement) ||
+      ts.isClassDeclaration(statement) ||
+      ts.isEnumDeclaration(statement) ||
+      ts.isModuleDeclaration(statement)) &&
+    statement.name &&
+    ts.isIdentifier(statement.name)
+  ) {
+    return statement.name.text === identifier
+  }
+  if (ts.isVariableStatement(statement)) {
+    return statement.declarationList.declarations.some((declaration) =>
+      bindingNameIncludes(declaration.name, identifier),
+    )
+  }
+  if (ts.isImportEqualsDeclaration(statement)) return statement.name.text === identifier
+  if (ts.isImportDeclaration(statement) && statement.importClause) {
+    const clause = statement.importClause
+    if (clause.name?.text === identifier) return true
+    if (clause.namedBindings) {
+      if (ts.isNamespaceImport(clause.namedBindings)) return clause.namedBindings.name.text === identifier
+      return clause.namedBindings.elements.some((element) => element.name.text === identifier)
+    }
+  }
+  return false
+}
+
 export function findHostExecutionViolationsInSource(relativePath: string, source: string): string[] {
   const sourceFile = ts.createSourceFile(
     relativePath,
@@ -116,6 +187,48 @@ export function findHostExecutionViolationsInSource(relativePath: string, source
   )
   const aliases = new Map<string, ResolvedValue>()
 
+  const isLocallyBound = (identifier: ts.Identifier): boolean => {
+    let current: ts.Node | undefined = identifier.parent
+    while (current) {
+      if (ts.isSourceFile(current) || ts.isBlock(current)) {
+        if (current.statements.some((statement) => statementDeclaresIdentifier(statement, identifier.text))) {
+          return true
+        }
+      }
+      if (ts.isFunctionLike(current)) {
+        if (current.parameters.some((parameter) => bindingNameIncludes(parameter.name, identifier.text))) return true
+        if (
+          (ts.isFunctionDeclaration(current) || ts.isFunctionExpression(current)) &&
+          current.name?.text === identifier.text
+        ) {
+          return true
+        }
+      }
+      if (ts.isCatchClause(current) && current.variableDeclaration) {
+        if (bindingNameIncludes(current.variableDeclaration.name, identifier.text)) return true
+      }
+      if (ts.isForStatement(current) && current.initializer && ts.isVariableDeclarationList(current.initializer)) {
+        if (
+          current.initializer.declarations.some((declaration) => bindingNameIncludes(declaration.name, identifier.text))
+        ) {
+          return true
+        }
+      }
+      if (
+        (ts.isForInStatement(current) || ts.isForOfStatement(current)) &&
+        ts.isVariableDeclarationList(current.initializer)
+      ) {
+        if (
+          current.initializer.declarations.some((declaration) => bindingNameIncludes(declaration.name, identifier.text))
+        ) {
+          return true
+        }
+      }
+      current = current.parent
+    }
+    return false
+  }
+
   const resolve = (input: ts.Expression, resolving = new Set<string>()): ResolvedValue | undefined => {
     const expression = unwrapExpression(input)
     if (ts.isStringLiteralLike(expression)) return { stringValue: expression.text }
@@ -125,7 +238,8 @@ export function findHostExecutionViolationsInSource(relativePath: string, source
       if (expression.text === "globalThis") return { target: "global" }
       if (expression.text === "Function") return { target: "function" }
       if (expression.text === "eval") return { target: "eval" }
-      if (expression.text === "require") return { target: "require" }
+      if (expression.text === "require" && !isLocallyBound(expression)) return { target: "require" }
+      if (expression.text === "module") return { target: "module" }
       if (expression.text === "componentsByContext" || expression.text === "RenderBindings") {
         return { target: "component-map" }
       }
@@ -160,7 +274,9 @@ export function findHostExecutionViolationsInSource(relativePath: string, source
       if (propertyName === "constructor" || propertyName === "Function") return { target: "function" }
       if (propertyName === "eval") return { target: "eval" }
       if (propertyName === "adapter") return { target: "adapter" }
-      if (base?.target === "global" && propertyName === "require") return { target: "require" }
+      if ((base?.target === "global" || base?.target === "module") && propertyName === "require") {
+        return { target: "require" }
+      }
       if (propertyName && COMPONENT_MAP_PROPERTIES.has(propertyName) && base?.target === "adapter") {
         return { target: "component-map" }
       }
@@ -170,6 +286,23 @@ export function findHostExecutionViolationsInSource(relativePath: string, source
     if (ts.isCallExpression(expression)) {
       if (ts.isIdentifier(expression.expression) && expression.expression.text === "createRenderBindings") {
         return { target: "component-map" }
+      }
+      if (
+        ts.isPropertyAccessExpression(expression.expression) &&
+        expression.expression.name.text === "bind" &&
+        resolve(expression.expression.expression, resolving)?.target === "require"
+      ) {
+        return { target: "require" }
+      }
+      const loaderTarget = resolve(expression.expression, resolving)?.target
+      const moduleSpecifier =
+        expression.arguments.length === 1 ? resolve(expression.arguments[0], resolving)?.stringValue : undefined
+      if (
+        loaderTarget === "require" &&
+        moduleSpecifier &&
+        classifyModuleTarget(moduleSpecifier) === "repository-adapter"
+      ) {
+        return { target: "adapter" }
       }
     }
     return undefined
@@ -216,14 +349,23 @@ export function findHostExecutionViolationsInSource(relativePath: string, source
         changed = assignAlias(element.name.text, { target: "adapter" }) || changed
         continue
       }
-      if (sourceTarget !== "adapter" && sourceTarget !== "global" && sourceTarget !== "component-map") continue
+      if (
+        sourceTarget !== "adapter" &&
+        sourceTarget !== "global" &&
+        sourceTarget !== "module" &&
+        sourceTarget !== "component-map"
+      ) {
+        continue
+      }
       const target =
-        sourceTarget === "global"
+        sourceTarget === "global" || sourceTarget === "module"
           ? propertyName === "Function"
             ? "function"
             : propertyName === "eval"
               ? "eval"
-              : undefined
+              : propertyName === "require"
+                ? "require"
+                : undefined
           : COMPONENT_MAP_PROPERTIES.has(propertyName) || sourceTarget === "component-map"
             ? "component-map"
             : undefined
@@ -250,6 +392,8 @@ export function findHostExecutionViolationsInSource(relativePath: string, source
         (COMPONENT_MAP_PROPERTIES.has(propertyName) || sourceTarget === "component-map")
       ) {
         changed = assignAlias(assignedName, { target: "component-map" }) || changed
+      } else if ((sourceTarget === "global" || sourceTarget === "module") && propertyName === "require") {
+        changed = assignAlias(assignedName, { target: "require" }) || changed
       }
     }
     return changed
@@ -257,6 +401,32 @@ export function findHostExecutionViolationsInSource(relativePath: string, source
 
   const collectAliases = (node: ts.Node): boolean => {
     let changed = false
+    if (ts.isImportDeclaration(node) && node.importClause && !isTypeOnlyImportDeclaration(node)) {
+      const specifier = ts.isStringLiteralLike(node.moduleSpecifier) ? node.moduleSpecifier.text : undefined
+      if (specifier && classifyModuleTarget(specifier) === "repository-adapter") {
+        const clause = node.importClause
+        if (clause.name) changed = assignAlias(clause.name.text, { target: "adapter" }) || changed
+        if (clause.namedBindings) {
+          if (ts.isNamespaceImport(clause.namedBindings)) {
+            changed = assignAlias(clause.namedBindings.name.text, { target: "adapter" }) || changed
+          } else {
+            for (const element of clause.namedBindings.elements) {
+              if (element.isTypeOnly) continue
+              const importedName = element.propertyName?.text ?? element.name.text
+              if (importedName === "adapter" || importedName === "default") {
+                changed = assignAlias(element.name.text, { target: "adapter" }) || changed
+              }
+            }
+          }
+        }
+      }
+    }
+    if (ts.isImportEqualsDeclaration(node) && !node.isTypeOnly) {
+      const specifier = importEqualsModuleSpecifier(node)
+      if (specifier && classifyModuleTarget(specifier) === "repository-adapter") {
+        changed = assignAlias(node.name.text, { target: "adapter" }) || changed
+      }
+    }
     if (ts.isVariableDeclaration(node) && node.initializer) {
       if (ts.isIdentifier(node.name)) {
         changed =
@@ -297,18 +467,12 @@ export function findHostExecutionViolationsInSource(relativePath: string, source
     }
   }
   const moduleText = (node: ts.Expression | undefined) => node && resolve(node)?.stringValue
-  const isTypeOnlyModuleEdge = (node: ts.ImportDeclaration | ts.ExportDeclaration): boolean => {
+  const isTypeOnlyModuleEdge = (
+    node: ts.ImportDeclaration | ts.ExportDeclaration | ts.ImportEqualsDeclaration,
+  ): boolean => {
+    if (ts.isImportEqualsDeclaration(node)) return node.isTypeOnly
     if (ts.isExportDeclaration(node)) return node.isTypeOnly
-    const clause = node.importClause
-    if (!clause) return false
-    if (clause.isTypeOnly) return true
-    return (
-      !clause.name &&
-      clause.namedBindings !== undefined &&
-      ts.isNamedImports(clause.namedBindings) &&
-      clause.namedBindings.elements.length > 0 &&
-      clause.namedBindings.elements.every((element) => element.isTypeOnly)
-    )
+    return isTypeOnlyImportDeclaration(node)
   }
   const isSandboxRouteEntry = (node: ts.ImportDeclaration | ts.ExportDeclaration, specifier: string): boolean => {
     if (relativePath !== SANDBOX_ROUTE_ENTRY || specifier !== SANDBOX_ROUTE_MODULE || !ts.isImportDeclaration(node)) {
@@ -351,16 +515,19 @@ export function findHostExecutionViolationsInSource(relativePath: string, source
       }
       if (baseTarget === "component-map") report(node, "executable adapter component-map member use")
     }
-    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
-      const specifier =
-        node.moduleSpecifier && ts.isStringLiteralLike(node.moduleSpecifier) ? node.moduleSpecifier.text : null
+    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node) || ts.isImportEqualsDeclaration(node)) {
+      const specifier = staticModuleSpecifier(node)
+      const moduleTarget = specifier ? classifyModuleTarget(specifier) : null
       if (
         specifier &&
-        previewSandboxModule.test(specifier) &&
+        moduleTarget === "preview-sandbox" &&
         !isTypeOnlyModuleEdge(node) &&
-        !isSandboxRouteEntry(node, specifier)
+        !(ts.isImportDeclaration(node) && isSandboxRouteEntry(node, specifier))
       ) {
         report(node, "host import of preview sandbox module")
+      }
+      if (specifier && moduleTarget === "repository-adapter" && !isTypeOnlyModuleEdge(node)) {
+        report(node, "host import of repository preview adapter module")
       }
       if (specifier && forbiddenExecutionModule.test(specifier)) report(node, "host import of sandbox execution module")
     }
@@ -370,6 +537,7 @@ export function findHostExecutionViolationsInSource(relativePath: string, source
       if (target?.target === "eval") report(node, "indirect eval execution")
       if (target?.target === "component-map") report(node, "executable adapter component-map invocation")
       const specifier = node.arguments?.length === 1 ? moduleText(node.arguments[0]) : undefined
+      const moduleTarget = specifier ? classifyModuleTarget(specifier) : null
       if (
         specifier &&
         forbiddenExecutionModule.test(specifier) &&
@@ -379,10 +547,17 @@ export function findHostExecutionViolationsInSource(relativePath: string, source
       }
       if (
         specifier &&
-        previewSandboxModule.test(specifier) &&
+        moduleTarget === "preview-sandbox" &&
         (target?.target === "import" || target?.target === "require")
       ) {
         report(node, "dynamic host import of preview sandbox module")
+      }
+      if (
+        specifier &&
+        moduleTarget === "repository-adapter" &&
+        (target?.target === "import" || target?.target === "require")
+      ) {
+        report(node, "dynamic host import of repository preview adapter module")
       }
     }
     ts.forEachChild(node, visit)

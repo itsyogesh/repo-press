@@ -144,7 +144,7 @@ describe("Studio compatible downgrade", () => {
       />,
     )
     expect(await screen.findByTitle("Compatible component preview")).toBeInTheDocument()
-    expect(frameHarness.mounts).toBe(2)
+    await waitFor(() => expect(frameHarness.mounts).toBe(2))
   })
 
   it.each([
