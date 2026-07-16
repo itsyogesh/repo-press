@@ -1,0 +1,88 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry.json",
+  "name": "repopress",
+  "homepage": "https://repopress.dev",
+  "items": [
+    {
+      "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+      "name": "callout",
+      "type": "registry:component",
+      "title": "Callout",
+      "description": "A semantic callout for highlighting Markdown content.",
+      "dependencies": [],
+      "registryDependencies": [],
+      "files": [
+        {
+          "path": "registry/repopress/callout/callout.tsx",
+          "type": "registry:component",
+          "target": "components/repopress/callout.tsx"
+        }
+      ],
+      "meta": {
+        "repopress": {
+          "apiVersion": 1,
+          "version": "1.0.0",
+          "kind": "mdx-component",
+          "logicalId": "@repopress/callout",
+          "mdxName": "Callout",
+          "exportName": "Callout",
+          "frameworks": ["next", "fumadocs"],
+          "preview": {
+            "fixtures": ["registry/repopress/callout/fixture.mdx"],
+            "defaultFixture": "registry/repopress/callout/fixture.mdx"
+          },
+          "authoring": {
+            "logicalId": "@repopress/callout",
+            "mdxName": "Callout",
+            "displayName": "Callout",
+            "description": "Highlights important Markdown content in a semantic aside.",
+            "category": "Content",
+            "exportName": "Callout",
+            "import": {
+              "source": "@/components/repopress/callout",
+              "exportName": "Callout"
+            },
+            "frameworks": ["next", "fumadocs"],
+            "runtime": "client",
+            "schemaStatus": "complete",
+            "kind": "flow",
+            "props": [
+              {
+                "name": "title",
+                "type": "string",
+                "label": "Title",
+                "required": false,
+                "description": "Optional heading and accessible label for the callout."
+              },
+              {
+                "name": "variant",
+                "type": "string",
+                "label": "Variant",
+                "required": true,
+                "description": "Visual emphasis for the callout.",
+                "options": ["default", "accent"],
+                "default": "default"
+              }
+            ],
+            "slots": [
+              {
+                "name": "children",
+                "accepts": "mdx",
+                "required": true
+              }
+            ],
+            "previewFixtures": ["registry/repopress/callout/fixture.mdx"],
+            "defaultFixture": "registry/repopress/callout/fixture.mdx",
+            "provenance": {
+              "source": "registry",
+              "registryItem": "@repopress/callout",
+              "version": "1.0.0",
+              "integrity": "sha256-EMN6TV4lqDVIuqV3Ha25KBi0qMQRO2MD+jFFGVBHQ/Q="
+            }
+          }
+        }
+      },
+      "docs": "Integrity hashes sorted source and fixture paths plus exact bytes with unsigned 32-bit big-endian length framing."
+    }
+  ]
+}
