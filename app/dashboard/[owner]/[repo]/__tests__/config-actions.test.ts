@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 // ── Hoisted mocks (must be before any import that uses them) ─────────────────
 
@@ -74,6 +74,16 @@ vi.mock("@/lib/github-permissions", () => ({
   roleAtLeast: roleAtLeastMock,
 }))
 
+const { getContentMock } = vi.hoisted(() => ({
+  getContentMock: vi.fn(),
+}))
+
+vi.mock("@/lib/github", () => ({
+  createGitHubClient: () => ({
+    repos: { getContent: getContentMock },
+  }),
+}))
+
 vi.mock("@/convex/_generated/api", () => ({
   api: {
     auth: { getCurrentUser: "auth:getCurrentUser" },
@@ -105,6 +115,17 @@ const OWNER = "acme"
 const REPO = "docs"
 const BRANCH = "main"
 const USER_ID = "user_abc123"
+const fetchMock = vi.fn()
+
+vi.stubGlobal("fetch", fetchMock)
+
+afterEach(() => {
+  expect(fetchMock, "config action tests must never make live HTTP requests").not.toHaveBeenCalled()
+})
+
+afterAll(() => {
+  vi.unstubAllGlobals()
+})
 
 const BASE_CONFIG = {
   version: 1,
@@ -130,6 +151,7 @@ function setupHappyPath() {
     branch: BRANCH,
   })
   convexMutationMock.mockResolvedValue(undefined)
+  getContentMock.mockResolvedValue({ data: [] })
 }
 
 // ── addProjectToConfigAction ─────────────────────────────────────────────────
@@ -158,6 +180,12 @@ describe("addProjectToConfigAction", () => {
     })
 
     expect(result).toEqual({ success: true, syncResult: { synced: [], created: ["proj_1"], unchanged: [] } })
+    expect(getContentMock).toHaveBeenCalledWith({
+      owner: OWNER,
+      repo: REPO,
+      path: "content/blog",
+      ref: BRANCH,
+    })
     expect(commitConfigMock).toHaveBeenCalledWith(
       TOKEN,
       OWNER,

@@ -235,4 +235,3 @@ This first ecosystem slice is done only when:
 - Documentation describes fidelity and trust boundaries honestly.
 - Draft PR #44 is reviewable with CI green.
 - Remaining dependency/security warnings and old PRs are explicitly triaged rather than silently ignored.
-
