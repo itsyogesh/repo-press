@@ -311,6 +311,44 @@ export async function saveFileContent(
   }
 }
 
+const MAX_CREATE_FILE_BYTES = 2 * 1024 * 1024
+
+/**
+ * Creates a repository file only when the path is absent at the branch head.
+ *
+ * GitHub's Contents API interprets an omitted `sha` as create-only. The API
+ * atomically rejects an existing path, including a concurrent winner; this
+ * helper intentionally performs no preflight read, update retry, or ref write.
+ */
+export async function createFileContentIfAbsent(
+  accessToken: string,
+  owner: string,
+  repo: string,
+  path: string,
+  content: string,
+  message = "Create file via RepoPress",
+  branch?: string,
+) {
+  assertRepository(owner, repo)
+  assertRepositoryPath(path)
+  assertCommitMessage(message)
+  if (branch !== undefined) assertBranch(branch)
+  if (typeof content !== "string" || Buffer.byteLength(content, "utf8") > MAX_CREATE_FILE_BYTES) {
+    throw new TypeError("Create-only file content exceeds byte limit")
+  }
+
+  const octokit = createGitHubClient(accessToken)
+  const { data } = await octokit.repos.createOrUpdateFileContents({
+    owner,
+    repo,
+    path,
+    message,
+    content: Buffer.from(content, "utf8").toString("base64"),
+    ...(branch === undefined ? {} : { branch }),
+  })
+  return data
+}
+
 export async function deleteFileContent(
   accessToken: string,
   owner: string,

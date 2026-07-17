@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { getGitHubToken } from "@/lib/auth-server"
 import { repoPressConfigSchema } from "@/lib/config-schema"
-import { batchCommit } from "@/lib/github"
+import { createFileContentIfAbsent } from "@/lib/github"
 import { resolveRepoRole } from "@/lib/github-permissions"
 import { resolveActingUserId } from "@/lib/server-context"
 
@@ -78,21 +78,17 @@ export async function initRepoPressAction(
   }
 
   try {
-    // New projects use repository-native discovery. Explicit preview entries
-    // remain a backward-compatible opt-in, but setup never fabricates one.
-    await batchCommit(
+    // A Contents request without a SHA is an atomic create-only operation.
+    // Existing or concurrently created config paths fail instead of becoming
+    // an implicit update.
+    await createFileContentIfAbsent(
       token,
       owner,
       repo,
-      branch,
-      [
-        {
-          path: "repopress.config.json",
-          content: JSON.stringify(config, null, 2),
-          action: "create",
-        },
-      ],
+      "repopress.config.json",
+      JSON.stringify(config, null, 2),
       "chore: initialize RepoPress configuration",
+      branch,
     )
 
     revalidatePath(`/dashboard/${owner}/${repo}/setup`)
