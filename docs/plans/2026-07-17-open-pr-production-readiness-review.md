@@ -16,9 +16,12 @@ final production-readiness work.
     directly from main and re-architects the MDX preview system, deleting the
     host-realm runtime that Line A patched.
 - #42 and #44 conflict in ~30 files, all in the old MDX runtime surface.
-  **#44 is the keeper; #42's design work gets salvaged on top; #41's bug
-  fixes need a survival audit** (some fix files #44 deleted, some fixes #44
-  never received).
+  **#44 is the keeper; #42's design work gets salvaged on top.** The
+  survival audit found **5 fixes from the #41 lineage genuinely missing in
+  #44** — including a data-loss-class publish bug — that must be ported.
+- #44's architecture claims held up under adversarial domain reviews
+  (installs, integrity, sandbox, auth), but the reviews surfaced **7 major
+  robustness bugs** to fix before merge.
 - CI (Lint / Typecheck / Test) is green on #41, #42, #44 heads and on main.
 
 ## PR inventory
@@ -255,4 +258,175 @@ Verdict: mechanically salvageable with the curated exclusions above; the
 design system core (tokens, fonts, primitives, landing/dashboard/docs/OG)
 is entirely in the clean bucket.
 
-<!-- ACTION PLAN -->
+## PR #44 review — safe MDX component ecosystem (73 commits, 192 files, +31.6k/−6k)
+
+Four independent domain reviews (Convex boundary, registry/integrity libs,
+GitHub API routes, studio edit/discovery libs) plus a direct review of the
+init-actions hardening. CI green at head `4076760`.
+
+### Headline claims — verification results
+
+| Claim | Verdict | Evidence |
+|-------|---------|----------|
+| Registry installs write only to a dedicated branch + PR, never the base branch | **Verified** | Branch forced to `repopress/install/` prefix from a pinned SHA; `batchCommitAtExpectedHead` refuses the protected base branch and fast-forwards with `force:false`; PR head/base re-verified after creation; collision resumes are tree-verified (SHA-1 recomputed locally) or 409 |
+| Integrity-pinned registry artifacts | **Verified (install-time)** | SHA-256 over a domain-separated, length-framed manifest+bytes construction; fails closed at resolver, planner, and lock layers. Gap: integrity is *not* re-verified when the committed lock is later loaded for Studio metadata (declarative-only exposure) |
+| No SSRF / fetch containment | **Verified** | Only non-GitHub server fetch is the registry, allowlisted to exact `repopress.dev` URLs, redirects re-validated per hop, size/type/timeout caps |
+| Route auth, no server-credential injection, Convex ownership | **Verified** | Every GitHub call uses the caller's own token; new Convex actions derive the actor server-side from the token, cross-check the session, require editor + push/admin, and rate-limit. This *fixes* main, where `syncTreeTitles` had no authorization at all |
+| No repository-code execution in the Studio/host realm | **Verified** | Generic preview is an inert render model (raw HTML → name-only placeholders, expressions/ESM dropped, URL schemes allowlisted, no `dangerouslySetInnerHTML`); source edits are parser-anchored with snapshot equality + offset re-verification (offsets empirically confirmed exact for astral/CRLF/tab input); compatible execution only via the sandbox worker path |
+| Exact-SHA reads | **Partial** | Verified for install / title-sync / gallery-scan (40-hex `readRef`, ancestor-proven). **publish-ops — the biggest write path — still reads via mutable branch refs** (prefetch at `baseBranch`, commit re-resolves `heads/<branch>`) |
+| Convex conventions (CLAUDE.md) | **Pass with nits** | Ownership checks, `v.id` FKs, indexes, state machine, getOrCreate all hold; `githubActionRateLimits` table omits `createdAt` |
+
+### Major findings — fix before merge
+
+Theme: new fail-closed validation converts previously-graceful degradation
+into permanent, project-wide outages; plus one state-consistency bug in
+publish.
+
+1. **Publish/commit ordering** — `convex/explorerOps.ts:405-407` +
+   `app/api/github/publish-ops/route.ts:338→377`: `markCommitted`'s new
+   `expectedUpdatedAt` optimistic lock throws *after* the irreversible
+   GitHub commit; one concurrent `saveDraft` during the publish window rolls
+   back the whole mutation — GitHub has the commit/PR but every op stays
+   `pending`, and a retry re-commits already-committed operations.
+2. **Title sync bricks per project (legacy paths)** —
+   `convex/documents.ts:881-889`: one legacy row whose stored path isn't
+   under the *current* `contentRoot` (mutable via project update/config
+   sync) throws `DOCUMENT_OUTSIDE_CONTENT_ROOT` and aborts every title sync
+   for the project; the same resolution crashes the studio render.
+3. **Title sync bricks per project (large/failed file)** —
+   `convex/documents.ts:915,929-932`: a single markdown file >256KB (or
+   >1MB GitHub no-encoding response, or one transient fetch failure)
+   rejects the batch `Promise.all` — deterministic permanent failure where
+   main skipped per-file.
+4. **Gallery scan bricks per repo** — `convex/mediaGallery.ts:45,72,202`:
+   every tree entry repo-wide is hard-validated *before* the image filter,
+   so one filename with a Unicode format char/backslash/scheme-like prefix —
+   or >20k entries or a truncated tree — permanently breaks scanning.
+   Validate-and-skip for non-image entries preserves the invariant without
+   the outage. (Compounding: the rate limiter is consumed before these
+   deterministic failures and never refunded — findings 2-4 also lock users
+   out at 4/min / 2/min while nothing can succeed.)
+5. **Studio page crash on exotic component names** —
+   `lib/studio/component-discovery.ts:28-30` +
+   `lib/studio/authoring-catalog.ts:562/576` +
+   `components/studio/editor.tsx:140-146`: a valid-MDX dashed/namespaced
+   component (`<Ab-cd />`, `<Ab:cd />` — confirmed to parse in remark-mdx
+   3.1.1) passes discovery but throws in `validateMdxName` above the error
+   boundary — opening/typing such a document crashes the whole Studio page.
+6. **Component edit can corrupt the document** —
+   `lib/studio/mdx-source-edit.ts:486-490,611-616` +
+   `lib/studio/component-serializer.ts:114-121`: escaping covers
+   `& < > " ' { }` but not line terminators, and `editComponentProp`
+   returns `ok:true` without re-parsing the result; a string prop containing
+   a blank line yields an unparseable document (verified against micromark),
+   breaking the module's never-corrupt contract. Currently masked only by
+   the single-line `<Input>` in the prop form.
+7. **HTML comment empties the preview** —
+   `lib/preview/generic-render-model.ts:108-112,728-764`: any
+   `<!-- comment -->` makes the whole document a PARSE_ERROR and the
+   placeholder fallback yields zero blocks — a plain `.md` with one comment
+   renders a completely empty preview with no diagnostic.
+
+### Ports required from the #41 lineage (see survival matrix)
+
+P0 publish metadata-format preservation (f8e9853 semantics — currently
+*every* `export const metadata` doc gets rewritten to YAML on publish), P1
+namespace-import handling (3a097c3), P1 deep-link empty-editor fix
+(4f5a6fc + its regression test), P2 sidebar flex layout (53be735), P2
+folder-picker access/a11y hardening (cbea505 + 451cbc1 rider).
+
+### Selected minor findings (fast-follow backlog)
+
+- `lib/github.ts:166-172`: `getFile` returns `null` on *any* error, so a
+  transient 5xx during publish prefetch skips the sha-conflict check and
+  clobbers remote edits without a 409.
+- PAT-only users: the new Convex actions hard-require a Better Auth account
+  and surface all authz failures as generic 500s — a deliberate access-model
+  change hidden as a server error (`convex/lib/githubActionAccess.ts:35-44`).
+- `lib/project-access-role.ts:14`: project ownership now takes precedence
+  over the GitHub-derived role — a creator whose repo access was revoked
+  still passes editor gates (contained by their token failing at GitHub).
+- Install route: no rate limiting (~136 sequential reads per request);
+  same-origin `Origin` check 403s behind TLS-terminating proxies; failed
+  installs strand `repopress/install/*` branches (nothing calls
+  `deleteBranchRef`).
+- Insert path still uses the permissive serializer — brace-wrapped strings
+  (including registry `default`s) become raw JSX expression source
+  (`components/studio/component-insert-modal.tsx:294,314`); the strict
+  `formatSafeLiteralPropValue` exists but is only used for edits.
+- NFC path normalization breaks byte-exact matching for NFD (macOS-created)
+  filenames (`lib/preview/path-policy.ts:46-49`).
+- Lock integrity not re-verified at load; `~/`-alias projects silently
+  un-installable; masking-scanner quote-state bug drops discovery on prose
+  apostrophes; `truncated` response field now dead; rate-limit table missing
+  `createdAt`.
+
+### Hygiene
+
+`review_diff.patch` committed at the repo root (junk — remove);
+`esbuild-wasm` appears to be a dead dependency after the sandbox rewrite;
+the new inline title extractor drops `export const metadata` title support
+(falls back to filename).
+
+### #44 verdict
+
+The architecture is real and the safety claims substantiate under
+adversarial review — this is the right base for production. It is **not
+mergeable today**: one fix round is needed (7 majors + P0/P1 ports +
+hygiene), then it merges and everything else rebases onto it.
+
+## Action plan — getting to the production-readiness start line
+
+**Phase 0 — repo hygiene (no code risk, do immediately)**
+1. Close #35 and #37 (fully absorbed into main; carry their PR-body caveats
+   — verify Remotion `durationInFrames`, replace placeholder music with
+   licensed audio — into the launch checklist below).
+2. Close #39 (superseded by #44's architecture; content preserved in the
+   #41/#42 lineage).
+3. #40: owner decision — recommend merge after a rebase + CI run (confirm no
+   test/fixture reads the root `repopress.config.json`).
+4. Comment on #34/#41/#42 linking this review; keep them open until their
+   salvage ports land, then close with pointers.
+
+**Phase 1 — #44 fix round → merge (the gate for everything else)**
+1. Fix majors 1-7 above on the #44 branch.
+2. Port the five survival-matrix fixes (P0 first — it is a data-loss class).
+3. Hygiene: drop `review_diff.patch`, remove `esbuild-wasm` if confirmed
+   dead, restore metadata-title extraction or document the regression.
+4. Re-run CI + the host-execution guard; then merge #44 into main.
+5. Close #34, #39, #41 with pointers to the port commits.
+
+**Phase 2 — design salvage (after #44 merges)**
+1. Fresh branch from main; apply #42's increment per the salvage plan
+   (Bucket A mechanical ~112 files; Bucket B hand-apply ~15 files; Bucket C
+   re-express preview styling on `GenericPreview`/`SandboxRuntime`).
+2. Exclusions: skip f91bda7's convex/lib sync-resilience (obsolete under
+   #44); keep the vitest `testTimeout` and turbopack root pin; fix the stale
+   `DESIGN.md` comment at `app/globals.css:15`.
+3. Open the fresh design PR; close #42 with a pointer.
+
+**Phase 3 — auth branch + dependency remediation (parallel with Phase 2)**
+1. Open a PR for `fix/login-auth-redirects` keeping `8bf276e` (login
+   redirect + proxy session-cookie signals, tested); drop or redo `681df36`
+   (no `bun.lockb` in an npm repo; keep `package-lock.json` authoritative).
+2. Replace the `"latest"` version ranges in package.json with real pinned
+   semver for `better-auth`, `@convex-dev/better-auth`, `convex`,
+   `@octokit/rest`.
+3. Execute the documented dependency upgrades: better-auth 1.4.9 → ~1.6.23
+   with @convex-dev/better-auth 0.10.10 → ~0.12.5 (full
+   OAuth/session/PAT/Convex auth matrix rerun), Next.js 16.0.10 → patched
+   16.x (~16.2.10) (proxy/auth/RSC/Server Action/build regressions), then
+   burn down the `npm audit --omit=dev` backlog per the staged plan.
+
+**Phase 4 — launch checklist (final production readiness work)**
+- Fast-follow backlog: file issues for the minor findings above (publish
+  prefetch error handling, PAT 500s, owner-precedence flip, install route
+  rate limit/Origin check/branch cleanup, insert-path serializer, NFD
+  paths).
+- Remotion: verify composition durations in `remotion studio`; replace
+  ffmpeg-generated placeholder music with licensed audio before publishing.
+- Decide deployment protection / domains on Vercel; review the recorded
+  build warnings (Sentry deprecations, OpenTelemetry duplication, baseline
+  browser mapping).
+- Re-run `convex-security-audit` style checks on the post-merge tree and
+  keep the host-execution guard in CI.
