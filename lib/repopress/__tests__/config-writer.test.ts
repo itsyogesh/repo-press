@@ -72,6 +72,30 @@ describe("addProject", () => {
     })
     expect(result.projects).toHaveLength(2)
   })
+
+  it("preserves explicit preview and declarative authoring overrides as optional compatibility metadata", () => {
+    const result = addProject(makeConfig(), {
+      id: "legacy",
+      name: "Legacy compatible preview",
+      contentRoot: "content/legacy",
+      framework: "custom",
+      contentType: "docs",
+      preview: { entry: ".repopress/custom-preview.tsx", plugins: ["legacy-callouts"] },
+      components: {
+        Callout: {
+          displayName: "Callout",
+          props: [{ name: "variant", type: "string", options: ["info", "warning"] }],
+          hasChildren: true,
+        },
+      },
+    })
+
+    expect(result.projects[1].preview).toEqual({
+      entry: ".repopress/custom-preview.tsx",
+      plugins: ["legacy-callouts"],
+    })
+    expect(result.projects[1].components?.Callout).toMatchObject({ displayName: "Callout", hasChildren: true })
+  })
 })
 
 describe("updateProject", () => {

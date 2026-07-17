@@ -1,5 +1,7 @@
 # RepoPress - History Implementation Summary & Next Phase Context
 
+> **Historical snapshot (2026-03-03):** The adapter-loading, same-origin JSX bridge, and runtime status in this document have been superseded. Do not use this file as current MDX architecture or implementation guidance. See `docs/multi_project_mdx_spec.md`, `docs/mdx_runtime_master_plan.md`, and the ratified native MDX ecosystem design in `docs/plans/2026-07-12-native-mdx-preview-ecosystem-design.md`.
+
 ## Plan Tracker (Canonical Status) - 2026-03-03
 
 Use this section as the single quick-status index across all docs/plans files.

@@ -10,15 +10,19 @@ export type ConfigWriteResult =
   | { success: false; error: string; errorType: "fetch-failed" | "validation" | "commit-failed" | "conflict" }
 
 export type NewProjectDef = Omit<ProjectConfigInput, "preview" | "components"> & {
+  /** Optional compatibility override; new setup does not synthesize one. */
   preview?: ProjectConfigInput["preview"]
+  /** Declarative authoring hints only; never executable preview authority. */
   components?: ProjectConfigInput["components"]
 }
 
 // ── Pure helpers (no side effects, testable) ──────────────────────
 
 /**
- * Adds a project to an existing config. Returns the updated config or throws
- * if validation fails (e.g. duplicate id or contentRoot).
+ * Adds a project to an existing config without generating preview adapters or
+ * component catalogs. Explicit compatibility metadata is preserved only when
+ * the caller supplies it. Returns the updated config or throws if validation
+ * fails (e.g. duplicate id or contentRoot).
  */
 export function addProject(config: RepoPressConfig, project: NewProjectDef): RepoPressConfig {
   assertJson(config)

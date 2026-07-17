@@ -314,7 +314,8 @@ export function RepoSetupForm({
           <Sparkles className="h-4 w-4 text-studio-accent" />
           <AlertTitle className="text-studio-accent">Initialize with Config (Recommended)</AlertTitle>
           <AlertDescription className="text-xs text-pretty text-studio-accent">
-            This adds a config file and preview adapter to your repo, enabling live MDX editing and project management.
+            This adds a lightweight project config. RepoPress discovers your existing MDX setup and keeps preview
+            fallbacks explicit.
           </AlertDescription>
         </Alert>
 

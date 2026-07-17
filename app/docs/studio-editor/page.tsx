@@ -31,13 +31,38 @@ export default function StudioEditorPage() {
           images, and code blocks.
         </li>
         <li>
-          <strong className="text-foreground">Preview (Right)</strong> - A real-time rendered preview of your MDX
-          content. As you type, the preview updates instantly so you can see exactly how your content will look.
+          <strong className="text-foreground">Preview (Right)</strong> - A live representation of your MDX content. The
+          fidelity badge identifies whether the current result is Generic or Compatible and explains any downgrade.
         </li>
       </ul>
       <p className="mb-4 leading-relaxed text-muted-foreground">
         You can resize each panel by dragging the dividers, or collapse the file tree and preview panels to focus on
         writing.
+      </p>
+
+      <h2 className="mb-4 mt-12 text-2xl font-semibold">Preview Fidelity</h2>
+      <p className="mb-4 leading-relaxed text-muted-foreground">
+        RepoPress labels every preview so an approximation is never presented as the repository&rsquo;s production
+        output:
+      </p>
+      <ul className="mb-4 list-inside list-disc space-y-2 text-muted-foreground">
+        <li>
+          <strong className="text-foreground">Generic</strong> - Renders a safe, bounded Typeset model without running
+          repository code. This fallback is always available.
+        </li>
+        <li>
+          <strong className="text-foreground">Compatible</strong> - Renders an exact signed browser-compatible artifact
+          in an isolated opaque-origin frame. Framework loaders, Server Components, and full application context may
+          still differ from production.
+        </li>
+        <li>
+          <strong className="text-foreground">Native</strong> - Reserved for a future isolated managed runner that uses
+          the repository&rsquo;s real framework runtime. It is not available in the current first slice.
+        </li>
+      </ul>
+      <p className="mb-4 leading-relaxed text-muted-foreground">
+        When a trusted Compatible artifact is unavailable, stale, or unsupported, the Studio keeps editing available,
+        downgrades to Generic, and shows the reason.
       </p>
 
       {/* MDX Editing */}

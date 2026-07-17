@@ -14,7 +14,7 @@ RepoPress connects to your GitHub repositories and gives you a Notion-like editi
 
 ### Key Features
 
-- **Visual MDX Studio Editor** -- Rich text editing with live preview, frontmatter management, and split-pane layout
+- **Visual MDX Studio Editor** -- Rich text editing with explicit preview fidelity, frontmatter management, and a split-pane layout
 - **Content Stays in Git** -- No vendor lock-in. Drafts are saved to Convex; published content is committed directly to your GitHub repo
 - **Framework Auto-detection** -- Automatically detects Fumadocs, Nextra, Astro, Hugo, Docusaurus, Jekyll, Contentlayer, and Next.js MDX setups from your repo and configures frontmatter fields accordingly
 - **Document Workflows** -- Full state machine: draft → in review → approved → published → archived, with publish requiring a GitHub commit
@@ -26,6 +26,7 @@ RepoPress connects to your GitHub repositories and gives you a Notion-like editi
 - **Taxonomy Management** -- Authors, tags, and nested categories per project
 - **Media Asset Library** -- Track images and files referenced in your content
 - **Folder Meta** -- Sidebar ordering via meta.json / _meta.json patterns (Fumadocs, Nextra compatible)
+- **Reusable MDX Components** -- Install integrity-pinned registry components through a GitHub pull request, then insert and edit them through declarative Studio forms
 
 ---
 
@@ -38,7 +39,7 @@ RepoPress connects to your GitHub repositories and gives you a Notion-like editi
 | **Database** | Convex (real-time, serverless) |
 | **Auth** | Better Auth + @convex-dev/better-auth (GitHub OAuth) |
 | **GitHub API** | Octokit (@octokit/rest) for file read/write/commit |
-| **Content Parsing** | gray-matter (frontmatter), react-markdown, remark-gfm |
+| **Content Parsing** | gray-matter, unified/remark MDX, bounded generic render models |
 | **Deployment** | Vercel |
 
 ---
@@ -125,6 +126,18 @@ RepoPress auto-detects these frameworks from your repo and adapts frontmatter fi
 | **Jekyll** | `_config.yml` | `_posts/` |
 | **Contentlayer** | `contentlayer` in package.json | from `contentlayer.config.*` |
 | **Next.js MDX** | `@next/mdx` in package.json | auto-detected |
+
+---
+
+## MDX Preview Fidelity
+
+RepoPress reports which preview it is showing instead of treating every approximation as native:
+
+- **Generic** renders a safe, bounded shadcn Typeset model. It never executes repository code and remains available as the default fallback.
+- **Compatible** renders only an exact signed browser-compatible artifact on a separately configured origin in an opaque iframe. It does not promise Server Component, framework-loader, or full application context parity.
+- **Native** is reserved for a future managed runner that executes the repository's actual framework in isolation. That runner is not included in the current first slice.
+
+New repository setup uses native discovery: RepoPress inspects the repository's existing framework, component aliases, MDX runtime map, and CSS target. Setup commits a lightweight `repopress.config.json`; it does not generate `.repopress/mdx-preview.tsx` or make a generated component catalog authoritative. Older explicit preview entries remain readable as untrusted compatibility overrides and never authorize execution in the Studio.
 
 ---
 

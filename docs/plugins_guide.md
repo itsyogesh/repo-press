@@ -1,56 +1,30 @@
-# RepoPress Plugin System (v1)
+# RepoPress Extensions and Compatibility Overrides
 
-RepoPress supports repo-local plugins to extend the MDX preview runtime. Plugins can contribute custom components, scope variables, and allowlisted imports.
+> **Status:** Registry-based declarative components are current. Repo-local executable preview plugins are legacy compatibility inputs only.
+> **Last updated:** 2026-07-17
 
-## Plugin Structure
+RepoPress extends MDX through integrity-pinned registry items and repository-native runtime maps. This keeps installed code in the repository, exposes reviewable changes through a GitHub pull request, and separates Studio authoring metadata from sandbox-only executable bindings.
 
-Plugins are stored in your repository, typically under `.repopress/plugins/<plugin-id>/`.
+## Recommended: registry components
 
-Each plugin requires:
+A registry item describes:
 
-1. `plugin.json` - Manifest file
-2. An entry file (e.g., `index.tsx`) - Implementation
+- normalized declarative authoring metadata;
+- source files and portable install targets;
+- package and registry dependencies;
+- framework/runtime compatibility;
+- optional CSS and preview fixtures;
+- provenance, version, and SHA-256 integrity.
 
-### Example: `plugin.json`
+The installer resolves the exact item and dependencies, discovers repository aliases/runtime map/CSS target, detects conflicts or local modifications, and creates one deterministic commit on a dedicated branch. The base branch is never written directly.
 
-```json
-{
-  "id": "my-custom-plugin",
-  "name": "My Custom Plugin",
-  "version": "1.0.0",
-  "entry": "./index.tsx",
-  "components": ["CustomBanner", "StatusBadge"],
-  "scopeExports": ["MY_CONSTANT"]
-}
-```
+Installed metadata can populate the Studio palette and prop form. It never injects React functions into Studio state. The installed repository runtime map supplies the component binding when the repository itself builds the content.
 
-### Example: `index.tsx`
+The first official item is `@repopress/callout`.
 
-```tsx
-import { CustomBanner } from "./components/Banner";
-import { StatusBadge } from "./components/Badge";
+## Legacy repo-local preview entries
 
-export const MY_CONSTANT = "Hello from Plugin!";
-
-export const adapter = {
-  components: {
-    CustomBanner,
-    StatusBadge,
-  },
-  scope: {
-    MY_CONSTANT,
-  },
-  allowImports: {
-    "lucide-react": { Info: true },
-  },
-};
-```
-
-## Enabling Plugins
-
-Plugins must be registered in your `repopress.config.json` and then enabled per project.
-
-### `repopress.config.json`
+Older configs may contain plugin registrations and preview entries:
 
 ```json
 {
@@ -58,37 +32,60 @@ Plugins must be registered in your `repopress.config.json` and then enabled per 
   "projects": [
     {
       "id": "docs",
+      "name": "Docs",
+      "contentRoot": "content/docs",
+      "framework": "fumadocs",
+      "contentType": "docs",
       "preview": {
-        "plugins": ["my-custom-plugin"]
+        "entry": ".repopress/custom-preview.tsx",
+        "plugins": ["legacy-callouts"]
       }
     }
   ],
   "plugins": {
-    "my-custom-plugin": ".repopress/plugins/my-custom-plugin/plugin.json"
+    "legacy-callouts": ".repopress/plugins/legacy-callouts/plugin.json"
   }
 }
 ```
 
-## Extension Points
+RepoPress keeps these values readable for migration, but they are untrusted compatibility inputs:
 
-### 1. Components
+- they do not become native preview authority;
+- they are never imported or evaluated in the Studio/host realm;
+- they cannot provide functions, scope, import bindings, credentials, filesystem access, or host navigation to Studio;
+- compatible rendering requires an exact signed artifact and the isolated opaque-origin sandbox;
+- absent or invalid compatible authority downgrades to generic Typeset preview.
 
-Any React component exported via `adapter.components` will be available as a global tag in your MDX files.
+New setup does not generate a preview adapter or plugin scaffold.
 
-### 2. Scope
+## Authoring metadata overrides
 
-Variables exported via `adapter.scope` will be available in MDX expressions (e.g., `{MY_CONSTANT}`).
+`projects[].components` may retain bounded declarative metadata for older repositories. This is an authoring hint, not an implementation:
 
-### 3. Allowed Imports
-
-Modules and named exports listed in `adapter.allowImports` can be imported directly in MDX files:
-
-```mdx
-import { Info } from "lucide-react";
+```json
+{
+  "components": {
+    "Callout": {
+      "displayName": "Callout",
+      "props": [
+        {
+          "name": "variant",
+          "type": "string",
+          "options": ["info", "warning"]
+        }
+      ],
+      "hasChildren": true
+    }
+  }
+}
 ```
 
-## Merging Logic
+Metadata must remain JSON-serializable and contain no executable source. Verified installed registry metadata takes precedence for the same MDX component name.
 
-1. **Default Adapter**: Base components and scope.
-2. **Plugins**: Merged in order defined in `repopress.config.json`. Later plugins override earlier ones.
-3. **Project Adapter**: Overrides all plugins and the default adapter.
+## Preview grades
+
+- `generic`: safe bounded Typeset model; no repository execution.
+- `compatible`: signed bounded artifact in the separately hosted opaque-origin iframe.
+- `native`: future managed framework runner; not available in the current slice.
+
+See `docs/multi_project_mdx_spec.md` for the configuration contract and `docs/mdx_runtime_master_plan.md` for the current architecture and roadmap.
