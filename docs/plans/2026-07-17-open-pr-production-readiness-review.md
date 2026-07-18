@@ -4,6 +4,19 @@ Review of all 8 open PRs (#34, #35, #37, #39, #40, #41, #42, #44), their git
 relationships, and the recommended sequence to reach a clean base for the
 final production-readiness work.
 
+> **Revised 2026-07-18** after the owner's differential review
+> (143/143 targeted tests). Corrections incorporated and independently
+> re-verified where disputed: the multiline-prop corruption major was a
+> false positive (repro: blank lines in quoted attributes parse fine in
+> flow context against remark-mdx 3.1.1; only inline-context tags fail,
+> unreachable via the single-line UI); the publish metadata issue is
+> missing *format provenance* (duplicate metadata / legacy-draft
+> conversion), not an unconditional rewrite; the optimistic-lock issue is
+> delete-specific; deep links are substantially mitigated by server-side
+> initial file loading; #44's tree controls do support Enter/Space; #37
+> must be closed explicitly; and one missed finding was added (title-sync
+> HTTP 500s recorded client-side as success).
+
 ## TL;DR
 
 - Main (`470f717`, merge of #38) already contains almost everything from the
@@ -18,7 +31,8 @@ final production-readiness work.
 - #42 and #44 conflict in ~30 files, all in the old MDX runtime surface.
   **#44 is the keeper; #42's design work gets salvaged on top.** The
   survival audit found **5 fixes from the #41 lineage genuinely missing in
-  #44** — including a data-loss-class publish bug — that must be ported.
+  #44** — two blocker-class (publish metadata format provenance,
+  namespace-import handling) — that must be ported.
 - #44's architecture claims held up under adversarial domain reviews
   (installs, integrity, sandbox, auth), but the reviews surfaced **7 major
   robustness bugs** to fix before merge.
@@ -42,8 +56,8 @@ Notes on the table:
 - "ahead/behind" counts are commits vs `origin/main` (`470f717`).
 - #34/#35 show "conflicts" only because their bases are pre-#38 main; the
   conflicts are against work that already includes them.
-- #37's base is `feature/remotion-videos`, not main — it auto-closes if #35
-  closes.
+- #37's base is `feature/remotion-videos`, not main — close it explicitly
+  (closing #35 alone does not auto-close it).
 - Vercel preview deploys: Ready on #34, #35, #41, #42, #44; failed on #37,
   #39, #40 (stale April builds).
 
@@ -106,9 +120,10 @@ Unmerged stray branch (no PR): fix/login-auth-redirects
 
 10 of its 11 commits are in main via #38. The 11th (`cbea505` "harden folder
 picker access and tests") lives on in #41/#42 but **not** in main or #44 —
-and the survival audit found the hardening genuinely missing in #44 (see
-matrix: P2). Action: port `cbea505` (+ its 451cbc1 rider) onto the #44 line,
-then close #34 with a comment pointing at the port commit.
+and the survival audit found the access-token wiring genuinely missing in
+#44 (see matrix: P3; the a11y half was overstated — #44's tree already
+handles Enter/Space). Action: port `cbea505` (+ its 451cbc1 rider) onto the
+#44 line, then close #34 with a comment pointing at the port commit.
 
 ### #35 — remotion videos (draft, base stale)
 
@@ -123,8 +138,9 @@ are live on main.
 ### #37 — landing Remotion preview (draft, stacked on #35)
 
 Landing video integration is in main (`components/landing/video-preview.tsx`
-exists on main; #42 restyles it). Its base is #35's branch, so it
-auto-closes when #35 closes. Action: close as fully absorbed.
+exists on main; #42 restyles it). Its base is #35's branch — note closing
+#35 does **not** auto-close #37 (that only happens if the base *branch* is
+deleted). Action: close #37 explicitly as fully absorbed.
 
 ### #39 — native MDX runtime refactor (open, current base)
 
@@ -153,8 +169,8 @@ patches the old MDX runtime that #44 deletes. Its remaining unique value is
 precisely the 5 at-risk fixes in the survival matrix + the 49-line
 `feature-grid.tsx` cleanup (which #42 carries forward anyway). Action: do
 NOT merge; port the at-risk fixes to the #44 line, then close with a
-pointer. Closing #41 without the ports would silently reintroduce a
-data-loss bug (P0 above).
+pointer. Closing #41 without the ports would silently reintroduce the
+blocker-class publish provenance and namespace-import bugs (P0/P1 above).
 
 ### #42 — editorial design system (draft, current base)
 
@@ -182,11 +198,11 @@ deleted modules).
 
 | Priority | Lost fix | Where the bug lives in #44 | Impact |
 |----------|----------|---------------------------|--------|
-| P0 | f8e9853 publish metadata format | `app/api/github/publish-ops/route.ts:122` (`if (!doc.githubSha) continue`), `:159`/`:199` unconditional `matter.stringify` | **Data loss class, wider than the original bug:** publishing any `export const metadata` MDX doc rewrites it as YAML frontmatter — #44 has no format-preservation subsystem at all |
-| P1 | 3a097c3 namespace imports | `components/mdx-runtime/transformImports.ts:64-66` — no `ImportNamespaceSpecifier` branch, unconditional `file.fail(...)`; reachable via `components/preview-sandbox/compatible-worker.ts:104` | Regressed from "import dropped silently" to "entire compatible preview fails to compile" on `import * as X` |
-| P1 | 4f5a6fc deep-link half | `components/studio/hooks/use-studio-file.ts:205-214` — caches + applies an empty snapshot when tree lacks sha and no cache exists | Deep links opened before tree hydration render an empty editor; regression test `use-studio-file.test.tsx` also missing in #44 |
+| P0 | f8e9853 publish metadata format | `app/api/github/publish-ops/route.ts` — per-doc `matter.stringify(body, frontmatter)` with no record of the source file's metadata format | **Missing format provenance** (confirmed blocker, corrected framing): depending on how a doc entered Convex, publish either prepends YAML over a body that still embeds `export const metadata` (duplicate metadata) or converts legacy drafts' metadata to YAML. Not an unconditional rewrite of every metadata doc |
+| P1 | 3a097c3 namespace imports | `components/mdx-runtime/transformImports.ts:64-66` — no `ImportNamespaceSpecifier` branch, unconditional `file.fail(...)`; reachable via `components/preview-sandbox/compatible-worker.ts:104` | Confirmed blocker: regressed from "import dropped silently" to "entire compatible preview fails to compile" on `import * as X` |
 | P2 | 53be735 sidebar layout | `components/studio/studio-layout.tsx:1406` — `StudioPanelShell` missing `flex flex-col`; children at `:1411`/`:1430` depend on it | File tree doesn't scroll; History/Settings not pinned to bottom |
-| P2 | cbea505 folder-picker hardening | `components/edit-project-dialog.tsx:100-103` omits `projectAccessToken` (query fails closed → PAT users blocked); repo `page.tsx` never mints per-project tokens; `components/ui/tree.tsx` lacks button semantics / keyboard nav | Access + a11y hardening lost; riders if ported: 451cbc1's page.tsx rename, `edit-project-dialog.test.tsx` |
+| P3 | 4f5a6fc deep-link half | `components/studio/hooks/use-studio-file.ts:205-214` — caches + applies an empty snapshot when tree lacks sha and no cache exists | **Downgraded after correction:** the studio page server-loads the deep-linked file at the pinned SHA (`page.tsx:140,164`), so deep links are substantially mitigated. Residual: the client cache path + missing `use-studio-file.test.tsx` regression test |
+| P3 | cbea505 folder-picker hardening | `components/edit-project-dialog.tsx:100-103` omits `projectAccessToken` (query fails closed → PAT users blocked); repo `page.tsx` never mints per-project tokens | **Narrowed after correction:** the a11y half was overstated — #44's `components/ui/tree.tsx` already has `role="button"`, `tabIndex={0}`, and Enter/Space handling (`:280-299`). Remaining substance is the access-token wiring; riders if ported: 451cbc1's page.tsx rename, `edit-project-dialog.test.tsx` |
 
 Minor notes from the same audit: (a) #44's inline title extractor
 (`convex/documents.ts:60`) only reads YAML `title:` — `export const
@@ -282,12 +298,15 @@ Theme: new fail-closed validation converts previously-graceful degradation
 into permanent, project-wide outages; plus one state-consistency bug in
 publish.
 
-1. **Publish/commit ordering** — `convex/explorerOps.ts:405-407` +
-   `app/api/github/publish-ops/route.ts:338→377`: `markCommitted`'s new
+1. **Publish/commit ordering (delete-specific)** —
+   `convex/explorerOps.ts:405-407` +
+   `app/api/github/publish-ops/route.ts:338→377`: `markCommitted`'s
    `expectedUpdatedAt` optimistic lock throws *after* the irreversible
-   GitHub commit; one concurrent `saveDraft` during the publish window rolls
-   back the whole mutation — GitHub has the commit/PR but every op stays
-   `pending`, and a retry re-commits already-committed operations.
+   GitHub commit. Scope corrected: the lock only guards
+   `deleteAssociations`, so the failure requires a concurrent edit to a doc
+   tied to a *staged delete* — but when it fires, GitHub has the commit/PR
+   while every op stays `pending`, and a retry re-commits already-committed
+   operations.
 2. **Title sync bricks per project (legacy paths)** —
    `convex/documents.ts:881-889`: one legacy row whose stored path isn't
    under the *current* `contentRoot` (mutable via project update/config
@@ -297,7 +316,11 @@ publish.
    `convex/documents.ts:915,929-932`: a single markdown file >256KB (or
    >1MB GitHub no-encoding response, or one transient fetch failure)
    rejects the batch `Promise.all` — deterministic permanent failure where
-   main skipped per-file.
+   main skipped per-file. **Compounding (missed in the first pass):** these
+   failures are invisible — the client records any HTTP response as success
+   (`components/studio/hooks/use-studio-queries.ts:89-91` chains
+   `.then(() => { entry.status = "done" })` with no `response.ok` check, so
+   a 500 marks the sync done).
 4. **Gallery scan bricks per repo** — `convex/mediaGallery.ts:45,72,202`:
    every tree entry repo-wide is hard-validated *before* the image filter,
    so one filename with a Unicode format char/backslash/scheme-like prefix —
@@ -313,14 +336,12 @@ publish.
    component (`<Ab-cd />`, `<Ab:cd />` — confirmed to parse in remark-mdx
    3.1.1) passes discovery but throws in `validateMdxName` above the error
    boundary — opening/typing such a document crashes the whole Studio page.
-6. **Component edit can corrupt the document** —
-   `lib/studio/mdx-source-edit.ts:486-490,611-616` +
-   `lib/studio/component-serializer.ts:114-121`: escaping covers
-   `& < > " ' { }` but not line terminators, and `editComponentProp`
-   returns `ok:true` without re-parsing the result; a string prop containing
-   a blank line yields an unparseable document (verified against micromark),
-   breaking the module's never-corrupt contract. Currently masked only by
-   the single-line `<Input>` in the prop form.
+6. **`getFile` conflates 404 with failure, bypassing publish conflict
+   detection** (elevated to blocker in the differential review) —
+   `lib/github.ts:166-172` returns `null` on *any* error, so a transient
+   GitHub 5xx/rate-limit during publish prefetch makes `existing`
+   undefined, skipping the sha-conflict check and letting the commit
+   clobber remote edits (or "create" over an existing file) without a 409.
 7. **HTML comment empties the preview** —
    `lib/preview/generic-render-model.ts:108-112,728-764`: any
    `<!-- comment -->` makes the whole document a PARSE_ERROR and the
@@ -329,17 +350,23 @@ publish.
 
 ### Ports required from the #41 lineage (see survival matrix)
 
-P0 publish metadata-format preservation (f8e9853 semantics — currently
-*every* `export const metadata` doc gets rewritten to YAML on publish), P1
-namespace-import handling (3a097c3), P1 deep-link empty-editor fix
-(4f5a6fc + its regression test), P2 sidebar flex layout (53be735), P2
-folder-picker access/a11y hardening (cbea505 + 451cbc1 rider).
+Blocker-class: P0 metadata format provenance (f8e9853 semantics — record
+and preserve each doc's source metadata format to prevent duplicate
+metadata / legacy-draft conversion on publish) and P1 namespace-import
+handling (3a097c3). Non-blocking: P2 sidebar flex layout (53be735), P3
+deep-link residual + regression test (4f5a6fc), P3 folder-picker
+access-token wiring (cbea505 + 451cbc1 rider).
 
 ### Selected minor findings (fast-follow backlog)
 
-- `lib/github.ts:166-172`: `getFile` returns `null` on *any* error, so a
-  transient 5xx during publish prefetch skips the sha-conflict check and
-  clobbers remote edits without a 409.
+- Multiline prop values (reclassified from major — false positive per the
+  differential review, confirmed by repro): blank lines inside quoted JSX
+  attributes parse fine in *flow* context on remark-mdx 3.1.1 (incl. CRLF);
+  only *inline-context* tags fail (`Unexpected end of file in attribute
+  value`), and the single-line `<Input>` prop form can't produce them.
+  Residual hardening: `editComponentProp`
+  (`lib/studio/mdx-source-edit.ts:611-616`) still returns `ok:true` without
+  re-parsing the edited result — add a post-edit re-parse guard.
 - PAT-only users: the new Convex actions hard-require a Better Auth account
   and surface all authz failures as generic 500s — a deliberate access-model
   change hidden as a server error (`convex/lib/githubActionAccess.ts:35-44`).
@@ -389,8 +416,15 @@ hygiene), then it merges and everything else rebases onto it.
    salvage ports land, then close with pointers.
 
 **Phase 1 — #44 fix round → merge (the gate for everything else)**
-1. Fix majors 1-7 above on the #44 branch.
-2. Port the five survival-matrix fixes (P0 first — it is a data-loss class).
+1. Fix the confirmed blockers on the #44 branch: majors 1-7 above
+   (delete-reconciliation ordering, title-sync/gallery single-outlier
+   failure modes, exotic-name Studio crash, `getFile` 404/failure
+   conflation, HTML-comment empty preview) plus the client-side
+   sync-status `response.ok` guard.
+2. Port the survival-matrix blockers: metadata format provenance (P0) and
+   namespace-import handling (P1); schedule the P2/P3 ports (sidebar
+   layout, deep-link residual + test, folder-picker token wiring) in the
+   same round or as immediate fast-follows.
 3. Hygiene: drop `review_diff.patch`, remove `esbuild-wasm` if confirmed
    dead, restore metadata-title extraction or document the regression.
 4. Re-run CI + the host-execution guard; then merge #44 into main.
