@@ -289,7 +289,7 @@ init-actions hardening. CI green at head `4076760`.
 | No SSRF / fetch containment | **Verified** | Only non-GitHub server fetch is the registry, allowlisted to exact `repopress.dev` URLs, redirects re-validated per hop, size/type/timeout caps |
 | Route auth, no server-credential injection, Convex ownership | **Verified** | Every GitHub call uses the caller's own token; new Convex actions derive the actor server-side from the token, cross-check the session, require editor + push/admin, and rate-limit. This *fixes* main, where `syncTreeTitles` had no authorization at all |
 | No repository-code execution in the Studio/host realm | **Verified** | Generic preview is an inert render model (raw HTML → name-only placeholders, expressions/ESM dropped, URL schemes allowlisted, no `dangerouslySetInnerHTML`); source edits are parser-anchored with snapshot equality + offset re-verification (offsets empirically confirmed exact for astral/CRLF/tab input); compatible execution only via the sandbox worker path |
-| Exact-SHA reads | **Partial** | Verified for install / title-sync / gallery-scan (40-hex `readRef`, ancestor-proven). **publish-ops — the biggest write path — still reads via mutable branch refs** (prefetch at `baseBranch`, commit re-resolves `heads/<branch>`) |
+| Exact-SHA reads | **Partial** | Verified for install / title-sync / gallery-scan (40-hex `readRef`, ancestor-proven). publish-ops still reads via mutable branch refs (prefetch at `baseBranch`, commit re-resolves `heads/<branch>`). Framing corrected: mutable refs are not inherently an exact-SHA violation here — the defect is *ambiguous reads with no durable link between the state that was checked and the state that gets committed* |
 | Convex conventions (CLAUDE.md) | **Pass with nits** | Ownership checks, `v.id` FKs, indexes, state machine, getOrCreate all hold; `githubActionRateLimits` table omits `createdAt` |
 
 ### Major findings — fix before merge
@@ -312,15 +312,16 @@ publish.
    under the *current* `contentRoot` (mutable via project update/config
    sync) throws `DOCUMENT_OUTSIDE_CONTENT_ROOT` and aborts every title sync
    for the project; the same resolution crashes the studio render.
-3. **Title sync bricks per project (large/failed file)** —
-   `convex/documents.ts:915,929-932`: a single markdown file >256KB (or
-   >1MB GitHub no-encoding response, or one transient fetch failure)
-   rejects the batch `Promise.all` — deterministic permanent failure where
-   main skipped per-file. **Compounding (missed in the first pass):** these
-   failures are invisible — the client records any HTTP response as success
+3. **Title sync fails whole-batch on a single outlier file** —
+   `convex/documents.ts:915,929-932`: one file rejects the batch
+   `Promise.all` where main skipped per-file. Two distinct modes (framing
+   corrected): a markdown file >256KB (or >1MB GitHub no-encoding
+   response) is a *deterministic* per-project failure; a *transient* fetch
+   failure is not permanent by itself but becomes **session-sticky**
+   because the client records HTTP 500 as success
    (`components/studio/hooks/use-studio-queries.ts:89-91` chains
-   `.then(() => { entry.status = "done" })` with no `response.ok` check, so
-   a 500 marks the sync done).
+   `.then(() => { entry.status = "done" })` with no `response.ok` check),
+   so the failed sync is never retried and never surfaced.
 4. **Gallery scan bricks per repo** — `convex/mediaGallery.ts:45,72,202`:
    every tree entry repo-wide is hard-validated *before* the image filter,
    so one filename with a Unicode format char/backslash/scheme-like prefix —
@@ -340,8 +341,11 @@ publish.
    detection** (elevated to blocker in the differential review) —
    `lib/github.ts:166-172` returns `null` on *any* error, so a transient
    GitHub 5xx/rate-limit during publish prefetch makes `existing`
-   undefined, skipping the sha-conflict check and letting the commit
-   clobber remote edits (or "create" over an existing file) without a 409.
+   undefined and skips the sha-conflict check. Framing corrected: this does
+   not clobber the base branch directly — it produces an *unflagged
+   overwrite on the publish branch* that a later merge can land. Fix shape:
+   typed reads where only 404 means absent; any other failure aborts the
+   publish.
 7. **HTML comment empties the preview** —
    `lib/preview/generic-render-model.ts:108-112,728-764`: any
    `<!-- comment -->` makes the whole document a PARSE_ERROR and the
@@ -453,10 +457,11 @@ hygiene), then it merges and everything else rebases onto it.
    burn down the `npm audit --omit=dev` backlog per the staged plan.
 
 **Phase 4 — launch checklist (final production readiness work)**
-- Fast-follow backlog: file issues for the minor findings above (publish
-  prefetch error handling, PAT 500s, owner-precedence flip, install route
-  rate limit/Origin check/branch cleanup, insert-path serializer, NFD
-  paths).
+- Fast-follow backlog: file issues for the minor findings above (PAT 500s,
+  owner-precedence flip, install route rate limit/Origin check/branch
+  cleanup, insert-path serializer, NFD paths). Publish prefetch error
+  handling is intentionally NOT here — it is the Phase 1 typed-reads
+  blocker.
 - Remotion: verify composition durations in `remotion studio`; replace
   ffmpeg-generated placeholder music with licensed audio before publishing.
 - Decide deployment protection / domains on Vercel; review the recorded
