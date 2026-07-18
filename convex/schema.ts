@@ -395,6 +395,12 @@ export default defineSchema({
     operationPaths: v.array(v.string()),
     opIds: v.array(v.id("explorerOps")),
     mediaOpIds: v.array(v.id("mediaOps")),
+    documentAssociations: v.array(
+      v.object({
+        documentId: v.id("documents"),
+        repoPath: v.string(),
+      }),
+    ),
     deleteAssociations: v.array(
       v.object({
         opId: v.id("explorerOps"),

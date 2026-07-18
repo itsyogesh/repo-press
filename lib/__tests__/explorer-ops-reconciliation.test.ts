@@ -19,6 +19,7 @@ vi.mock("@/convex/auth", () => ({
 }))
 
 import { discardAll, markCommitted, undoOp } from "@/convex/explorerOps"
+import { undoByRepoPath as undoMediaByRepoPath } from "@/convex/mediaOps"
 import { mintProjectAccessToken } from "@/lib/project-access-token"
 
 function createCtx(
@@ -249,6 +250,38 @@ describe("publish attempt guard on undo/discard", () => {
       }),
     ).rejects.toThrow(/publish is in progress/i)
 
+    expect(patch).not.toHaveBeenCalled()
+  })
+
+  it("refuses individual media undo while a publish attempt is at the commit boundary", async () => {
+    const patch = vi.fn()
+    const get = vi.fn().mockResolvedValueOnce(project)
+
+    await expect(
+      (undoMediaByRepoPath as any).handler(createCtx(get, patch, { activePublishAttempt: activeAttempt }), {
+        projectId: "project_1",
+        repoPath: "/public/uploads/pic.png",
+        userId: "user_owner",
+        projectAccessToken: await patToken(),
+      }),
+    ).rejects.toThrow(/publish is in progress/i)
+
+    expect(patch).not.toHaveBeenCalled()
+  })
+
+  it("allows individual media undo when no publish attempt is active", async () => {
+    const patch = vi.fn()
+    const get = vi.fn().mockResolvedValueOnce(project)
+
+    const result = await (undoMediaByRepoPath as any).handler(createCtx(get, patch), {
+      projectId: "project_1",
+      repoPath: "/public/uploads/pic.png",
+      userId: "user_owner",
+      projectAccessToken: await patToken(),
+    })
+
+    // No pending op in the mocked table; the guard let the call through.
+    expect(result).toBeNull()
     expect(patch).not.toHaveBeenCalled()
   })
 

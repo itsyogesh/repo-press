@@ -958,13 +958,23 @@ async function commitBatchAtValidatedHead(
     tree: newTree.sha,
     parents: [expected.expectedHeadSha],
   })
-  await octokit.git.updateRef({
-    owner,
-    repo,
-    ref: `heads/${expected.branch}`,
-    sha: newCommit.sha,
-    force: false,
-  })
+  try {
+    await octokit.git.updateRef({
+      owner,
+      repo,
+      ref: `heads/${expected.branch}`,
+      sha: newCommit.sha,
+      force: false,
+    })
+  } catch (error: any) {
+    // A 422 on a non-forced ref update is a fast-forward failure: the head
+    // moved after our pre-check. That is a CONFIRMED late CAS conflict (the
+    // new commit object exists but was never referenced), so normalize it to
+    // the same typed error as the pre-check path. Anything else stays raw -
+    // it is not proof of a conflict.
+    if (error?.status === 422) throw new BranchHeadMovedError(expected.branch)
+    throw error
+  }
   return { commitSha: newCommit.sha, treeSha: newTree.sha }
 }
 
@@ -1216,6 +1226,44 @@ export async function batchCommit(
   })
 
   return { commitSha: newCommit.sha, treeSha: newTree.sha }
+}
+
+/**
+ * Look up an existing open pull request for a publish lane (head = lane
+ * branch, base = the protected base branch). Used to make PR creation an
+ * idempotent ensure: after an uncertain createPullRequest outcome, adopt the
+ * PR that actually exists instead of guessing. Throws GitHubReadError on any
+ * lookup failure so callers keep the uncertainty explicit.
+ */
+export async function findOpenPublishLanePullRequest(
+  accessToken: string,
+  owner: string,
+  repo: string,
+  branch: string,
+  baseBranch: string,
+): Promise<{ number: number; htmlUrl: string } | null> {
+  assertRepository(owner, repo)
+  assertBranch(branch)
+  assertBranch(baseBranch)
+  if (!branch.startsWith("repopress/") || branch.startsWith("repopress/install/") || branch === baseBranch) {
+    throw new TypeError("Publish lane PR lookup requires a repopress/ lane branch")
+  }
+  const octokit = createGitHubClient(accessToken)
+  try {
+    const { data } = await octokit.pulls.list({
+      owner,
+      repo,
+      state: "open",
+      head: `${owner}:${branch}`,
+      base: baseBranch,
+      per_page: 2,
+    })
+    const pr = data[0]
+    if (!pr) return null
+    return { number: pr.number, htmlUrl: pr.html_url }
+  } catch (error: any) {
+    throw new GitHubReadError(`GitHub PR lookup failed for ${branch} (status: ${error?.status ?? "unknown"})`, error)
+  }
 }
 
 export async function createPullRequest(

@@ -33,8 +33,10 @@ vi.mock("@octokit/rest", () => ({
 }))
 
 import {
+  BranchHeadMovedError,
   batchCommit,
   batchCommitAtExpectedHead,
+  batchCommitPublishLaneAtExpectedHead,
   createBranchFromSha,
   deleteBranchRef,
   findOpenPullRequestByHead,
@@ -466,5 +468,83 @@ describe("batchCommit", () => {
       ]),
     ).resolves.toBe(false)
     expect(treeGetter).not.toHaveBeenCalled()
+  })
+})
+
+describe("expected-head CAS conflict normalization", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockOctokit.git.getRef.mockResolvedValue({ data: { object: { sha: "a".repeat(40) } } })
+    mockOctokit.git.getCommit.mockResolvedValue({ data: { tree: { sha: "tree-sha" } } })
+    mockOctokit.git.createTree.mockResolvedValue({ data: { sha: "new-tree-sha" } })
+    mockOctokit.git.createCommit.mockResolvedValue({ data: { sha: "new-commit-sha" } })
+  })
+
+  const expected = {
+    branch: "repopress/install/demo-abc",
+    protectedBaseBranch: "main",
+    expectedHeadSha: "a".repeat(40),
+  }
+  const laneExpected = {
+    branch: "repopress/hello",
+    protectedBaseBranch: "main",
+    expectedHeadSha: "a".repeat(40),
+  }
+  const operations = [{ path: "docs/a.md", content: "x", contentEncoding: "utf-8" as const, action: "update" as const }]
+
+  it("normalizes a late non-fast-forward ref update into BranchHeadMovedError", async () => {
+    // The pre-check passed, but the head moved before updateRef: a CONFIRMED
+    // late CAS conflict discovered after the commit object was created.
+    mockOctokit.git.updateRef.mockRejectedValue(
+      Object.assign(new Error("Update is not a fast forward"), { status: 422 }),
+    )
+
+    await expect(
+      batchCommitPublishLaneAtExpectedHead("token", "acme", "docs-site", laneExpected, operations, "msg"),
+    ).rejects.toBeInstanceOf(BranchHeadMovedError)
+  })
+
+  it("does not mask non-conflict ref update failures as head movement", async () => {
+    mockOctokit.git.updateRef.mockRejectedValue(Object.assign(new Error("boom"), { status: 500 }))
+
+    await expect(
+      batchCommitPublishLaneAtExpectedHead("token", "acme", "docs-site", laneExpected, operations, "msg"),
+    ).rejects.toThrow("boom")
+  })
+
+  it("accepts repopress/ lane branches and rejects the install namespace", async () => {
+    mockOctokit.git.updateRef.mockResolvedValue({ data: {} })
+
+    await expect(
+      batchCommitPublishLaneAtExpectedHead(
+        "token",
+        "acme",
+        "docs-site",
+        { ...laneExpected, branch: "repopress/install/x" },
+        operations,
+        "msg",
+      ),
+    ).rejects.toThrow(/publish lane branch/i)
+
+    const result = await batchCommitPublishLaneAtExpectedHead(
+      "token",
+      "acme",
+      "docs-site",
+      laneExpected,
+      operations,
+      "msg",
+    )
+    expect(result.commitSha).toBe("new-commit-sha")
+  })
+
+  it("keeps the install wrapper restricted to its namespace", async () => {
+    mockOctokit.git.updateRef.mockResolvedValue({ data: {} })
+
+    await expect(
+      batchCommitAtExpectedHead("token", "acme", "docs-site", laneExpected, operations, "msg"),
+    ).rejects.toThrow(/dedicated branch/i)
+
+    const result = await batchCommitAtExpectedHead("token", "acme", "docs-site", expected, operations, "msg")
+    expect(result.commitSha).toBe("new-commit-sha")
   })
 })

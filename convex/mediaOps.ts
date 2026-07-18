@@ -1,6 +1,7 @@
 import { v } from "convex/values"
 import { internalMutation, mutation, query } from "./_generated/server"
 import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
+import { assertNoActivePublishAttempt, findActivePublishAttempt } from "./lib/publishAttemptGuard"
 
 /** Generate a one-time upload URL for Convex file storage. The caller POSTs raw bytes to this URL and receives a storageId in response. */
 export const generateConvexUploadUrl = mutation({
@@ -152,8 +153,16 @@ export const markCommitted = mutation({
   },
   handler: async (ctx, args) => {
     const now = Date.now()
+    // Media ops from the publish snapshot that can no longer be marked
+    // committed even though the commit contains their changes (undone in a
+    // race). Reported so the caller surfaces the divergence; committed ops
+    // are idempotent retries, not drift.
+    const unreconciledMediaOpIds: Array<(typeof args.ids)[number]> = []
     for (const id of args.ids) {
       const op = await ctx.db.get(id)
+      if (!op || op.status === "undone") {
+        unreconciledMediaOpIds.push(id)
+      }
       if (!op || op.status !== "pending") continue
 
       await resolveProjectAccess(
@@ -169,6 +178,7 @@ export const markCommitted = mutation({
         updatedAt: now,
       })
     }
+    return { unreconciledMediaOpIds }
   },
 })
 
@@ -181,6 +191,10 @@ export const undoByRepoPath = mutation({
   },
   handler: async (ctx, args) => {
     await resolveProjectAccess(ctx, args, "editor")
+
+    // A publish attempt at the commit boundary may already have (or be about
+    // to have) a Git commit containing this media op.
+    await assertNoActivePublishAttempt(ctx.db, args.projectId)
 
     const pending = await ctx.db
       .query("mediaOps")
@@ -240,6 +254,11 @@ export const cleanupMediaForBranch = internalMutation({
     const branch = await ctx.db.get(args.publishBranchId)
     if (!branch) return
 
+    // Never undo media while a publish attempt is at the commit boundary for
+    // this project - the in-flight commit may contain these ops. Skipped rows
+    // are picked up by the stale-upload cron once the attempt resolves.
+    if (await findActivePublishAttempt(ctx.db, branch.projectId)) return
+
     const ops = await ctx.db
       .query("mediaOps")
       .withIndex("by_projectId", (q) => q.eq("projectId", branch.projectId))
@@ -288,7 +307,18 @@ export const cleanupStaleUploads = internalMutation({
       .take(staleBatchSize)
 
     const now = Date.now()
+    // Cache active-attempt lookups per project within this run.
+    const activeAttemptByProject = new Map<string, boolean>()
     for (const op of allPending) {
+      // Skip rows whose project has a publish attempt at the commit
+      // boundary; the next nightly run collects them once it resolves.
+      let attemptActive = activeAttemptByProject.get(op.projectId)
+      if (attemptActive === undefined) {
+        attemptActive = (await findActivePublishAttempt(ctx.db, op.projectId)) !== null
+        activeAttemptByProject.set(op.projectId, attemptActive)
+      }
+      if (attemptActive) continue
+
       if (op.convexStorageId) {
         try {
           await ctx.storage.delete(op.convexStorageId)

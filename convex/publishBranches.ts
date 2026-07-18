@@ -37,6 +37,29 @@ export const getCurrentForProject = query({
   handler: getCurrentBranchForProject,
 })
 
+/**
+ * Fetch a publish branch by ID for attempt recovery. Returns null when the
+ * caller cannot read the backing project.
+ */
+export const getById = query({
+  args: {
+    id: v.id("publishBranches"),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const branch = await ctx.db.get(args.id)
+    if (!branch) return null
+    const access = await resolveProjectReader(ctx, {
+      projectId: branch.projectId,
+      userId: args.userId,
+      projectAccessToken: args.projectAccessToken,
+    })
+    if (!access) return null
+    return branch
+  },
+})
+
 /** Lists the current and inactive publish branches that are still open for a project. */
 export const listOpenForProject = query({
   args: {

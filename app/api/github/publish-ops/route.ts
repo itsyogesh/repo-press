@@ -10,6 +10,7 @@ import {
   createGitHubClient,
   createPublishBranchFromSha,
   createPullRequest,
+  findOpenPublishLanePullRequest,
   GitHubReadError,
   getBranchHeadForPublish,
   getCommitDetailsForPublish,
@@ -86,6 +87,36 @@ export async function POST(request: Request) {
         ...queryAuth,
       }),
     ])
+
+    // ── Recover a publish attempt stranded at the commit boundary ──
+    // Runs BEFORE the no-pending check (a crashed attempt that already
+    // reconciled its ops leaves nothing pending, yet must still be closed
+    // out) and BEFORE this request's publishMode is applied (recovery of the
+    // previous attempt must not depend on the new request's intent).
+    const activeAttempt = await convex.query(api.publishAttempts.getActiveForProject, {
+      projectId: project._id,
+      ...queryAuth,
+    })
+    if (activeAttempt) {
+      const recovery = await recoverPublishAttempt({
+        convex,
+        attempt: activeAttempt,
+        projectId: project._id,
+        token,
+        owner,
+        repo,
+        baseBranch,
+        title,
+        description,
+        actingUserId,
+        projectAccessToken,
+      })
+      if (recovery.handled) {
+        return recovery.response
+      }
+      // The attempt provably never landed and was superseded - continue with
+      // a fresh publish against the current head.
+    }
 
     if (pendingOps.length === 0 && dirtyDocs.length === 0 && pendingMediaOps.length === 0) {
       return NextResponse.json({ error: "No pending changes to publish" }, { status: 400 })
@@ -180,32 +211,6 @@ export async function POST(request: Request) {
       }
 
       publishBranch = null
-    }
-
-    // ── Recover a publish attempt stranded at the commit boundary ──
-    const activeAttempt = await convex.query(api.publishAttempts.getActiveForProject, {
-      projectId: project._id,
-      ...queryAuth,
-    })
-    if (activeAttempt) {
-      const recovery = await recoverPublishAttempt({
-        convex,
-        attempt: activeAttempt,
-        token,
-        owner,
-        repo,
-        baseBranch,
-        title,
-        description,
-        actingUserId,
-        projectAccessToken,
-        currentPublishBranch: publishBranch,
-      })
-      if (recovery.handled) {
-        return recovery.response
-      }
-      // The attempt provably never landed and was superseded - continue with
-      // a fresh publish against the current head.
     }
 
     // ── Pin the single Git authority for this publish ──
@@ -476,6 +481,9 @@ export async function POST(request: Request) {
         expectedUpdatedAt: association.expectedUpdatedAt,
       })),
     })
+    const documentAssociations = resolvedDirtyDocs
+      .filter(({ repoPath }) => !contentOpPaths.has(repoPath))
+      .map(({ source, repoPath }) => ({ documentId: source._id, repoPath }))
     const attemptId = await convex.mutation(api.publishAttempts.begin, {
       projectId: project._id,
       publishBranchId: publishBranch._id,
@@ -485,6 +493,7 @@ export async function POST(request: Request) {
       operationPaths: operations.map((operation) => operation.path),
       opIds: pendingOps.map((op) => op._id),
       mediaOpIds: pendingMediaOps.map((op) => op._id),
+      documentAssociations,
       deleteAssociations,
       userId: actingUserId,
       projectAccessToken,
@@ -536,9 +545,20 @@ export async function POST(request: Request) {
       const prTitle = title || `Content update via RepoPress (${parts.join(", ")}) (PR from RepoPress)`
       const prBody =
         description || `Automated content update from RepoPress.\n\n${parts.map((p) => `- ${p}`).join("\n")}`
-      const pr = await createPullRequest(token, owner, repo, branchName, baseBranch, prTitle, prBody)
-      prNumber = pr.number
-      prUrl = pr.htmlUrl
+      const ensured = await ensureLanePullRequest({
+        token,
+        owner,
+        repo,
+        branchName,
+        baseBranch,
+        prTitle,
+        prBody,
+      })
+      prNumber = ensured.prNumber
+      prUrl = ensured.prUrl
+      if (ensured.warning) {
+        warning = warning ? `${warning} ${ensured.warning}` : ensured.warning
+      }
     } else if (title || description) {
       try {
         await updatePullRequest(token, owner, repo, prNumber, {
@@ -561,8 +581,9 @@ export async function POST(request: Request) {
       newFilePaths: operations.map((op) => op.path),
     })
 
+    let opMarkResult: { skippedDeleteAssociations?: unknown[]; unreconciledOpIds?: unknown[] } | undefined
     if (pendingOps.length > 0) {
-      const markResult = await convex.mutation(api.explorerOps.markCommitted, {
+      opMarkResult = await convex.mutation(api.explorerOps.markCommitted, {
         ids: pendingOps.map((op) => op._id),
         deleteAssociations,
         commitSha,
@@ -570,14 +591,11 @@ export async function POST(request: Request) {
         userId: actingUserId,
         projectAccessToken,
       })
-      const reconciliationWarning = describeReconciliationWarnings(commitSha, markResult)
-      if (reconciliationWarning) {
-        warning = warning ? `${warning} ${reconciliationWarning}` : reconciliationWarning
-      }
     }
 
+    let mediaMarkResult: { unreconciledMediaOpIds?: unknown[] } | undefined
     if (pendingMediaOps.length > 0) {
-      await convex.mutation(api.mediaOps.markCommitted, {
+      mediaMarkResult = await convex.mutation(api.mediaOps.markCommitted, {
         ids: pendingMediaOps.map((op) => op._id),
         commitSha,
         publishBranchId: publishBranch._id,
@@ -585,24 +603,27 @@ export async function POST(request: Request) {
         projectAccessToken,
       })
     }
+    const reconciliationWarning = describeReconciliationWarnings(commitSha, opMarkResult, mediaMarkResult)
+    if (reconciliationWarning) {
+      warning = warning ? `${warning} ${reconciliationWarning}` : reconciliationWarning
+    }
 
-    const docsToUpdateSha = resolvedDirtyDocs.filter(({ repoPath }) => !contentOpPaths.has(repoPath))
     const shaFetches = await Promise.all(
-      docsToUpdateSha.map(async ({ source: doc, repoPath }) => {
+      documentAssociations.map(async ({ documentId, repoPath }) => {
         try {
           const fileOnBranch = await getFile(token, owner, repo, repoPath, commitSha)
-          return { doc, sha: fileOnBranch?.sha ?? null }
+          return { documentId, sha: fileOnBranch?.sha ?? null }
         } catch {
-          return { doc, sha: null }
+          return { documentId, sha: null }
         }
       }),
     )
 
-    for (const { doc, sha: blobSha } of shaFetches) {
+    for (const { documentId, sha: blobSha } of shaFetches) {
       if (!blobSha) continue
       try {
         await convex.mutation(api.documents.update, {
-          id: doc._id,
+          id: documentId,
           userId: actingUserId,
           projectAccessToken,
           githubSha: blobSha,
@@ -688,27 +709,79 @@ function isActivePublishBranchConflict(error: unknown) {
 
 function describeReconciliationWarnings(
   commitSha: string,
-  markResult: { skippedDeleteAssociations?: unknown[]; unreconciledOpIds?: unknown[] } | null | undefined,
+  opMarkResult: { skippedDeleteAssociations?: unknown[]; unreconciledOpIds?: unknown[] } | null | undefined,
+  mediaMarkResult?: { unreconciledMediaOpIds?: unknown[] } | null,
 ): string | undefined {
   const details: string[] = []
-  const skipped = markResult?.skippedDeleteAssociations ?? []
+  const skipped = opMarkResult?.skippedDeleteAssociations ?? []
   if (skipped.length > 0) {
     details.push(
       `${skipped.length} deleted document(s) kept their draft content in RepoPress because they changed during publishing; review those drafts before the next publish.`,
     )
   }
-  const unreconciled = markResult?.unreconciledOpIds ?? []
+  const unreconciled = opMarkResult?.unreconciledOpIds ?? []
   if (unreconciled.length > 0) {
     details.push(
       `${unreconciled.length} staged operation(s) were undone while publishing even though the commit contains their changes; review the repository and re-stage or revert as needed.`,
+    )
+  }
+  const unreconciledMedia = mediaMarkResult?.unreconciledMediaOpIds ?? []
+  if (unreconciledMedia.length > 0) {
+    details.push(
+      `${unreconciledMedia.length} staged media upload(s) were undone while publishing even though the commit contains them; review the repository media and re-stage or revert as needed.`,
     )
   }
   if (details.length === 0) return undefined
   return `Commit ${commitSha} succeeded, but ${details.join(" Also: ")}`
 }
 
+/**
+ * Idempotent PR ensure for a publish lane: try to create, and after ANY
+ * uncertain creation outcome look up the open PR that actually exists for
+ * this head/base pair and adopt it. Only when neither works does the caller
+ * get a warning instead of a PR number.
+ */
+async function ensureLanePullRequest({
+  token,
+  owner,
+  repo,
+  branchName,
+  baseBranch,
+  prTitle,
+  prBody,
+}: {
+  token: string
+  owner: string
+  repo: string
+  branchName: string
+  baseBranch: string
+  prTitle: string
+  prBody: string
+}): Promise<{ prNumber?: number; prUrl?: string; warning?: string }> {
+  try {
+    const pr = await createPullRequest(token, owner, repo, branchName, baseBranch, prTitle, prBody)
+    return { prNumber: pr.number, prUrl: pr.htmlUrl }
+  } catch (creationError) {
+    console.error("PR creation uncertain; looking up existing lane PR:", creationError)
+    try {
+      const existing = await findOpenPublishLanePullRequest(token, owner, repo, branchName, baseBranch)
+      if (existing) {
+        return { prNumber: existing.number, prUrl: existing.htmlUrl }
+      }
+    } catch (lookupError) {
+      console.error("Lane PR lookup failed after uncertain creation:", lookupError)
+    }
+    return {
+      warning: `The commit succeeded, but opening the pull request for ${branchName} failed; open it manually from the publish lane.`,
+    }
+  }
+}
+
+const MAX_RECOVERY_ANCESTRY_DEPTH = 20
+
 type RecoverablePublishAttempt = {
   _id: Id<"publishAttempts">
+  projectId: Id<"projects">
   publishBranchId: Id<"publishBranches">
   branchName: string
   expectedHeadSha: string
@@ -716,6 +789,7 @@ type RecoverablePublishAttempt = {
   operationPaths: string[]
   opIds: Id<"explorerOps">[]
   mediaOpIds: Id<"mediaOps">[]
+  documentAssociations: Array<{ documentId: Id<"documents">; repoPath: string }>
   deleteAssociations: Array<{ opId: Id<"explorerOps">; documentId: Id<"documents">; expectedUpdatedAt: number }>
   // getActiveForProject only returns committing/committed attempts; the wider
   // union matches the stored document type.
@@ -726,15 +800,19 @@ type RecoverablePublishAttempt = {
 /**
  * Recover a publish attempt stranded at the commit boundary.
  *
- * Proof of landing: the lane head is a commit whose parent is exactly the
- * attempt's expectedHeadSha and whose message carries the attempt's plan
- * digest trailer. When landed, Convex state is reconciled from the durable
- * attempt record WITHOUT committing again; when provably not landed, the
- * attempt is superseded so a fresh publish can proceed.
+ * The attempt's OWN lane (by publishBranchId) is the recovery target - never
+ * the request's current lane. Proof of landing walks the lane's linear
+ * first-parent ancestry from the head back toward the attempt's expected
+ * head, looking for the plan-digest trailer; superseding happens ONLY when
+ * non-landing is proven (the walk reaches the expected head through
+ * single-parent commits without finding the trailer). Merge commits, a
+ * deleted branch, or an exhausted depth bound make landing unprovable and
+ * fail CLOSED - no supersede, no new commit.
  */
 async function recoverPublishAttempt({
   convex,
   attempt,
+  projectId,
   token,
   owner,
   repo,
@@ -743,10 +821,10 @@ async function recoverPublishAttempt({
   description,
   actingUserId,
   projectAccessToken,
-  currentPublishBranch,
 }: {
   convex: ConvexHttpClient
   attempt: RecoverablePublishAttempt
+  projectId: Id<"projects">
   token: string
   owner: string
   repo: string
@@ -755,30 +833,105 @@ async function recoverPublishAttempt({
   description?: string
   actingUserId?: string
   projectAccessToken?: string
-  currentPublishBranch: { _id: Id<"publishBranches">; prNumber?: number; prUrl?: string } | null
 }): Promise<{ handled: true; response: NextResponse } | { handled: false }> {
   const auth = { userId: actingUserId, projectAccessToken }
+
+  // Validate the attempt's lane reference before trusting anything else.
+  const lane = await convex.query(api.publishBranches.getById, { id: attempt.publishBranchId, ...auth })
+  if (
+    attempt.projectId !== projectId ||
+    !lane ||
+    lane.projectId !== projectId ||
+    lane.branchName !== attempt.branchName
+  ) {
+    console.error("Publish attempt state is inconsistent", {
+      attemptId: attempt._id,
+      attemptProjectId: attempt.projectId,
+      laneFound: Boolean(lane),
+    })
+    return {
+      handled: true,
+      response: NextResponse.json(
+        {
+          ok: false,
+          error:
+            "A previous publish attempt references a lane that no longer matches this project. Manual review is required before publishing again.",
+        },
+        { status: 500 },
+      ),
+    }
+  }
+
   let commitSha = attempt.status === "committed" ? (attempt.commitSha ?? null) : null
   try {
     if (!commitSha) {
       const head = await getBranchHeadForPublish(token, owner, repo, attempt.branchName)
-      if (head.status === "absent" || head.sha === attempt.expectedHeadSha) {
-        // Lane gone, or head untouched since planning: the commit provably
-        // never landed. Retire the attempt and let a fresh publish proceed.
+      if (head.status === "absent") {
+        // The lane branch is gone. The attempt's commit may have landed and
+        // the branch been merged/deleted afterwards - non-landing is NOT
+        // proven, so fail closed instead of superseding.
+        return {
+          handled: true,
+          response: NextResponse.json(
+            {
+              ok: false,
+              error: `Publish lane branch ${attempt.branchName} no longer exists while a publish attempt is unresolved. Cannot prove whether its commit landed; resolve the lane manually before publishing again.`,
+            },
+            { status: 409 },
+          ),
+        }
+      }
+
+      // Walk linear first-parent ancestry looking for the attempt trailer.
+      let cursor: string = head.sha
+      let provenNotLanded = false
+      let unprovableReason: string | null = null
+      for (let depth = 0; depth <= MAX_RECOVERY_ANCESTRY_DEPTH; depth += 1) {
+        if (cursor === attempt.expectedHeadSha) {
+          // Reached the expected head through single-parent commits without
+          // finding the trailer: the commit provably never landed.
+          provenNotLanded = true
+          break
+        }
+        if (depth === MAX_RECOVERY_ANCESTRY_DEPTH) {
+          unprovableReason = "ancestry depth bound reached"
+          break
+        }
+        const details = await getCommitDetailsForPublish(token, owner, repo, cursor)
+        if (commitMessageCarriesAttempt(details.message, attempt.planDigest)) {
+          commitSha = cursor
+          break
+        }
+        if (details.parents.length !== 1) {
+          // A merge (or root) commit breaks the linear proof; the attempt's
+          // commit could hide on another parent path.
+          unprovableReason = "non-linear history between the lane head and the attempt's expected head"
+          break
+        }
+        cursor = details.parents[0]
+      }
+
+      if (!commitSha && !provenNotLanded) {
+        return {
+          handled: true,
+          response: NextResponse.json(
+            {
+              ok: false,
+              error: `Cannot prove whether the interrupted publish on ${attempt.branchName} landed (${unprovableReason ?? "unknown"}). Resolve the lane manually before publishing again.`,
+            },
+            { status: 409 },
+          ),
+        }
+      }
+
+      if (provenNotLanded || !commitSha) {
+        // provenNotLanded is the only way to reach here without a commitSha
+        // (the unprovable case returned above); the extra check narrows the
+        // type and guards the invariant.
         await convex.mutation(api.publishAttempts.supersede, { id: attempt._id, ...auth })
         return { handled: false }
       }
-      const details = await getCommitDetailsForPublish(token, owner, repo, head.sha)
-      const landed =
-        details.parents.includes(attempt.expectedHeadSha) &&
-        commitMessageCarriesAttempt(details.message, attempt.planDigest)
-      if (!landed) {
-        // A foreign commit moved the lane past our expected head; the CAS
-        // commit could not have landed.
-        await convex.mutation(api.publishAttempts.supersede, { id: attempt._id, ...auth })
-        return { handled: false }
-      }
-      commitSha = head.sha
+
       await convex.mutation(api.publishAttempts.recordCommit, { id: attempt._id, commitSha, ...auth })
     }
   } catch (error) {
@@ -795,46 +948,47 @@ async function recoverPublishAttempt({
     throw error
   }
 
-  // The commit is real - reconcile Convex state without committing again.
-  const laneIsCurrent = currentPublishBranch?._id === attempt.publishBranchId
-  let warning: string | undefined
-  let prNumber = laneIsCurrent ? currentPublishBranch?.prNumber : undefined
-  let prUrl = laneIsCurrent ? currentPublishBranch?.prUrl : undefined
-
-  if (laneIsCurrent) {
-    if (!prNumber) {
-      try {
-        const pr = await createPullRequest(
-          token,
-          owner,
-          repo,
-          attempt.branchName,
-          baseBranch,
-          title || "Content update via RepoPress (recovered publish)",
-          description || "Automated content update from RepoPress (recovered after an interrupted publish).",
-        )
-        prNumber = pr.number
-        prUrl = pr.htmlUrl
-      } catch (error) {
-        warning = "Recovered the commit, but opening its pull request failed; open it manually from the publish lane."
-        console.error("Failed to open PR during publish recovery:", error)
-      }
-    }
-    await convex.mutation(api.publishBranches.updateAfterCommit, {
-      id: attempt.publishBranchId,
-      userId: actingUserId,
-      projectAccessToken,
-      prNumber,
-      prUrl,
-      lastCommitSha: commitSha,
-      newFilePaths: attempt.operationPaths,
-    })
-  } else {
-    warning = "Recovered a publish on a lane that is no longer current; verify that lane's pull request manually."
+  if (!commitSha) {
+    // Unreachable: every branch above either set commitSha or returned.
+    throw new Error("Publish recovery reached reconciliation without a commit SHA")
   }
 
+  // The commit is real - reconcile Convex state on the ATTEMPT's lane
+  // without committing again.
+  let warning: string | undefined
+  let prNumber = lane.prNumber
+  let prUrl = lane.prUrl
+
+  if (!prNumber) {
+    const ensured = await ensureLanePullRequest({
+      token,
+      owner,
+      repo,
+      branchName: attempt.branchName,
+      baseBranch,
+      prTitle: title || "Content update via RepoPress (recovered publish)",
+      prBody: description || "Automated content update from RepoPress (recovered after an interrupted publish).",
+    })
+    prNumber = ensured.prNumber
+    prUrl = ensured.prUrl
+    if (ensured.warning) {
+      warning = ensured.warning
+    }
+  }
+
+  await convex.mutation(api.publishBranches.updateAfterCommit, {
+    id: attempt.publishBranchId,
+    userId: actingUserId,
+    projectAccessToken,
+    prNumber,
+    prUrl,
+    lastCommitSha: commitSha,
+    newFilePaths: attempt.operationPaths,
+  })
+
+  let opMarkResult: { skippedDeleteAssociations?: unknown[]; unreconciledOpIds?: unknown[] } | undefined
   if (attempt.opIds.length > 0) {
-    const markResult = await convex.mutation(api.explorerOps.markCommitted, {
+    opMarkResult = await convex.mutation(api.explorerOps.markCommitted, {
       ids: attempt.opIds,
       deleteAssociations: attempt.deleteAssociations,
       commitSha,
@@ -842,20 +996,40 @@ async function recoverPublishAttempt({
       userId: actingUserId,
       projectAccessToken,
     })
-    const reconciliationWarning = describeReconciliationWarnings(commitSha, markResult)
-    if (reconciliationWarning) {
-      warning = warning ? `${warning} ${reconciliationWarning}` : reconciliationWarning
-    }
   }
 
+  let mediaMarkResult: { unreconciledMediaOpIds?: unknown[] } | undefined
   if (attempt.mediaOpIds.length > 0) {
-    await convex.mutation(api.mediaOps.markCommitted, {
+    mediaMarkResult = await convex.mutation(api.mediaOps.markCommitted, {
       ids: attempt.mediaOpIds,
       commitSha,
       publishBranchId: attempt.publishBranchId,
       userId: actingUserId,
       projectAccessToken,
     })
+  }
+  const reconciliationWarning = describeReconciliationWarnings(commitSha, opMarkResult, mediaMarkResult)
+  if (reconciliationWarning) {
+    warning = warning ? `${warning} ${reconciliationWarning}` : reconciliationWarning
+  }
+
+  // Refresh document SHAs at the exact landed commit from the durable
+  // associations - same behavior as normal completion.
+  for (const { documentId, repoPath } of attempt.documentAssociations) {
+    try {
+      const fileAtCommit = await getFile(token, owner, repo, repoPath, commitSha)
+      if (fileAtCommit?.sha) {
+        await convex.mutation(api.documents.update, {
+          id: documentId,
+          userId: actingUserId,
+          projectAccessToken,
+          githubSha: fileAtCommit.sha,
+        })
+      }
+    } catch {
+      // Non-critical: conflict detection may be stale for this file on the
+      // next publish, which surfaces as an honest 409.
+    }
   }
 
   await convex.mutation(api.publishAttempts.markReconciled, { id: attempt._id, ...auth })

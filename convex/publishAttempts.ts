@@ -41,6 +41,12 @@ export const begin = mutation({
     operationPaths: v.array(v.string()),
     opIds: v.array(v.id("explorerOps")),
     mediaOpIds: v.array(v.id("mediaOps")),
+    documentAssociations: v.array(
+      v.object({
+        documentId: v.id("documents"),
+        repoPath: v.string(),
+      }),
+    ),
     deleteAssociations: v.array(deleteAssociationValidator),
     userId: v.optional(v.string()),
     projectAccessToken: v.optional(v.string()),
@@ -55,6 +61,34 @@ export const begin = mutation({
     if (active) {
       throw new Error("Another publish attempt is still active for this project")
     }
+
+    // Validate every reference inside this transaction so a recovered
+    // attempt can trust its own snapshot: the lane must be this project's
+    // lane under the recorded name, and every op/media/document reference
+    // must belong to this project. All arrays are bounded by staged sizes.
+    const lane = await ctx.db.get(args.publishBranchId)
+    if (!lane || lane.projectId !== args.projectId || lane.branchName !== args.branchName) {
+      throw new Error("Publish attempt lane does not match the project's publish branch")
+    }
+    for (const opId of args.opIds) {
+      const op = await ctx.db.get(opId)
+      if (!op || op.projectId !== args.projectId) {
+        throw new Error("Publish attempt references an explorer op outside the project")
+      }
+    }
+    for (const mediaOpId of args.mediaOpIds) {
+      const mediaOp = await ctx.db.get(mediaOpId)
+      if (!mediaOp || mediaOp.projectId !== args.projectId) {
+        throw new Error("Publish attempt references a media op outside the project")
+      }
+    }
+    for (const association of [...args.deleteAssociations, ...args.documentAssociations]) {
+      const document = await ctx.db.get(association.documentId)
+      if (!document || document.projectId !== args.projectId) {
+        throw new Error("Publish attempt references a document outside the project")
+      }
+    }
+
     const now = Date.now()
     return await ctx.db.insert("publishAttempts", {
       projectId: args.projectId,
@@ -65,6 +99,7 @@ export const begin = mutation({
       operationPaths: args.operationPaths,
       opIds: args.opIds,
       mediaOpIds: args.mediaOpIds,
+      documentAssociations: args.documentAssociations,
       deleteAssociations: args.deleteAssociations,
       status: "committing",
       createdAt: now,

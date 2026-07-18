@@ -29,6 +29,7 @@ vi.mock("@/lib/github", () => ({
   createPublishBranchFromSha: vi.fn(),
   createGitHubClient: vi.fn(),
   createPullRequest: vi.fn(),
+  findOpenPublishLanePullRequest: vi.fn(),
   getBranchHeadForPublish: vi.fn(),
   getCommitDetailsForPublish: vi.fn(),
   getFile: vi.fn(),
@@ -56,6 +57,7 @@ import {
   createGitHubClient,
   createPublishBranchFromSha,
   createPullRequest,
+  findOpenPublishLanePullRequest,
   GitHubReadError,
   getBranchHeadForPublish,
   getCommitDetailsForPublish,
@@ -94,6 +96,7 @@ function mockPublishQueries({
   },
   openPublishBranches,
   activePublishAttempt = null,
+  attemptLane = null,
   existingBranchNames = [],
   refreshedPublishBranch,
 }: {
@@ -103,6 +106,7 @@ function mockPublishQueries({
   currentPublishBranch?: Record<string, unknown> | null
   openPublishBranches?: Array<Record<string, unknown>>
   activePublishAttempt?: Record<string, unknown> | null
+  attemptLane?: Record<string, unknown> | null
   existingBranchNames?: string[]
   refreshedPublishBranch?: Record<string, unknown>
 }) {
@@ -114,13 +118,17 @@ function mockPublishQueries({
     .mockResolvedValueOnce(taggedPendingOps)
     .mockResolvedValueOnce(taggedDirtyDocs)
     .mockResolvedValueOnce(pendingMediaOps)
-    .mockResolvedValueOnce(currentPublishBranch)
+    .mockResolvedValueOnce(activePublishAttempt)
+
+  if (activePublishAttempt) {
+    convexQueryMock.mockResolvedValueOnce(attemptLane)
+  }
+
+  convexQueryMock.mockResolvedValueOnce(currentPublishBranch)
 
   if (openPublishBranches !== undefined) {
     convexQueryMock.mockResolvedValueOnce(openPublishBranches)
   }
-
-  convexQueryMock.mockResolvedValueOnce(activePublishAttempt)
 
   convexQueryMock.mockResolvedValueOnce(existingBranchNames)
 
@@ -164,6 +172,7 @@ describe("POST /api/github/publish-ops", () => {
     vi.mocked(getFile).mockResolvedValue({ sha: "new-sha-1" } as never)
     vi.mocked(getFileForPublish).mockResolvedValue({ status: "absent" } as never)
     vi.mocked(getBranchHeadForPublish).mockResolvedValue({ status: "found", sha: "authority-sha-1" } as never)
+    vi.mocked(findOpenPublishLanePullRequest).mockResolvedValue(null as never)
     convexMutationMock.mockResolvedValue(undefined as never)
     vi.mocked(branchExists).mockResolvedValue(false)
     vi.mocked(createPublishBranchFromSha).mockResolvedValue(undefined as never)
@@ -923,6 +932,7 @@ describe("POST /api/github/publish-ops", () => {
           convexStorageId: "convex-storage-id-1",
         },
       ])
+      .mockResolvedValueOnce(null)
       .mockResolvedValueOnce({
         _id: "publish_branch_1",
         branchName: "repopress/main/1234",
@@ -930,7 +940,6 @@ describe("POST /api/github/publish-ops", () => {
         prUrl: "https://github.com/acme/docs-site/pull/42",
         committedFilePaths: [],
       })
-      .mockResolvedValueOnce(null)
       .mockResolvedValueOnce("https://files.convex.cloud/storage/convex-storage-id-1")
 
     const response = await POST(
@@ -978,13 +987,13 @@ describe("POST /api/github/publish-ops", () => {
         },
       ])
       .mockResolvedValueOnce([])
+      .mockResolvedValueOnce(null)
       .mockResolvedValueOnce({
         _id: "publish_branch_1",
         branchName: "repopress/main/1234",
         prNumber: 42,
         prUrl: "https://github.com/acme/docs-site/pull/42",
       })
-      .mockResolvedValueOnce(null)
 
     const response = await POST(buildRequest({ projectId: "project_123" }))
 
@@ -1055,13 +1064,13 @@ describe("POST /api/github/publish-ops", () => {
         },
       ])
       .mockResolvedValueOnce([])
+      .mockResolvedValueOnce(null)
       .mockResolvedValueOnce({
         _id: "publish_branch_1",
         branchName: "repopress/main/1234",
         prNumber: 42,
         prUrl: "https://github.com/acme/docs-site/pull/42",
       })
-      .mockResolvedValueOnce(null)
 
     const response = await POST(buildRequest({ projectId: "project_123" }))
 
@@ -1126,13 +1135,13 @@ describe("POST /api/github/publish-ops", () => {
         },
       ])
       .mockResolvedValueOnce([])
+      .mockResolvedValueOnce(null)
       .mockResolvedValueOnce({
         _id: "publish_branch_1",
         branchName: "repopress/main/1234",
         prNumber: 42,
         prUrl: "https://github.com/acme/docs-site/pull/42",
       })
-      .mockResolvedValueOnce(null)
 
     const response = await POST(buildRequest({ projectId: "project_123" }))
 
@@ -1183,12 +1192,13 @@ describe("POST /api/github/publish-ops", () => {
       .mockResolvedValueOnce([op])
       .mockResolvedValueOnce([doc])
       .mockResolvedValueOnce([])
-      .mockResolvedValueOnce(currentBranch)
       .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(currentBranch)
       .mockResolvedValueOnce(project)
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
+      .mockResolvedValueOnce(null)
 
     const firstResponse = await POST(buildRequest({ projectId: "project_123" }))
     const secondResponse = await POST(buildRequest({ projectId: "project_123" }))
@@ -1440,6 +1450,7 @@ describe("POST /api/github/publish-ops", () => {
       // head and the head commit carries the attempt trailer.
       const attempt = {
         _id: "attempt_1",
+        projectId: "project_123",
         publishBranchId: "publish_branch_1",
         branchName: "repopress/main/1234",
         expectedHeadSha: "authority-sha-1",
@@ -1447,6 +1458,7 @@ describe("POST /api/github/publish-ops", () => {
         operationPaths: ["content/posts/old.mdx"],
         opIds: ["op_delete"],
         mediaOpIds: [],
+        documentAssociations: [],
         deleteAssociations: [{ opId: "op_delete", documentId: "doc_1", expectedUpdatedAt: 900 }],
         status: "committing",
       }
@@ -1454,6 +1466,13 @@ describe("POST /api/github/publish-ops", () => {
         pendingOps: [{ _id: "op_delete", opType: "delete", filePath: "posts/old.mdx", createdAt: 1_000 }],
         dirtyDocs: [],
         activePublishAttempt: attempt,
+        attemptLane: {
+          _id: "publish_branch_1",
+          projectId: "project_123",
+          branchName: "repopress/main/1234",
+          prNumber: 42,
+          prUrl: "https://github.com/acme/docs-site/pull/42",
+        },
       })
       vi.mocked(getBranchHeadForPublish).mockResolvedValue({ status: "found", sha: "commit-sha-1" } as never)
       vi.mocked(getCommitDetailsForPublish).mockResolvedValue({
@@ -1489,6 +1508,7 @@ describe("POST /api/github/publish-ops", () => {
     it("recovers a committed attempt directly from its recorded SHA without GitHub reads", async () => {
       const attempt = {
         _id: "attempt_1",
+        projectId: "project_123",
         publishBranchId: "publish_branch_1",
         branchName: "repopress/main/1234",
         expectedHeadSha: "authority-sha-1",
@@ -1496,6 +1516,7 @@ describe("POST /api/github/publish-ops", () => {
         operationPaths: ["content/posts/old.mdx"],
         opIds: ["op_delete"],
         mediaOpIds: [],
+        documentAssociations: [],
         deleteAssociations: [],
         status: "committed",
         commitSha: "commit-sha-1",
@@ -1504,6 +1525,13 @@ describe("POST /api/github/publish-ops", () => {
         pendingOps: [{ _id: "op_delete", opType: "delete", filePath: "posts/old.mdx", createdAt: 1_000 }],
         dirtyDocs: [],
         activePublishAttempt: attempt,
+        attemptLane: {
+          _id: "publish_branch_1",
+          projectId: "project_123",
+          branchName: "repopress/main/1234",
+          prNumber: 42,
+          prUrl: "https://github.com/acme/docs-site/pull/42",
+        },
       })
 
       const response = await POST(buildRequest({ projectId: "project_123" }))
@@ -1520,6 +1548,7 @@ describe("POST /api/github/publish-ops", () => {
     it("supersedes an attempt whose commit provably never landed and publishes fresh", async () => {
       const attempt = {
         _id: "attempt_stale",
+        projectId: "project_123",
         publishBranchId: "publish_branch_1",
         branchName: "repopress/main/1234",
         expectedHeadSha: "authority-sha-1",
@@ -1527,10 +1556,20 @@ describe("POST /api/github/publish-ops", () => {
         operationPaths: [],
         opIds: [],
         mediaOpIds: [],
+        documentAssociations: [],
         deleteAssociations: [],
         status: "committing",
       }
-      mockPublishQueries({ activePublishAttempt: attempt })
+      mockPublishQueries({
+        activePublishAttempt: attempt,
+        attemptLane: {
+          _id: "publish_branch_1",
+          projectId: "project_123",
+          branchName: "repopress/main/1234",
+          prNumber: 42,
+          prUrl: "https://github.com/acme/docs-site/pull/42",
+        },
+      })
       // Lane head still exactly at the attempt's expected head: not landed.
       vi.mocked(getBranchHeadForPublish).mockResolvedValue({ status: "found", sha: "authority-sha-1" } as never)
 
@@ -1565,6 +1604,250 @@ describe("POST /api/github/publish-ops", () => {
 
       expect(response.status).toBe(200)
       expect(payload.warning).toMatch(/undone while publishing/i)
+    })
+
+    const recoveryLane = {
+      _id: "publish_branch_1",
+      projectId: "project_123",
+      branchName: "repopress/main/1234",
+      prNumber: 42,
+      prUrl: "https://github.com/acme/docs-site/pull/42",
+    }
+
+    function committedAttempt(overrides: Record<string, unknown> = {}) {
+      return {
+        _id: "attempt_1",
+        projectId: "project_123",
+        publishBranchId: "publish_branch_1",
+        branchName: "repopress/main/1234",
+        expectedHeadSha: "authority-sha-1",
+        planDigest: "digest-1",
+        operationPaths: ["content/posts/old.mdx"],
+        opIds: [],
+        mediaOpIds: [],
+        documentAssociations: [],
+        deleteAssociations: [],
+        status: "committed",
+        commitSha: "commit-sha-1",
+        ...overrides,
+      }
+    }
+
+    it("recovers a stranded attempt even when nothing is pending anymore", async () => {
+      // A crash after markCommitted left ops committed (nothing pending) but
+      // the attempt unreconciled. Recovery must run BEFORE the no-pending
+      // 400.
+      mockPublishQueries({
+        pendingOps: [],
+        dirtyDocs: [],
+        pendingMediaOps: [],
+        activePublishAttempt: committedAttempt(),
+        attemptLane: recoveryLane,
+      })
+
+      const response = await POST(buildRequest({ projectId: "project_123" }))
+      const payload = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(payload.recovered).toBe(true)
+      expect(payload.commitSha).toBe("commit-sha-1")
+      expect(batchCommitPublishLaneAtExpectedHead).not.toHaveBeenCalled()
+    })
+
+    it("recovers before applying the new request's create-new publishMode", async () => {
+      mockPublishQueries({
+        pendingOps: [],
+        dirtyDocs: [],
+        activePublishAttempt: committedAttempt(),
+        attemptLane: recoveryLane,
+      })
+
+      const response = await POST(buildRequest({ projectId: "project_123", publishMode: "create-new" }))
+      const payload = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(payload.recovered).toBe(true)
+      // Recovery targeted the attempt's own lane; the new request's mode
+      // never influenced it (no overlap checks, no lane deactivation).
+      expect(batchCommitPublishLaneAtExpectedHead).not.toHaveBeenCalled()
+    })
+
+    it("fails closed with 500 when the attempt's lane no longer matches", async () => {
+      mockPublishQueries({
+        activePublishAttempt: committedAttempt(),
+        attemptLane: { ...recoveryLane, branchName: "repopress/other-lane" },
+      })
+
+      const response = await POST(buildRequest({ projectId: "project_123" }))
+      const payload = await response.json()
+
+      expect(response.status).toBe(500)
+      expect(payload.error).toMatch(/no longer matches this project/i)
+      // Fail closed: no attempt mutation (supersede/record/reconcile) and no
+      // commit. (The auth layer's cache write goes through the same client,
+      // so assert the targeted absence, not zero calls.)
+      expect(convexMutationMock).not.toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ id: "attempt_1" }),
+      )
+      expect(batchCommitPublishLaneAtExpectedHead).not.toHaveBeenCalled()
+    })
+
+    it("finds a landed commit deeper in linear ancestry instead of superseding", async () => {
+      // Someone committed on top of our landed commit: head has no trailer,
+      // but its single parent does.
+      mockPublishQueries({
+        activePublishAttempt: committedAttempt({ status: "committing", commitSha: undefined }),
+        attemptLane: recoveryLane,
+      })
+      vi.mocked(getBranchHeadForPublish).mockResolvedValue({ status: "found", sha: "foreign-sha-2" } as never)
+      vi.mocked(getCommitDetailsForPublish).mockImplementation(
+        async (_t: unknown, _o: unknown, _r: unknown, sha: unknown) => {
+          if (sha === "foreign-sha-2") {
+            return { message: "chore: unrelated commit", parents: ["landed-sha-1"] }
+          }
+          if (sha === "landed-sha-1") {
+            return {
+              message: "chore(content): via RepoPress\n\nRepoPress-Publish-Attempt: digest-1",
+              parents: ["authority-sha-1"],
+            }
+          }
+          throw new Error(`unexpected sha ${String(sha)}`)
+        },
+      )
+
+      const response = await POST(buildRequest({ projectId: "project_123" }))
+      const payload = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(payload.recovered).toBe(true)
+      expect(payload.commitSha).toBe("landed-sha-1")
+      expect(batchCommitPublishLaneAtExpectedHead).not.toHaveBeenCalled()
+    })
+
+    it("fails closed on non-linear history instead of superseding", async () => {
+      mockPublishQueries({
+        activePublishAttempt: committedAttempt({ status: "committing", commitSha: undefined }),
+        attemptLane: recoveryLane,
+      })
+      vi.mocked(getBranchHeadForPublish).mockResolvedValue({ status: "found", sha: "merge-sha" } as never)
+      vi.mocked(getCommitDetailsForPublish).mockResolvedValue({
+        message: "Merge branch",
+        parents: ["parent-a", "parent-b"],
+      } as never)
+
+      const response = await POST(buildRequest({ projectId: "project_123" }))
+      const payload = await response.json()
+
+      expect(response.status).toBe(409)
+      expect(payload.error).toMatch(/cannot prove/i)
+      // No supersede, no recordCommit, no new commit.
+      expect(convexMutationMock).not.toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ id: "attempt_1" }),
+      )
+      expect(batchCommitPublishLaneAtExpectedHead).not.toHaveBeenCalled()
+    })
+
+    it("fails closed when the lane branch is gone while an attempt is committing", async () => {
+      mockPublishQueries({
+        activePublishAttempt: committedAttempt({ status: "committing", commitSha: undefined }),
+        attemptLane: recoveryLane,
+      })
+      vi.mocked(getBranchHeadForPublish).mockResolvedValue({ status: "absent" } as never)
+
+      const response = await POST(buildRequest({ projectId: "project_123" }))
+      const payload = await response.json()
+
+      expect(response.status).toBe(409)
+      expect(payload.error).toMatch(/cannot prove whether its commit landed/i)
+      expect(convexMutationMock).not.toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ id: "attempt_1" }),
+      )
+      expect(batchCommitPublishLaneAtExpectedHead).not.toHaveBeenCalled()
+    })
+
+    it("refreshes stored document SHAs at the landed commit during recovery", async () => {
+      mockPublishQueries({
+        activePublishAttempt: committedAttempt({
+          documentAssociations: [{ documentId: "doc_9", repoPath: "content/posts/hello.mdx" }],
+        }),
+        attemptLane: recoveryLane,
+      })
+      vi.mocked(getFile).mockResolvedValue({ sha: "refreshed-sha" } as never)
+      const documentUpdates: unknown[] = []
+      convexMutationMock.mockImplementation(async (_fn: unknown, args: unknown) => {
+        if (args && typeof args === "object" && "githubSha" in (args as Record<string, unknown>)) {
+          documentUpdates.push(args)
+        }
+        return undefined
+      })
+
+      const response = await POST(buildRequest({ projectId: "project_123" }))
+
+      expect(response.status).toBe(200)
+      expect(getFile).toHaveBeenCalledWith("gh-token", "acme", "docs-site", "content/posts/hello.mdx", "commit-sha-1")
+      expect(documentUpdates).toEqual([expect.objectContaining({ id: "doc_9", githubSha: "refreshed-sha" })])
+    })
+
+    it("adopts the existing lane PR when creation fails (idempotent ensure)", async () => {
+      mockPublishQueries({
+        currentPublishBranch: {
+          _id: "publish_branch_1",
+          branchName: "repopress/main/1234",
+          prNumber: undefined,
+          prUrl: undefined,
+        },
+      })
+      vi.mocked(createPullRequest).mockRejectedValue(Object.assign(new Error("already exists"), { status: 422 }))
+      vi.mocked(findOpenPublishLanePullRequest).mockResolvedValue({
+        number: 7,
+        htmlUrl: "https://github.com/acme/docs-site/pull/7",
+      } as never)
+
+      const response = await POST(buildRequest({ projectId: "project_123" }))
+      const payload = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(payload.ok).toBe(true)
+      expect(payload.prNumber).toBe(7)
+      expect(payload.prUrl).toBe("https://github.com/acme/docs-site/pull/7")
+      expect(payload.warning).toBeUndefined()
+    })
+
+    it("surfaces concurrently undone media uploads as a divergence warning", async () => {
+      mockPublishQueries({
+        pendingMediaOps: [
+          {
+            _id: "media_1",
+            projectId: "project_123",
+            repoPath: "/public/uploads/pic.png",
+            sourceType: "github",
+            content: Buffer.from([1]).toString("base64"),
+          },
+        ],
+      })
+      convexMutationMock.mockImplementation(async (_fn: unknown, args: unknown) => {
+        if (
+          args &&
+          typeof args === "object" &&
+          "ids" in (args as Record<string, unknown>) &&
+          !("deleteAssociations" in (args as Record<string, unknown>))
+        ) {
+          return { unreconciledMediaOpIds: ["media_1"] }
+        }
+        if (args && typeof args === "object" && "deleteAssociations" in (args as Record<string, unknown>)) {
+          return { skippedDeleteAssociations: [], unreconciledOpIds: [] }
+        }
+        return undefined
+      })
+
+      const response = await POST(buildRequest({ projectId: "project_123" }))
+      const payload = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(payload.warning).toMatch(/media upload\(s\) were undone/i)
     })
   })
 })
