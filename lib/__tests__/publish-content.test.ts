@@ -34,6 +34,31 @@ describe("detectMetadataSource", () => {
   it("returns none for plain content", () => {
     expect(detectMetadataSource("# Just markdown\n", "docs/a.mdx")).toBe("none")
   })
+
+  it("does not close a tilde fence with a backtick fence line (mixed markers)", () => {
+    const source = "~~~\nsome code\n```\nexport const metadata = { title: 'X' }\n~~~\n"
+    expect(detectMetadataSource(source, "docs/a.mdx")).toBe("none")
+  })
+
+  it("does not close a backtick fence with a tilde line (mixed markers)", () => {
+    const source = "```\n~~~\nexport const metadata = { title: 'X' }\n```\n"
+    expect(detectMetadataSource(source, "docs/a.mdx")).toBe("none")
+  })
+
+  it("does not close a long fence with a shorter run of the same marker", () => {
+    const source = "`````\ncode\n```\nexport const metadata = { title: 'X' }\n`````\n"
+    expect(detectMetadataSource(source, "docs/a.mdx")).toBe("none")
+  })
+
+  it("closes a fence with a longer run of the same marker and resumes detection", () => {
+    const source = "```\ncode\n`````\nexport const metadata = { title: 'X' }\n"
+    expect(detectMetadataSource(source, "docs/a.mdx")).toBe("metadata-export")
+  })
+
+  it("does not treat a fence-like line with an info string as a close", () => {
+    const source = "```ts\ncode\n``` not-a-close\nexport const metadata = { title: 'X' }\n```\n"
+    expect(detectMetadataSource(source, "docs/a.mdx")).toBe("none")
+  })
 })
 
 describe("bodyEmbedsMetadataExport", () => {

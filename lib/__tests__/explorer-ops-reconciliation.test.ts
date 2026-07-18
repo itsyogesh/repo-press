@@ -18,25 +18,40 @@ vi.mock("@/convex/auth", () => ({
   },
 }))
 
-import { markCommitted } from "@/convex/explorerOps"
+import { discardAll, markCommitted, undoOp } from "@/convex/explorerOps"
 import { mintProjectAccessToken } from "@/lib/project-access-token"
 
-function createCtx(get: ReturnType<typeof vi.fn>, patch: ReturnType<typeof vi.fn>) {
+function createCtx(
+  get: ReturnType<typeof vi.fn>,
+  patch: ReturnType<typeof vi.fn>,
+  options?: { activePublishAttempt?: Record<string, unknown> | null },
+) {
+  const activePublishAttempt = options?.activePublishAttempt ?? null
   return {
     db: {
       get,
       patch,
       insert: vi.fn(),
       delete: vi.fn(),
-      query: vi.fn(() => ({
+      query: vi.fn((table: string) => ({
         withIndex: () => ({
-          first: vi.fn().mockResolvedValue(null),
+          first: vi.fn().mockResolvedValue(table === "publishAttempts" ? activePublishAttempt : null),
           filter: () => ({ first: vi.fn().mockResolvedValue(null) }),
+          collect: vi.fn().mockResolvedValue([]),
         }),
       })),
     },
     scheduler: { runAfter: vi.fn() },
+    storage: { delete: vi.fn() },
   } as any
+}
+
+const activeAttempt = {
+  _id: "attempt_1",
+  projectId: "project_1",
+  branchName: "repopress/start",
+  planDigest: "digest-1",
+  status: "committing",
 }
 
 async function patToken() {
@@ -100,6 +115,7 @@ describe("markCommitted post-commit reconciliation", () => {
           reason: "document-changed-after-snapshot",
         }),
       ],
+      unreconciledOpIds: [],
     })
   })
 
@@ -123,7 +139,7 @@ describe("markCommitted post-commit reconciliation", () => {
 
     expect(patch).toHaveBeenCalledWith("doc_1", expect.objectContaining({ body: undefined, frontmatter: undefined }))
     expect(patch).toHaveBeenCalledWith("op_delete", expect.objectContaining({ status: "committed" }))
-    expect(result).toEqual({ skippedDeleteAssociations: [] })
+    expect(result).toEqual({ skippedDeleteAssociations: [], unreconciledOpIds: [] })
   })
 
   it("is idempotent for retries: already-committed ops are untouched and produce no errors", async () => {
@@ -139,7 +155,22 @@ describe("markCommitted post-commit reconciliation", () => {
     })
 
     expect(patch).not.toHaveBeenCalled()
-    expect(result).toEqual({ skippedDeleteAssociations: [] })
+    expect(result).toEqual({ skippedDeleteAssociations: [], unreconciledOpIds: [] })
+  })
+
+  it("reports concurrently undone ops as unreconciled instead of silently absorbing them", async () => {
+    const patch = vi.fn()
+    const get = vi.fn().mockResolvedValueOnce({ ...pendingDeleteOp, status: "undone" })
+
+    const result = await (markCommitted as any).handler(createCtx(get, patch), {
+      ids: ["op_delete"],
+      commitSha: "commit_1",
+      userId: "user_owner",
+      projectAccessToken: await patToken(),
+    })
+
+    expect(patch).not.toHaveBeenCalled()
+    expect(result).toEqual({ skippedDeleteAssociations: [], unreconciledOpIds: ["op_delete"] })
   })
 
   it("skips a cross-project association with an integrity reason while still committing the op", async () => {
@@ -166,6 +197,73 @@ describe("markCommitted post-commit reconciliation", () => {
       skippedDeleteAssociations: [
         expect.objectContaining({ opId: "op_delete", reason: "association-project-mismatch" }),
       ],
+      unreconciledOpIds: [],
     })
+  })
+})
+
+describe("publish attempt guard on undo/discard", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    process.env.BETTER_AUTH_SECRET = "test-secret"
+    safeGetAuthUserMock.mockResolvedValue(null)
+  })
+
+  it("refuses undoOp while a publish attempt is at the commit boundary", async () => {
+    const patch = vi.fn()
+    const get = vi.fn().mockResolvedValueOnce(pendingDeleteOp).mockResolvedValueOnce(project)
+
+    await expect(
+      (undoOp as any).handler(createCtx(get, patch, { activePublishAttempt: activeAttempt }), {
+        id: "op_delete",
+        userId: "user_owner",
+        projectAccessToken: await patToken(),
+      }),
+    ).rejects.toThrow(/publish is in progress/i)
+
+    expect(patch).not.toHaveBeenCalled()
+  })
+
+  it("allows undoOp when no publish attempt is active", async () => {
+    const patch = vi.fn()
+    const get = vi.fn().mockResolvedValueOnce(pendingDeleteOp).mockResolvedValueOnce(project)
+
+    await (undoOp as any).handler(createCtx(get, patch), {
+      id: "op_delete",
+      userId: "user_owner",
+      projectAccessToken: await patToken(),
+    })
+
+    expect(patch).toHaveBeenCalledWith("op_delete", expect.objectContaining({ status: "undone" }))
+  })
+
+  it("refuses discardAll while a publish attempt is at the commit boundary", async () => {
+    const patch = vi.fn()
+    const get = vi.fn().mockResolvedValueOnce(project)
+
+    await expect(
+      (discardAll as any).handler(createCtx(get, patch, { activePublishAttempt: activeAttempt }), {
+        projectId: "project_1",
+        userId: "user_owner",
+        projectAccessToken: await patToken(),
+      }),
+    ).rejects.toThrow(/publish is in progress/i)
+
+    expect(patch).not.toHaveBeenCalled()
+  })
+
+  it("allows discardAll when no publish attempt is active", async () => {
+    const patch = vi.fn()
+    const get = vi.fn().mockResolvedValueOnce(project)
+
+    const result = await (discardAll as any).handler(createCtx(get, patch), {
+      projectId: "project_1",
+      userId: "user_owner",
+      projectAccessToken: await patToken(),
+    })
+
+    expect(result).toEqual(
+      expect.objectContaining({ discardedOpIds: [], discardedMediaOpIds: [], discardedDirtyDocIds: [] }),
+    )
   })
 })

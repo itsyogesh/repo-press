@@ -3,6 +3,7 @@ import { resolveStoredRepoPath, type StoredPathRepresentation } from "../lib/pre
 import type { Id } from "./_generated/dataModel"
 import { mutation, query } from "./_generated/server"
 import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
+import { assertNoActivePublishAttempt } from "./lib/publishAttemptGuard"
 
 /** Returns all pending explorer ops for a project. */
 export const listPending = query({
@@ -218,6 +219,11 @@ export const undoOp = mutation({
       "editor",
     )
 
+    // A publish attempt that reached the commit boundary has (or is about to
+    // have) a Git commit containing this op - undoing it now would silently
+    // diverge Convex state from the repository.
+    await assertNoActivePublishAttempt(ctx.db, op.projectId)
+
     // Mark the op as undone
     await ctx.db.patch(args.id, {
       status: "undone",
@@ -258,6 +264,10 @@ export const discardAll = mutation({
   },
   handler: async (ctx, args) => {
     await resolveProjectAccess(ctx, args, "editor")
+
+    // Refuse to discard while a publish attempt is at the commit boundary:
+    // the Git commit may already contain this staged work.
+    await assertNoActivePublishAttempt(ctx.db, args.projectId)
 
     const now = Date.now()
     const pendingOps = await ctx.db
@@ -385,8 +395,18 @@ export const markCommitted = mutation({
       documentId: Id<"documents">
       reason: "association-project-mismatch" | "association-path-mismatch" | "document-changed-after-snapshot"
     }> = []
+    // Ops from the publish snapshot that can no longer be marked committed
+    // even though the Git commit contains their changes (e.g. undone in a
+    // race before the attempt guard existed). Reported so the caller can
+    // surface the repository/draft divergence truthfully instead of
+    // silently absorbing it. Already-committed ops are idempotent retries,
+    // not drift.
+    const unreconciledOpIds: Array<(typeof args.ids)[number]> = []
     for (const id of args.ids) {
       const op = await ctx.db.get(id)
+      if (!op || op.status === "undone") {
+        unreconciledOpIds.push(id)
+      }
       // Only mark ops that are still pending (avoid overwriting concurrent
       // undos, and keep retries of this mutation idempotent)
       if (op && op.status === "pending") {
@@ -437,7 +457,7 @@ export const markCommitted = mutation({
         })
       }
     }
-    return { skippedDeleteAssociations }
+    return { skippedDeleteAssociations, unreconciledOpIds }
   },
 })
 

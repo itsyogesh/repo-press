@@ -413,6 +413,7 @@ describe("Convex ownership guards", () => {
           reason: "document-changed-after-snapshot",
         }),
       ],
+      unreconciledOpIds: [],
     })
   })
 

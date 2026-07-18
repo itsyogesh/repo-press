@@ -380,4 +380,33 @@ export default defineSchema({
     .index("by_projectId", ["projectId"])
     .index("by_projectId_status", ["projectId", "status"])
     .index("by_prNumber", ["prNumber"]),
+
+  // ─── Publish Attempts (durable commit/reconcile boundary) ─────────
+  // One row per publish request that reaches the commit boundary. Recovery
+  // uses expectedHeadSha + planDigest (also embedded in the Git commit
+  // message) to prove whether the commit landed, so a retry after a
+  // post-commit failure reconciles instead of committing again.
+  publishAttempts: defineTable({
+    projectId: v.id("projects"),
+    publishBranchId: v.id("publishBranches"),
+    branchName: v.string(),
+    expectedHeadSha: v.string(),
+    planDigest: v.string(),
+    operationPaths: v.array(v.string()),
+    opIds: v.array(v.id("explorerOps")),
+    mediaOpIds: v.array(v.id("mediaOps")),
+    deleteAssociations: v.array(
+      v.object({
+        opId: v.id("explorerOps"),
+        documentId: v.id("documents"),
+        expectedUpdatedAt: v.number(),
+      }),
+    ),
+    status: v.union(v.literal("committing"), v.literal("committed"), v.literal("reconciled"), v.literal("superseded")),
+    commitSha: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_projectId_status", ["projectId", "status"])
+    .index("by_publishBranchId_status", ["publishBranchId", "status"]),
 })

@@ -11,7 +11,7 @@ export type ContentMetadataSource = "frontmatter" | "metadata-export" | "none"
 
 const YAML_FRONTMATTER_PATTERN = /^\uFEFF?---\r?\n/
 const METADATA_EXPORT_PATTERN = /^export\s+const\s+metadata\s*=/
-const FENCE_PATTERN = /^\s{0,3}(?:```|~~~)/
+const FENCE_LINE_PATTERN = /^\s{0,3}(`{3,}|~{3,})[ \t]*(\S?)/
 
 function isMdxFile(filePath: string) {
   return /\.mdx$/i.test(filePath)
@@ -22,15 +22,31 @@ function isMdxFile(filePath: string) {
  * is an `export const metadata =` statement. Deterministic and throw-free by
  * construction: publish decisions must never depend on a full MDX parse that
  * can reject otherwise-publishable documents.
+ *
+ * Fences follow CommonMark closing rules: a fence closes only on a line with
+ * the SAME marker character, at LEAST the opening run length, and nothing but
+ * whitespace after it. A ``` line inside an open ~~~ block (or a shorter run
+ * of the same marker) is content, not a close.
  */
 function hasTopLevelMetadataExport(content: string) {
-  let inFence = false
+  let openFence: { marker: string; length: number } | null = null
   for (const line of content.split(/\r?\n/)) {
-    if (FENCE_PATTERN.test(line)) {
-      inFence = !inFence
+    const fenceMatch = FENCE_LINE_PATTERN.exec(line)
+    if (openFence) {
+      if (
+        fenceMatch &&
+        fenceMatch[1][0] === openFence.marker &&
+        fenceMatch[1].length >= openFence.length &&
+        fenceMatch[2] === ""
+      ) {
+        openFence = null
+      }
       continue
     }
-    if (inFence) continue
+    if (fenceMatch) {
+      openFence = { marker: fenceMatch[1][0], length: fenceMatch[1].length }
+      continue
+    }
     if (METADATA_EXPORT_PATTERN.test(line)) return true
   }
   return false

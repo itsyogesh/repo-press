@@ -669,6 +669,73 @@ export async function createBranchFromSha(
   await octokit.git.createRef({ owner, repo, ref: `refs/heads/${branch}`, sha: baseSha })
 }
 
+/**
+ * Create a publish lane branch from an exact pinned SHA (never from a
+ * re-resolved mutable ref). Restricted to `repopress/` lane names, excluding
+ * the registry-install namespace.
+ */
+export async function createPublishBranchFromSha(
+  accessToken: string,
+  owner: string,
+  repo: string,
+  branch: string,
+  baseSha: string,
+): Promise<void> {
+  assertRepository(owner, repo)
+  assertBranch(branch)
+  assertSha(baseSha)
+  if (!branch.startsWith("repopress/") || branch.startsWith("repopress/install/"))
+    throw new TypeError("Publish lanes require a repopress/ branch outside the install namespace")
+  const octokit = createGitHubClient(accessToken)
+  await octokit.git.createRef({ owner, repo, ref: `refs/heads/${branch}`, sha: baseSha })
+}
+
+/**
+ * Typed head resolution for the publish path: absent branch reads as
+ * { status: "absent" }; any other failure throws GitHubReadError so callers
+ * abort instead of guessing.
+ */
+export async function getBranchHeadForPublish(
+  accessToken: string,
+  owner: string,
+  repo: string,
+  branch: string,
+): Promise<{ status: "found"; sha: string } | { status: "absent" }> {
+  assertRepository(owner, repo)
+  assertBranch(branch)
+  const octokit = createGitHubClient(accessToken)
+  try {
+    const { data } = await octokit.git.getRef({ owner, repo, ref: `heads/${branch}` })
+    assertSha(data.object.sha)
+    return { status: "found", sha: data.object.sha }
+  } catch (error: any) {
+    if (error?.status === 404) return { status: "absent" }
+    throw new GitHubReadError(`GitHub head read failed for ${branch} (status: ${error?.status ?? "unknown"})`, error)
+  }
+}
+
+/**
+ * Read a commit's message and parents for publish-attempt recovery. Throws
+ * GitHubReadError on any failure - recovery decisions must not run on
+ * ambiguous evidence.
+ */
+export async function getCommitDetailsForPublish(
+  accessToken: string,
+  owner: string,
+  repo: string,
+  sha: string,
+): Promise<{ message: string; parents: string[] }> {
+  assertRepository(owner, repo)
+  assertSha(sha)
+  const octokit = createGitHubClient(accessToken)
+  try {
+    const { data } = await octokit.git.getCommit({ owner, repo, commit_sha: sha })
+    return { message: data.message, parents: data.parents.map((parent) => parent.sha) }
+  } catch (error: any) {
+    throw new GitHubReadError(`GitHub commit read failed for ${sha} (status: ${error?.status ?? "unknown"})`, error)
+  }
+}
+
 export async function deleteBranchRef(accessToken: string, owner: string, repo: string, branch: string): Promise<void> {
   assertRepository(owner, repo)
   assertBranch(branch)
@@ -776,6 +843,49 @@ function validateExpectedBranchHead(expected: ExpectedBranchHead): ExpectedBranc
   return { branch, protectedBaseBranch, expectedHeadSha }
 }
 
+/**
+ * The expected-head compare-and-swap commit failed because the branch head
+ * moved between planning and committing. No commit was created; callers can
+ * safely re-plan against the new head and retry.
+ */
+export class BranchHeadMovedError extends Error {
+  constructor(branch: string) {
+    super(`Branch ${branch} head changed since the publish was planned`)
+    this.name = "BranchHeadMovedError"
+  }
+}
+
+function assertExpectedHeadPreconditions(expected: ExpectedBranchHead) {
+  assertBranch(expected.branch)
+  assertBranch(expected.protectedBaseBranch)
+  assertSha(expected.expectedHeadSha)
+  if (expected.branch === expected.protectedBaseBranch)
+    throw new TypeError("Refusing to mutate the protected base branch")
+}
+
+/**
+ * Expected-head CAS commit for RepoPress publish lanes (`repopress/<scope>`
+ * branches created by the publish flow). Same compare-and-swap semantics as
+ * the registry-install variant: the commit's parent is exactly
+ * `expectedHeadSha` and the ref update is non-forced, so a branch that moved
+ * after planning fails with BranchHeadMovedError instead of overwriting.
+ */
+export async function batchCommitPublishLaneAtExpectedHead(
+  accessToken: string,
+  owner: string,
+  repo: string,
+  rawExpected: ExpectedBranchHead,
+  rawOperations: readonly BatchOperation[],
+  message: string,
+): Promise<{ commitSha: string; treeSha: string }> {
+  assertRepository(owner, repo)
+  const expected = validateExpectedBranchHead(rawExpected)
+  assertExpectedHeadPreconditions(expected)
+  if (!expected.branch.startsWith("repopress/") || expected.branch.startsWith("repopress/install/"))
+    throw new TypeError("Publish commits require a repopress/ publish lane branch")
+  return commitBatchAtValidatedHead(accessToken, owner, repo, expected, rawOperations, message)
+}
+
 export async function batchCommitAtExpectedHead(
   accessToken: string,
   owner: string,
@@ -786,18 +896,25 @@ export async function batchCommitAtExpectedHead(
 ): Promise<{ commitSha: string; treeSha: string }> {
   assertRepository(owner, repo)
   const expected = validateExpectedBranchHead(rawExpected)
-  assertBranch(expected.branch)
-  assertBranch(expected.protectedBaseBranch)
-  assertSha(expected.expectedHeadSha)
-  if (expected.branch === expected.protectedBaseBranch)
-    throw new TypeError("Refusing to mutate the protected base branch")
+  assertExpectedHeadPreconditions(expected)
   if (!expected.branch.startsWith("repopress/install/"))
     throw new TypeError("Registry installs require a dedicated branch")
+  return commitBatchAtValidatedHead(accessToken, owner, repo, expected, rawOperations, message)
+}
+
+async function commitBatchAtValidatedHead(
+  accessToken: string,
+  owner: string,
+  repo: string,
+  expected: ExpectedBranchHead,
+  rawOperations: readonly BatchOperation[],
+  message: string,
+): Promise<{ commitSha: string; treeSha: string }> {
   assertCommitMessage(message)
   const operations = validateBatchOperations(rawOperations)
   const octokit = createGitHubClient(accessToken)
   const { data: branchRef } = await octokit.git.getRef({ owner, repo, ref: `heads/${expected.branch}` })
-  if (branchRef.object.sha !== expected.expectedHeadSha) throw new Error("Dedicated branch head changed")
+  if (branchRef.object.sha !== expected.expectedHeadSha) throw new BranchHeadMovedError(expected.branch)
   const { data: baseCommit } = await octokit.git.getCommit({
     owner,
     repo,

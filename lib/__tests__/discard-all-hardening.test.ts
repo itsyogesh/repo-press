@@ -38,6 +38,15 @@ function createCtx({
       patch: vi.fn(),
       delete: vi.fn(),
       query: vi.fn((tableName: string) => {
+        if (tableName === "publishAttempts") {
+          // No publish attempt is at the commit boundary in these scenarios.
+          return {
+            withIndex: () => ({
+              first: vi.fn().mockResolvedValue(null),
+            }),
+          }
+        }
+
         if (tableName === "explorerOps") {
           return {
             withIndex: () => ({

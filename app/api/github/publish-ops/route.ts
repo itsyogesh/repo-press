@@ -4,12 +4,15 @@ import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
 import type { BatchOperation } from "@/lib/github"
 import {
-  batchCommit,
+  BranchHeadMovedError,
+  batchCommitPublishLaneAtExpectedHead,
   branchExists,
-  createBranch,
   createGitHubClient,
+  createPublishBranchFromSha,
   createPullRequest,
   GitHubReadError,
+  getBranchHeadForPublish,
+  getCommitDetailsForPublish,
   getFile,
   getFileForPublish,
   type PublishFileReadResult,
@@ -19,6 +22,12 @@ import { resolveStoredRepoPath, type StoredPathRepresentation } from "@/lib/prev
 import { mintServerQueryToken } from "@/lib/project-access-token"
 import { buildPublishBranchName, derivePublishBranchScope } from "@/lib/publish-branch-name"
 import { detectMetadataSource, serializePublishContent } from "@/lib/publish-content"
+import {
+  commitMessageCarriesAttempt,
+  computePublishPlanDigest,
+  formatPublishAttemptTrailer,
+  sha256Hex,
+} from "@/lib/publish-plan"
 import { RouteAuthError, resolveRouteAuth } from "@/lib/route-auth"
 import { isStudioMediaResolveUrl } from "@/lib/studio/media-resolve"
 
@@ -134,16 +143,116 @@ export async function POST(request: Request) {
       pathsToFetch.set(`media:${normalizedPath}`, normalizedPath)
     }
 
-    // Typed preflight reads: only a 404 counts as "absent". Any other read
-    // failure aborts the publish before a commit exists - proceeding on an
-    // ambiguous read disables sha-conflict detection and produces unflagged
-    // overwrites on the publish branch.
+    // ── Lane decision (before any reads, so one Git authority can be pinned) ──
+    // By default, reuse the current active lane. Callers can opt into a fresh lane/PR.
+    let publishBranch = await convex.query(api.publishBranches.getCurrentForProject, {
+      projectId: project._id,
+      ...queryAuth,
+    })
+    const currentPublishBranchId = publishBranch?._id
+
+    if (publishModeUsed === "create-new") {
+      const openPublishBranches = await convex.query(api.publishBranches.listOpenForProject, {
+        projectId: project._id,
+        ...queryAuth,
+      })
+      const stagedRepoPaths = new Set<string>([
+        ...resolvedPendingOps.map(({ repoPath }) => repoPath),
+        ...resolvedDirtyDocs.map(({ repoPath }) => repoPath),
+        ...pendingMediaOps.map((mediaOp) => normalizeMediaPath(mediaOp.repoPath)),
+      ])
+      const overlaps = openPublishBranches.flatMap((branch) =>
+        branch._id === currentPublishBranchId
+          ? []
+          : (branch.committedFilePaths ?? [])
+              .filter((path) => stagedRepoPaths.has(path))
+              .map((path) => ({
+                path,
+                publishBranchId: branch._id,
+                branchName: branch.branchName,
+                prNumber: branch.prNumber,
+                prUrl: branch.prUrl,
+              })),
+      )
+
+      if (overlaps.length > 0) {
+        return NextResponse.json({ ok: false, overlaps }, { status: 409 })
+      }
+
+      publishBranch = null
+    }
+
+    // ── Recover a publish attempt stranded at the commit boundary ──
+    const activeAttempt = await convex.query(api.publishAttempts.getActiveForProject, {
+      projectId: project._id,
+      ...queryAuth,
+    })
+    if (activeAttempt) {
+      const recovery = await recoverPublishAttempt({
+        convex,
+        attempt: activeAttempt,
+        token,
+        owner,
+        repo,
+        baseBranch,
+        title,
+        description,
+        actingUserId,
+        projectAccessToken,
+        currentPublishBranch: publishBranch,
+      })
+      if (recovery.handled) {
+        return recovery.response
+      }
+      // The attempt provably never landed and was superseded - continue with
+      // a fresh publish against the current head.
+    }
+
+    // ── Pin the single Git authority for this publish ──
+    // Existing lanes read and commit against their pinned lane head; new
+    // lanes read against the pinned base head and are created from that
+    // exact SHA. Every preflight read and the CAS commit use this one SHA.
+    const authorityBranch = publishBranch ? publishBranch.branchName : baseBranch
+    let authoritySha: string
+    try {
+      const head = await getBranchHeadForPublish(token, owner, repo, authorityBranch)
+      if (head.status === "absent") {
+        if (publishBranch) {
+          return NextResponse.json(
+            {
+              ok: false,
+              error: `Publish lane branch ${authorityBranch} no longer exists on GitHub. Create a new lane (publishMode "create-new") to continue.`,
+            },
+            { status: 409 },
+          )
+        }
+        return NextResponse.json(
+          { ok: false, error: `Base branch ${baseBranch} does not exist on GitHub` },
+          { status: 502 },
+        )
+      }
+      authoritySha = head.sha
+    } catch (error) {
+      if (error instanceof GitHubReadError) {
+        console.error("Publish authority resolution failed:", error)
+        return NextResponse.json(
+          { ok: false, error: `Publish aborted before any commit: ${error.message}. Retry once GitHub reads succeed.` },
+          { status: 502 },
+        )
+      }
+      throw error
+    }
+
+    // Typed preflight reads pinned to the publish authority SHA: only a 404
+    // counts as "absent". Any other read failure aborts the publish before a
+    // commit exists - proceeding on an ambiguous read disables sha-conflict
+    // detection and produces unflagged overwrites on the publish branch.
     const prefetchResults = new Map<string, PublishFileReadResult>()
     let fetchResults: Array<{ key: string; result: PublishFileReadResult }>
     try {
       fetchResults = await Promise.all(
         Array.from(pathsToFetch, async ([key, fullPath]) => {
-          const result = await getFileForPublish(token, owner, repo, fullPath, baseBranch)
+          const result = await getFileForPublish(token, owner, repo, fullPath, authoritySha)
           return { key, result }
         }),
       )
@@ -173,7 +282,7 @@ export async function POST(request: Request) {
         if (existing?.status === "found") {
           conflicts.push({
             path: repoPath,
-            reason: `File already exists on ${baseBranch} (sha: ${existing.file.sha})`,
+            reason: `File already exists on ${authorityBranch} (sha: ${existing.file.sha})`,
           })
           continue
         }
@@ -262,7 +371,7 @@ export async function POST(request: Request) {
       token,
       owner,
       repo,
-      baseBranch,
+      authorityBranch,
       pendingMediaOps,
       prefetchResults,
       conflicts,
@@ -275,40 +384,6 @@ export async function POST(request: Request) {
 
     if (operations.length === 0) {
       return NextResponse.json({ error: "No valid operations to publish" }, { status: 400 })
-    }
-
-    // By default, reuse the current active lane. Callers can opt into a fresh lane/PR.
-    let publishBranch = await convex.query(api.publishBranches.getCurrentForProject, {
-      projectId: project._id,
-      ...queryAuth,
-    })
-    const currentPublishBranchId = publishBranch?._id
-
-    if (publishModeUsed === "create-new") {
-      const openPublishBranches = await convex.query(api.publishBranches.listOpenForProject, {
-        projectId: project._id,
-        ...queryAuth,
-      })
-      const operationPaths = new Set(operations.map((op) => op.path))
-      const overlaps = openPublishBranches.flatMap((branch) =>
-        branch._id === currentPublishBranchId
-          ? []
-          : (branch.committedFilePaths ?? [])
-              .filter((path) => operationPaths.has(path))
-              .map((path) => ({
-                path,
-                publishBranchId: branch._id,
-                branchName: branch.branchName,
-                prNumber: branch.prNumber,
-                prUrl: branch.prUrl,
-              })),
-      )
-
-      if (overlaps.length > 0) {
-        return NextResponse.json({ ok: false, overlaps }, { status: 409 })
-      }
-
-      publishBranch = null
     }
 
     let branchName = publishBranch?.branchName
@@ -326,7 +401,7 @@ export async function POST(request: Request) {
         token,
         owner,
         repo,
-        baseBranch,
+        baseSha: authoritySha,
         scope,
         existingBranchNames,
       })
@@ -380,8 +455,75 @@ export async function POST(request: Request) {
     if (mediaCreateCount > 0) parts.push(`${mediaCreateCount} media created`)
     if (mediaUpdateCount > 0) parts.push(`${mediaUpdateCount} media updated`)
 
-    const commitMessage = `chore(content): ${parts.join(", ")} via RepoPress`
-    const { commitSha } = await batchCommit(token, owner, repo, branchName, operations, commitMessage)
+    // ── Durable attempt + expected-head CAS commit ──
+    // The attempt row (with the plan digest, also embedded in the commit
+    // message trailer) is written BEFORE the commit, so a crash anywhere
+    // after this point is recoverable on retry without committing again.
+    const planDigest = computePublishPlanDigest({
+      branchName,
+      expectedHeadSha: authoritySha,
+      operations: operations.map((operation) => ({
+        path: operation.path,
+        action: operation.action,
+        contentDigest:
+          operation.action === "delete" || typeof operation.content !== "string" ? null : sha256Hex(operation.content),
+      })),
+      opIds: pendingOps.map((op) => String(op._id)),
+      mediaOpIds: pendingMediaOps.map((op) => String(op._id)),
+      deleteAssociations: deleteAssociations.map((association) => ({
+        opId: String(association.opId),
+        documentId: String(association.documentId),
+        expectedUpdatedAt: association.expectedUpdatedAt,
+      })),
+    })
+    const attemptId = await convex.mutation(api.publishAttempts.begin, {
+      projectId: project._id,
+      publishBranchId: publishBranch._id,
+      branchName,
+      expectedHeadSha: authoritySha,
+      planDigest,
+      operationPaths: operations.map((operation) => operation.path),
+      opIds: pendingOps.map((op) => op._id),
+      mediaOpIds: pendingMediaOps.map((op) => op._id),
+      deleteAssociations,
+      userId: actingUserId,
+      projectAccessToken,
+    })
+
+    const commitMessage = `chore(content): ${parts.join(", ")} via RepoPress\n\n${formatPublishAttemptTrailer(planDigest)}`
+    let commitSha: string
+    try {
+      ;({ commitSha } = await batchCommitPublishLaneAtExpectedHead(
+        token,
+        owner,
+        repo,
+        { branch: branchName, protectedBaseBranch: baseBranch, expectedHeadSha: authoritySha },
+        operations,
+        commitMessage,
+      ))
+    } catch (error) {
+      if (error instanceof BranchHeadMovedError) {
+        await convex.mutation(api.publishAttempts.supersede, {
+          id: attemptId,
+          userId: actingUserId,
+          projectAccessToken,
+        })
+        return NextResponse.json(
+          {
+            ok: false,
+            error: `The publish branch advanced while publishing. No commit was created by this request; retry to publish against the new head.`,
+          },
+          { status: 409 },
+        )
+      }
+      throw error
+    }
+    await convex.mutation(api.publishAttempts.recordCommit, {
+      id: attemptId,
+      commitSha,
+      userId: actingUserId,
+      projectAccessToken,
+    })
 
     // PR creation: Only create a new PR if one doesn't exist for this branch.
     // When the PR already exists (prNumber is set), we skip PR creation and just push commits.
@@ -428,9 +570,8 @@ export async function POST(request: Request) {
         userId: actingUserId,
         projectAccessToken,
       })
-      const skipped = markResult?.skippedDeleteAssociations ?? []
-      if (skipped.length > 0) {
-        const reconciliationWarning = `Commit ${commitSha} succeeded, but ${skipped.length} deleted document(s) kept their draft content in RepoPress because they changed during publishing. Review those drafts before the next publish.`
+      const reconciliationWarning = describeReconciliationWarnings(commitSha, markResult)
+      if (reconciliationWarning) {
         warning = warning ? `${warning} ${reconciliationWarning}` : reconciliationWarning
       }
     }
@@ -449,7 +590,7 @@ export async function POST(request: Request) {
     const shaFetches = await Promise.all(
       docsToUpdateSha.map(async ({ source: doc, repoPath }) => {
         try {
-          const fileOnBranch = await getFile(token, owner, repo, repoPath, branchName)
+          const fileOnBranch = await getFile(token, owner, repo, repoPath, commitSha)
           return { doc, sha: fileOnBranch?.sha ?? null }
         } catch {
           return { doc, sha: null }
@@ -470,6 +611,12 @@ export async function POST(request: Request) {
         // Non-critical: conflict detection may be stale for this file on next publish.
       }
     }
+
+    await convex.mutation(api.publishAttempts.markReconciled, {
+      id: attemptId,
+      userId: actingUserId,
+      projectAccessToken,
+    })
 
     return NextResponse.json({
       ok: true,
@@ -539,18 +686,208 @@ function isActivePublishBranchConflict(error: unknown) {
   return error instanceof Error && error.message.includes(ACTIVE_PUBLISH_BRANCH_CONFLICT_MESSAGE)
 }
 
-async function createAvailablePublishBranch({
+function describeReconciliationWarnings(
+  commitSha: string,
+  markResult: { skippedDeleteAssociations?: unknown[]; unreconciledOpIds?: unknown[] } | null | undefined,
+): string | undefined {
+  const details: string[] = []
+  const skipped = markResult?.skippedDeleteAssociations ?? []
+  if (skipped.length > 0) {
+    details.push(
+      `${skipped.length} deleted document(s) kept their draft content in RepoPress because they changed during publishing; review those drafts before the next publish.`,
+    )
+  }
+  const unreconciled = markResult?.unreconciledOpIds ?? []
+  if (unreconciled.length > 0) {
+    details.push(
+      `${unreconciled.length} staged operation(s) were undone while publishing even though the commit contains their changes; review the repository and re-stage or revert as needed.`,
+    )
+  }
+  if (details.length === 0) return undefined
+  return `Commit ${commitSha} succeeded, but ${details.join(" Also: ")}`
+}
+
+type RecoverablePublishAttempt = {
+  _id: Id<"publishAttempts">
+  publishBranchId: Id<"publishBranches">
+  branchName: string
+  expectedHeadSha: string
+  planDigest: string
+  operationPaths: string[]
+  opIds: Id<"explorerOps">[]
+  mediaOpIds: Id<"mediaOps">[]
+  deleteAssociations: Array<{ opId: Id<"explorerOps">; documentId: Id<"documents">; expectedUpdatedAt: number }>
+  // getActiveForProject only returns committing/committed attempts; the wider
+  // union matches the stored document type.
+  status: "committing" | "committed" | "reconciled" | "superseded"
+  commitSha?: string
+}
+
+/**
+ * Recover a publish attempt stranded at the commit boundary.
+ *
+ * Proof of landing: the lane head is a commit whose parent is exactly the
+ * attempt's expectedHeadSha and whose message carries the attempt's plan
+ * digest trailer. When landed, Convex state is reconciled from the durable
+ * attempt record WITHOUT committing again; when provably not landed, the
+ * attempt is superseded so a fresh publish can proceed.
+ */
+async function recoverPublishAttempt({
+  convex,
+  attempt,
   token,
   owner,
   repo,
   baseBranch,
+  title,
+  description,
+  actingUserId,
+  projectAccessToken,
+  currentPublishBranch,
+}: {
+  convex: ConvexHttpClient
+  attempt: RecoverablePublishAttempt
+  token: string
+  owner: string
+  repo: string
+  baseBranch: string
+  title?: string
+  description?: string
+  actingUserId?: string
+  projectAccessToken?: string
+  currentPublishBranch: { _id: Id<"publishBranches">; prNumber?: number; prUrl?: string } | null
+}): Promise<{ handled: true; response: NextResponse } | { handled: false }> {
+  const auth = { userId: actingUserId, projectAccessToken }
+  let commitSha = attempt.status === "committed" ? (attempt.commitSha ?? null) : null
+  try {
+    if (!commitSha) {
+      const head = await getBranchHeadForPublish(token, owner, repo, attempt.branchName)
+      if (head.status === "absent" || head.sha === attempt.expectedHeadSha) {
+        // Lane gone, or head untouched since planning: the commit provably
+        // never landed. Retire the attempt and let a fresh publish proceed.
+        await convex.mutation(api.publishAttempts.supersede, { id: attempt._id, ...auth })
+        return { handled: false }
+      }
+      const details = await getCommitDetailsForPublish(token, owner, repo, head.sha)
+      const landed =
+        details.parents.includes(attempt.expectedHeadSha) &&
+        commitMessageCarriesAttempt(details.message, attempt.planDigest)
+      if (!landed) {
+        // A foreign commit moved the lane past our expected head; the CAS
+        // commit could not have landed.
+        await convex.mutation(api.publishAttempts.supersede, { id: attempt._id, ...auth })
+        return { handled: false }
+      }
+      commitSha = head.sha
+      await convex.mutation(api.publishAttempts.recordCommit, { id: attempt._id, commitSha, ...auth })
+    }
+  } catch (error) {
+    if (error instanceof GitHubReadError) {
+      console.error("Publish recovery read failed:", error)
+      return {
+        handled: true,
+        response: NextResponse.json(
+          { ok: false, error: `Publish recovery aborted: ${error.message}. Retry once GitHub reads succeed.` },
+          { status: 502 },
+        ),
+      }
+    }
+    throw error
+  }
+
+  // The commit is real - reconcile Convex state without committing again.
+  const laneIsCurrent = currentPublishBranch?._id === attempt.publishBranchId
+  let warning: string | undefined
+  let prNumber = laneIsCurrent ? currentPublishBranch?.prNumber : undefined
+  let prUrl = laneIsCurrent ? currentPublishBranch?.prUrl : undefined
+
+  if (laneIsCurrent) {
+    if (!prNumber) {
+      try {
+        const pr = await createPullRequest(
+          token,
+          owner,
+          repo,
+          attempt.branchName,
+          baseBranch,
+          title || "Content update via RepoPress (recovered publish)",
+          description || "Automated content update from RepoPress (recovered after an interrupted publish).",
+        )
+        prNumber = pr.number
+        prUrl = pr.htmlUrl
+      } catch (error) {
+        warning = "Recovered the commit, but opening its pull request failed; open it manually from the publish lane."
+        console.error("Failed to open PR during publish recovery:", error)
+      }
+    }
+    await convex.mutation(api.publishBranches.updateAfterCommit, {
+      id: attempt.publishBranchId,
+      userId: actingUserId,
+      projectAccessToken,
+      prNumber,
+      prUrl,
+      lastCommitSha: commitSha,
+      newFilePaths: attempt.operationPaths,
+    })
+  } else {
+    warning = "Recovered a publish on a lane that is no longer current; verify that lane's pull request manually."
+  }
+
+  if (attempt.opIds.length > 0) {
+    const markResult = await convex.mutation(api.explorerOps.markCommitted, {
+      ids: attempt.opIds,
+      deleteAssociations: attempt.deleteAssociations,
+      commitSha,
+      publishBranchId: attempt.publishBranchId,
+      userId: actingUserId,
+      projectAccessToken,
+    })
+    const reconciliationWarning = describeReconciliationWarnings(commitSha, markResult)
+    if (reconciliationWarning) {
+      warning = warning ? `${warning} ${reconciliationWarning}` : reconciliationWarning
+    }
+  }
+
+  if (attempt.mediaOpIds.length > 0) {
+    await convex.mutation(api.mediaOps.markCommitted, {
+      ids: attempt.mediaOpIds,
+      commitSha,
+      publishBranchId: attempt.publishBranchId,
+      userId: actingUserId,
+      projectAccessToken,
+    })
+  }
+
+  await convex.mutation(api.publishAttempts.markReconciled, { id: attempt._id, ...auth })
+
+  const note =
+    "Recovered a previous publish attempt without committing again. Review remaining staged changes and publish again if needed."
+  return {
+    handled: true,
+    response: NextResponse.json({
+      ok: true,
+      recovered: true,
+      commitSha,
+      prUrl,
+      prNumber,
+      summary: "recovered previous publish",
+      warning: warning ? `${warning} ${note}` : note,
+    }),
+  }
+}
+
+async function createAvailablePublishBranch({
+  token,
+  owner,
+  repo,
+  baseSha,
   scope,
   existingBranchNames,
 }: {
   token: string
   owner: string
   repo: string
-  baseBranch: string
+  baseSha: string
   scope: string
   existingBranchNames: string[]
 }) {
@@ -568,7 +905,7 @@ async function createAvailablePublishBranch({
     }
 
     try {
-      await createBranch(token, owner, repo, baseBranch, candidate)
+      await createPublishBranchFromSha(token, owner, repo, candidate, baseSha)
       return candidate
     } catch (error) {
       if (isGitHubBranchExistsError(error)) {
@@ -583,7 +920,7 @@ async function createAvailablePublishBranch({
   const timestamp = Date.now()
   const fallback = `repopress/${scope}-t${timestamp}`
   try {
-    await createBranch(token, owner, repo, baseBranch, fallback)
+    await createPublishBranchFromSha(token, owner, repo, fallback, baseSha)
     return fallback
   } catch (error) {
     if (isGitHubBranchExistsError(error)) {
@@ -632,7 +969,7 @@ async function buildMediaBatchOperations({
   token,
   owner,
   repo,
-  baseBranch,
+  authorityBranch,
   pendingMediaOps,
   prefetchResults,
   conflicts,
@@ -643,7 +980,7 @@ async function buildMediaBatchOperations({
   token: string
   owner: string
   repo: string
-  baseBranch: string
+  authorityBranch: string
   pendingMediaOps: Array<any>
   prefetchResults: Map<string, PublishFileReadResult>
   conflicts: Array<{ path: string; reason: string }>
@@ -660,14 +997,14 @@ async function buildMediaBatchOperations({
       if (!baseVersionSha || baseVersionSha !== expectedBaseSha) {
         conflicts.push({
           path: mediaOp.repoPath,
-          reason: `Media has changed on ${baseBranch} since staging (expected sha: ${expectedBaseSha}, current: ${baseVersionSha ?? "missing"})`,
+          reason: `Media has changed on ${authorityBranch} since staging (expected sha: ${expectedBaseSha}, current: ${baseVersionSha ?? "missing"})`,
         })
         continue
       }
     } else if (baseVersionSha) {
       conflicts.push({
         path: mediaOp.repoPath,
-        reason: `Media already exists on ${baseBranch}; re-upload to stage an update instead of a create.`,
+        reason: `Media already exists on ${authorityBranch}; re-upload to stage an update instead of a create.`,
       })
       continue
     }
