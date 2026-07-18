@@ -1,5 +1,6 @@
 import { v } from "convex/values"
 import { resolveStoredRepoPath, type StoredPathRepresentation } from "../lib/preview/path-policy"
+import type { Id } from "./_generated/dataModel"
 import { mutation, query } from "./_generated/server"
 import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
 
@@ -373,9 +374,21 @@ export const markCommitted = mutation({
     const deletedDocumentByOpId = new Map(
       (args.deleteAssociations ?? []).map((association) => [association.opId, association]),
     )
+    // This mutation runs AFTER the GitHub commit has landed, so it must never
+    // throw for a single bad association: throwing would roll back the whole
+    // batch, leave every op "pending" against an already-published commit, and
+    // make a retry re-commit committed work. Association-level problems skip
+    // the destructive document clear (fail closed) while the op status still
+    // records reality.
+    const skippedDeleteAssociations: Array<{
+      opId: (typeof args.ids)[number]
+      documentId: Id<"documents">
+      reason: "association-project-mismatch" | "association-path-mismatch" | "document-changed-after-snapshot"
+    }> = []
     for (const id of args.ids) {
       const op = await ctx.db.get(id)
-      // Only mark ops that are still pending (avoid overwriting concurrent undos)
+      // Only mark ops that are still pending (avoid overwriting concurrent
+      // undos, and keep retries of this mutation idempotent)
       if (op && op.status === "pending") {
         const access = await resolveProjectAccess(
           ctx,
@@ -386,30 +399,34 @@ export const markCommitted = mutation({
         const deleteAssociation = deletedDocumentByOpId.get(id)
         if (op.opType === "delete" && deleteAssociation) {
           const associatedDocument = await ctx.db.get(deleteAssociation.documentId)
+          const skip = (reason: (typeof skippedDeleteAssociations)[number]["reason"]) => {
+            skippedDeleteAssociations.push({ opId: id, documentId: deleteAssociation.documentId, reason })
+          }
           if (!associatedDocument || associatedDocument.projectId !== op.projectId) {
-            throw new Error("Delete association does not belong to the explorer operation project")
+            skip("association-project-mismatch")
+          } else {
+            const opRepoPath = resolveStoredRepoPath(
+              access.project.contentRoot,
+              op.filePath,
+              op.pathRepresentation as StoredPathRepresentation | undefined,
+            )
+            const documentRepoPath = resolveStoredRepoPath(
+              access.project.contentRoot,
+              associatedDocument.filePath,
+              associatedDocument.pathRepresentation as StoredPathRepresentation | undefined,
+            )
+            if (opRepoPath !== documentRepoPath) {
+              skip("association-path-mismatch")
+            } else if (associatedDocument.updatedAt !== deleteAssociation.expectedUpdatedAt) {
+              skip("document-changed-after-snapshot")
+            } else {
+              await ctx.db.patch(associatedDocument._id, {
+                body: undefined,
+                frontmatter: undefined,
+                updatedAt: now,
+              })
+            }
           }
-          const opRepoPath = resolveStoredRepoPath(
-            access.project.contentRoot,
-            op.filePath,
-            op.pathRepresentation as StoredPathRepresentation | undefined,
-          )
-          const documentRepoPath = resolveStoredRepoPath(
-            access.project.contentRoot,
-            associatedDocument.filePath,
-            associatedDocument.pathRepresentation as StoredPathRepresentation | undefined,
-          )
-          if (opRepoPath !== documentRepoPath) {
-            throw new Error("Delete association path does not match the explorer operation")
-          }
-          if (associatedDocument.updatedAt !== deleteAssociation.expectedUpdatedAt) {
-            throw new Error("Associated document changed after the publish snapshot")
-          }
-          await ctx.db.patch(associatedDocument._id, {
-            body: undefined,
-            frontmatter: undefined,
-            updatedAt: now,
-          })
         }
 
         await ctx.db.patch(id, {
@@ -420,6 +437,7 @@ export const markCommitted = mutation({
         })
       }
     }
+    return { skippedDeleteAssociations }
   },
 })
 

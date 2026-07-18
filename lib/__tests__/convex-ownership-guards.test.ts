@@ -368,7 +368,11 @@ describe("Convex ownership guards", () => {
     expect(patch).toHaveBeenCalledWith("op_delete", expect.objectContaining({ status: "committed" }))
   })
 
-  it("preserves a concurrently saved draft instead of committing its delete operation", async () => {
+  it("preserves a concurrently saved draft while still recording the committed delete operation", async () => {
+    // markCommitted runs after the GitHub commit has landed, so a concurrent
+    // edit must not throw (that would leave the op "pending" against a real
+    // commit and make retries re-commit it). The draft clear is skipped and
+    // reported instead; the op status records reality.
     const patch = vi.fn()
     const ctx = createCtx({
       get: vi
@@ -392,16 +396,24 @@ describe("Convex ownership guards", () => {
       patch,
     })
 
-    await expect(
-      (markExplorerOpsCommitted as any).handler(ctx, {
-        ids: ["op_delete"],
-        deleteAssociations: [{ opId: "op_delete", documentId: "doc_dirty", expectedUpdatedAt: 100 }],
-        commitSha: "commit_1",
-        userId: "user_owner",
-      }),
-    ).rejects.toThrow("changed after the publish snapshot")
+    const result = await (markExplorerOpsCommitted as any).handler(ctx, {
+      ids: ["op_delete"],
+      deleteAssociations: [{ opId: "op_delete", documentId: "doc_dirty", expectedUpdatedAt: 100 }],
+      commitSha: "commit_1",
+      userId: "user_owner",
+    })
 
-    expect(patch).not.toHaveBeenCalled()
+    expect(patch).not.toHaveBeenCalledWith("doc_dirty", expect.anything())
+    expect(patch).toHaveBeenCalledWith("op_delete", expect.objectContaining({ status: "committed" }))
+    expect(result).toEqual({
+      skippedDeleteAssociations: [
+        expect.objectContaining({
+          opId: "op_delete",
+          documentId: "doc_dirty",
+          reason: "document-changed-after-snapshot",
+        }),
+      ],
+    })
   })
 
   it("allows history restore when PAT mode supplies a valid project access token", async () => {

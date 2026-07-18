@@ -172,6 +172,78 @@ export async function getFile(accessToken: string, owner: string, repo: string, 
   }
 }
 
+/**
+ * A GitHub read failed for a reason other than the file being absent.
+ * Publish preflight must abort on this instead of treating the file as
+ * missing - conflating failures with 404 silently disables conflict
+ * detection and produces unflagged overwrites on the publish branch.
+ */
+export class GitHubReadError extends Error {
+  readonly cause?: unknown
+
+  constructor(message: string, cause?: unknown) {
+    super(message)
+    this.name = "GitHubReadError"
+    this.cause = cause
+  }
+}
+
+export type PublishFileReadResult =
+  | { status: "found"; file: { content: string; sha: string; name: string; path: string } }
+  | { status: "absent" }
+
+/**
+ * Typed file read for the publish path: only a 404 means the file is absent.
+ * Every other outcome (server error, rate limit, directory at the path,
+ * malformed response) throws GitHubReadError so publishing aborts instead of
+ * proceeding on ambiguous state.
+ */
+export async function getFileForPublish(
+  accessToken: string,
+  owner: string,
+  repo: string,
+  path: string,
+  ref?: string,
+): Promise<PublishFileReadResult> {
+  const octokit = createGitHubClient(accessToken)
+  let data: Awaited<ReturnType<typeof octokit.repos.getContent>>["data"]
+  try {
+    ;({ data } = await octokit.repos.getContent({ owner, repo, path, ref }))
+  } catch (error: any) {
+    if (error?.status === 404) {
+      return { status: "absent" }
+    }
+    throw new GitHubReadError(
+      `GitHub read failed for ${path}${ref ? ` at ${ref}` : ""} (status: ${error?.status ?? "unknown"})`,
+      error,
+    )
+  }
+
+  if (Array.isArray(data)) {
+    throw new GitHubReadError(`GitHub read for ${path} resolved to a directory, not a file`)
+  }
+  if (!("sha" in data) || !data.sha) {
+    throw new GitHubReadError(`GitHub read for ${path} returned no blob sha`)
+  }
+
+  let content: string
+  if ("content" in data && data.content) {
+    content = Buffer.from(data.content, "base64").toString("utf-8")
+  } else {
+    try {
+      const { data: blobData } = await octokit.git.getBlob({ owner, repo, file_sha: data.sha })
+      content = Buffer.from(blobData.content, "base64").toString("utf-8")
+    } catch (error: any) {
+      throw new GitHubReadError(`GitHub blob read failed for ${path} (status: ${error?.status ?? "unknown"})`, error)
+    }
+  }
+
+  return {
+    status: "found",
+    file: { content, sha: data.sha, name: data.name, path: data.path },
+  }
+}
+
 const CONTENT_EXTENSIONS = [".md", ".mdx", ".markdown"]
 
 /**

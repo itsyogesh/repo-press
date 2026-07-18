@@ -29,6 +29,8 @@ vi.mock("@/lib/github", () => ({
   createGitHubClient: vi.fn(),
   createPullRequest: vi.fn(),
   getFile: vi.fn(),
+  getFileForPublish: vi.fn(),
+  GitHubReadError: class GitHubReadError extends Error {},
   updatePullRequest: vi.fn(),
 }))
 
@@ -50,7 +52,9 @@ import {
   createBranch,
   createGitHubClient,
   createPullRequest,
+  GitHubReadError,
   getFile,
+  getFileForPublish,
   updatePullRequest,
 } from "@/lib/github"
 import { getRepoRole } from "@/lib/github-permissions"
@@ -148,6 +152,8 @@ describe("POST /api/github/publish-ops", () => {
     } as never)
     vi.mocked(batchCommit).mockResolvedValue({ commitSha: "commit-sha-1" } as never)
     vi.mocked(getFile).mockResolvedValue({ sha: "new-sha-1" } as never)
+    vi.mocked(getFileForPublish).mockResolvedValue({ status: "absent" } as never)
+    convexMutationMock.mockResolvedValue(undefined as never)
     vi.mocked(branchExists).mockResolvedValue(false)
     vi.mocked(createBranch).mockResolvedValue(undefined as never)
     vi.mocked(createPullRequest).mockResolvedValue({
@@ -1202,6 +1208,121 @@ describe("POST /api/github/publish-ops", () => {
 
     expect(response.status).toBe(409)
     expect(getFile).not.toHaveBeenCalled()
+    expect(getFileForPublish).not.toHaveBeenCalled()
     expect(batchCommit).not.toHaveBeenCalled()
+  })
+
+  describe("publish integrity", () => {
+    it("aborts with 502 before any commit when a preflight read fails for a non-404 reason", async () => {
+      vi.mocked(getFileForPublish).mockRejectedValue(
+        new GitHubReadError("GitHub read failed for content/posts/hello.mdx (status: 500)"),
+      )
+
+      const response = await POST(buildRequest({ projectId: "project_123" }))
+      const payload = await response.json()
+
+      expect(response.status).toBe(502)
+      expect(payload.ok).toBe(false)
+      expect(payload.error).toMatch(/aborted before any commit/i)
+      expect(batchCommit).not.toHaveBeenCalled()
+      expect(createPullRequest).not.toHaveBeenCalled()
+    })
+
+    it("prefetches dirty documents even when they have no githubSha", async () => {
+      const response = await POST(buildRequest({ projectId: "project_123" }))
+
+      expect(response.status).toBe(200)
+      expect(getFileForPublish).toHaveBeenCalledWith("gh-token", "acme", "docs-site", "content/posts/hello.mdx", "main")
+    })
+
+    it("preserves a metadata-export document verbatim instead of prepending YAML", async () => {
+      const body = 'export const metadata = {\n  "title": "Hello"\n}\n\n# Body\n'
+      mockPublishQueries({
+        dirtyDocs: [{ _id: "doc_1", filePath: "posts/hello.mdx", body, frontmatter: {} }],
+      })
+      vi.mocked(getFileForPublish).mockResolvedValue({
+        status: "found",
+        file: { content: body, sha: "sha-old", name: "hello.mdx", path: "content/posts/hello.mdx" },
+      } as never)
+
+      const response = await POST(buildRequest({ projectId: "project_123" }))
+
+      expect(response.status).toBe(200)
+      const operations = vi.mocked(batchCommit).mock.calls[0][4]
+      expect(operations).toEqual([
+        expect.objectContaining({ path: "content/posts/hello.mdx", action: "update", content: body }),
+      ])
+      expect(operations[0].content).not.toMatch(/^---/)
+    })
+
+    it("re-emits export const metadata for a legacy stripped draft instead of converting to YAML", async () => {
+      mockPublishQueries({
+        dirtyDocs: [{ _id: "doc_1", filePath: "posts/hello.mdx", body: "# Body\n", frontmatter: { title: "Hello" } }],
+      })
+      vi.mocked(getFileForPublish).mockResolvedValue({
+        status: "found",
+        file: {
+          content: 'export const metadata = { title: "Old" }\n\n# Old body\n',
+          sha: "sha-old",
+          name: "hello.mdx",
+          path: "content/posts/hello.mdx",
+        },
+      } as never)
+
+      const response = await POST(buildRequest({ projectId: "project_123" }))
+
+      expect(response.status).toBe(200)
+      const operations = vi.mocked(batchCommit).mock.calls[0][4]
+      expect(operations[0].content).toMatch(/^export const metadata = \{/)
+      expect(operations[0].content).toContain('"title": "Hello"')
+      expect(operations[0].content).not.toMatch(/^---/)
+    })
+
+    it("returns 409 instead of publishing duplicate metadata when an export-embedding body also has frontmatter", async () => {
+      const body = 'export const metadata = { title: "Embedded" }\n\n# Body\n'
+      mockPublishQueries({
+        dirtyDocs: [{ _id: "doc_1", filePath: "posts/hello.mdx", body, frontmatter: { title: "Panel" } }],
+      })
+
+      const response = await POST(buildRequest({ projectId: "project_123" }))
+      const payload = await response.json()
+
+      expect(response.status).toBe(409)
+      expect(payload.conflicts).toEqual([
+        expect.objectContaining({ path: "content/posts/hello.mdx", reason: expect.stringMatching(/metadata/i) }),
+      ])
+      expect(batchCommit).not.toHaveBeenCalled()
+    })
+
+    it("surfaces skipped delete associations as a warning while the publish still succeeds", async () => {
+      mockPublishQueries({
+        pendingOps: [
+          {
+            _id: "op_delete",
+            opType: "delete",
+            filePath: "posts/old.mdx",
+            createdAt: 1_000,
+          },
+        ],
+        dirtyDocs: [{ _id: "doc_1", filePath: "posts/old.mdx", body: "# Old\n", frontmatter: {}, updatedAt: 900 }],
+      })
+      convexMutationMock.mockImplementation(async (_fn: unknown, args: unknown) => {
+        if (args && typeof args === "object" && "deleteAssociations" in (args as Record<string, unknown>)) {
+          return {
+            skippedDeleteAssociations: [
+              { opId: "op_delete", documentId: "doc_1", reason: "document-changed-after-snapshot" },
+            ],
+          }
+        }
+        return undefined
+      })
+
+      const response = await POST(buildRequest({ projectId: "project_123" }))
+      const payload = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(payload.ok).toBe(true)
+      expect(payload.warning).toMatch(/kept their draft content/i)
+    })
   })
 })

@@ -1,5 +1,4 @@
 import { ConvexHttpClient } from "convex/browser"
-import matter from "gray-matter"
 import { NextResponse } from "next/server"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
@@ -10,12 +9,16 @@ import {
   createBranch,
   createGitHubClient,
   createPullRequest,
+  GitHubReadError,
   getFile,
+  getFileForPublish,
+  type PublishFileReadResult,
   updatePullRequest,
 } from "@/lib/github"
 import { resolveStoredRepoPath, type StoredPathRepresentation } from "@/lib/preview/path-policy"
 import { mintServerQueryToken } from "@/lib/project-access-token"
 import { buildPublishBranchName, derivePublishBranchScope } from "@/lib/publish-branch-name"
+import { detectMetadataSource, serializePublishContent } from "@/lib/publish-content"
 import { RouteAuthError, resolveRouteAuth } from "@/lib/route-auth"
 import { isStudioMediaResolveUrl } from "@/lib/studio/media-resolve"
 
@@ -117,9 +120,12 @@ export async function POST(request: Request) {
       }
     }
 
-    for (const { source: doc, repoPath } of resolvedDirtyDocs) {
+    for (const { repoPath } of resolvedDirtyDocs) {
       if (contentOpPaths.has(repoPath)) continue
-      if (!doc.githubSha) continue
+      // Prefetch regardless of githubSha: even when a dirty doc lost its sha,
+      // the file may still exist on GitHub, and its current content is the
+      // metadata-format authority (frontmatter vs export const metadata).
+      // A genuinely-new file reads as "absent", which yields source "none".
       pathsToFetch.set(`content:${repoPath}`, repoPath)
     }
 
@@ -128,13 +134,32 @@ export async function POST(request: Request) {
       pathsToFetch.set(`media:${normalizedPath}`, normalizedPath)
     }
 
-    const prefetchResults = new Map<string, Awaited<ReturnType<typeof getFile>>>()
-    const fetchResults = await Promise.all(
-      Array.from(pathsToFetch, async ([key, fullPath]) => {
-        const result = await getFile(token, owner, repo, fullPath, baseBranch)
-        return { key, result }
-      }),
-    )
+    // Typed preflight reads: only a 404 counts as "absent". Any other read
+    // failure aborts the publish before a commit exists - proceeding on an
+    // ambiguous read disables sha-conflict detection and produces unflagged
+    // overwrites on the publish branch.
+    const prefetchResults = new Map<string, PublishFileReadResult>()
+    let fetchResults: Array<{ key: string; result: PublishFileReadResult }>
+    try {
+      fetchResults = await Promise.all(
+        Array.from(pathsToFetch, async ([key, fullPath]) => {
+          const result = await getFileForPublish(token, owner, repo, fullPath, baseBranch)
+          return { key, result }
+        }),
+      )
+    } catch (error) {
+      if (error instanceof GitHubReadError) {
+        console.error("Publish preflight read failed:", error)
+        return NextResponse.json(
+          {
+            ok: false,
+            error: `Publish aborted before any commit: ${error.message}. Retry once GitHub reads succeed.`,
+          },
+          { status: 502 },
+        )
+      }
+      throw error
+    }
     for (const { key, result } of fetchResults) {
       prefetchResults.set(key, result)
     }
@@ -145,10 +170,10 @@ export async function POST(request: Request) {
     for (const { source: op, repoPath } of resolvedPendingOps) {
       if (op.opType === "create") {
         const existing = prefetchResults.get(`content:${repoPath}`)
-        if (existing) {
+        if (existing?.status === "found") {
           conflicts.push({
             path: repoPath,
-            reason: `File already exists on ${baseBranch} (sha: ${existing.sha})`,
+            reason: `File already exists on ${baseBranch} (sha: ${existing.file.sha})`,
           })
           continue
         }
@@ -156,11 +181,20 @@ export async function POST(request: Request) {
         const doc = dirtyDocByRepoPath.get(repoPath)
         const rawFrontmatter = doc ? doc.frontmatter || {} : op.initialFrontmatter || {}
         const rawBody = doc ? doc.body || "" : op.initialBody || ""
-        const fileContent = matter.stringify(rawBody, rewriteProxyUrls(rawFrontmatter))
+        const serialized = serializePublishContent({
+          filePath: repoPath,
+          body: rawBody,
+          frontmatter: rewriteProxyUrls(rawFrontmatter),
+          metadataSource: "none",
+        })
+        if (!serialized.ok) {
+          conflicts.push({ path: repoPath, reason: serialized.reason })
+          continue
+        }
 
         operations.push({
           path: repoPath,
-          content: fileContent,
+          content: serialized.content,
           contentEncoding: "utf-8",
           action: "create",
         })
@@ -170,10 +204,10 @@ export async function POST(request: Request) {
       if (op.opType === "delete") {
         if (op.previousSha) {
           const existing = prefetchResults.get(`content:${repoPath}`)
-          if (existing && existing.sha !== op.previousSha) {
+          if (existing?.status === "found" && existing.file.sha !== op.previousSha) {
             conflicts.push({
               path: repoPath,
-              reason: `File has been modified since staging deletion (expected sha: ${op.previousSha}, current: ${existing.sha})`,
+              reason: `File has been modified since staging deletion (expected sha: ${op.previousSha}, current: ${existing.file.sha})`,
             })
             continue
           }
@@ -185,21 +219,33 @@ export async function POST(request: Request) {
 
     for (const { source: doc, repoPath } of resolvedDirtyDocs) {
       if (contentOpPaths.has(repoPath)) continue
-      if (doc.githubSha) {
-        const existing = prefetchResults.get(`content:${repoPath}`)
-        if (existing && existing.sha !== doc.githubSha) {
-          conflicts.push({
-            path: repoPath,
-            reason: `File has been modified on GitHub since last sync (expected sha: ${doc.githubSha}, current: ${existing.sha})`,
-          })
-          continue
-        }
+      const existing = prefetchResults.get(`content:${repoPath}`)
+      if (doc.githubSha && existing?.status === "found" && existing.file.sha !== doc.githubSha) {
+        conflicts.push({
+          path: repoPath,
+          reason: `File has been modified on GitHub since last sync (expected sha: ${doc.githubSha}, current: ${existing.file.sha})`,
+        })
+        continue
       }
 
-      const fileContent = matter.stringify(doc.body || "", rewriteProxyUrls(doc.frontmatter || {}))
+      // Preserve the repository's metadata format: the existing file is the
+      // provenance authority; an absent file yields "none" (YAML only when
+      // frontmatter fields actually exist).
+      const metadataSource =
+        existing?.status === "found" ? detectMetadataSource(existing.file.content, repoPath) : "none"
+      const serialized = serializePublishContent({
+        filePath: repoPath,
+        body: doc.body || "",
+        frontmatter: rewriteProxyUrls(doc.frontmatter || {}),
+        metadataSource,
+      })
+      if (!serialized.ok) {
+        conflicts.push({ path: repoPath, reason: serialized.reason })
+        continue
+      }
       operations.push({
         path: repoPath,
-        content: fileContent,
+        content: serialized.content,
         contentEncoding: "utf-8",
         action: "update",
       })
@@ -374,7 +420,7 @@ export async function POST(request: Request) {
     })
 
     if (pendingOps.length > 0) {
-      await convex.mutation(api.explorerOps.markCommitted, {
+      const markResult = await convex.mutation(api.explorerOps.markCommitted, {
         ids: pendingOps.map((op) => op._id),
         deleteAssociations,
         commitSha,
@@ -382,6 +428,11 @@ export async function POST(request: Request) {
         userId: actingUserId,
         projectAccessToken,
       })
+      const skipped = markResult?.skippedDeleteAssociations ?? []
+      if (skipped.length > 0) {
+        const reconciliationWarning = `Commit ${commitSha} succeeded, but ${skipped.length} deleted document(s) kept their draft content in RepoPress because they changed during publishing. Review those drafts before the next publish.`
+        warning = warning ? `${warning} ${reconciliationWarning}` : reconciliationWarning
+      }
     }
 
     if (pendingMediaOps.length > 0) {
@@ -594,7 +645,7 @@ async function buildMediaBatchOperations({
   repo: string
   baseBranch: string
   pendingMediaOps: Array<any>
-  prefetchResults: Map<string, Awaited<ReturnType<typeof getFile>>>
+  prefetchResults: Map<string, PublishFileReadResult>
   conflicts: Array<{ path: string; reason: string }>
 }): Promise<BatchOperation[]> {
   const operations: BatchOperation[] = []
@@ -602,17 +653,18 @@ async function buildMediaBatchOperations({
   for (const mediaOp of pendingMediaOps) {
     const normalizedPath = normalizeMediaPath(mediaOp.repoPath)
     const baseVersion = prefetchResults.get(`media:${normalizedPath}`)
+    const baseVersionSha = baseVersion?.status === "found" ? baseVersion.file.sha : null
     const expectedBaseSha = mediaOp.githubSha ?? null
 
     if (expectedBaseSha) {
-      if (!baseVersion || baseVersion.sha !== expectedBaseSha) {
+      if (!baseVersionSha || baseVersionSha !== expectedBaseSha) {
         conflicts.push({
           path: mediaOp.repoPath,
-          reason: `Media has changed on ${baseBranch} since staging (expected sha: ${expectedBaseSha}, current: ${baseVersion?.sha ?? "missing"})`,
+          reason: `Media has changed on ${baseBranch} since staging (expected sha: ${expectedBaseSha}, current: ${baseVersionSha ?? "missing"})`,
         })
         continue
       }
-    } else if (baseVersion) {
+    } else if (baseVersionSha) {
       conflicts.push({
         path: mediaOp.repoPath,
         reason: `Media already exists on ${baseBranch}; re-upload to stage an update instead of a create.`,
