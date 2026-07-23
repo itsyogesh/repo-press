@@ -172,7 +172,17 @@ describe("POST /api/github/publish-ops", () => {
     } as never)
     vi.mocked(batchCommitPublishLaneAtExpectedHead).mockResolvedValue({ commitSha: "commit-sha-1" } as never)
     vi.mocked(getFile).mockResolvedValue({ sha: "new-sha-1" } as never)
-    vi.mocked(getFileForPublish).mockResolvedValue({ status: "absent" } as never)
+    vi.mocked(getFileForPublish).mockImplementation(async (...callArgs: unknown[]) => {
+      const path = String(callArgs[3])
+      const ref = String(callArgs[4])
+      // Post-commit reconciliation reads at the landed commit; default them
+      // to found so the happy path reconciles. Preflight reads (authority
+      // SHAs) default to absent.
+      if (ref.startsWith("commit-sha") || ref === "landed-sha-1") {
+        return { status: "found", file: { content: "", sha: "synced-sha", name: "", path } }
+      }
+      return { status: "absent" }
+    })
     vi.mocked(getBranchHeadForPublish).mockResolvedValue({ status: "found", sha: "authority-sha-1" } as never)
     vi.mocked(findOpenPublishLanePullRequest).mockResolvedValue(null as never)
     convexMutationMock.mockResolvedValue(undefined as never)
@@ -1411,7 +1421,9 @@ describe("POST /api/github/publish-ops", () => {
 
       const second = await POST(buildRequest({ projectId: "project_123" }))
       expect(second.status).toBe(200)
-      expect(getFileForPublish).toHaveBeenLastCalledWith(
+      // The second publish's PREFLIGHT read is pinned to the advanced lane
+      // head (the post-commit refresh reads at commit-sha-2 afterwards).
+      expect(getFileForPublish).toHaveBeenCalledWith(
         "gh-token",
         "acme",
         "docs-site",
@@ -1464,7 +1476,7 @@ describe("POST /api/github/publish-ops", () => {
         planDigest: PLAN_DIGEST,
         operationPaths: ["content/posts/old.mdx"],
         opIds: ["op_delete"],
-        mediaOpIds: [],
+        mediaAssociations: [],
         documentAssociations: [],
         deleteAssociations: [{ opId: "op_delete", documentId: "doc_1", expectedUpdatedAt: 900 }],
         status: "committing",
@@ -1522,7 +1534,7 @@ describe("POST /api/github/publish-ops", () => {
         planDigest: PLAN_DIGEST,
         operationPaths: ["content/posts/old.mdx"],
         opIds: ["op_delete"],
-        mediaOpIds: [],
+        mediaAssociations: [],
         documentAssociations: [],
         deleteAssociations: [],
         status: "committed",
@@ -1562,7 +1574,7 @@ describe("POST /api/github/publish-ops", () => {
         planDigest: PLAN_DIGEST,
         operationPaths: [],
         opIds: [],
-        mediaOpIds: [],
+        mediaAssociations: [],
         documentAssociations: [],
         deleteAssociations: [],
         status: "committing",
@@ -1631,7 +1643,7 @@ describe("POST /api/github/publish-ops", () => {
         planDigest: PLAN_DIGEST,
         operationPaths: ["content/posts/old.mdx"],
         opIds: [],
-        mediaOpIds: [],
+        mediaAssociations: [],
         documentAssociations: [],
         deleteAssociations: [],
         status: "committed",
@@ -1782,7 +1794,10 @@ describe("POST /api/github/publish-ops", () => {
         }),
         attemptLane: recoveryLane,
       })
-      vi.mocked(getFile).mockResolvedValue({ sha: "refreshed-sha" } as never)
+      vi.mocked(getFileForPublish).mockImplementation(async (...callArgs: unknown[]) => {
+        const path = String(callArgs[3])
+        return { status: "found", file: { content: "", sha: "refreshed-sha", name: "", path } }
+      })
       const documentUpdates: unknown[] = []
       convexMutationMock.mockImplementation(async (_fn: unknown, args: unknown) => {
         if (args && typeof args === "object" && "githubSha" in (args as Record<string, unknown>)) {
@@ -1794,7 +1809,13 @@ describe("POST /api/github/publish-ops", () => {
       const response = await POST(buildRequest({ projectId: "project_123" }))
 
       expect(response.status).toBe(200)
-      expect(getFile).toHaveBeenCalledWith("gh-token", "acme", "docs-site", "content/posts/hello.mdx", "commit-sha-1")
+      expect(getFileForPublish).toHaveBeenCalledWith(
+        "gh-token",
+        "acme",
+        "docs-site",
+        "content/posts/hello.mdx",
+        "commit-sha-1",
+      )
       expect(documentUpdates).toEqual([expect.objectContaining({ id: "doc_9", githubSha: "refreshed-sha" })])
     })
 
@@ -1888,7 +1909,15 @@ describe("POST /api/github/publish-ops", () => {
         }
         return undefined
       })
-      vi.mocked(getFile).mockRejectedValue(Object.assign(new Error("boom"), { status: 500 }))
+      vi.mocked(getFileForPublish).mockImplementation(async (...callArgs: unknown[]) => {
+        const ref = String(callArgs[4])
+        if (ref.startsWith("commit-sha")) {
+          // Real production failure mode: the TYPED read throws - nothing is
+          // silently converted to null.
+          throw new GitHubReadError("GitHub read failed (status: 500)")
+        }
+        return { status: "absent" }
+      })
 
       const first = await POST(buildRequest({ projectId: "project_123" }))
       const firstPayload = await first.json()
@@ -1920,7 +1949,14 @@ describe("POST /api/github/publish-ops", () => {
         }
         return undefined
       })
-      vi.mocked(getFile).mockResolvedValue({ sha: "refreshed-sha" } as never)
+      vi.mocked(getFileForPublish).mockImplementation(async (...callArgs: unknown[]) => {
+        const path = String(callArgs[3])
+        const ref = String(callArgs[4])
+        if (ref.startsWith("commit-sha")) {
+          return { status: "found", file: { content: "", sha: "refreshed-sha", name: "", path } }
+        }
+        return { status: "absent" }
+      })
 
       const retry = await POST(buildRequest({ projectId: "project_123" }))
       const retryPayload = await retry.json()

@@ -33,6 +33,8 @@ describe("mediaOps.stage", () => {
         insert: vi.fn(),
         query: vi.fn(() => ({
           withIndex: () => ({
+            // No publish attempt is at the commit boundary in this scenario.
+            first: vi.fn().mockResolvedValue(null),
             filter: () => ({
               first: vi.fn().mockResolvedValue({
                 _id: "media_op_1",

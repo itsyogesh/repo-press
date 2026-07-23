@@ -19,15 +19,19 @@ vi.mock("@/convex/auth", () => ({
 }))
 
 import { discardAll, markCommitted, undoOp } from "@/convex/explorerOps"
-import { cleanupMediaForBranch, undoByRepoPath as undoMediaByRepoPath } from "@/convex/mediaOps"
+import { cleanupMediaForBranch, stage as stageMedia, undoByRepoPath as undoMediaByRepoPath } from "@/convex/mediaOps"
 import { mintProjectAccessToken } from "@/lib/project-access-token"
 
 function createCtx(
   get: ReturnType<typeof vi.fn>,
   patch: ReturnType<typeof vi.fn>,
-  options?: { activePublishAttempt?: Record<string, unknown> | null },
+  options?: {
+    activePublishAttempt?: Record<string, unknown> | null
+    pendingMediaRow?: Record<string, unknown> | null
+  },
 ) {
   const activePublishAttempt = options?.activePublishAttempt ?? null
+  const pendingMediaRow = options?.pendingMediaRow ?? null
   const emptyChain = (): any => ({
     first: vi.fn().mockResolvedValue(null),
     collect: vi.fn().mockResolvedValue([]),
@@ -43,7 +47,14 @@ function createCtx(
         withIndex: () => ({
           first: vi.fn().mockResolvedValue(table === "publishAttempts" ? activePublishAttempt : null),
           collect: vi.fn().mockResolvedValue([]),
-          filter: () => emptyChain(),
+          filter: () =>
+            table === "mediaOps" && pendingMediaRow
+              ? {
+                  first: vi.fn().mockResolvedValue(pendingMediaRow),
+                  collect: vi.fn().mockResolvedValue([]),
+                  filter: () => emptyChain(),
+                }
+              : emptyChain(),
         }),
       })),
     },
@@ -287,6 +298,33 @@ describe("publish attempt guard on undo/discard", () => {
 
     // No pending op in the mocked table; the guard let the call through.
     expect(result).toBeNull()
+    expect(patch).not.toHaveBeenCalled()
+  })
+
+  it("refuses to replace an existing pending media upload while a publish attempt is active", async () => {
+    const patch = vi.fn()
+    const get = vi.fn().mockResolvedValueOnce(project)
+
+    await expect(
+      (stageMedia as any).handler(
+        createCtx(get, patch, {
+          activePublishAttempt: activeAttempt,
+          pendingMediaRow: { _id: "media_1", projectId: "project_1", convexStorageId: "storage_old" },
+        }),
+        {
+          projectId: "project_1",
+          repoPath: "/public/uploads/pic.png",
+          fileName: "pic.png",
+          mimeType: "image/png",
+          sourceType: "convex",
+          convexStorageId: "storage_new",
+          userId: "user_owner",
+          projectAccessToken: await patToken(),
+        },
+      ),
+    ).rejects.toThrow(/publish is in progress/i)
+
+    // Neither the row nor the referenced storage was touched.
     expect(patch).not.toHaveBeenCalled()
   })
 

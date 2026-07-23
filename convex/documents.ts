@@ -823,7 +823,53 @@ export const listDirtyForProject = query({
       .query("documents")
       .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", "approved"))
       .collect()
-    return [...drafts, ...approved].filter((d) => d.body != null || d.frontmatter != null)
+    return [...drafts, ...approved].filter(
+      (d) =>
+        (d.body != null || d.frontmatter != null) &&
+        // Lane-synchronization provenance: a document whose exact snapshot
+        // was published and reconciled is clean until the next edit
+        // diverges updatedAt from lastPublishedUpdatedAt.
+        d.lastPublishedUpdatedAt !== d.updatedAt,
+    )
+  },
+})
+
+/**
+ * Record lane-synchronization provenance after a publish reconciled this
+ * document. Guarded by a compare-and-swap on updatedAt: when the document
+ * still matches the published snapshot it becomes clean
+ * (lastPublishedUpdatedAt === updatedAt); when it was edited during the
+ * publish, only githubSha is refreshed and the newer draft stays dirty.
+ */
+export const markPublishedSnapshot = mutation({
+  args: {
+    id: v.id("documents"),
+    githubSha: v.string(),
+    expectedUpdatedAt: v.number(),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const doc = await ctx.db.get(args.id)
+    if (!doc) throw new Error("Document not found")
+    await resolveProjectAccess(
+      ctx,
+      { projectId: doc.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken },
+      "editor",
+    )
+    const now = Date.now()
+    if (doc.updatedAt === args.expectedUpdatedAt) {
+      await ctx.db.patch(args.id, {
+        githubSha: args.githubSha,
+        lastPublishedUpdatedAt: now,
+        updatedAt: now,
+      })
+      return { synchronized: true }
+    }
+    // Edited during publishing: refresh conflict-detection state only; the
+    // concurrent draft remains dirty.
+    await ctx.db.patch(args.id, { githubSha: args.githubSha, updatedAt: now })
+    return { synchronized: false }
   },
 })
 

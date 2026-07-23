@@ -68,6 +68,10 @@ export const stage = mutation({
       .first()
 
     if (existingPending) {
+      // Replacing an existing pending row mutates bytes an active publish
+      // attempt may have planned - refuse while one is at the commit
+      // boundary (a brand-new row below is safe: no attempt references it).
+      await assertNoActivePublishAttempt(ctx.db, args.projectId)
       // If replacing a Convex-stored file, delete the old storage entry first.
       if (existingPending.convexStorageId && existingPending.convexStorageId !== args.convexStorageId) {
         try {

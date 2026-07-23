@@ -14,7 +14,6 @@ import {
   GitHubReadError,
   getBranchHeadForPublish,
   getCommitDetailsForPublish,
-  getFile,
   getFileForPublish,
   type PublishFileReadResult,
   updatePullRequest,
@@ -512,7 +511,11 @@ export async function POST(request: Request) {
         planDigest,
         operationPaths: operations.map((operation) => operation.path),
         opIds: pendingOps.map((op) => op._id),
-        mediaOpIds: pendingMediaOps.map((op) => op._id),
+        mediaAssociations: pendingMediaOps.map((op) => ({
+          mediaOpId: op._id,
+          repoPath: op.repoPath,
+          expectedUpdatedAt: op.updatedAt,
+        })),
         documentAssociations,
         deleteAssociations,
         userId: actingUserId,
@@ -812,10 +815,14 @@ async function ensureLanePullRequest({
 const MAX_RECOVERY_ANCESTRY_DEPTH = 20
 
 /**
- * Refresh the stored githubSha of each associated document to its blob at
- * the exact landed commit. Failures are counted, not swallowed-and-forgotten:
- * callers must keep the attempt un-reconciled when failedCount > 0 so a
- * retry can finish the sync without committing again.
+ * Reconcile each associated document against the exact landed commit using
+ * TYPED reads: a GitHub failure throws (counted), and an absent associated
+ * file is ALSO counted as a failure - every association was planned to
+ * exist at the landed commit, so absence is an anomaly, not success.
+ * Callers must keep the attempt un-reconciled when failedCount > 0 so a
+ * retry can finish the sync without committing again. On success the
+ * document records lane-synchronization provenance (markPublishedSnapshot)
+ * and becomes clean unless it was edited during the publish.
  */
 async function refreshDocumentShasAtCommit({
   convex,
@@ -832,24 +839,25 @@ async function refreshDocumentShasAtCommit({
   owner: string
   repo: string
   commitSha: string
-  documentAssociations: Array<{ documentId: Id<"documents">; repoPath: string }>
+  documentAssociations: Array<{ documentId: Id<"documents">; repoPath: string; expectedUpdatedAt: number }>
   actingUserId?: string
   projectAccessToken?: string
 }): Promise<{ failedCount: number }> {
   let failedCount = 0
-  for (const { documentId, repoPath } of documentAssociations) {
+  for (const { documentId, repoPath, expectedUpdatedAt } of documentAssociations) {
     try {
-      const fileAtCommit = await getFile(token, owner, repo, repoPath, commitSha)
-      if (!fileAtCommit?.sha) {
-        // The associated file is genuinely absent at the landed commit (its
-        // operation conflicted out of the plan); nothing to refresh.
+      const fileAtCommit = await getFileForPublish(token, owner, repo, repoPath, commitSha)
+      if (fileAtCommit.status === "absent") {
+        failedCount += 1
+        console.error("Document SHA refresh found no file at the landed commit:", { documentId, repoPath, commitSha })
         continue
       }
-      await convex.mutation(api.documents.update, {
+      await convex.mutation(api.documents.markPublishedSnapshot, {
         id: documentId,
+        githubSha: fileAtCommit.file.sha,
+        expectedUpdatedAt,
         userId: actingUserId,
         projectAccessToken,
-        githubSha: fileAtCommit.sha,
       })
     } catch (error) {
       failedCount += 1
@@ -868,7 +876,7 @@ type RecoverablePublishAttempt = {
   planDigest: string
   operationPaths: string[]
   opIds: Id<"explorerOps">[]
-  mediaOpIds: Id<"mediaOps">[]
+  mediaAssociations: Array<{ mediaOpId: Id<"mediaOps">; repoPath: string; expectedUpdatedAt: number }>
   documentAssociations: Array<{ documentId: Id<"documents">; repoPath: string; expectedUpdatedAt: number }>
   deleteAssociations: Array<{ opId: Id<"explorerOps">; documentId: Id<"documents">; expectedUpdatedAt: number }>
   // getActiveForProject only returns committing/committed attempts; the wider
@@ -1087,9 +1095,9 @@ async function recoverPublishAttempt({
   }
 
   let mediaMarkResult: { unreconciledMediaOpIds?: unknown[] } | undefined
-  if (attempt.mediaOpIds.length > 0) {
+  if (attempt.mediaAssociations.length > 0) {
     mediaMarkResult = await convex.mutation(api.mediaOps.markCommitted, {
-      ids: attempt.mediaOpIds,
+      ids: attempt.mediaAssociations.map((association) => association.mediaOpId),
       commitSha,
       publishBranchId: attempt.publishBranchId,
       userId: actingUserId,

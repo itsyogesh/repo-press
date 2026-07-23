@@ -46,7 +46,13 @@ export const begin = mutation({
     planDigest: v.string(),
     operationPaths: v.array(v.string()),
     opIds: v.array(v.id("explorerOps")),
-    mediaOpIds: v.array(v.id("mediaOps")),
+    mediaAssociations: v.array(
+      v.object({
+        mediaOpId: v.id("mediaOps"),
+        repoPath: v.string(),
+        expectedUpdatedAt: v.number(),
+      }),
+    ),
     documentAssociations: v.array(
       v.object({
         documentId: v.id("documents"),
@@ -77,7 +83,7 @@ export const begin = mutation({
     }
     if (
       args.opIds.length > MAX_ATTEMPT_OPERATIONS ||
-      args.mediaOpIds.length > MAX_ATTEMPT_OPERATIONS ||
+      args.mediaAssociations.length > MAX_ATTEMPT_OPERATIONS ||
       args.documentAssociations.length > MAX_ATTEMPT_OPERATIONS ||
       args.deleteAssociations.length > MAX_ATTEMPT_OPERATIONS ||
       args.operationPaths.length > MAX_ATTEMPT_OPERATIONS * 2
@@ -90,8 +96,8 @@ export const begin = mutation({
       }
     }
     const opIdSet = new Set(args.opIds.map(String))
-    const mediaIdSet = new Set(args.mediaOpIds.map(String))
-    if (opIdSet.size !== args.opIds.length || mediaIdSet.size !== args.mediaOpIds.length) {
+    const mediaIdSet = new Set(args.mediaAssociations.map((a) => String(a.mediaOpId)))
+    if (opIdSet.size !== args.opIds.length || mediaIdSet.size !== args.mediaAssociations.length) {
       throw new Error("Publish attempt contains duplicate operation references")
     }
     if (new Set(args.documentAssociations.map((a) => String(a.documentId))).size !== args.documentAssociations.length) {
@@ -129,13 +135,23 @@ export const begin = mutation({
         ),
       })
     }
-    for (const mediaOpId of args.mediaOpIds) {
-      const mediaOp = await ctx.db.get(mediaOpId)
+    for (const association of args.mediaAssociations) {
+      const mediaOp = await ctx.db.get(association.mediaOpId)
       if (!mediaOp || mediaOp.projectId !== args.projectId) {
         throw new Error("Publish attempt references a media op outside the project")
       }
       if (mediaOp.status !== "pending") {
         throw new Error("Staged changes changed since planning: a media upload is no longer pending")
+      }
+      // Versioned snapshot: an in-place replacement (new bytes, new source)
+      // bumps updatedAt, and a moved upload changes repoPath - both must
+      // reject rather than committing stale bytes and then marking the
+      // NEW row committed.
+      if (mediaOp.repoPath !== association.repoPath) {
+        throw new Error("Staged changes changed since planning: a media upload path no longer matches")
+      }
+      if (mediaOp.updatedAt !== association.expectedUpdatedAt) {
+        throw new Error("Staged changes changed since planning: a media upload was replaced")
       }
     }
     const validateDocumentSnapshot = async (association: {
@@ -185,7 +201,7 @@ export const begin = mutation({
       planDigest: args.planDigest,
       operationPaths: args.operationPaths,
       opIds: args.opIds,
-      mediaOpIds: args.mediaOpIds,
+      mediaAssociations: args.mediaAssociations,
       documentAssociations: args.documentAssociations,
       deleteAssociations: args.deleteAssociations,
       status: "committing",

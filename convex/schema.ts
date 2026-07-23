@@ -187,6 +187,11 @@ export default defineSchema({
     // GitHub sync state
     githubSha: v.optional(v.string()),
     lastSyncedAt: v.optional(v.number()),
+    // Lane-synchronization provenance: set (to the same value as updatedAt)
+    // when a publish successfully committed and reconciled this document's
+    // exact planned snapshot. The document is "clean" for publishing while
+    // lastPublishedUpdatedAt === updatedAt; any later edit diverges them.
+    lastPublishedUpdatedAt: v.optional(v.number()),
     // Scheduling
     publishedAt: v.optional(v.number()),
     scheduledAt: v.optional(v.number()),
@@ -398,7 +403,16 @@ export default defineSchema({
     planDigest: v.string(),
     operationPaths: v.array(v.string()),
     opIds: v.array(v.id("explorerOps")),
-    mediaOpIds: v.array(v.id("mediaOps")),
+    // Versioned media snapshot: identity + planned repoPath + planned
+    // updatedAt, so an in-place replacement racing the publish is caught
+    // transactionally at begin.
+    mediaAssociations: v.array(
+      v.object({
+        mediaOpId: v.id("mediaOps"),
+        repoPath: v.string(),
+        expectedUpdatedAt: v.number(),
+      }),
+    ),
     documentAssociations: v.array(
       v.object({
         documentId: v.id("documents"),

@@ -59,7 +59,7 @@ const baseArgs = {
   planDigest: "d".repeat(64),
   operationPaths: ["content/a.mdx"],
   opIds: [],
-  mediaOpIds: [],
+  mediaAssociations: [],
   documentAssociations: [],
   deleteAssociations: [],
   userId: "user_owner",
@@ -248,6 +248,56 @@ describe("publishAttempts.begin transactional reference validation", () => {
         projectAccessToken: await patToken(),
       }),
     ).rejects.toThrow(/pending delete operation included in this attempt/i)
+
+    expect(insert).not.toHaveBeenCalled()
+  })
+
+  it("rejects a media upload replaced in place after planning (versioned association)", async () => {
+    const insert = vi.fn()
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce(project)
+      .mockResolvedValueOnce({ _id: "lane_1", projectId: "project_1", branchName: "repopress/start" })
+      .mockResolvedValueOnce({
+        _id: "media_1",
+        projectId: "project_1",
+        repoPath: "/public/uploads/pic.png",
+        status: "pending",
+        updatedAt: 9, // stage() replaced the bytes after planning
+      })
+
+    await expect(
+      (begin as any).handler(createCtx(get, insert), {
+        ...baseArgs,
+        mediaAssociations: [{ mediaOpId: "media_1", repoPath: "/public/uploads/pic.png", expectedUpdatedAt: 5 }],
+        projectAccessToken: await patToken(),
+      }),
+    ).rejects.toThrow(/media upload was replaced/i)
+
+    expect(insert).not.toHaveBeenCalled()
+  })
+
+  it("rejects a media upload whose repoPath no longer matches the planned association", async () => {
+    const insert = vi.fn()
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce(project)
+      .mockResolvedValueOnce({ _id: "lane_1", projectId: "project_1", branchName: "repopress/start" })
+      .mockResolvedValueOnce({
+        _id: "media_1",
+        projectId: "project_1",
+        repoPath: "/public/uploads/moved.png",
+        status: "pending",
+        updatedAt: 5,
+      })
+
+    await expect(
+      (begin as any).handler(createCtx(get, insert), {
+        ...baseArgs,
+        mediaAssociations: [{ mediaOpId: "media_1", repoPath: "/public/uploads/pic.png", expectedUpdatedAt: 5 }],
+        projectAccessToken: await patToken(),
+      }),
+    ).rejects.toThrow(/media upload path no longer matches/i)
 
     expect(insert).not.toHaveBeenCalled()
   })
