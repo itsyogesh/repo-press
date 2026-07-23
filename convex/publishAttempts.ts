@@ -1,7 +1,13 @@
 import { v } from "convex/values"
+import { resolveStoredRepoPath, type StoredPathRepresentation } from "../lib/preview/path-policy"
 import { mutation, query } from "./_generated/server"
 import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
 import { findActivePublishAttempt } from "./lib/publishAttemptGuard"
+
+const MAX_ATTEMPT_OPERATIONS = 500
+const MAX_ATTEMPT_PATH_LENGTH = 512
+const SHA_PATTERN = /^[0-9a-f]{40}$/
+const DIGEST_PATTERN = /^[0-9a-f]{64}$/
 
 const deleteAssociationValidator = v.object({
   opId: v.id("explorerOps"),
@@ -45,6 +51,7 @@ export const begin = mutation({
       v.object({
         documentId: v.id("documents"),
         repoPath: v.string(),
+        expectedUpdatedAt: v.number(),
       }),
     ),
     deleteAssociations: v.array(deleteAssociationValidator),
@@ -52,7 +59,7 @@ export const begin = mutation({
     projectAccessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await resolveProjectAccess(
+    const access = await resolveProjectAccess(
       ctx,
       { projectId: args.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken },
       "editor",
@@ -62,31 +69,111 @@ export const begin = mutation({
       throw new Error("Another publish attempt is still active for this project")
     }
 
-    // Validate every reference inside this transaction so a recovered
-    // attempt can trust its own snapshot: the lane must be this project's
-    // lane under the recorded name, and every op/media/document reference
-    // must belong to this project. All arrays are bounded by staged sizes.
+    // ── Shape bounds and duplicate rejection ──
+    if (!SHA_PATTERN.test(args.expectedHeadSha)) throw new Error("Publish attempt expected head must be a 40-hex SHA")
+    if (!DIGEST_PATTERN.test(args.planDigest)) throw new Error("Publish attempt plan digest must be a 64-hex digest")
+    if (!args.branchName.startsWith("repopress/") || args.branchName.startsWith("repopress/install/")) {
+      throw new Error("Publish attempt branch must be a repopress/ publish lane")
+    }
+    if (
+      args.opIds.length > MAX_ATTEMPT_OPERATIONS ||
+      args.mediaOpIds.length > MAX_ATTEMPT_OPERATIONS ||
+      args.documentAssociations.length > MAX_ATTEMPT_OPERATIONS ||
+      args.deleteAssociations.length > MAX_ATTEMPT_OPERATIONS ||
+      args.operationPaths.length > MAX_ATTEMPT_OPERATIONS * 2
+    ) {
+      throw new Error("Publish attempt exceeds the staged operation bounds")
+    }
+    for (const path of args.operationPaths) {
+      if (path.length === 0 || path.length > MAX_ATTEMPT_PATH_LENGTH) {
+        throw new Error("Publish attempt operation path exceeds bounds")
+      }
+    }
+    const opIdSet = new Set(args.opIds.map(String))
+    const mediaIdSet = new Set(args.mediaOpIds.map(String))
+    if (opIdSet.size !== args.opIds.length || mediaIdSet.size !== args.mediaOpIds.length) {
+      throw new Error("Publish attempt contains duplicate operation references")
+    }
+    if (new Set(args.documentAssociations.map((a) => String(a.documentId))).size !== args.documentAssociations.length) {
+      throw new Error("Publish attempt contains duplicate document associations")
+    }
+    if (new Set(args.deleteAssociations.map((a) => String(a.opId))).size !== args.deleteAssociations.length) {
+      throw new Error("Publish attempt contains duplicate delete associations")
+    }
+
+    // ── Transactional snapshot-freshness validation ──
+    // The route planned this publish from an earlier read. Everything the
+    // attempt is about to commit must STILL be in that planned state inside
+    // this transaction - otherwise a discard/undo/save that raced planning
+    // could be committed silently from stale in-memory content.
     const lane = await ctx.db.get(args.publishBranchId)
     if (!lane || lane.projectId !== args.projectId || lane.branchName !== args.branchName) {
       throw new Error("Publish attempt lane does not match the project's publish branch")
     }
+    const contentRoot = access.project.contentRoot
+    const opById = new Map<string, { opType: string; repoPath: string }>()
     for (const opId of args.opIds) {
       const op = await ctx.db.get(opId)
       if (!op || op.projectId !== args.projectId) {
         throw new Error("Publish attempt references an explorer op outside the project")
       }
+      if (op.status !== "pending") {
+        throw new Error("Staged changes changed since planning: an operation is no longer pending")
+      }
+      opById.set(String(opId), {
+        opType: op.opType,
+        repoPath: resolveStoredRepoPath(
+          contentRoot,
+          op.filePath,
+          op.pathRepresentation as StoredPathRepresentation | undefined,
+        ),
+      })
     }
     for (const mediaOpId of args.mediaOpIds) {
       const mediaOp = await ctx.db.get(mediaOpId)
       if (!mediaOp || mediaOp.projectId !== args.projectId) {
         throw new Error("Publish attempt references a media op outside the project")
       }
+      if (mediaOp.status !== "pending") {
+        throw new Error("Staged changes changed since planning: a media upload is no longer pending")
+      }
     }
-    for (const association of [...args.deleteAssociations, ...args.documentAssociations]) {
+    const validateDocumentSnapshot = async (association: {
+      documentId: (typeof args.documentAssociations)[number]["documentId"]
+      repoPath: string
+      expectedUpdatedAt: number
+    }) => {
       const document = await ctx.db.get(association.documentId)
       if (!document || document.projectId !== args.projectId) {
         throw new Error("Publish attempt references a document outside the project")
       }
+      if (document.updatedAt !== association.expectedUpdatedAt) {
+        throw new Error("Staged changes changed since planning: a document was edited or discarded")
+      }
+      const resolvedPath = resolveStoredRepoPath(
+        contentRoot,
+        document.filePath,
+        document.pathRepresentation as StoredPathRepresentation | undefined,
+      )
+      if (resolvedPath !== association.repoPath) {
+        throw new Error("Staged changes changed since planning: a document path no longer matches")
+      }
+    }
+    for (const association of args.documentAssociations) {
+      await validateDocumentSnapshot(association)
+    }
+    for (const association of args.deleteAssociations) {
+      const owningOp = opById.get(String(association.opId))
+      if (!owningOp || owningOp.opType !== "delete") {
+        throw new Error("Delete association must reference a pending delete operation included in this attempt")
+      }
+      // The associated document must still match the planned snapshot AND
+      // resolve to the same path as its owning delete operation.
+      await validateDocumentSnapshot({
+        documentId: association.documentId,
+        repoPath: owningOp.repoPath,
+        expectedUpdatedAt: association.expectedUpdatedAt,
+      })
     }
 
     const now = Date.now()

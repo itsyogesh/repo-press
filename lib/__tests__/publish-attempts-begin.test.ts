@@ -49,14 +49,14 @@ async function patToken() {
   })
 }
 
-const project = { _id: "project_1", userId: "user_owner" }
+const project = { _id: "project_1", userId: "user_owner", contentRoot: "content" }
 
 const baseArgs = {
   projectId: "project_1",
   publishBranchId: "lane_1",
   branchName: "repopress/start",
   expectedHeadSha: "a".repeat(40),
-  planDigest: "digest-1",
+  planDigest: "d".repeat(64),
   operationPaths: ["content/a.mdx"],
   opIds: [],
   mediaOpIds: [],
@@ -87,7 +87,7 @@ describe("publishAttempts.begin transactional reference validation", () => {
     expect(result).toBe("attempt_1")
     expect(insert).toHaveBeenCalledWith(
       "publishAttempts",
-      expect.objectContaining({ status: "committing", planDigest: "digest-1" }),
+      expect.objectContaining({ status: "committing", planDigest: "d".repeat(64) }),
     )
   })
 
@@ -149,10 +149,146 @@ describe("publishAttempts.begin transactional reference validation", () => {
     await expect(
       (begin as any).handler(createCtx(get, insert), {
         ...baseArgs,
-        documentAssociations: [{ documentId: "doc_1", repoPath: "content/a.mdx" }],
+        documentAssociations: [{ documentId: "doc_1", repoPath: "content/a.mdx", expectedUpdatedAt: 5 }],
         projectAccessToken: await patToken(),
       }),
     ).rejects.toThrow(/document outside the project/i)
+
+    expect(insert).not.toHaveBeenCalled()
+  })
+
+  it("rejects a document edited or discarded after planning (stale updatedAt)", async () => {
+    const insert = vi.fn()
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce(project)
+      .mockResolvedValueOnce({ _id: "lane_1", projectId: "project_1", branchName: "repopress/start" })
+      .mockResolvedValueOnce({
+        _id: "doc_1",
+        projectId: "project_1",
+        filePath: "a.mdx",
+        pathRepresentation: "content_relative_v1",
+        updatedAt: 6, // saved again after planning
+      })
+
+    await expect(
+      (begin as any).handler(createCtx(get, insert), {
+        ...baseArgs,
+        documentAssociations: [{ documentId: "doc_1", repoPath: "content/a.mdx", expectedUpdatedAt: 5 }],
+        projectAccessToken: await patToken(),
+      }),
+    ).rejects.toThrow(/edited or discarded/i)
+
+    expect(insert).not.toHaveBeenCalled()
+  })
+
+  it("rejects a document whose resolved path no longer matches the planned association", async () => {
+    const insert = vi.fn()
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce(project)
+      .mockResolvedValueOnce({ _id: "lane_1", projectId: "project_1", branchName: "repopress/start" })
+      .mockResolvedValueOnce({
+        _id: "doc_1",
+        projectId: "project_1",
+        filePath: "renamed.mdx",
+        pathRepresentation: "content_relative_v1",
+        updatedAt: 5,
+      })
+
+    await expect(
+      (begin as any).handler(createCtx(get, insert), {
+        ...baseArgs,
+        documentAssociations: [{ documentId: "doc_1", repoPath: "content/a.mdx", expectedUpdatedAt: 5 }],
+        projectAccessToken: await patToken(),
+      }),
+    ).rejects.toThrow(/path no longer matches/i)
+
+    expect(insert).not.toHaveBeenCalled()
+  })
+
+  it("rejects an operation that is no longer pending (undone after planning)", async () => {
+    const insert = vi.fn()
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce(project)
+      .mockResolvedValueOnce({ _id: "lane_1", projectId: "project_1", branchName: "repopress/start" })
+      .mockResolvedValueOnce({
+        _id: "op_1",
+        projectId: "project_1",
+        opType: "create",
+        filePath: "a.mdx",
+        pathRepresentation: "content_relative_v1",
+        status: "undone",
+      })
+
+    await expect(
+      (begin as any).handler(createCtx(get, insert), {
+        ...baseArgs,
+        opIds: ["op_1"],
+        projectAccessToken: await patToken(),
+      }),
+    ).rejects.toThrow(/no longer pending/i)
+
+    expect(insert).not.toHaveBeenCalled()
+  })
+
+  it("rejects a delete association whose op is not an included pending delete", async () => {
+    const insert = vi.fn()
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce(project)
+      .mockResolvedValueOnce({ _id: "lane_1", projectId: "project_1", branchName: "repopress/start" })
+
+    await expect(
+      (begin as any).handler(createCtx(get, insert), {
+        ...baseArgs,
+        // op_missing is not in opIds at all
+        deleteAssociations: [{ opId: "op_missing", documentId: "doc_1", expectedUpdatedAt: 5 }],
+        projectAccessToken: await patToken(),
+      }),
+    ).rejects.toThrow(/pending delete operation included in this attempt/i)
+
+    expect(insert).not.toHaveBeenCalled()
+  })
+
+  it("rejects duplicate operation references", async () => {
+    const insert = vi.fn()
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce(project)
+      .mockResolvedValueOnce({ _id: "lane_1", projectId: "project_1", branchName: "repopress/start" })
+
+    await expect(
+      (begin as any).handler(createCtx(get, insert), {
+        ...baseArgs,
+        opIds: ["op_1", "op_1"],
+        projectAccessToken: await patToken(),
+      }),
+    ).rejects.toThrow(/duplicate operation references/i)
+
+    expect(insert).not.toHaveBeenCalled()
+  })
+
+  it("rejects malformed digests and out-of-bounds arrays", async () => {
+    const insert = vi.fn()
+    const get = vi.fn().mockResolvedValue(project)
+
+    await expect(
+      (begin as any).handler(createCtx(get, insert), {
+        ...baseArgs,
+        planDigest: "not-a-digest",
+        projectAccessToken: await patToken(),
+      }),
+    ).rejects.toThrow(/64-hex digest/i)
+
+    await expect(
+      (begin as any).handler(createCtx(get, insert), {
+        ...baseArgs,
+        opIds: Array.from({ length: 501 }, (_v, i) => `op_${i}`),
+        projectAccessToken: await patToken(),
+      }),
+    ).rejects.toThrow(/staged operation bounds/i)
 
     expect(insert).not.toHaveBeenCalled()
   })

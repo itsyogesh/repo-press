@@ -19,7 +19,7 @@ vi.mock("@/convex/auth", () => ({
 }))
 
 import { discardAll, markCommitted, undoOp } from "@/convex/explorerOps"
-import { undoByRepoPath as undoMediaByRepoPath } from "@/convex/mediaOps"
+import { cleanupMediaForBranch, undoByRepoPath as undoMediaByRepoPath } from "@/convex/mediaOps"
 import { mintProjectAccessToken } from "@/lib/project-access-token"
 
 function createCtx(
@@ -28,6 +28,11 @@ function createCtx(
   options?: { activePublishAttempt?: Record<string, unknown> | null },
 ) {
   const activePublishAttempt = options?.activePublishAttempt ?? null
+  const emptyChain = (): any => ({
+    first: vi.fn().mockResolvedValue(null),
+    collect: vi.fn().mockResolvedValue([]),
+    filter: () => emptyChain(),
+  })
   return {
     db: {
       get,
@@ -37,8 +42,8 @@ function createCtx(
       query: vi.fn((table: string) => ({
         withIndex: () => ({
           first: vi.fn().mockResolvedValue(table === "publishAttempts" ? activePublishAttempt : null),
-          filter: () => ({ first: vi.fn().mockResolvedValue(null) }),
           collect: vi.fn().mockResolvedValue([]),
+          filter: () => emptyChain(),
         }),
       })),
     },
@@ -283,6 +288,38 @@ describe("publish attempt guard on undo/discard", () => {
     // No pending op in the mocked table; the guard let the call through.
     expect(result).toBeNull()
     expect(patch).not.toHaveBeenCalled()
+  })
+
+  it("durably flags PR-close media cleanup when a publish attempt is at the commit boundary", async () => {
+    const patch = vi.fn()
+    const get = vi.fn().mockResolvedValueOnce({
+      _id: "lane_1",
+      projectId: "project_1",
+      branchName: "repopress/start",
+    })
+
+    await (cleanupMediaForBranch as any).handler(createCtx(get, patch, { activePublishAttempt: activeAttempt }), {
+      publishBranchId: "lane_1",
+    })
+
+    // Skipped, but DURABLY: the branch is flagged for the nightly cron.
+    expect(patch).toHaveBeenCalledWith("lane_1", expect.objectContaining({ mediaCleanupPending: true }))
+  })
+
+  it("runs PR-close media cleanup and clears the flag when no attempt is active", async () => {
+    const patch = vi.fn()
+    const get = vi.fn().mockResolvedValueOnce({
+      _id: "lane_1",
+      projectId: "project_1",
+      branchName: "repopress/start",
+      mediaCleanupPending: true,
+    })
+
+    await (cleanupMediaForBranch as any).handler(createCtx(get, patch), {
+      publishBranchId: "lane_1",
+    })
+
+    expect(patch).toHaveBeenCalledWith("lane_1", expect.objectContaining({ mediaCleanupPending: undefined }))
   })
 
   it("allows discardAll when no publish attempt is active", async () => {

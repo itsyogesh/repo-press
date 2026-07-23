@@ -967,12 +967,21 @@ async function commitBatchAtValidatedHead(
       force: false,
     })
   } catch (error: any) {
-    // A 422 on a non-forced ref update is a fast-forward failure: the head
-    // moved after our pre-check. That is a CONFIRMED late CAS conflict (the
-    // new commit object exists but was never referenced), so normalize it to
-    // the same typed error as the pre-check path. Anything else stays raw -
-    // it is not proof of a conflict.
-    if (error?.status === 422) throw new BranchHeadMovedError(expected.branch)
+    // A 422 on a non-forced ref update is USUALLY a fast-forward failure,
+    // but 422 is also GitHub's generic validation status. Confirm the head
+    // actually moved before normalizing to the typed CAS error; when the
+    // head is still at the expected SHA (or the confirmation read fails),
+    // surface the original error - it is not proof of a conflict.
+    if (error?.status === 422) {
+      try {
+        const { data: confirmRef } = await octokit.git.getRef({ owner, repo, ref: `heads/${expected.branch}` })
+        if (confirmRef.object.sha !== expected.expectedHeadSha) {
+          throw new BranchHeadMovedError(expected.branch)
+        }
+      } catch (confirmError) {
+        if (confirmError instanceof BranchHeadMovedError) throw confirmError
+      }
+    }
     throw error
   }
   return { commitSha: newCommit.sha, treeSha: newTree.sha }

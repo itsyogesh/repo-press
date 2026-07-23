@@ -68,6 +68,8 @@ import {
 import { getRepoRole } from "@/lib/github-permissions"
 import { POST } from "../route"
 
+const PLAN_DIGEST = "d".repeat(64)
+
 const baseProject = {
   _id: "project_123",
   userId: "user_owner",
@@ -1294,13 +1296,18 @@ describe("POST /api/github/publish-ops", () => {
     })
 
     it("preserves a metadata-export document verbatim instead of prepending YAML", async () => {
-      const body = 'export const metadata = {\n  "title": "Hello"\n}\n\n# Body\n'
+      const body = 'export const metadata = {\n  "title": "Hello"\n}\n\n# Body (edited)\n'
       mockPublishQueries({
         dirtyDocs: [{ _id: "doc_1", filePath: "posts/hello.mdx", body, frontmatter: {} }],
       })
       vi.mocked(getFileForPublish).mockResolvedValue({
         status: "found",
-        file: { content: body, sha: "sha-old", name: "hello.mdx", path: "content/posts/hello.mdx" },
+        file: {
+          content: 'export const metadata = {\n  "title": "Hello"\n}\n\n# Old body\n',
+          sha: "sha-old",
+          name: "hello.mdx",
+          path: "content/posts/hello.mdx",
+        },
       } as never)
 
       const response = await POST(buildRequest({ projectId: "project_123" }))
@@ -1454,7 +1461,7 @@ describe("POST /api/github/publish-ops", () => {
         publishBranchId: "publish_branch_1",
         branchName: "repopress/main/1234",
         expectedHeadSha: "authority-sha-1",
-        planDigest: "digest-1",
+        planDigest: PLAN_DIGEST,
         operationPaths: ["content/posts/old.mdx"],
         opIds: ["op_delete"],
         mediaOpIds: [],
@@ -1476,7 +1483,7 @@ describe("POST /api/github/publish-ops", () => {
       })
       vi.mocked(getBranchHeadForPublish).mockResolvedValue({ status: "found", sha: "commit-sha-1" } as never)
       vi.mocked(getCommitDetailsForPublish).mockResolvedValue({
-        message: "chore(content): 1 deleted via RepoPress\n\nRepoPress-Publish-Attempt: digest-1",
+        message: `chore(content): 1 deleted via RepoPress\n\nRepoPress-Publish-Attempt: ${PLAN_DIGEST}`,
         parents: ["authority-sha-1"],
       } as never)
       const markCommittedCalls: unknown[] = []
@@ -1512,7 +1519,7 @@ describe("POST /api/github/publish-ops", () => {
         publishBranchId: "publish_branch_1",
         branchName: "repopress/main/1234",
         expectedHeadSha: "authority-sha-1",
-        planDigest: "digest-1",
+        planDigest: PLAN_DIGEST,
         operationPaths: ["content/posts/old.mdx"],
         opIds: ["op_delete"],
         mediaOpIds: [],
@@ -1552,7 +1559,7 @@ describe("POST /api/github/publish-ops", () => {
         publishBranchId: "publish_branch_1",
         branchName: "repopress/main/1234",
         expectedHeadSha: "authority-sha-1",
-        planDigest: "digest-1",
+        planDigest: PLAN_DIGEST,
         operationPaths: [],
         opIds: [],
         mediaOpIds: [],
@@ -1621,7 +1628,7 @@ describe("POST /api/github/publish-ops", () => {
         publishBranchId: "publish_branch_1",
         branchName: "repopress/main/1234",
         expectedHeadSha: "authority-sha-1",
-        planDigest: "digest-1",
+        planDigest: PLAN_DIGEST,
         operationPaths: ["content/posts/old.mdx"],
         opIds: [],
         mediaOpIds: [],
@@ -1708,7 +1715,7 @@ describe("POST /api/github/publish-ops", () => {
           }
           if (sha === "landed-sha-1") {
             return {
-              message: "chore(content): via RepoPress\n\nRepoPress-Publish-Attempt: digest-1",
+              message: `chore(content): via RepoPress\n\nRepoPress-Publish-Attempt: ${PLAN_DIGEST}`,
               parents: ["authority-sha-1"],
             }
           }
@@ -1848,6 +1855,162 @@ describe("POST /api/github/publish-ops", () => {
 
       expect(response.status).toBe(200)
       expect(payload.warning).toMatch(/media upload\(s\) were undone/i)
+    })
+
+    it("returns 409 without committing when begin rejects a stale planned snapshot", async () => {
+      convexMutationMock.mockImplementation(async (_fn: unknown, args: unknown) => {
+        if (args && typeof args === "object" && "planDigest" in (args as Record<string, unknown>)) {
+          throw new Error("Staged changes changed since planning: a document was edited or discarded")
+        }
+        return undefined
+      })
+
+      const response = await POST(buildRequest({ projectId: "project_123" }))
+      const payload = await response.json()
+
+      expect(response.status).toBe(409)
+      expect(payload.error).toMatch(/aborted before any commit/i)
+      expect(payload.error).toMatch(/changed since planning/i)
+      expect(batchCommitPublishLaneAtExpectedHead).not.toHaveBeenCalled()
+    })
+
+    it("keeps the attempt retryable when document SHA refresh fails, then a retry reconciles without a second commit", async () => {
+      // First request: the commit lands, but the post-commit SHA refresh
+      // fails - the response stays ok with reconciliationIncomplete and the
+      // attempt must NOT be marked reconciled.
+      const attemptCalls: Array<Record<string, unknown>> = []
+      convexMutationMock.mockImplementation(async (_fn: unknown, args: unknown) => {
+        if (args && typeof args === "object") {
+          const record = args as Record<string, unknown>
+          if ("planDigest" in record) return "attempt_1"
+          if (record.id === "attempt_1") attemptCalls.push(record)
+          if ("deleteAssociations" in record) return { skippedDeleteAssociations: [], unreconciledOpIds: [] }
+        }
+        return undefined
+      })
+      vi.mocked(getFile).mockRejectedValue(Object.assign(new Error("boom"), { status: 500 }))
+
+      const first = await POST(buildRequest({ projectId: "project_123" }))
+      const firstPayload = await first.json()
+
+      expect(first.status).toBe(200)
+      expect(firstPayload.ok).toBe(true)
+      expect(firstPayload.reconciliationIncomplete).toBe(true)
+      expect(firstPayload.warning).toMatch(/publish again to finish reconciliation/i)
+      expect(batchCommitPublishLaneAtExpectedHead).toHaveBeenCalledTimes(1)
+      // recordCommit happened; markReconciled (id-only call) did not.
+      expect(attemptCalls).toEqual([expect.objectContaining({ id: "attempt_1", commitSha: "commit-sha-1" })])
+
+      // Retry: the attempt is still committed - recovery finishes the
+      // refresh and reconciles WITHOUT a second Git commit.
+      mockPublishQueries({
+        pendingOps: [],
+        dirtyDocs: [],
+        activePublishAttempt: committedAttempt({
+          documentAssociations: [{ documentId: "doc_1", repoPath: "content/posts/hello.mdx", expectedUpdatedAt: 900 }],
+        }),
+        attemptLane: recoveryLane,
+      })
+      const retryAttemptCalls: Array<Record<string, unknown>> = []
+      convexMutationMock.mockImplementation(async (_fn: unknown, args: unknown) => {
+        if (args && typeof args === "object") {
+          const record = args as Record<string, unknown>
+          if (record.id === "attempt_1") retryAttemptCalls.push(record)
+          if ("deleteAssociations" in record) return { skippedDeleteAssociations: [], unreconciledOpIds: [] }
+        }
+        return undefined
+      })
+      vi.mocked(getFile).mockResolvedValue({ sha: "refreshed-sha" } as never)
+
+      const retry = await POST(buildRequest({ projectId: "project_123" }))
+      const retryPayload = await retry.json()
+
+      expect(retry.status).toBe(200)
+      expect(retryPayload.recovered).toBe(true)
+      expect(retryPayload.reconciliationIncomplete).toBeUndefined()
+      // Still exactly ONE Git commit across both requests.
+      expect(batchCommitPublishLaneAtExpectedHead).toHaveBeenCalledTimes(1)
+      // markReconciled ran this time (id-only call, no commitSha).
+      expect(retryAttemptCalls).toEqual([expect.objectContaining({ id: "attempt_1" })])
+      expect(retryAttemptCalls[0].commitSha).toBeUndefined()
+    })
+
+    it("does not create a redundant commit when re-publishing unchanged created content", async () => {
+      // First publish: a staged create with its dirty document lands.
+      const body = "# Hello\n"
+      mockPublishQueries({
+        pendingOps: [{ _id: "op_create", opType: "create", filePath: "posts/hello.mdx", createdAt: 1 }],
+        dirtyDocs: [{ _id: "doc_1", filePath: "posts/hello.mdx", body, frontmatter: {}, updatedAt: 5 }],
+      })
+
+      const first = await POST(buildRequest({ projectId: "project_123" }))
+      expect(first.status).toBe(200)
+      expect(batchCommitPublishLaneAtExpectedHead).toHaveBeenCalledTimes(1)
+
+      // Second publish: the create op is committed (no longer pending), the
+      // document is still dirty, and the lane now contains exactly the
+      // published content. Nothing has changed - no commit may happen.
+      mockPublishQueries({
+        pendingOps: [],
+        dirtyDocs: [
+          { _id: "doc_1", filePath: "posts/hello.mdx", body, frontmatter: {}, updatedAt: 5, githubSha: "blob-1" },
+        ],
+      })
+      vi.mocked(getFileForPublish).mockResolvedValue({
+        status: "found",
+        file: { content: body, sha: "blob-1", name: "hello.mdx", path: "content/posts/hello.mdx" },
+      } as never)
+
+      const second = await POST(buildRequest({ projectId: "project_123" }))
+      const secondPayload = await second.json()
+
+      expect(second.status).toBe(400)
+      expect(secondPayload.error).toMatch(/no valid operations/i)
+      expect(batchCommitPublishLaneAtExpectedHead).toHaveBeenCalledTimes(1)
+    })
+
+    it("does not adopt a commit that only mentions the digest outside an exact trailer line", async () => {
+      mockPublishQueries({
+        activePublishAttempt: committedAttempt({ status: "committing", commitSha: undefined }),
+        attemptLane: recoveryLane,
+      })
+      vi.mocked(getBranchHeadForPublish).mockResolvedValue({ status: "found", sha: "prose-sha" } as never)
+      vi.mocked(getCommitDetailsForPublish).mockResolvedValue({
+        message: `mention of RepoPress-Publish-Attempt: ${PLAN_DIGEST} inside prose`,
+        parents: ["authority-sha-1"],
+      } as never)
+
+      const response = await POST(buildRequest({ projectId: "project_123" }))
+      const payload = await response.json()
+
+      // Not adopted; the walk reaches the expected head and proves
+      // non-landing, so a fresh publish proceeds.
+      expect(response.status).toBe(200)
+      expect(payload.recovered).toBeUndefined()
+      expect(batchCommitPublishLaneAtExpectedHead).toHaveBeenCalledTimes(1)
+    })
+
+    it("fails closed when the exact trailer sits on a commit that is not the direct child of the expected head", async () => {
+      mockPublishQueries({
+        activePublishAttempt: committedAttempt({ status: "committing", commitSha: undefined }),
+        attemptLane: recoveryLane,
+      })
+      vi.mocked(getBranchHeadForPublish).mockResolvedValue({ status: "found", sha: "forged-sha" } as never)
+      vi.mocked(getCommitDetailsForPublish).mockResolvedValue({
+        message: `forged\n\nRepoPress-Publish-Attempt: ${PLAN_DIGEST}`,
+        parents: ["some-other-parent"],
+      } as never)
+
+      const response = await POST(buildRequest({ projectId: "project_123" }))
+      const payload = await response.json()
+
+      expect(response.status).toBe(409)
+      expect(payload.error).toMatch(/cannot prove/i)
+      expect(convexMutationMock).not.toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ id: "attempt_1" }),
+      )
+      expect(batchCommitPublishLaneAtExpectedHead).not.toHaveBeenCalled()
     })
   })
 })

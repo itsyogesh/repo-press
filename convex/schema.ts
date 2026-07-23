@@ -374,12 +374,16 @@ export default defineSchema({
     status: v.union(v.literal("active"), v.literal("inactive"), v.literal("merged"), v.literal("closed")),
     lastCommitSha: v.optional(v.string()),
     committedFilePaths: v.optional(v.array(v.string())),
+    // Set when PR-close media cleanup was skipped because a publish attempt
+    // was at the commit boundary; the nightly cron finishes it durably.
+    mediaCleanupPending: v.optional(v.boolean()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_projectId", ["projectId"])
     .index("by_projectId_status", ["projectId", "status"])
-    .index("by_prNumber", ["prNumber"]),
+    .index("by_prNumber", ["prNumber"])
+    .index("by_mediaCleanupPending", ["mediaCleanupPending"]),
 
   // ─── Publish Attempts (durable commit/reconcile boundary) ─────────
   // One row per publish request that reaches the commit boundary. Recovery
@@ -399,6 +403,7 @@ export default defineSchema({
       v.object({
         documentId: v.id("documents"),
         repoPath: v.string(),
+        expectedUpdatedAt: v.number(),
       }),
     ),
     deleteAssociations: v.array(

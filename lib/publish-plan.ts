@@ -61,6 +61,14 @@ export function formatPublishAttemptTrailer(planDigest: string): string {
   return `${PUBLISH_ATTEMPT_TRAILER}: ${planDigest}`
 }
 
+/**
+ * True only when the message carries the attempt trailer as an EXACT line
+ * (`RepoPress-Publish-Attempt: <digest>` with nothing else on the line). A
+ * digest substring embedded in prose or another trailer does not count -
+ * recovery must not adopt commits that merely mention the digest.
+ */
 export function commitMessageCarriesAttempt(message: string, planDigest: string): boolean {
-  return message.includes(formatPublishAttemptTrailer(planDigest))
+  if (!/^[0-9a-f]{64}$/.test(planDigest)) return false
+  const expected = formatPublishAttemptTrailer(planDigest)
+  return message.split(/\r?\n/).some((line) => line === expected)
 }

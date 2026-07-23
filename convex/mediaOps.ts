@@ -255,30 +255,41 @@ export const cleanupMediaForBranch = internalMutation({
     if (!branch) return
 
     // Never undo media while a publish attempt is at the commit boundary for
-    // this project - the in-flight commit may contain these ops. Skipped rows
-    // are picked up by the stale-upload cron once the attempt resolves.
-    if (await findActivePublishAttempt(ctx.db, branch.projectId)) return
+    // this project - the in-flight commit may contain these ops. The skip is
+    // DURABLE: the branch is flagged and the nightly cron finishes the
+    // cleanup once the attempt resolves (the webhook only fires once).
+    if (await findActivePublishAttempt(ctx.db, branch.projectId)) {
+      await ctx.db.patch(branch._id, { mediaCleanupPending: true, updatedAt: Date.now() })
+      return
+    }
 
-    const ops = await ctx.db
-      .query("mediaOps")
-      .withIndex("by_projectId", (q) => q.eq("projectId", branch.projectId))
-      .filter((q) => q.eq(q.field("publishBranchId"), args.publishBranchId))
-      .filter((q) => q.or(q.eq(q.field("status"), "pending"), q.eq(q.field("status"), "committed")))
-      .collect()
-
-    const now = Date.now()
-    for (const op of ops) {
-      if (op.convexStorageId) {
-        try {
-          await ctx.storage.delete(op.convexStorageId)
-        } catch {
-          // Already gone.
-        }
-      }
-      await ctx.db.patch(op._id, { status: "undone", updatedAt: now })
+    await cleanupBranchMediaRows(ctx, args.publishBranchId, branch.projectId)
+    if (branch.mediaCleanupPending) {
+      await ctx.db.patch(branch._id, { mediaCleanupPending: undefined, updatedAt: Date.now() })
     }
   },
 })
+
+async function cleanupBranchMediaRows(ctx: { db: any; storage: any }, publishBranchId: string, projectId: string) {
+  const ops = await ctx.db
+    .query("mediaOps")
+    .withIndex("by_projectId", (q: any) => q.eq("projectId", projectId))
+    .filter((q: any) => q.eq(q.field("publishBranchId"), publishBranchId))
+    .filter((q: any) => q.or(q.eq(q.field("status"), "pending"), q.eq(q.field("status"), "committed")))
+    .collect()
+
+  const now = Date.now()
+  for (const op of ops) {
+    if (op.convexStorageId) {
+      try {
+        await ctx.storage.delete(op.convexStorageId)
+      } catch {
+        // Already gone.
+      }
+    }
+    await ctx.db.patch(op._id, { status: "undone", updatedAt: now })
+  }
+}
 
 /**
  * Stale cleanup: delete Convex storage files for pending mediaOps older than 7 days
@@ -330,6 +341,27 @@ export const cleanupStaleUploads = internalMutation({
       processed++
     }
 
-    return { processed }
+    // Finish PR-close cleanups that were durably skipped while a publish
+    // attempt was at the commit boundary (the webhook fires only once; the
+    // committed rows it targets are outside the stale-pending pass above).
+    const flaggedBranches = await ctx.db
+      .query("publishBranches")
+      .withIndex("by_mediaCleanupPending", (q) => q.eq("mediaCleanupPending", true))
+      .take(10)
+    let flaggedCleaned = 0
+    for (const branch of flaggedBranches) {
+      let attemptActive = activeAttemptByProject.get(branch.projectId)
+      if (attemptActive === undefined) {
+        attemptActive = (await findActivePublishAttempt(ctx.db, branch.projectId)) !== null
+        activeAttemptByProject.set(branch.projectId, attemptActive)
+      }
+      if (attemptActive) continue
+
+      await cleanupBranchMediaRows(ctx, branch._id, branch.projectId)
+      await ctx.db.patch(branch._id, { mediaCleanupPending: undefined, updatedAt: Date.now() })
+      flaggedCleaned++
+    }
+
+    return { processed, flaggedCleaned }
   },
 })

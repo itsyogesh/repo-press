@@ -105,7 +105,6 @@ export async function POST(request: Request) {
         token,
         owner,
         repo,
-        baseBranch,
         title,
         description,
         actingUserId,
@@ -357,6 +356,13 @@ export async function POST(request: Request) {
         conflicts.push({ path: repoPath, reason: serialized.reason })
         continue
       }
+      // Redundancy guard: when the serialized content is byte-identical to
+      // the file at the publish authority, there is nothing to commit for
+      // this document - skipping it prevents empty "update" commits on
+      // every publish after a create/update landed.
+      if (existing?.status === "found" && existing.file.content === serialized.content) {
+        continue
+      }
       operations.push({
         path: repoPath,
         content: serialized.content,
@@ -481,23 +487,51 @@ export async function POST(request: Request) {
         expectedUpdatedAt: association.expectedUpdatedAt,
       })),
     })
+    // Documents whose SHAs must be refreshed at the landed commit: every
+    // dirty document EXCEPT those tied to a staged delete (their content is
+    // cleared via deleteAssociations instead). Create-op documents are
+    // included - without a refreshed githubSha their next publish would
+    // re-commit unchanged content.
+    const deleteOpPaths = new Set(
+      resolvedPendingOps.filter(({ source }) => source.opType === "delete").map(({ repoPath }) => repoPath),
+    )
     const documentAssociations = resolvedDirtyDocs
-      .filter(({ repoPath }) => !contentOpPaths.has(repoPath))
-      .map(({ source, repoPath }) => ({ documentId: source._id, repoPath }))
-    const attemptId = await convex.mutation(api.publishAttempts.begin, {
-      projectId: project._id,
-      publishBranchId: publishBranch._id,
-      branchName,
-      expectedHeadSha: authoritySha,
-      planDigest,
-      operationPaths: operations.map((operation) => operation.path),
-      opIds: pendingOps.map((op) => op._id),
-      mediaOpIds: pendingMediaOps.map((op) => op._id),
-      documentAssociations,
-      deleteAssociations,
-      userId: actingUserId,
-      projectAccessToken,
-    })
+      .filter(({ repoPath }) => !deleteOpPaths.has(repoPath))
+      .map(({ source, repoPath }) => ({
+        documentId: source._id,
+        repoPath,
+        expectedUpdatedAt: source.updatedAt,
+      }))
+    let attemptId: Id<"publishAttempts">
+    try {
+      attemptId = await convex.mutation(api.publishAttempts.begin, {
+        projectId: project._id,
+        publishBranchId: publishBranch._id,
+        branchName,
+        expectedHeadSha: authoritySha,
+        planDigest,
+        operationPaths: operations.map((operation) => operation.path),
+        opIds: pendingOps.map((op) => op._id),
+        mediaOpIds: pendingMediaOps.map((op) => op._id),
+        documentAssociations,
+        deleteAssociations,
+        userId: actingUserId,
+        projectAccessToken,
+      })
+    } catch (error) {
+      // begin validates the planned snapshot transactionally; any failure
+      // means staged state changed between planning and the commit boundary
+      // (or another attempt won the race). Nothing was committed.
+      const message = error instanceof Error ? error.message : "publish attempt validation failed"
+      console.error("Publish attempt begin rejected:", error)
+      return NextResponse.json(
+        {
+          ok: false,
+          error: `Publish aborted before any commit: ${message}. Retry to publish the current staged state.`,
+        },
+        { status: 409 },
+      )
+    }
 
     const commitMessage = `chore(content): ${parts.join(", ")} via RepoPress\n\n${formatPublishAttemptTrailer(planDigest)}`
     let commitSha: string
@@ -608,36 +642,33 @@ export async function POST(request: Request) {
       warning = warning ? `${warning} ${reconciliationWarning}` : reconciliationWarning
     }
 
-    const shaFetches = await Promise.all(
-      documentAssociations.map(async ({ documentId, repoPath }) => {
-        try {
-          const fileOnBranch = await getFile(token, owner, repo, repoPath, commitSha)
-          return { documentId, sha: fileOnBranch?.sha ?? null }
-        } catch {
-          return { documentId, sha: null }
-        }
-      }),
-    )
-
-    for (const { documentId, sha: blobSha } of shaFetches) {
-      if (!blobSha) continue
-      try {
-        await convex.mutation(api.documents.update, {
-          id: documentId,
-          userId: actingUserId,
-          projectAccessToken,
-          githubSha: blobSha,
-        })
-      } catch {
-        // Non-critical: conflict detection may be stale for this file on next publish.
-      }
-    }
-
-    await convex.mutation(api.publishAttempts.markReconciled, {
-      id: attemptId,
-      userId: actingUserId,
+    const refresh = await refreshDocumentShasAtCommit({
+      convex,
+      token,
+      owner,
+      repo,
+      commitSha,
+      documentAssociations,
+      actingUserId,
       projectAccessToken,
     })
+
+    let reconciliationIncomplete = false
+    if (refresh.failedCount > 0) {
+      // Retryable: the attempt stays "committed" so the next publish request
+      // re-enters recovery, finishes the SHA refresh, and reconciles - it
+      // never commits again. Marking reconciled here would convert this
+      // transient failure into a future false conflict.
+      reconciliationIncomplete = true
+      const refreshWarning = `${refresh.failedCount} document(s) could not sync their GitHub state after commit ${commitSha}; publish again to finish reconciliation (no new commit will be created).`
+      warning = warning ? `${warning} ${refreshWarning}` : refreshWarning
+    } else {
+      await convex.mutation(api.publishAttempts.markReconciled, {
+        id: attemptId,
+        userId: actingUserId,
+        projectAccessToken,
+      })
+    }
 
     return NextResponse.json({
       ok: true,
@@ -647,6 +678,7 @@ export async function POST(request: Request) {
       commitSha,
       summary: parts.join(", "),
       warning,
+      reconciliationIncomplete: reconciliationIncomplete || undefined,
       media: {
         created: mediaCreateCount,
         updated: mediaUpdateCount,
@@ -779,6 +811,54 @@ async function ensureLanePullRequest({
 
 const MAX_RECOVERY_ANCESTRY_DEPTH = 20
 
+/**
+ * Refresh the stored githubSha of each associated document to its blob at
+ * the exact landed commit. Failures are counted, not swallowed-and-forgotten:
+ * callers must keep the attempt un-reconciled when failedCount > 0 so a
+ * retry can finish the sync without committing again.
+ */
+async function refreshDocumentShasAtCommit({
+  convex,
+  token,
+  owner,
+  repo,
+  commitSha,
+  documentAssociations,
+  actingUserId,
+  projectAccessToken,
+}: {
+  convex: ConvexHttpClient
+  token: string
+  owner: string
+  repo: string
+  commitSha: string
+  documentAssociations: Array<{ documentId: Id<"documents">; repoPath: string }>
+  actingUserId?: string
+  projectAccessToken?: string
+}): Promise<{ failedCount: number }> {
+  let failedCount = 0
+  for (const { documentId, repoPath } of documentAssociations) {
+    try {
+      const fileAtCommit = await getFile(token, owner, repo, repoPath, commitSha)
+      if (!fileAtCommit?.sha) {
+        // The associated file is genuinely absent at the landed commit (its
+        // operation conflicted out of the plan); nothing to refresh.
+        continue
+      }
+      await convex.mutation(api.documents.update, {
+        id: documentId,
+        userId: actingUserId,
+        projectAccessToken,
+        githubSha: fileAtCommit.sha,
+      })
+    } catch (error) {
+      failedCount += 1
+      console.error("Document SHA refresh failed:", { documentId, repoPath, error })
+    }
+  }
+  return { failedCount }
+}
+
 type RecoverablePublishAttempt = {
   _id: Id<"publishAttempts">
   projectId: Id<"projects">
@@ -789,7 +869,7 @@ type RecoverablePublishAttempt = {
   operationPaths: string[]
   opIds: Id<"explorerOps">[]
   mediaOpIds: Id<"mediaOps">[]
-  documentAssociations: Array<{ documentId: Id<"documents">; repoPath: string }>
+  documentAssociations: Array<{ documentId: Id<"documents">; repoPath: string; expectedUpdatedAt: number }>
   deleteAssociations: Array<{ opId: Id<"explorerOps">; documentId: Id<"documents">; expectedUpdatedAt: number }>
   // getActiveForProject only returns committing/committed attempts; the wider
   // union matches the stored document type.
@@ -816,7 +896,6 @@ async function recoverPublishAttempt({
   token,
   owner,
   repo,
-  baseBranch,
   title,
   description,
   actingUserId,
@@ -828,7 +907,6 @@ async function recoverPublishAttempt({
   token: string
   owner: string
   repo: string
-  baseBranch: string
   title?: string
   description?: string
   actingUserId?: string
@@ -899,7 +977,15 @@ async function recoverPublishAttempt({
         }
         const details = await getCommitDetailsForPublish(token, owner, repo, cursor)
         if (commitMessageCarriesAttempt(details.message, attempt.planDigest)) {
-          commitSha = cursor
+          // A candidate is accepted ONLY as the single-parent direct child of
+          // the attempt's expected head. A trailer anywhere else means
+          // someone reused the digest on a commit our CAS could not have
+          // produced - unprovable, never adopted.
+          if (details.parents.length === 1 && details.parents[0] === attempt.expectedHeadSha) {
+            commitSha = cursor
+          } else {
+            unprovableReason = "attempt trailer found on a commit that is not the direct child of the expected head"
+          }
           break
         }
         if (details.parents.length !== 1) {
@@ -965,7 +1051,9 @@ async function recoverPublishAttempt({
       owner,
       repo,
       branchName: attempt.branchName,
-      baseBranch,
+      // The lane's stored base is authoritative - the project's current
+      // branch setting may have changed since the lane was created.
+      baseBranch: lane.baseBranch,
       prTitle: title || "Content update via RepoPress (recovered publish)",
       prBody: description || "Automated content update from RepoPress (recovered after an interrupted publish).",
     })
@@ -1014,25 +1102,28 @@ async function recoverPublishAttempt({
   }
 
   // Refresh document SHAs at the exact landed commit from the durable
-  // associations - same behavior as normal completion.
-  for (const { documentId, repoPath } of attempt.documentAssociations) {
-    try {
-      const fileAtCommit = await getFile(token, owner, repo, repoPath, commitSha)
-      if (fileAtCommit?.sha) {
-        await convex.mutation(api.documents.update, {
-          id: documentId,
-          userId: actingUserId,
-          projectAccessToken,
-          githubSha: fileAtCommit.sha,
-        })
-      }
-    } catch {
-      // Non-critical: conflict detection may be stale for this file on the
-      // next publish, which surfaces as an honest 409.
-    }
-  }
+  // associations - same behavior as normal completion, and equally
+  // retryable: failures keep the attempt "committed" so the next request
+  // re-enters recovery (never committing again).
+  const refresh = await refreshDocumentShasAtCommit({
+    convex,
+    token,
+    owner,
+    repo,
+    commitSha,
+    documentAssociations: attempt.documentAssociations,
+    actingUserId,
+    projectAccessToken,
+  })
 
-  await convex.mutation(api.publishAttempts.markReconciled, { id: attempt._id, ...auth })
+  let reconciliationIncomplete = false
+  if (refresh.failedCount > 0) {
+    reconciliationIncomplete = true
+    const refreshWarning = `${refresh.failedCount} document(s) could not sync their GitHub state after commit ${commitSha}; publish again to finish reconciliation (no new commit will be created).`
+    warning = warning ? `${warning} ${refreshWarning}` : refreshWarning
+  } else {
+    await convex.mutation(api.publishAttempts.markReconciled, { id: attempt._id, ...auth })
+  }
 
   const note =
     "Recovered a previous publish attempt without committing again. Review remaining staged changes and publish again if needed."
@@ -1041,6 +1132,7 @@ async function recoverPublishAttempt({
     response: NextResponse.json({
       ok: true,
       recovered: true,
+      reconciliationIncomplete: reconciliationIncomplete || undefined,
       commitSha,
       prUrl,
       prNumber,

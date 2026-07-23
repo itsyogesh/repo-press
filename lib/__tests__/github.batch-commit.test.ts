@@ -492,16 +492,30 @@ describe("expected-head CAS conflict normalization", () => {
   }
   const operations = [{ path: "docs/a.md", content: "x", contentEncoding: "utf-8" as const, action: "update" as const }]
 
-  it("normalizes a late non-fast-forward ref update into BranchHeadMovedError", async () => {
+  it("normalizes a late non-fast-forward ref update into BranchHeadMovedError after confirming the head moved", async () => {
     // The pre-check passed, but the head moved before updateRef: a CONFIRMED
     // late CAS conflict discovered after the commit object was created.
     mockOctokit.git.updateRef.mockRejectedValue(
       Object.assign(new Error("Update is not a fast forward"), { status: 422 }),
     )
+    mockOctokit.git.getRef
+      .mockResolvedValueOnce({ data: { object: { sha: "a".repeat(40) } } }) // pre-check: at expected head
+      .mockResolvedValueOnce({ data: { object: { sha: "b".repeat(40) } } }) // confirm: head moved
 
     await expect(
       batchCommitPublishLaneAtExpectedHead("token", "acme", "docs-site", laneExpected, operations, "msg"),
     ).rejects.toBeInstanceOf(BranchHeadMovedError)
+  })
+
+  it("does not normalize a 422 when the head provably did not move", async () => {
+    // 422 is also GitHub's generic validation status; with the head still at
+    // the expected SHA it is NOT a CAS conflict.
+    mockOctokit.git.updateRef.mockRejectedValue(Object.assign(new Error("Validation Failed"), { status: 422 }))
+    mockOctokit.git.getRef.mockResolvedValue({ data: { object: { sha: "a".repeat(40) } } })
+
+    await expect(
+      batchCommitPublishLaneAtExpectedHead("token", "acme", "docs-site", laneExpected, operations, "msg"),
+    ).rejects.toThrow("Validation Failed")
   })
 
   it("does not mask non-conflict ref update failures as head movement", async () => {
