@@ -2048,5 +2048,258 @@ describe("POST /api/github/publish-ops", () => {
       )
       expect(batchCommitPublishLaneAtExpectedHead).not.toHaveBeenCalled()
     })
+
+    it("replays partial multi-document reconciliation with the original associations - no false dirt", async () => {
+      // First request: TWO dirty documents land in one commit; doc_a's SHA
+      // refresh succeeds but doc_b's read fails, so the attempt stays
+      // committed (retryable) with doc_a already synchronized.
+      mockPublishQueries({
+        pendingOps: [],
+        dirtyDocs: [
+          { _id: "doc_a", filePath: "posts/a.mdx", body: "# A", frontmatter: {}, updatedAt: 100 },
+          { _id: "doc_b", filePath: "posts/b.mdx", body: "# B", frontmatter: {}, updatedAt: 200 },
+        ],
+      })
+      const snapshotCalls: Array<Record<string, unknown>> = []
+      const attemptCalls: Array<Record<string, unknown>> = []
+      convexMutationMock.mockImplementation(async (_fn: unknown, args: unknown) => {
+        if (args && typeof args === "object") {
+          const record = args as Record<string, unknown>
+          if ("planDigest" in record) return "attempt_1"
+          if ("publishBranchId" in record && "githubSha" in record) snapshotCalls.push(record)
+          if (record.id === "attempt_1") attemptCalls.push(record)
+        }
+        return undefined
+      })
+      vi.mocked(getFileForPublish).mockImplementation(async (...callArgs: unknown[]) => {
+        const path = String(callArgs[3])
+        const ref = String(callArgs[4])
+        if (ref.startsWith("commit-sha")) {
+          if (path.endsWith("/b.mdx")) throw new GitHubReadError("GitHub read failed (status: 500)")
+          return { status: "found", file: { content: "", sha: "synced-sha", name: "", path } }
+        }
+        return { status: "absent" }
+      })
+
+      const first = await POST(buildRequest({ projectId: "project_123" }))
+      const firstPayload = await first.json()
+
+      expect(first.status).toBe(200)
+      expect(firstPayload.reconciliationIncomplete).toBe(true)
+      // Only doc_a was synchronized, with full lane/commit/revision
+      // provenance and its ORIGINAL planned updatedAt.
+      expect(snapshotCalls).toEqual([
+        expect.objectContaining({
+          id: "doc_a",
+          publishBranchId: "publish_branch_1",
+          commitSha: "commit-sha-1",
+          expectedUpdatedAt: 100,
+          contentRevision: expect.stringMatching(/^[0-9a-f]{64}$/),
+        }),
+      ])
+      // recordCommit happened; markReconciled (id-only) did not.
+      expect(attemptCalls).toEqual([expect.objectContaining({ id: "attempt_1", commitSha: "commit-sha-1" })])
+
+      // Retry: recovery replays BOTH associations verbatim from the durable
+      // attempt. The doc_a replay patches identical provenance (a no-op for
+      // its clean state) instead of treating it as concurrently edited.
+      snapshotCalls.length = 0
+      const retryAttemptCalls: Array<Record<string, unknown>> = []
+      mockPublishQueries({
+        pendingOps: [],
+        dirtyDocs: [],
+        activePublishAttempt: committedAttempt({
+          documentAssociations: [
+            {
+              documentId: "doc_a",
+              repoPath: "content/posts/a.mdx",
+              expectedUpdatedAt: 100,
+              contentRevision: "a".repeat(64),
+            },
+            {
+              documentId: "doc_b",
+              repoPath: "content/posts/b.mdx",
+              expectedUpdatedAt: 200,
+              contentRevision: "b".repeat(64),
+            },
+          ],
+        }),
+        attemptLane: recoveryLane,
+      })
+      convexMutationMock.mockImplementation(async (_fn: unknown, args: unknown) => {
+        if (args && typeof args === "object") {
+          const record = args as Record<string, unknown>
+          if ("publishBranchId" in record && "githubSha" in record) snapshotCalls.push(record)
+          if (record.id === "attempt_1") retryAttemptCalls.push(record)
+        }
+        return undefined
+      })
+      vi.mocked(getFileForPublish).mockImplementation(async (...callArgs: unknown[]) => {
+        const path = String(callArgs[3])
+        return { status: "found", file: { content: "", sha: "synced-sha", name: "", path } }
+      })
+
+      const retry = await POST(buildRequest({ projectId: "project_123" }))
+      const retryPayload = await retry.json()
+
+      expect(retry.status).toBe(200)
+      expect(retryPayload.recovered).toBe(true)
+      expect(retryPayload.reconciliationIncomplete).toBeUndefined()
+      expect(snapshotCalls).toEqual([
+        expect.objectContaining({ id: "doc_a", expectedUpdatedAt: 100, contentRevision: "a".repeat(64) }),
+        expect.objectContaining({ id: "doc_b", expectedUpdatedAt: 200, contentRevision: "b".repeat(64) }),
+      ])
+      // Reconciled after the replay; still exactly one Git commit overall.
+      expect(retryAttemptCalls).toEqual([expect.objectContaining({ id: "attempt_1" })])
+      expect(batchCommitPublishLaneAtExpectedHead).toHaveBeenCalledTimes(1)
+    })
+
+    it("retries after a crash between the SHA refresh and markReconciled as a pure replay", async () => {
+      // Every document already refreshed once; the crash hit just before
+      // markReconciled. The retry replays the same associations (no-ops for
+      // the already-clean documents) and closes out the attempt.
+      const snapshotCalls: Array<Record<string, unknown>> = []
+      const attemptCalls: Array<Record<string, unknown>> = []
+      mockPublishQueries({
+        pendingOps: [],
+        dirtyDocs: [],
+        activePublishAttempt: committedAttempt({
+          documentAssociations: [
+            {
+              documentId: "doc_a",
+              repoPath: "content/posts/a.mdx",
+              expectedUpdatedAt: 100,
+              contentRevision: "a".repeat(64),
+            },
+          ],
+        }),
+        attemptLane: recoveryLane,
+      })
+      convexMutationMock.mockImplementation(async (_fn: unknown, args: unknown) => {
+        if (args && typeof args === "object") {
+          const record = args as Record<string, unknown>
+          if ("publishBranchId" in record && "githubSha" in record) snapshotCalls.push(record)
+          if (record.id === "attempt_1") attemptCalls.push(record)
+        }
+        return undefined
+      })
+      vi.mocked(getFileForPublish).mockImplementation(async (...callArgs: unknown[]) => {
+        const path = String(callArgs[3])
+        return { status: "found", file: { content: "", sha: "synced-sha", name: "", path } }
+      })
+
+      const response = await POST(buildRequest({ projectId: "project_123" }))
+      const payload = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(payload.recovered).toBe(true)
+      expect(snapshotCalls).toEqual([
+        expect.objectContaining({
+          id: "doc_a",
+          publishBranchId: "publish_branch_1",
+          commitSha: "commit-sha-1",
+          expectedUpdatedAt: 100,
+          contentRevision: "a".repeat(64),
+        }),
+      ])
+      expect(attemptCalls).toEqual([expect.objectContaining({ id: "attempt_1" })])
+      expect(batchCommitPublishLaneAtExpectedHead).not.toHaveBeenCalled()
+    })
+
+    it("supersedes a committing attempt on a closed lane, restores its state, and publishes it fresh", async () => {
+      // The lane's PR was closed unmerged while an attempt sat at the
+      // commit boundary (its branch may already be deleted). recordCommit
+      // never ran, so nothing was marked committed - superseding loses
+      // nothing, and the deferred close-time invalidation runs now so the
+      // restored content joins THIS publish.
+      convexQueryMock.mockReset()
+      convexQueryMock
+        .mockResolvedValueOnce(baseProject)
+        .mockResolvedValueOnce([]) // pending ops (stale: before restore)
+        .mockResolvedValueOnce([]) // dirty docs (stale: before restore)
+        .mockResolvedValueOnce([]) // media ops
+        .mockResolvedValueOnce(committedAttempt({ status: "committing", commitSha: undefined }))
+        .mockResolvedValueOnce({ ...recoveryLane, status: "closed" })
+        // Refetch after the invalidation restored the lane's content.
+        .mockResolvedValueOnce([]) // pending ops
+        .mockResolvedValueOnce([
+          {
+            _id: "doc_restored",
+            filePath: "posts/restored.mdx",
+            pathRepresentation: "content_relative_v1",
+            body: "# Restored",
+            frontmatter: {},
+            updatedAt: 7,
+          },
+        ])
+        .mockResolvedValueOnce([]) // media ops
+        .mockResolvedValueOnce(null) // no current lane - the closed one is gone
+        .mockResolvedValueOnce([]) // existing branch names
+        .mockResolvedValueOnce({ _id: "publish_branch_2", branchName: "repopress/restored", projectId: "project_123" })
+      convexMutationMock.mockImplementation(async (_fn: unknown, args: unknown) => {
+        if (args && typeof args === "object" && "planDigest" in (args as Record<string, unknown>)) {
+          return "attempt_2"
+        }
+        return undefined
+      })
+
+      const response = await POST(buildRequest({ projectId: "project_123" }))
+      const payload = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(payload.ok).toBe(true)
+      expect(payload.recovered).toBeUndefined()
+      // The old attempt was superseded and the closed lane invalidated.
+      expect(convexMutationMock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ id: "attempt_1" }))
+      expect(convexMutationMock).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ id: "publish_branch_1" }),
+      )
+      // The restored document publishes in this very request, to a new lane.
+      expect(batchCommitPublishLaneAtExpectedHead).toHaveBeenCalledWith(
+        "gh-token",
+        "acme",
+        "docs-site",
+        expect.objectContaining({ branch: "repopress/restored", protectedBaseBranch: "main" }),
+        expect.arrayContaining([expect.objectContaining({ path: "content/posts/restored.mdx" })]),
+        expect.any(String),
+      )
+    })
+
+    it("reconciles a committed attempt on a closed lane, then finishes the deferred invalidation", async () => {
+      const attemptCalls: Array<Record<string, unknown>> = []
+      const laneCalls: Array<Record<string, unknown>> = []
+      mockPublishQueries({
+        pendingOps: [],
+        dirtyDocs: [],
+        activePublishAttempt: committedAttempt(),
+        attemptLane: { ...recoveryLane, status: "closed", prNumber: undefined, prUrl: undefined },
+      })
+      convexMutationMock.mockImplementation(async (_fn: unknown, args: unknown) => {
+        if (args && typeof args === "object") {
+          const record = args as Record<string, unknown>
+          if (record.id === "attempt_1") attemptCalls.push(record)
+          // finishLaneInvalidation is the lane-id call WITHOUT the
+          // updateAfterCommit bookkeeping fields.
+          if (record.id === "publish_branch_1" && !("lastCommitSha" in record)) laneCalls.push(record)
+        }
+        return undefined
+      })
+
+      const response = await POST(buildRequest({ projectId: "project_123" }))
+      const payload = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(payload.recovered).toBe(true)
+      expect(payload.laneInvalidated).toBe(true)
+      expect(payload.warning).toMatch(/restored/i)
+      // The attempt reconciled from its recorded SHA (markReconciled is the
+      // id-only call) and the lane invalidation ran afterwards.
+      expect(attemptCalls).toEqual([expect.objectContaining({ id: "attempt_1" })])
+      expect(laneCalls).toEqual([expect.objectContaining({ id: "publish_branch_1" })])
+      // Never open a PR for a finished lane.
+      expect(createPullRequest).not.toHaveBeenCalled()
+      expect(batchCommitPublishLaneAtExpectedHead).not.toHaveBeenCalled()
+    })
   })
 })

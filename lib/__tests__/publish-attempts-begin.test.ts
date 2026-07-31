@@ -320,6 +320,53 @@ describe("publishAttempts.begin transactional reference validation", () => {
     expect(insert).not.toHaveBeenCalled()
   })
 
+  it("accepts a well-formed content revision and stores it on the association", async () => {
+    const insert = vi.fn().mockResolvedValue("attempt_1")
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce(project)
+      .mockResolvedValueOnce({ _id: "lane_1", projectId: "project_1", branchName: "repopress/start" })
+      .mockResolvedValueOnce({
+        _id: "doc_1",
+        projectId: "project_1",
+        filePath: "a.mdx",
+        pathRepresentation: "content_relative_v1",
+        updatedAt: 5,
+      })
+
+    await (begin as any).handler(createCtx(get, insert), {
+      ...baseArgs,
+      documentAssociations: [
+        { documentId: "doc_1", repoPath: "content/a.mdx", expectedUpdatedAt: 5, contentRevision: "c".repeat(64) },
+      ],
+      projectAccessToken: await patToken(),
+    })
+
+    expect(insert).toHaveBeenCalledWith(
+      "publishAttempts",
+      expect.objectContaining({
+        documentAssociations: [expect.objectContaining({ contentRevision: "c".repeat(64) })],
+      }),
+    )
+  })
+
+  it("rejects a malformed content revision", async () => {
+    const insert = vi.fn()
+    const get = vi.fn().mockResolvedValue(project)
+
+    await expect(
+      (begin as any).handler(createCtx(get, insert), {
+        ...baseArgs,
+        documentAssociations: [
+          { documentId: "doc_1", repoPath: "content/a.mdx", expectedUpdatedAt: 5, contentRevision: "not-a-digest" },
+        ],
+        projectAccessToken: await patToken(),
+      }),
+    ).rejects.toThrow(/content revision must be a 64-hex digest/i)
+
+    expect(insert).not.toHaveBeenCalled()
+  })
+
   it("rejects malformed digests and out-of-bounds arrays", async () => {
     const insert = vi.fn()
     const get = vi.fn().mockResolvedValue(project)

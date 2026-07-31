@@ -58,6 +58,7 @@ export const begin = mutation({
         documentId: v.id("documents"),
         repoPath: v.string(),
         expectedUpdatedAt: v.number(),
+        contentRevision: v.optional(v.string()),
       }),
     ),
     deleteAssociations: v.array(deleteAssociationValidator),
@@ -93,6 +94,11 @@ export const begin = mutation({
     for (const path of args.operationPaths) {
       if (path.length === 0 || path.length > MAX_ATTEMPT_PATH_LENGTH) {
         throw new Error("Publish attempt operation path exceeds bounds")
+      }
+    }
+    for (const association of args.documentAssociations) {
+      if (association.contentRevision !== undefined && !DIGEST_PATTERN.test(association.contentRevision)) {
+        throw new Error("Publish attempt content revision must be a 64-hex digest")
       }
     }
     const opIdSet = new Set(args.opIds.map(String))

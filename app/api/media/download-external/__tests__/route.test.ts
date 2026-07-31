@@ -114,7 +114,13 @@ describe("POST /api/media/download-external", () => {
       },
     } as any)
     convexQueryMock.mockResolvedValue(projectRecord)
-    convexMutationMock.mockResolvedValue("media-op-1")
+    // mediaOps.stage returns a structured result; other mutations
+    // (recordMediaAsset) return plain values.
+    convexMutationMock.mockImplementation(async (_fn: unknown, args: unknown) =>
+      args && typeof args === "object" && "sourceType" in (args as Record<string, unknown>)
+        ? { staged: true, mediaOpId: "media-op-1" }
+        : "media-op-1",
+    )
   })
 
   afterEach(() => {
@@ -150,6 +156,21 @@ describe("POST /api/media/download-external", () => {
         convexStorageId: "storage_ext123",
       }),
     )
+  })
+
+  it("returns a truthful 409 when staging is rejected because a publish is finalizing", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(imageResponse())
+    convexMutationMock.mockImplementation(async (_fn: unknown, args: unknown) =>
+      args && typeof args === "object" && "sourceType" in (args as Record<string, unknown>)
+        ? { staged: false, reason: "publish-in-progress" }
+        : "media-op-1",
+    )
+
+    const response = await POST(buildRequest(baseBody()))
+    const payload = await response.json()
+
+    expect(response.status).toBe(409)
+    expect(payload.error).toContain("publish is finalizing")
   })
 
   it("threads sourceFilePath into staged external media ops", async () => {

@@ -1,6 +1,7 @@
 import { v } from "convex/values"
 import { internalMutation, mutation, query } from "./_generated/server"
 import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
+import { invalidateClosedLaneSync } from "./lib/laneInvalidation"
 import { assertNoActivePublishAttempt, findActivePublishAttempt } from "./lib/publishAttemptGuard"
 
 /** Generate a one-time upload URL for Convex file storage. The caller POSTs raw bytes to this URL and receives a storageId in response. */
@@ -71,7 +72,20 @@ export const stage = mutation({
       // Replacing an existing pending row mutates bytes an active publish
       // attempt may have planned - refuse while one is at the commit
       // boundary (a brand-new row below is safe: no attempt references it).
-      await assertNoActivePublishAttempt(ctx.db, args.projectId)
+      // The refusal is a structured RESULT, not a throw: the caller already
+      // stored the new bytes, and this mutation must COMMIT for the
+      // storage delete below to take effect (a thrown mutation rolls its
+      // storage writes back, orphaning the rejected object).
+      if (await findActivePublishAttempt(ctx.db, args.projectId)) {
+        if (args.convexStorageId && args.convexStorageId !== existingPending.convexStorageId) {
+          try {
+            await ctx.storage.delete(args.convexStorageId)
+          } catch {
+            // Already gone.
+          }
+        }
+        return { staged: false as const, reason: "publish-in-progress" as const }
+      }
       // If replacing a Convex-stored file, delete the old storage entry first.
       if (existingPending.convexStorageId && existingPending.convexStorageId !== args.convexStorageId) {
         try {
@@ -96,11 +110,11 @@ export const stage = mutation({
         commitSha: undefined,
         updatedAt: now,
       })
-      return existingPending._id
+      return { staged: true as const, mediaOpId: existingPending._id }
     }
 
     const { projectAccessToken: _projectAccessToken, ...storableArgs } = args
-    return await ctx.db.insert("mediaOps", {
+    const mediaOpId = await ctx.db.insert("mediaOps", {
       ...storableArgs,
       userId,
       status: "pending",
@@ -108,6 +122,7 @@ export const stage = mutation({
       createdAt: now,
       updatedAt: now,
     })
+    return { staged: true as const, mediaOpId }
   },
 })
 
@@ -247,55 +262,6 @@ export const clearCommittedForProject = mutation({
 })
 
 /**
- * Delete all Convex storage files for a closed/merged publish branch and mark those ops as undone.
- * Called by the PR-closed and PR-merged webhook handlers.
- */
-export const cleanupMediaForBranch = internalMutation({
-  args: {
-    publishBranchId: v.id("publishBranches"),
-  },
-  handler: async (ctx, args) => {
-    const branch = await ctx.db.get(args.publishBranchId)
-    if (!branch) return
-
-    // Never undo media while a publish attempt is at the commit boundary for
-    // this project - the in-flight commit may contain these ops. The skip is
-    // DURABLE: the branch is flagged and the nightly cron finishes the
-    // cleanup once the attempt resolves (the webhook only fires once).
-    if (await findActivePublishAttempt(ctx.db, branch.projectId)) {
-      await ctx.db.patch(branch._id, { mediaCleanupPending: true, updatedAt: Date.now() })
-      return
-    }
-
-    await cleanupBranchMediaRows(ctx, args.publishBranchId, branch.projectId)
-    if (branch.mediaCleanupPending) {
-      await ctx.db.patch(branch._id, { mediaCleanupPending: undefined, updatedAt: Date.now() })
-    }
-  },
-})
-
-async function cleanupBranchMediaRows(ctx: { db: any; storage: any }, publishBranchId: string, projectId: string) {
-  const ops = await ctx.db
-    .query("mediaOps")
-    .withIndex("by_projectId", (q: any) => q.eq("projectId", projectId))
-    .filter((q: any) => q.eq(q.field("publishBranchId"), publishBranchId))
-    .filter((q: any) => q.or(q.eq(q.field("status"), "pending"), q.eq(q.field("status"), "committed")))
-    .collect()
-
-  const now = Date.now()
-  for (const op of ops) {
-    if (op.convexStorageId) {
-      try {
-        await ctx.storage.delete(op.convexStorageId)
-      } catch {
-        // Already gone.
-      }
-    }
-    await ctx.db.patch(op._id, { status: "undone", updatedAt: now })
-  }
-}
-
-/**
  * Stale cleanup: delete Convex storage files for pending mediaOps older than 7 days
  * that were never associated with a publish branch (truly abandoned staging files).
  * Runs nightly via cron.
@@ -345,14 +311,15 @@ export const cleanupStaleUploads = internalMutation({
       processed++
     }
 
-    // Finish PR-close cleanups that were durably skipped while a publish
-    // attempt was at the commit boundary (the webhook fires only once; the
-    // committed rows it targets are outside the stale-pending pass above).
+    // Finish closed-lane synchronization invalidations that were durably
+    // deferred while a publish attempt was at the commit boundary (the
+    // close event fires only once; the committed rows and document
+    // provenance it targets are outside the stale-pending pass above).
     const flaggedBranches = await ctx.db
       .query("publishBranches")
-      .withIndex("by_mediaCleanupPending", (q) => q.eq("mediaCleanupPending", true))
+      .withIndex("by_laneInvalidationPending", (q) => q.eq("laneInvalidationPending", true))
       .take(10)
-    let flaggedCleaned = 0
+    let lanesInvalidated = 0
     for (const branch of flaggedBranches) {
       let attemptActive = activeAttemptByProject.get(branch.projectId)
       if (attemptActive === undefined) {
@@ -361,11 +328,10 @@ export const cleanupStaleUploads = internalMutation({
       }
       if (attemptActive) continue
 
-      await cleanupBranchMediaRows(ctx, branch._id, branch.projectId)
-      await ctx.db.patch(branch._id, { mediaCleanupPending: undefined, updatedAt: Date.now() })
-      flaggedCleaned++
+      const invalidation = await invalidateClosedLaneSync(ctx, branch)
+      if (!invalidation.deferred) lanesInvalidated++
     }
 
-    return { processed, flaggedCleaned }
+    return { processed, lanesInvalidated }
   },
 })

@@ -3,6 +3,7 @@ import type { Id } from "./_generated/dataModel"
 import type { QueryCtx } from "./_generated/server"
 import { mutation, query } from "./_generated/server"
 import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
+import { invalidateClosedLaneSync } from "./lib/laneInvalidation"
 
 async function getCurrentBranchForProject(
   ctx: QueryCtx,
@@ -228,7 +229,14 @@ export const markMerged = mutation({
   },
 })
 
-/** Mark a publish branch as closed (PR was closed without merging). */
+/**
+ * Mark a publish branch as closed (PR was closed without merging). This is
+ * the CLIENT FALLBACK close path (usePrStatusSync detects an externally
+ * closed PR); the webhook path is githubWebhook.handlePRClosed. Both must
+ * invalidate the lane's synchronization state, or content published to the
+ * dead lane stays excluded from listDirtyForProject/listPending with no way
+ * to republish.
+ */
 export const markClosed = mutation({
   args: {
     id: v.id("publishBranches"),
@@ -248,6 +256,34 @@ export const markClosed = mutation({
       status: "closed",
       updatedAt: Date.now(),
     })
+    return await invalidateClosedLaneSync(ctx, { ...publishBranch, status: "closed" })
+  },
+})
+
+/**
+ * Finish (or run) the synchronization invalidation for an already-closed
+ * lane. Used by publish-attempt recovery after it resolves an attempt whose
+ * lane was closed unmerged - the close-time invalidation was deferred while
+ * that attempt was active.
+ */
+export const finishLaneInvalidation = mutation({
+  args: {
+    id: v.id("publishBranches"),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const publishBranch = await ctx.db.get(args.id)
+    if (!publishBranch) throw new Error("Publish branch not found")
+    await resolveProjectAccess(
+      ctx,
+      { projectId: publishBranch.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken },
+      "editor",
+    )
+    if (publishBranch.status !== "closed") {
+      throw new Error("Lane invalidation only applies to closed publish lanes")
+    }
+    return await invalidateClosedLaneSync(ctx, publishBranch)
   },
 })
 

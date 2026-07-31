@@ -19,7 +19,7 @@ vi.mock("@/convex/auth", () => ({
 }))
 
 import { discardAll, markCommitted, undoOp } from "@/convex/explorerOps"
-import { cleanupMediaForBranch, stage as stageMedia, undoByRepoPath as undoMediaByRepoPath } from "@/convex/mediaOps"
+import { stage as stageMedia, undoByRepoPath as undoMediaByRepoPath } from "@/convex/mediaOps"
 import { mintProjectAccessToken } from "@/lib/project-access-token"
 
 function createCtx(
@@ -301,63 +301,34 @@ describe("publish attempt guard on undo/discard", () => {
     expect(patch).not.toHaveBeenCalled()
   })
 
-  it("refuses to replace an existing pending media upload while a publish attempt is active", async () => {
+  it("rejects replacing a pending media upload while a publish attempt is active and deletes the new bytes", async () => {
     const patch = vi.fn()
     const get = vi.fn().mockResolvedValueOnce(project)
+    const ctx = createCtx(get, patch, {
+      activePublishAttempt: activeAttempt,
+      pendingMediaRow: { _id: "media_1", projectId: "project_1", convexStorageId: "storage_old" },
+    })
 
-    await expect(
-      (stageMedia as any).handler(
-        createCtx(get, patch, {
-          activePublishAttempt: activeAttempt,
-          pendingMediaRow: { _id: "media_1", projectId: "project_1", convexStorageId: "storage_old" },
-        }),
-        {
-          projectId: "project_1",
-          repoPath: "/public/uploads/pic.png",
-          fileName: "pic.png",
-          mimeType: "image/png",
-          sourceType: "convex",
-          convexStorageId: "storage_new",
-          userId: "user_owner",
-          projectAccessToken: await patToken(),
-        },
-      ),
-    ).rejects.toThrow(/publish is in progress/i)
+    const result = await (stageMedia as any).handler(ctx, {
+      projectId: "project_1",
+      repoPath: "/public/uploads/pic.png",
+      fileName: "pic.png",
+      mimeType: "image/png",
+      sourceType: "convex",
+      convexStorageId: "storage_new",
+      userId: "user_owner",
+      projectAccessToken: await patToken(),
+    })
 
-    // Neither the row nor the referenced storage was touched.
+    // Structured refusal, NOT a throw: the mutation must commit for the
+    // storage delete to take effect (a thrown mutation rolls it back and
+    // orphans the just-uploaded object). The route maps this to a 409.
+    expect(result).toEqual({ staged: false, reason: "publish-in-progress" })
+    // The rejected NEW upload was deleted; the planned row and its bytes
+    // were untouched.
+    expect(ctx.storage.delete).toHaveBeenCalledWith("storage_new")
+    expect(ctx.storage.delete).not.toHaveBeenCalledWith("storage_old")
     expect(patch).not.toHaveBeenCalled()
-  })
-
-  it("durably flags PR-close media cleanup when a publish attempt is at the commit boundary", async () => {
-    const patch = vi.fn()
-    const get = vi.fn().mockResolvedValueOnce({
-      _id: "lane_1",
-      projectId: "project_1",
-      branchName: "repopress/start",
-    })
-
-    await (cleanupMediaForBranch as any).handler(createCtx(get, patch, { activePublishAttempt: activeAttempt }), {
-      publishBranchId: "lane_1",
-    })
-
-    // Skipped, but DURABLY: the branch is flagged for the nightly cron.
-    expect(patch).toHaveBeenCalledWith("lane_1", expect.objectContaining({ mediaCleanupPending: true }))
-  })
-
-  it("runs PR-close media cleanup and clears the flag when no attempt is active", async () => {
-    const patch = vi.fn()
-    const get = vi.fn().mockResolvedValueOnce({
-      _id: "lane_1",
-      projectId: "project_1",
-      branchName: "repopress/start",
-      mediaCleanupPending: true,
-    })
-
-    await (cleanupMediaForBranch as any).handler(createCtx(get, patch), {
-      publishBranchId: "lane_1",
-    })
-
-    expect(patch).toHaveBeenCalledWith("lane_1", expect.objectContaining({ mediaCleanupPending: undefined }))
   })
 
   it("allows discardAll when no publish attempt is active", async () => {

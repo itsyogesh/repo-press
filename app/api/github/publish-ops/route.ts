@@ -72,20 +72,22 @@ export async function POST(request: Request) {
     const { repoOwner: owner, repoName: repo, branch: baseBranch, contentRoot } = project
 
     const queryAuth = { userId: actingUserId, projectAccessToken }
-    const [pendingOps, dirtyDocs, pendingMediaOps] = await Promise.all([
-      convex.query(api.explorerOps.listPending, {
-        projectId: project._id,
-        ...queryAuth,
-      }),
-      convex.query(api.documents.listDirtyForProject, {
-        projectId: project._id,
-        ...queryAuth,
-      }),
-      convex.query(api.mediaOps.listPending, {
-        projectId: project._id,
-        ...queryAuth,
-      }),
-    ])
+    const loadStagedState = () =>
+      Promise.all([
+        convex.query(api.explorerOps.listPending, {
+          projectId: project._id,
+          ...queryAuth,
+        }),
+        convex.query(api.documents.listDirtyForProject, {
+          projectId: project._id,
+          ...queryAuth,
+        }),
+        convex.query(api.mediaOps.listPending, {
+          projectId: project._id,
+          ...queryAuth,
+        }),
+      ])
+    let [pendingOps, dirtyDocs, pendingMediaOps] = await loadStagedState()
 
     // ── Recover a publish attempt stranded at the commit boundary ──
     // Runs BEFORE the no-pending check (a crashed attempt that already
@@ -112,8 +114,13 @@ export async function POST(request: Request) {
       if (recovery.handled) {
         return recovery.response
       }
-      // The attempt provably never landed and was superseded - continue with
-      // a fresh publish against the current head.
+      // The attempt was superseded - continue with a fresh publish against
+      // the current head. When resolving it invalidated a closed lane, the
+      // restored operations/documents must join THIS publish, so re-read
+      // the staged state.
+      if (recovery.stagedStateStale) {
+        ;[pendingOps, dirtyDocs, pendingMediaOps] = await loadStagedState()
+      }
     }
 
     if (pendingOps.length === 0 && dirtyDocs.length === 0 && pendingMediaOps.length === 0) {
@@ -278,6 +285,9 @@ export async function POST(request: Request) {
 
     const operations: BatchOperation[] = []
     const conflicts: { path: string; reason: string }[] = []
+    // Exact serialized bytes planned per content path - the source of each
+    // document association's content-specific revision digest.
+    const serializedContentByRepoPath = new Map<string, string>()
 
     for (const { source: op, repoPath } of resolvedPendingOps) {
       if (op.opType === "create") {
@@ -303,6 +313,7 @@ export async function POST(request: Request) {
           conflicts.push({ path: repoPath, reason: serialized.reason })
           continue
         }
+        serializedContentByRepoPath.set(repoPath, serialized.content)
 
         operations.push({
           path: repoPath,
@@ -355,6 +366,7 @@ export async function POST(request: Request) {
         conflicts.push({ path: repoPath, reason: serialized.reason })
         continue
       }
+      serializedContentByRepoPath.set(repoPath, serialized.content)
       // Redundancy guard: when the serialized content is byte-identical to
       // the file at the publish authority, there is nothing to commit for
       // this document - skipping it prevents empty "update" commits on
@@ -500,6 +512,10 @@ export async function POST(request: Request) {
         documentId: source._id,
         repoPath,
         expectedUpdatedAt: source.updatedAt,
+        // Content-specific revision of the exact serialized bytes this
+        // publish plans for the document (set for every non-delete path on
+        // the success path; conflicts abort before associations are built).
+        contentRevision: sha256Hex(serializedContentByRepoPath.get(repoPath) ?? ""),
       }))
     let attemptId: Id<"publishAttempts">
     try {
@@ -650,6 +666,7 @@ export async function POST(request: Request) {
       token,
       owner,
       repo,
+      publishBranchId: publishBranch._id,
       commitSha,
       documentAssociations,
       actingUserId,
@@ -829,6 +846,7 @@ async function refreshDocumentShasAtCommit({
   token,
   owner,
   repo,
+  publishBranchId,
   commitSha,
   documentAssociations,
   actingUserId,
@@ -838,13 +856,19 @@ async function refreshDocumentShasAtCommit({
   token: string
   owner: string
   repo: string
+  publishBranchId: Id<"publishBranches">
   commitSha: string
-  documentAssociations: Array<{ documentId: Id<"documents">; repoPath: string; expectedUpdatedAt: number }>
+  documentAssociations: Array<{
+    documentId: Id<"documents">
+    repoPath: string
+    expectedUpdatedAt: number
+    contentRevision?: string
+  }>
   actingUserId?: string
   projectAccessToken?: string
 }): Promise<{ failedCount: number }> {
   let failedCount = 0
-  for (const { documentId, repoPath, expectedUpdatedAt } of documentAssociations) {
+  for (const { documentId, repoPath, expectedUpdatedAt, contentRevision } of documentAssociations) {
     try {
       const fileAtCommit = await getFileForPublish(token, owner, repo, repoPath, commitSha)
       if (fileAtCommit.status === "absent") {
@@ -855,6 +879,9 @@ async function refreshDocumentShasAtCommit({
       await convex.mutation(api.documents.markPublishedSnapshot, {
         id: documentId,
         githubSha: fileAtCommit.file.sha,
+        publishBranchId,
+        commitSha,
+        contentRevision,
         expectedUpdatedAt,
         userId: actingUserId,
         projectAccessToken,
@@ -877,7 +904,12 @@ type RecoverablePublishAttempt = {
   operationPaths: string[]
   opIds: Id<"explorerOps">[]
   mediaAssociations: Array<{ mediaOpId: Id<"mediaOps">; repoPath: string; expectedUpdatedAt: number }>
-  documentAssociations: Array<{ documentId: Id<"documents">; repoPath: string; expectedUpdatedAt: number }>
+  documentAssociations: Array<{
+    documentId: Id<"documents">
+    repoPath: string
+    expectedUpdatedAt: number
+    contentRevision?: string
+  }>
   deleteAssociations: Array<{ opId: Id<"explorerOps">; documentId: Id<"documents">; expectedUpdatedAt: number }>
   // getActiveForProject only returns committing/committed attempts; the wider
   // union matches the stored document type.
@@ -919,7 +951,7 @@ async function recoverPublishAttempt({
   description?: string
   actingUserId?: string
   projectAccessToken?: string
-}): Promise<{ handled: true; response: NextResponse } | { handled: false }> {
+}): Promise<{ handled: true; response: NextResponse } | { handled: false; stagedStateStale?: boolean }> {
   const auth = { userId: actingUserId, projectAccessToken }
 
   // Validate the attempt's lane reference before trusting anything else.
@@ -946,6 +978,27 @@ async function recoverPublishAttempt({
         { status: 500 },
       ),
     }
+  }
+
+  // A finished lane (PR closed unmerged or merged) can never accept this
+  // attempt's work again, and GitHub may already have deleted its branch -
+  // the ancestry walk below would fail closed FOREVER. A "committing"
+  // attempt provably never ran recordCommit, so markCommitted and the
+  // document refresh never ran either: every staged operation is still
+  // pending and every document still dirty. Superseding therefore loses
+  // nothing - if the CAS commit did land it sits on a finished lane
+  // (closed: explicitly abandoned unmerged; merged: identical content is
+  // skipped by the redundancy guard on the next publish).
+  const laneFinished = lane.status === "closed" || lane.status === "merged"
+  if (laneFinished && attempt.status === "committing") {
+    await convex.mutation(api.publishAttempts.supersede, { id: attempt._id, ...auth })
+    if (lane.status === "closed") {
+      // Close-time invalidation deferred while this attempt was active;
+      // finish it now so the restored operations join the fresh publish.
+      await convex.mutation(api.publishBranches.finishLaneInvalidation, { id: attempt.publishBranchId, ...auth })
+      return { handled: false, stagedStateStale: true }
+    }
+    return { handled: false }
   }
 
   let commitSha = attempt.status === "committed" ? (attempt.commitSha ?? null) : null
@@ -1053,7 +1106,9 @@ async function recoverPublishAttempt({
   let prNumber = lane.prNumber
   let prUrl = lane.prUrl
 
-  if (!prNumber) {
+  // Never try to open a pull request for a finished lane - its PR life is
+  // over and the branch may already be deleted.
+  if (!prNumber && !laneFinished) {
     const ensured = await ensureLanePullRequest({
       token,
       owner,
@@ -1118,6 +1173,7 @@ async function recoverPublishAttempt({
     token,
     owner,
     repo,
+    publishBranchId: attempt.publishBranchId,
     commitSha,
     documentAssociations: attempt.documentAssociations,
     actingUserId,
@@ -1125,22 +1181,32 @@ async function recoverPublishAttempt({
   })
 
   let reconciliationIncomplete = false
+  let laneInvalidated = false
   if (refresh.failedCount > 0) {
     reconciliationIncomplete = true
     const refreshWarning = `${refresh.failedCount} document(s) could not sync their GitHub state after commit ${commitSha}; publish again to finish reconciliation (no new commit will be created).`
     warning = warning ? `${warning} ${refreshWarning}` : refreshWarning
   } else {
     await convex.mutation(api.publishAttempts.markReconciled, { id: attempt._id, ...auth })
+    if (lane.status === "closed") {
+      // The lane's PR was closed unmerged, so everything just reconciled
+      // onto it is stranded; the close-time invalidation was deferred while
+      // this attempt was active. Finish it now that the attempt resolved.
+      await convex.mutation(api.publishBranches.finishLaneInvalidation, { id: attempt.publishBranchId, ...auth })
+      laneInvalidated = true
+    }
   }
 
-  const note =
-    "Recovered a previous publish attempt without committing again. Review remaining staged changes and publish again if needed."
+  const note = laneInvalidated
+    ? "Recovered a previous publish attempt whose pull request was closed without merging. Its staged operations and documents were restored; publish again to publish them to a new lane."
+    : "Recovered a previous publish attempt without committing again. Review remaining staged changes and publish again if needed."
   return {
     handled: true,
     response: NextResponse.json({
       ok: true,
       recovered: true,
       reconciliationIncomplete: reconciliationIncomplete || undefined,
+      laneInvalidated: laneInvalidated || undefined,
       commitSha,
       prUrl,
       prNumber,

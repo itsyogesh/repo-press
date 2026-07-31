@@ -826,25 +826,38 @@ export const listDirtyForProject = query({
     return [...drafts, ...approved].filter(
       (d) =>
         (d.body != null || d.frontmatter != null) &&
-        // Lane-synchronization provenance: a document whose exact snapshot
-        // was published and reconciled is clean until the next edit
-        // diverges updatedAt from lastPublishedUpdatedAt.
-        d.lastPublishedUpdatedAt !== d.updatedAt,
+        // Lane-synchronization provenance: a document is clean only while
+        // the snapshot recorded by its last reconciled publish is still
+        // current. Recording provenance never bumps updatedAt, so this
+        // comparison is stable across reconciliation replays; closing the
+        // lane unmerged clears the provenance and the document becomes
+        // dirty again.
+        d.publishedProvenance?.publishedUpdatedAt !== d.updatedAt,
     )
   },
 })
 
 /**
  * Record lane-synchronization provenance after a publish reconciled this
- * document. Guarded by a compare-and-swap on updatedAt: when the document
- * still matches the published snapshot it becomes clean
- * (lastPublishedUpdatedAt === updatedAt); when it was edited during the
- * publish, only githubSha is refreshed and the newer draft stays dirty.
+ * document: which lane and commit hold the published snapshot, the
+ * content-specific revision that landed, and the snapshot's updatedAt.
+ *
+ * Deliberately IDEMPOTENT: it records what landed without ever touching
+ * updatedAt, and cleanliness is derived (publishedUpdatedAt === updatedAt).
+ * Replaying the same lane/commit/revision association - recovery after a
+ * partial reconcile, or a retry between the SHA refresh and markReconciled -
+ * patches identical values, so it can neither flip a synchronized document
+ * dirty nor mask a concurrent edit as clean.
  */
 export const markPublishedSnapshot = mutation({
   args: {
     id: v.id("documents"),
     githubSha: v.string(),
+    publishBranchId: v.id("publishBranches"),
+    commitSha: v.string(),
+    // Optional only for replays of attempts recorded before the field
+    // existed; every new publish provides it.
+    contentRevision: v.optional(v.string()),
     expectedUpdatedAt: v.number(),
     userId: v.optional(v.string()),
     projectAccessToken: v.optional(v.string()),
@@ -857,19 +870,24 @@ export const markPublishedSnapshot = mutation({
       { projectId: doc.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken },
       "editor",
     )
-    const now = Date.now()
-    if (doc.updatedAt === args.expectedUpdatedAt) {
-      await ctx.db.patch(args.id, {
-        githubSha: args.githubSha,
-        lastPublishedUpdatedAt: now,
-        updatedAt: now,
-      })
-      return { synchronized: true }
+    const publishedProvenance: {
+      publishBranchId: typeof args.publishBranchId
+      commitSha: string
+      publishedUpdatedAt: number
+      contentRevision?: string
+    } = {
+      publishBranchId: args.publishBranchId,
+      commitSha: args.commitSha,
+      publishedUpdatedAt: args.expectedUpdatedAt,
     }
-    // Edited during publishing: refresh conflict-detection state only; the
-    // concurrent draft remains dirty.
-    await ctx.db.patch(args.id, { githubSha: args.githubSha, updatedAt: now })
-    return { synchronized: false }
+    if (args.contentRevision !== undefined) {
+      publishedProvenance.contentRevision = args.contentRevision
+    }
+    await ctx.db.patch(args.id, { githubSha: args.githubSha, publishedProvenance })
+    // synchronized: the planned snapshot is still the document's current
+    // content, so it is now clean. A concurrent edit leaves it dirty - the
+    // provenance still truthfully records what landed on the lane.
+    return { synchronized: doc.updatedAt === args.expectedUpdatedAt }
   },
 })
 

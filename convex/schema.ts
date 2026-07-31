@@ -187,11 +187,25 @@ export default defineSchema({
     // GitHub sync state
     githubSha: v.optional(v.string()),
     lastSyncedAt: v.optional(v.number()),
-    // Lane-synchronization provenance: set (to the same value as updatedAt)
-    // when a publish successfully committed and reconciled this document's
-    // exact planned snapshot. The document is "clean" for publishing while
-    // lastPublishedUpdatedAt === updatedAt; any later edit diverges them.
+    // DEPRECATED: superseded by publishedProvenance. Kept only so rows
+    // written by the previous revision still validate; never read or
+    // written anymore and safe to drop after a cleanup pass.
     lastPublishedUpdatedAt: v.optional(v.number()),
+    // Lane-synchronization provenance: which publish lane and commit hold
+    // this document's published snapshot, the content-specific revision
+    // (sha256 of the serialized bytes) that landed, and the updatedAt of
+    // the planned snapshot. The document is "clean" for publishing while
+    // publishedUpdatedAt === updatedAt (recording it never bumps
+    // updatedAt, so replays are no-ops); closing the lane unmerged clears
+    // the whole object and the document becomes dirty again.
+    publishedProvenance: v.optional(
+      v.object({
+        publishBranchId: v.id("publishBranches"),
+        commitSha: v.string(),
+        contentRevision: v.optional(v.string()),
+        publishedUpdatedAt: v.number(),
+      }),
+    ),
     // Scheduling
     publishedAt: v.optional(v.number()),
     scheduledAt: v.optional(v.number()),
@@ -379,16 +393,17 @@ export default defineSchema({
     status: v.union(v.literal("active"), v.literal("inactive"), v.literal("merged"), v.literal("closed")),
     lastCommitSha: v.optional(v.string()),
     committedFilePaths: v.optional(v.array(v.string())),
-    // Set when PR-close media cleanup was skipped because a publish attempt
-    // was at the commit boundary; the nightly cron finishes it durably.
-    mediaCleanupPending: v.optional(v.boolean()),
+    // Set when closed-lane synchronization invalidation was skipped because
+    // a publish attempt was at the commit boundary; the nightly cron (or
+    // attempt recovery) finishes it durably.
+    laneInvalidationPending: v.optional(v.boolean()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_projectId", ["projectId"])
     .index("by_projectId_status", ["projectId", "status"])
     .index("by_prNumber", ["prNumber"])
-    .index("by_mediaCleanupPending", ["mediaCleanupPending"]),
+    .index("by_laneInvalidationPending", ["laneInvalidationPending"]),
 
   // ─── Publish Attempts (durable commit/reconcile boundary) ─────────
   // One row per publish request that reaches the commit boundary. Recovery
@@ -418,6 +433,11 @@ export default defineSchema({
         documentId: v.id("documents"),
         repoPath: v.string(),
         expectedUpdatedAt: v.number(),
+        // sha256 of the exact serialized content this publish planned for
+        // the document; stored into the document's publishedProvenance at
+        // reconcile time. Optional only for attempts recorded before the
+        // field existed.
+        contentRevision: v.optional(v.string()),
       }),
     ),
     deleteAssociations: v.array(

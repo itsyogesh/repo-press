@@ -1,6 +1,7 @@
 import { v } from "convex/values"
 import { verifyServerQueryToken } from "../lib/project-access-token"
 import { mutation } from "./_generated/server"
+import { invalidateClosedLaneSync } from "./lib/laneInvalidation"
 
 /**
  * Handle a GitHub PR merge event.
@@ -171,8 +172,13 @@ export const handlePRMerged = mutation({
 
 /**
  * Handle a GitHub PR close event (without merge).
- * Marks the publish branch as closed. Explorer and media ops remain pending
- * so the user can re-publish later.
+ * Marks the publish branch as closed and invalidates the lane's
+ * synchronization state: ops committed to the lane are restored to pending
+ * (or explicitly discarded when newer pending intent supersedes them) and
+ * documents whose publishedProvenance points at the lane become dirty
+ * again, so nothing the dead lane held is stranded. Pending staged work is
+ * untouched. The client fallback path (publishBranches.markClosed) performs
+ * the same invalidation.
  */
 export const handlePRClosed = mutation({
   args: {
@@ -195,5 +201,6 @@ export const handlePRClosed = mutation({
       status: "closed",
       updatedAt: Date.now(),
     })
+    await invalidateClosedLaneSync(ctx, { ...publishBranch, status: "closed" })
   },
 })
