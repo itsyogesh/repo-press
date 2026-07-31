@@ -1042,6 +1042,7 @@ function indexGitTree(data: unknown): IndexedGitTree | null {
       pathBytes += Buffer.byteLength(path, "utf8")
       if (pathBytes > MAX_VERIFY_TREE_PATH_BYTES || !/^[0-7]{6}$/u.test(mode)) return null
       if (type === "tree") {
+        if (mode !== "040000") return null
         if (directories.has(path) || leaves.has(path)) return null
         directories.add(path)
         continue
@@ -1145,32 +1146,51 @@ async function readCommitForPublish(
 function applyPublishDescriptors(
   baseTree: IndexedGitTree,
   descriptors: readonly PublishOperationDescriptor[],
-): Map<string, GitLeaf> | null {
-  const expected = new Map(baseTree.leaves)
+): IndexedGitTree | null {
+  const expectedLeaves = new Map(baseTree.leaves)
+  const expectedDirectories = new Set(baseTree.directories)
+  const deleteParentCandidates = new Set<string>()
+  const parentDirectories = (path: string) => {
+    const segments = path.split("/")
+    return segments.slice(0, -1).map((_segment, index) => segments.slice(0, index + 1).join("/"))
+  }
   for (const descriptor of descriptors) {
     const baseLeaf = baseTree.leaves.get(descriptor.path)
     const baseDirectory = baseTree.directories.has(descriptor.path)
     const baseFileExists = baseLeaf?.type === "blob"
     if (descriptor.action === "create") {
       if (baseLeaf || baseDirectory) return null
-      expected.set(descriptor.path, {
+      expectedLeaves.set(descriptor.path, {
         mode: "100644",
         type: "blob",
         sha: descriptor.expectedBlobSha,
       })
+      for (const parent of parentDirectories(descriptor.path)) {
+        if (expectedLeaves.has(parent)) return null
+        expectedDirectories.add(parent)
+      }
     } else if (descriptor.action === "update") {
       if (!baseFileExists || baseDirectory) return null
-      expected.set(descriptor.path, {
+      expectedLeaves.set(descriptor.path, {
         mode: "100644",
         type: "blob",
         sha: descriptor.expectedBlobSha,
       })
     } else {
       if (!baseFileExists || baseDirectory) return null
-      expected.delete(descriptor.path)
+      expectedLeaves.delete(descriptor.path)
+      for (const parent of parentDirectories(descriptor.path)) deleteParentCandidates.add(parent)
     }
   }
-  return expected
+  const deepestFirst = [...deleteParentCandidates].sort((a, b) => b.split("/").length - a.split("/").length)
+  for (const directory of deepestFirst) {
+    const prefix = `${directory}/`
+    const hasContent =
+      [...expectedLeaves.keys()].some((path) => path.startsWith(prefix)) ||
+      [...expectedDirectories].some((path) => path !== directory && path.startsWith(prefix))
+    if (!hasContent) expectedDirectories.delete(directory)
+  }
+  return { leaves: expectedLeaves, directories: expectedDirectories }
 }
 
 function gitLeavesEqual(expected: Map<string, GitLeaf>, actual: Map<string, GitLeaf>): boolean {
@@ -1180,6 +1200,16 @@ function gitLeavesEqual(expected: Map<string, GitLeaf>, actual: Map<string, GitL
     if (!candidate || candidate.mode !== leaf.mode || candidate.type !== leaf.type || candidate.sha !== leaf.sha) {
       return false
     }
+  }
+  return true
+}
+
+function gitTreesEqual(expected: IndexedGitTree, actual: IndexedGitTree): boolean {
+  if (!gitLeavesEqual(expected.leaves, actual.leaves) || expected.directories.size !== actual.directories.size) {
+    return false
+  }
+  for (const directory of expected.directories) {
+    if (!actual.directories.has(directory)) return false
   }
   return true
 }
@@ -1209,8 +1239,8 @@ export async function verifyPublishAttemptCommitForPublish(
     readGitTreeForPublish(octokit, owner, repo, baseCommit.treeSha),
     readGitTreeForPublish(octokit, owner, repo, candidateCommit.treeSha),
   ])
-  const expectedLeaves = applyPublishDescriptors(baseTree, descriptors)
-  return expectedLeaves ? gitLeavesEqual(expectedLeaves, candidateTree.leaves) : false
+  const expectedTree = applyPublishDescriptors(baseTree, descriptors)
+  return expectedTree ? gitTreesEqual(expectedTree, candidateTree) : false
 }
 
 export type PublishPathOutcome = {

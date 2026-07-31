@@ -497,6 +497,7 @@ describe("batchCommit", () => {
           truncated: false,
           tree: [
             { path: "existing.txt", type: "blob", mode: "100644", sha: existingSha },
+            { path: "content", type: "tree", mode: "040000", sha: "3".repeat(40) },
             { path: "content/new.mdx", type: "blob", mode: "100644", sha: expectedBlobSha },
           ],
         },
@@ -682,6 +683,79 @@ describe("batchCommit", () => {
         { path: "vendor/content", action: "update", expectedBlobSha },
       ]),
     ).resolves.toBe(false)
+  })
+
+  it("rejects unrelated empty-tree additions and removals even when every leaf matches", async () => {
+    const baseSha = "a".repeat(40)
+    const candidateSha = "b".repeat(40)
+    const blobSha = "c".repeat(40)
+    const verifyTrees = async (baseTree: unknown[], candidateTree: unknown[]) => {
+      mockOctokit.git.getCommit
+        .mockResolvedValueOnce({
+          data: { message: "publish", parents: [{ sha: baseSha }], tree: { sha: "1".repeat(40) } },
+        })
+        .mockResolvedValueOnce({ data: { message: "base", parents: [], tree: { sha: "2".repeat(40) } } })
+      mockOctokit.git.getTree
+        .mockResolvedValueOnce({ data: { truncated: false, tree: baseTree } })
+        .mockResolvedValueOnce({ data: { truncated: false, tree: candidateTree } })
+      return verifyPublishAttemptCommitForPublish("token", "owner", "repo", baseSha, candidateSha, [
+        { path: "content/page.mdx", action: "update", expectedBlobSha: blobSha },
+      ])
+    }
+    const page = { path: "content/page.mdx", type: "blob", mode: "100644", sha: blobSha }
+    const contentTree = { path: "content", type: "tree", mode: "040000", sha: "f".repeat(40) }
+    const emptyTree = { path: "empty-existing", type: "tree", mode: "040000", sha: "d".repeat(40) }
+    const unrelatedTree = { path: "unrelated-empty", type: "tree", mode: "040000", sha: "e".repeat(40) }
+
+    await expect(verifyTrees([contentTree, page], [contentTree, page, unrelatedTree])).resolves.toBe(false)
+    await expect(verifyTrees([contentTree, page, emptyTree], [contentTree, page])).resolves.toBe(false)
+  })
+
+  it("accepts a delete only when its newly empty parent directories are pruned", async () => {
+    const baseSha = "a".repeat(40)
+    const candidateSha = "b".repeat(40)
+    mockOctokit.git.getCommit
+      .mockResolvedValueOnce({
+        data: { message: "publish", parents: [{ sha: baseSha }], tree: { sha: "1".repeat(40) } },
+      })
+      .mockResolvedValueOnce({ data: { message: "base", parents: [], tree: { sha: "2".repeat(40) } } })
+    mockOctokit.git.getTree
+      .mockResolvedValueOnce({
+        data: {
+          truncated: false,
+          tree: [
+            { path: "content", type: "tree", mode: "040000", sha: "c".repeat(40) },
+            { path: "content/nested", type: "tree", mode: "040000", sha: "d".repeat(40) },
+            { path: "content/nested/old.mdx", type: "blob", mode: "100644", sha: "e".repeat(40) },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({ data: { truncated: false, tree: [] } })
+
+    await expect(
+      verifyPublishAttemptCommitForPublish("token", "owner", "repo", baseSha, candidateSha, [
+        { path: "content/nested/old.mdx", action: "delete" },
+      ]),
+    ).resolves.toBe(true)
+  })
+
+  it("rejects tree entries whose mode is not 040000", async () => {
+    const authoritySha = "a".repeat(40)
+    mockOctokit.git.getCommit.mockResolvedValue({
+      data: { message: "authority", parents: [], tree: { sha: "1".repeat(40) } },
+    })
+    mockOctokit.git.getTree.mockResolvedValue({
+      data: {
+        truncated: false,
+        tree: [{ path: "content", type: "tree", mode: "100644", sha: "b".repeat(40) }],
+      },
+    })
+
+    await expect(
+      inspectPublishEffectsAtCommit("token", "owner", "repo", authoritySha, [
+        { path: "content/page.mdx", action: "delete" },
+      ]),
+    ).rejects.toBeInstanceOf(GitHubReadError)
   })
 })
 
