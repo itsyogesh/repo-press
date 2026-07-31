@@ -2,6 +2,8 @@ import { v } from "convex/values"
 import { internalMutation, mutation, query } from "./_generated/server"
 import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
 import { invalidateClosedLaneSync } from "./lib/laneInvalidation"
+import { finalizeMergedLaneSync } from "./lib/laneMerge"
+import { deleteUnownedStorageOrTombstone } from "./lib/mediaTombstone"
 import { assertNoActivePublishAttempt, findActivePublishAttempt } from "./lib/publishAttemptGuard"
 
 /** Generate a one-time upload URL for Convex file storage. The caller POSTs raw bytes to this URL and receives a storageId in response. */
@@ -75,24 +77,34 @@ export const stage = mutation({
       // The refusal is a structured RESULT, not a throw: the caller already
       // stored the new bytes, and this mutation must COMMIT for the
       // storage delete below to take effect (a thrown mutation rolls its
-      // storage writes back, orphaning the rejected object).
+      // storage writes back, orphaning the rejected object). A failed
+      // delete leaves a durable "failed" tombstone row that owns the
+      // object so the nightly cron retries it.
       if (await findActivePublishAttempt(ctx.db, args.projectId)) {
         if (args.convexStorageId && args.convexStorageId !== existingPending.convexStorageId) {
-          try {
-            await ctx.storage.delete(args.convexStorageId)
-          } catch {
-            // Already gone.
-          }
+          await deleteUnownedStorageOrTombstone(ctx, {
+            projectId: args.projectId,
+            userId,
+            repoPath: args.repoPath,
+            fileName: args.fileName,
+            mimeType: args.mimeType,
+            convexStorageId: args.convexStorageId,
+          })
         }
         return { staged: false as const, reason: "publish-in-progress" as const }
       }
-      // If replacing a Convex-stored file, delete the old storage entry first.
+      // If replacing a Convex-stored file, delete the old storage entry
+      // first - the patch below drops the row's reference to it, so a
+      // failed delete must also leave an owning tombstone.
       if (existingPending.convexStorageId && existingPending.convexStorageId !== args.convexStorageId) {
-        try {
-          await ctx.storage.delete(existingPending.convexStorageId)
-        } catch {
-          // Storage entry may already be gone; don't block the update.
-        }
+        await deleteUnownedStorageOrTombstone(ctx, {
+          projectId: args.projectId,
+          userId,
+          repoPath: args.repoPath,
+          fileName: existingPending.fileName,
+          mimeType: existingPending.mimeType,
+          convexStorageId: existingPending.convexStorageId,
+        })
       }
       await ctx.db.patch(existingPending._id, {
         fileName: args.fileName,
@@ -311,16 +323,40 @@ export const cleanupStaleUploads = internalMutation({
       processed++
     }
 
-    // Finish closed-lane synchronization invalidations that were durably
-    // deferred while a publish attempt was at the commit boundary (the
-    // close event fires only once; the committed rows and document
-    // provenance it targets are outside the stale-pending pass above).
+    // Retry storage deletes owned by durable "failed" tombstone rows (a
+    // rejected replacement or discarded upload whose delete failed). On
+    // success the tombstone has served its purpose and is removed.
+    const failedTombstones = await ctx.db
+      .query("mediaOps")
+      .filter((q) => q.eq(q.field("status"), "failed"))
+      .take(50)
+    let tombstonesCleared = 0
+    for (const tombstone of failedTombstones) {
+      if (tombstone.convexStorageId) {
+        try {
+          await ctx.storage.delete(tombstone.convexStorageId)
+        } catch {
+          continue // Still failing - keep ownership for the next run.
+        }
+      }
+      await ctx.db.delete(tombstone._id)
+      tombstonesCleared++
+    }
+
+    // Finish lane synchronization cleanups (closed-lane invalidation or
+    // merged-lane finalization, dispatched on status) that were durably
+    // deferred behind a publish attempt or split across bounded batches
+    // (the close/merge event fires only once; the committed rows and
+    // document provenance they target are outside the passes above).
     const flaggedBranches = await ctx.db
       .query("publishBranches")
       .withIndex("by_laneInvalidationPending", (q) => q.eq("laneInvalidationPending", true))
       .take(10)
-    let lanesInvalidated = 0
+    let lanesCleaned = 0
     for (const branch of flaggedBranches) {
+      // Cleanup semantics exist only for finished lanes; never restore or
+      // spend rows of a lane that is still open.
+      if (branch.status !== "closed" && branch.status !== "merged") continue
       let attemptActive = activeAttemptByProject.get(branch.projectId)
       if (attemptActive === undefined) {
         attemptActive = (await findActivePublishAttempt(ctx.db, branch.projectId)) !== null
@@ -328,10 +364,13 @@ export const cleanupStaleUploads = internalMutation({
       }
       if (attemptActive) continue
 
-      const invalidation = await invalidateClosedLaneSync(ctx, branch)
-      if (!invalidation.deferred) lanesInvalidated++
+      const cleanup =
+        branch.status === "merged"
+          ? await finalizeMergedLaneSync(ctx, branch)
+          : await invalidateClosedLaneSync(ctx, branch)
+      if (!cleanup.deferred && cleanup.done) lanesCleaned++
     }
 
-    return { processed, lanesInvalidated }
+    return { processed, tombstonesCleared, lanesCleaned }
   },
 })

@@ -18,10 +18,11 @@ vi.mock("@/convex/auth", () => ({
   },
 }))
 
-import { handlePRClosed } from "@/convex/githubWebhook"
-import { invalidateClosedLaneSync } from "@/convex/lib/laneInvalidation"
+import { handlePRClosed, handlePRMerged } from "@/convex/githubWebhook"
+import { invalidateClosedLaneSync, LANE_CLEANUP_BATCH } from "@/convex/lib/laneInvalidation"
+import { finalizeMergedLaneSync } from "@/convex/lib/laneMerge"
 import { cleanupStaleUploads } from "@/convex/mediaOps"
-import { finishLaneInvalidation, markClosed } from "@/convex/publishBranches"
+import { finishLaneCleanup, markClosed, markMerged } from "@/convex/publishBranches"
 import { mintProjectAccessToken, mintServerQueryToken } from "@/lib/project-access-token"
 
 const project = { _id: "project_1", userId: "user_owner", contentRoot: "content" }
@@ -52,8 +53,9 @@ async function patToken() {
 
 /**
  * Table/status-aware db mock: withIndex callbacks run against a recorder so
- * eq("status", ...) and eq("laneInvalidationPending", ...) select rows the
- * way the real indexes would.
+ * eq("status", ...), eq("publishBranchId", ...), and even nested paths like
+ * eq("publishedProvenance.publishBranchId", ...) select rows the way the
+ * real indexes would.
  */
 function createLaneCtx({
   activePublishAttempt = null,
@@ -61,17 +63,20 @@ function createLaneCtx({
   mediaOps = [],
   documents = [],
   publishBranches = [],
+  failingStorageIds = [],
 }: {
   activePublishAttempt?: Record<string, unknown> | null
   explorerOps?: Array<Record<string, unknown>>
   mediaOps?: Array<Record<string, unknown>>
   documents?: Array<Record<string, unknown>>
   publishBranches?: Array<Record<string, unknown>>
+  failingStorageIds?: string[]
 } = {}) {
   const rowsById = new Map<string, Record<string, unknown>>()
   for (const row of [project, ...explorerOps, ...mediaOps, ...documents, ...publishBranches]) {
     rowsById.set(String(row._id), row)
   }
+  const deletedIds = new Set<string>()
 
   const captureEq = (cb?: (q: unknown) => unknown) => {
     const values: Record<string, unknown> = {}
@@ -84,6 +89,9 @@ function createLaneCtx({
     cb?.(recorder)
     return values
   }
+
+  const valueAtPath = (row: Record<string, unknown>, field: string) =>
+    field.split(".").reduce<unknown>((value, key) => (value as Record<string, unknown> | undefined)?.[key], row)
 
   const rowsFor = (table: string, eq: Record<string, unknown>) => {
     if (table === "publishAttempts") {
@@ -99,8 +107,10 @@ function createLaneCtx({
             : table === "publishBranches"
               ? publishBranches
               : []
-    return source.filter((row) =>
-      Object.entries(eq).every(([field, value]) => field === "projectId" || row[field] === value),
+    return source.filter(
+      (row) =>
+        !deletedIds.has(String(row._id)) &&
+        Object.entries(eq).every(([field, value]) => field === "projectId" || valueAtPath(row, field) === value),
     )
   }
 
@@ -115,23 +125,50 @@ function createLaneCtx({
     const row = rowsById.get(String(id))
     if (row) Object.assign(row, values)
   })
-  const del = vi.fn()
+  const del = vi.fn().mockImplementation(async (id: string) => {
+    deletedIds.add(String(id))
+  })
+  const storageDelete = vi.fn().mockImplementation(async (storageId: string) => {
+    if (failingStorageIds.includes(storageId)) throw new Error("storage backend unavailable")
+  })
 
+  // cleanupStaleUploads runs two bare filter().take() scans over mediaOps in
+  // order: the stale-pending pass first, then the failed-tombstone pass.
+  // Serve rows only to the second so tombstone fixtures never leak into the
+  // stale-pending pass.
+  let bareMediaFilterCalls = 0
   return {
     db: {
       get: vi.fn().mockImplementation(async (id: string) => rowsById.get(String(id)) ?? null),
       patch,
       delete: del,
-      insert: vi.fn(),
+      insert: vi.fn().mockResolvedValue("tombstone_1"),
       query: vi.fn((table: string) => ({
         withIndex: (_indexName: string, cb?: (q: unknown) => unknown) => chain(rowsFor(table, captureEq(cb))),
-        // cleanupStaleUploads' stale-pending pass uses a bare filter().take().
-        filter: () => chain([]),
+        filter: () => {
+          if (table !== "mediaOps") return chain([])
+          bareMediaFilterCalls += 1
+          return chain(bareMediaFilterCalls === 1 ? [] : rowsFor("mediaOps", { status: "failed" }))
+        },
       })),
     },
     scheduler: { runAfter: vi.fn() },
-    storage: { delete: vi.fn() },
+    storage: { delete: storageDelete },
   } as any
+}
+
+function committedLaneOp(id: string, overrides: Record<string, unknown> = {}) {
+  return {
+    _id: id,
+    projectId: "project_1",
+    opType: "create",
+    filePath: `guides/${id}.mdx`,
+    pathRepresentation: "content_relative_v1",
+    status: "committed",
+    publishBranchId: "lane_1",
+    updatedAt: 10,
+    ...overrides,
+  }
 }
 
 describe("closed-lane synchronization invalidation", () => {
@@ -144,26 +181,8 @@ describe("closed-lane synchronization invalidation", () => {
   it("restores the lane's committed ops, media, and document provenance for republishing", async () => {
     const ctx = createLaneCtx({
       explorerOps: [
-        {
-          _id: "op_lane",
-          projectId: "project_1",
-          opType: "create",
-          filePath: "guides/a.mdx",
-          pathRepresentation: "content_relative_v1",
-          status: "committed",
-          publishBranchId: "lane_1",
-          updatedAt: 10,
-        },
-        {
-          _id: "op_other_lane",
-          projectId: "project_1",
-          opType: "create",
-          filePath: "guides/other.mdx",
-          pathRepresentation: "content_relative_v1",
-          status: "committed",
-          publishBranchId: "lane_OTHER",
-          updatedAt: 10,
-        },
+        committedLaneOp("op_lane", { filePath: "guides/a.mdx" }),
+        committedLaneOp("op_other_lane", { filePath: "guides/other.mdx", publishBranchId: "lane_OTHER" }),
       ],
       mediaOps: [
         {
@@ -196,6 +215,7 @@ describe("closed-lane synchronization invalidation", () => {
 
     expect(result).toEqual({
       deferred: false,
+      done: true,
       restoredOpIds: ["op_lane"],
       discardedOpIds: [],
       restoredMediaOpIds: ["media_lane"],
@@ -211,9 +231,10 @@ describe("closed-lane synchronization invalidation", () => {
       expect.objectContaining({ status: "pending", commitSha: undefined, publishBranchId: undefined }),
     )
     expect(ctx.db.patch).toHaveBeenCalledWith("doc_lane", { publishedProvenance: undefined })
-    // Restoring keeps the staged bytes - nothing is deleted.
+    // Restoring keeps the staged bytes - nothing is deleted, nothing scheduled.
     expect(ctx.storage.delete).not.toHaveBeenCalled()
     expect(ctx.db.delete).not.toHaveBeenCalled()
+    expect(ctx.scheduler.runAfter).not.toHaveBeenCalled()
     // Other lanes' rows are untouched.
     expect(ctx.db.patch).not.toHaveBeenCalledWith("op_other_lane", expect.anything())
     expect(ctx.db.patch).not.toHaveBeenCalledWith("doc_other_lane", expect.anything())
@@ -222,16 +243,7 @@ describe("closed-lane synchronization invalidation", () => {
   it("discards committed rows superseded by newer pending intent on the same path", async () => {
     const ctx = createLaneCtx({
       explorerOps: [
-        {
-          _id: "op_committed",
-          projectId: "project_1",
-          opType: "create",
-          filePath: "guides/a.mdx",
-          pathRepresentation: "content_relative_v1",
-          status: "committed",
-          publishBranchId: "lane_1",
-          updatedAt: 10,
-        },
+        committedLaneOp("op_committed", { filePath: "guides/a.mdx" }),
         {
           _id: "op_pending_same_path",
           projectId: "project_1",
@@ -267,6 +279,7 @@ describe("closed-lane synchronization invalidation", () => {
 
     expect(result).toEqual(
       expect.objectContaining({
+        done: true,
         restoredOpIds: [],
         discardedOpIds: ["op_committed"],
         restoredMediaOpIds: [],
@@ -281,29 +294,47 @@ describe("closed-lane synchronization invalidation", () => {
     expect(ctx.db.patch).not.toHaveBeenCalledWith("op_pending_same_path", expect.anything())
   })
 
-  it("cancels out a create+delete pair on the same path (net zero against the base branch)", async () => {
+  it("keeps a discarded upload as a failed tombstone when its storage delete fails", async () => {
     const ctx = createLaneCtx({
-      explorerOps: [
+      mediaOps: [
         {
-          _id: "op_create",
+          _id: "media_committed",
           projectId: "project_1",
-          opType: "create",
-          filePath: "guides/a.mdx",
-          pathRepresentation: "content_relative_v1",
+          repoPath: "/public/x.png",
           status: "committed",
           publishBranchId: "lane_1",
+          convexStorageId: "storage_stuck",
           updatedAt: 10,
         },
         {
-          _id: "op_delete",
+          _id: "media_pending_same_path",
           projectId: "project_1",
-          opType: "delete",
-          filePath: "guides/a.mdx",
-          pathRepresentation: "content_relative_v1",
-          status: "committed",
-          publishBranchId: "lane_1",
+          repoPath: "/public/x.png",
+          status: "pending",
+          convexStorageId: "storage_new",
           updatedAt: 20,
         },
+      ],
+      failingStorageIds: ["storage_stuck"],
+    })
+
+    const result = await invalidateClosedLaneSync(ctx, laneDoc() as any)
+
+    expect(result).toEqual(expect.objectContaining({ discardedMediaOpIds: ["media_committed"] }))
+    // The row is NOT deleted - it becomes a durable tombstone that still
+    // owns the object, for the nightly cron to retry.
+    expect(ctx.db.delete).not.toHaveBeenCalledWith("media_committed")
+    expect(ctx.db.patch).toHaveBeenCalledWith(
+      "media_committed",
+      expect.objectContaining({ status: "failed", publishBranchId: undefined }),
+    )
+  })
+
+  it("cancels out a create+delete pair on the same path (net zero against the base branch)", async () => {
+    const ctx = createLaneCtx({
+      explorerOps: [
+        committedLaneOp("op_create", { filePath: "guides/a.mdx", opType: "create", updatedAt: 10 }),
+        committedLaneOp("op_delete", { filePath: "guides/a.mdx", opType: "delete", updatedAt: 20 }),
       ],
     })
 
@@ -319,6 +350,28 @@ describe("closed-lane synchronization invalidation", () => {
     expect(ctx.db.delete).toHaveBeenCalledWith("op_delete")
   })
 
+  it("processes at most one bounded batch per pass and schedules a durable continuation", async () => {
+    const manyOps = Array.from({ length: LANE_CLEANUP_BATCH + 5 }, (_v, index) =>
+      committedLaneOp(`op_${index}`, { filePath: `guides/file-${index}.mdx` }),
+    )
+    const lane = laneDoc()
+    const ctx = createLaneCtx({ explorerOps: manyOps, publishBranches: [lane] })
+
+    const result = await invalidateClosedLaneSync(ctx, lane as any)
+
+    expect(result).toEqual(expect.objectContaining({ deferred: false, done: false }))
+    expect((result as { restoredOpIds: string[] }).restoredOpIds).toHaveLength(LANE_CLEANUP_BATCH)
+    // Durable resumability: the flag stays set and a continuation is scheduled.
+    expect(ctx.db.patch).toHaveBeenCalledWith("lane_1", expect.objectContaining({ laneInvalidationPending: true }))
+    expect(ctx.scheduler.runAfter).toHaveBeenCalledWith(0, expect.anything(), { id: "lane_1" })
+
+    // The next pass drains the remainder and clears the flag.
+    const second = await invalidateClosedLaneSync(ctx, { ...lane, laneInvalidationPending: true } as any)
+    expect(second).toEqual(expect.objectContaining({ done: true }))
+    expect((second as { restoredOpIds: string[] }).restoredOpIds).toHaveLength(5)
+    expect(ctx.db.patch).toHaveBeenCalledWith("lane_1", expect.objectContaining({ laneInvalidationPending: undefined }))
+  })
+
   it("defers durably while a publish attempt is at the commit boundary", async () => {
     const ctx = createLaneCtx({
       activePublishAttempt: {
@@ -328,18 +381,7 @@ describe("closed-lane synchronization invalidation", () => {
         planDigest: "d".repeat(64),
         status: "committing",
       },
-      explorerOps: [
-        {
-          _id: "op_lane",
-          projectId: "project_1",
-          opType: "create",
-          filePath: "guides/a.mdx",
-          pathRepresentation: "content_relative_v1",
-          status: "committed",
-          publishBranchId: "lane_1",
-          updatedAt: 10,
-        },
-      ],
+      explorerOps: [committedLaneOp("op_lane", { filePath: "guides/a.mdx" })],
       publishBranches: [laneDoc()],
     })
 
@@ -372,25 +414,16 @@ describe("closed-lane synchronization invalidation", () => {
 
     expect(ctx.db.patch).toHaveBeenCalledWith("lane_1", expect.objectContaining({ status: "closed" }))
     expect(ctx.db.patch).toHaveBeenCalledWith("doc_lane", { publishedProvenance: undefined })
-    expect(result).toEqual(expect.objectContaining({ deferred: false, invalidatedDocumentIds: ["doc_lane"] }))
+    expect(result).toEqual(
+      expect.objectContaining({ deferred: false, done: true, invalidatedDocumentIds: ["doc_lane"] }),
+    )
   })
 
   it("handlePRClosed (webhook path) closes the lane AND invalidates its synchronization", async () => {
     const lane = laneDoc({ status: "active" })
     const ctx = createLaneCtx({
       publishBranches: [lane],
-      explorerOps: [
-        {
-          _id: "op_lane",
-          projectId: "project_1",
-          opType: "delete",
-          filePath: "guides/a.mdx",
-          pathRepresentation: "content_relative_v1",
-          status: "committed",
-          publishBranchId: "lane_1",
-          updatedAt: 10,
-        },
-      ],
+      explorerOps: [committedLaneOp("op_lane", { filePath: "guides/a.mdx", opType: "delete" })],
     })
 
     await (handlePRClosed as any).handler(ctx, {
@@ -405,44 +438,51 @@ describe("closed-lane synchronization invalidation", () => {
     )
   })
 
-  it("finishLaneInvalidation refuses lanes that are not closed", async () => {
+  it("finishLaneCleanup refuses lanes that are still open", async () => {
     const ctx = createLaneCtx({ publishBranches: [laneDoc({ status: "active" })] })
 
     await expect(
-      (finishLaneInvalidation as any).handler(ctx, {
+      (finishLaneCleanup as any).handler(ctx, {
         id: "lane_1",
         userId: "user_owner",
         projectAccessToken: await patToken(),
       }),
-    ).rejects.toThrow(/closed publish lanes/i)
+    ).rejects.toThrow(/closed or merged publish lanes/i)
   })
 
-  it("finishLaneInvalidation completes a deferred invalidation and clears the flag", async () => {
+  it("finishLaneCleanup completes a deferred invalidation and clears the flag", async () => {
     const lane = laneDoc({ laneInvalidationPending: true })
     const ctx = createLaneCtx({
       publishBranches: [lane],
-      explorerOps: [
-        {
-          _id: "op_lane",
-          projectId: "project_1",
-          opType: "create",
-          filePath: "guides/a.mdx",
-          pathRepresentation: "content_relative_v1",
-          status: "committed",
-          publishBranchId: "lane_1",
-          updatedAt: 10,
-        },
-      ],
+      explorerOps: [committedLaneOp("op_lane", { filePath: "guides/a.mdx" })],
     })
 
-    const result = await (finishLaneInvalidation as any).handler(ctx, {
+    const result = await (finishLaneCleanup as any).handler(ctx, {
       id: "lane_1",
       userId: "user_owner",
       projectAccessToken: await patToken(),
     })
 
-    expect(result).toEqual(expect.objectContaining({ deferred: false, restoredOpIds: ["op_lane"] }))
+    expect(result).toEqual(expect.objectContaining({ deferred: false, done: true, restoredOpIds: ["op_lane"] }))
     expect(ctx.db.patch).toHaveBeenCalledWith("lane_1", expect.objectContaining({ laneInvalidationPending: undefined }))
+  })
+
+  it("finishLaneCleanup with action=invalidate restores work on a MERGED lane whose commit never merged", async () => {
+    const lane = laneDoc({ status: "merged" })
+    const ctx = createLaneCtx({
+      publishBranches: [lane],
+      explorerOps: [committedLaneOp("op_stranded", { filePath: "guides/a.mdx" })],
+    })
+
+    const result = await (finishLaneCleanup as any).handler(ctx, {
+      id: "lane_1",
+      action: "invalidate",
+      userId: "user_owner",
+      projectAccessToken: await patToken(),
+    })
+
+    expect(result).toEqual(expect.objectContaining({ restoredOpIds: ["op_stranded"] }))
+    expect(ctx.db.patch).toHaveBeenCalledWith("op_stranded", expect.objectContaining({ status: "pending" }))
   })
 
   it("the nightly cron drains deferred invalidations once the attempt resolves", async () => {
@@ -461,9 +501,41 @@ describe("closed-lane synchronization invalidation", () => {
 
     const result = await (cleanupStaleUploads as any).handler(ctx, {})
 
-    expect(result).toEqual({ processed: 0, lanesInvalidated: 1 })
+    expect(result).toEqual({ processed: 0, tombstonesCleared: 0, lanesCleaned: 1 })
     expect(ctx.db.patch).toHaveBeenCalledWith("doc_lane", { publishedProvenance: undefined })
     expect(ctx.db.patch).toHaveBeenCalledWith("lane_1", expect.objectContaining({ laneInvalidationPending: undefined }))
+  })
+
+  it("the nightly cron retries failed-delete tombstones and removes them on success", async () => {
+    const ctx = createLaneCtx({
+      mediaOps: [
+        {
+          _id: "tombstone_ok",
+          projectId: "project_1",
+          repoPath: "/public/a.png",
+          status: "failed",
+          convexStorageId: "storage_recoverable",
+          updatedAt: 10,
+        },
+        {
+          _id: "tombstone_stuck",
+          projectId: "project_1",
+          repoPath: "/public/b.png",
+          status: "failed",
+          convexStorageId: "storage_stuck",
+          updatedAt: 10,
+        },
+      ],
+      failingStorageIds: ["storage_stuck"],
+    })
+
+    const result = await (cleanupStaleUploads as any).handler(ctx, {})
+
+    expect(result).toEqual({ processed: 0, tombstonesCleared: 1, lanesCleaned: 0 })
+    expect(ctx.storage.delete).toHaveBeenCalledWith("storage_recoverable")
+    expect(ctx.db.delete).toHaveBeenCalledWith("tombstone_ok")
+    // The stuck object keeps its owning tombstone for the next run.
+    expect(ctx.db.delete).not.toHaveBeenCalledWith("tombstone_stuck")
   })
 
   it("the nightly cron keeps deferring while the project's attempt is still active", async () => {
@@ -489,7 +561,178 @@ describe("closed-lane synchronization invalidation", () => {
 
     const result = await (cleanupStaleUploads as any).handler(ctx, {})
 
-    expect(result).toEqual({ processed: 0, lanesInvalidated: 0 })
+    expect(result).toEqual({ processed: 0, tombstonesCleared: 0, lanesCleaned: 0 })
     expect(ctx.db.patch).not.toHaveBeenCalledWith("doc_lane", expect.anything())
+  })
+})
+
+describe("merged-lane finalization", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    process.env.BETTER_AUTH_SECRET = "test-secret"
+    safeGetAuthUserMock.mockResolvedValue(null)
+  })
+
+  function mergedLane(overrides: Record<string, unknown> = {}) {
+    return laneDoc({ status: "merged", committedFilePaths: ["content/guides/a.mdx"], ...overrides })
+  }
+
+  it("spends the lane's committed rows and publishes the merged documents (idempotent)", async () => {
+    const lane = mergedLane()
+    const ctx = createLaneCtx({
+      publishBranches: [lane],
+      explorerOps: [
+        committedLaneOp("op_lane", { filePath: "guides/a.mdx" }),
+        committedLaneOp("op_other_lane", { filePath: "guides/other.mdx", publishBranchId: "lane_OTHER" }),
+      ],
+      mediaOps: [
+        {
+          _id: "media_lane",
+          projectId: "project_1",
+          repoPath: "/public/x.png",
+          status: "committed",
+          publishBranchId: "lane_1",
+          convexStorageId: "storage_1",
+          updatedAt: 10,
+        },
+      ],
+      documents: [
+        {
+          _id: "doc_merged",
+          projectId: "project_1",
+          filePath: "guides/a.mdx",
+          status: "draft",
+          body: "# A",
+          updatedAt: 5,
+        },
+        {
+          _id: "doc_unrelated",
+          projectId: "project_1",
+          filePath: "guides/z.mdx",
+          status: "draft",
+          body: "# Z",
+          updatedAt: 5,
+        },
+      ],
+    })
+
+    const result = await finalizeMergedLaneSync(ctx, lane as any)
+
+    expect(result).toEqual({
+      deferred: false,
+      done: true,
+      clearedOpIds: ["op_lane"],
+      clearedMediaOpIds: ["media_lane"],
+      publishedDocumentIds: ["doc_merged"],
+    })
+    expect(ctx.db.delete).toHaveBeenCalledWith("op_lane")
+    expect(ctx.db.delete).toHaveBeenCalledWith("media_lane")
+    expect(ctx.storage.delete).toHaveBeenCalledWith("storage_1")
+    expect(ctx.db.patch).toHaveBeenCalledWith("doc_merged", expect.objectContaining({ status: "published" }))
+    expect(ctx.db.delete).not.toHaveBeenCalledWith("op_other_lane")
+    expect(ctx.db.patch).not.toHaveBeenCalledWith("doc_unrelated", expect.anything())
+
+    // A second pass (the other close/merge path firing later) is a no-op.
+    const replay = await finalizeMergedLaneSync(ctx, lane as any)
+    expect(replay).toEqual(
+      expect.objectContaining({ done: true, clearedOpIds: [], clearedMediaOpIds: [], publishedDocumentIds: [] }),
+    )
+  })
+
+  it("defers durably while a publish attempt is at the commit boundary", async () => {
+    const lane = mergedLane()
+    const ctx = createLaneCtx({
+      activePublishAttempt: {
+        _id: "attempt_1",
+        projectId: "project_1",
+        branchName: "repopress/start",
+        planDigest: "d".repeat(64),
+        status: "committed",
+      },
+      publishBranches: [lane],
+      explorerOps: [committedLaneOp("op_lane", { filePath: "guides/a.mdx" })],
+    })
+
+    const result = await finalizeMergedLaneSync(ctx, lane as any)
+
+    expect(result).toEqual({ deferred: true })
+    expect(ctx.db.patch).toHaveBeenCalledWith("lane_1", expect.objectContaining({ laneInvalidationPending: true }))
+    expect(ctx.db.delete).not.toHaveBeenCalled()
+  })
+
+  it("splits large lanes into bounded batches and publishes documents only on the final pass", async () => {
+    const manyOps = Array.from({ length: LANE_CLEANUP_BATCH + 3 }, (_v, index) =>
+      committedLaneOp(`op_${index}`, { filePath: `guides/file-${index}.mdx` }),
+    )
+    const lane = mergedLane()
+    const ctx = createLaneCtx({
+      publishBranches: [lane],
+      explorerOps: manyOps,
+      documents: [
+        {
+          _id: "doc_merged",
+          projectId: "project_1",
+          filePath: "guides/a.mdx",
+          status: "draft",
+          body: "# A",
+          updatedAt: 5,
+        },
+      ],
+    })
+
+    const first = await finalizeMergedLaneSync(ctx, lane as any)
+    expect(first).toEqual(expect.objectContaining({ done: false, publishedDocumentIds: [] }))
+    expect((first as { clearedOpIds: string[] }).clearedOpIds).toHaveLength(LANE_CLEANUP_BATCH)
+    expect(ctx.scheduler.runAfter).toHaveBeenCalledWith(0, expect.anything(), { id: "lane_1" })
+    expect(ctx.db.patch).not.toHaveBeenCalledWith("doc_merged", expect.anything())
+
+    const second = await finalizeMergedLaneSync(ctx, lane as any)
+    expect(second).toEqual(expect.objectContaining({ done: true, publishedDocumentIds: ["doc_merged"] }))
+  })
+
+  it("markMerged (client fallback path) runs the same finalization as the webhook", async () => {
+    const lane = mergedLane({ status: "active" })
+    const ctx = createLaneCtx({
+      publishBranches: [lane],
+      explorerOps: [committedLaneOp("op_lane", { filePath: "guides/a.mdx" })],
+      documents: [
+        {
+          _id: "doc_merged",
+          projectId: "project_1",
+          filePath: "guides/a.mdx",
+          status: "draft",
+          body: "# A",
+          updatedAt: 5,
+        },
+      ],
+    })
+
+    const result = await (markMerged as any).handler(ctx, {
+      id: "lane_1",
+      userId: "user_owner",
+      projectAccessToken: await patToken(),
+    })
+
+    expect(ctx.db.patch).toHaveBeenCalledWith("lane_1", expect.objectContaining({ status: "merged" }))
+    expect(ctx.db.delete).toHaveBeenCalledWith("op_lane")
+    expect(ctx.db.patch).toHaveBeenCalledWith("doc_merged", expect.objectContaining({ status: "published" }))
+    expect(result).toEqual(expect.objectContaining({ done: true, publishedDocumentIds: ["doc_merged"] }))
+  })
+
+  it("handlePRMerged (webhook path) runs the shared finalization", async () => {
+    const lane = mergedLane({ status: "active" })
+    const ctx = createLaneCtx({
+      publishBranches: [lane],
+      explorerOps: [committedLaneOp("op_lane", { filePath: "guides/a.mdx" })],
+    })
+
+    await (handlePRMerged as any).handler(ctx, {
+      prNumber: 42,
+      mergeCommitSha: "merge-sha-1",
+      serverQueryToken: await mintServerQueryToken(),
+    })
+
+    expect(ctx.db.patch).toHaveBeenCalledWith("lane_1", expect.objectContaining({ status: "merged" }))
+    expect(ctx.db.delete).toHaveBeenCalledWith("op_lane")
   })
 })

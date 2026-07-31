@@ -494,8 +494,12 @@ export const update = mutation({
     if (!doc) throw new Error("Document not found")
     await resolveProjectAccess(ctx, { projectId: doc.projectId, userId, projectAccessToken }, "editor")
 
+    // Only content writes advance the content version; metadata-only
+    // updates keep publish cleanliness intact.
+    const writesContent = "body" in updates || "frontmatter" in updates
     await ctx.db.patch(id, {
       ...updates,
+      ...(writesContent ? { contentVersion: (doc.contentVersion ?? 0) + 1 } : {}),
       updatedAt: Date.now(),
     })
   },
@@ -625,10 +629,13 @@ export const saveDraft = mutation({
       })
     }
 
-    // Update the document with the new content
+    // Update the document with the new content. The contentVersion bump is
+    // what makes the document dirty for publishing - workflow transitions
+    // bump only updatedAt and leave cleanliness intact.
     await ctx.db.patch(args.id, {
       body: args.body,
       frontmatter: args.frontmatter,
+      contentVersion: (doc.contentVersion ?? 0) + 1,
       updatedAt: now,
     })
   },
@@ -823,19 +830,39 @@ export const listDirtyForProject = query({
       .query("documents")
       .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", "approved"))
       .collect()
-    return [...drafts, ...approved].filter(
-      (d) =>
-        (d.body != null || d.frontmatter != null) &&
-        // Lane-synchronization provenance: a document is clean only while
-        // the snapshot recorded by its last reconciled publish is still
-        // current. Recording provenance never bumps updatedAt, so this
-        // comparison is stable across reconciliation replays; closing the
-        // lane unmerged clears the provenance and the document becomes
-        // dirty again.
-        d.publishedProvenance?.publishedUpdatedAt !== d.updatedAt,
-    )
+    return [...drafts, ...approved].filter((d) => (d.body != null || d.frontmatter != null) && !isCleanForPublish(d))
   },
 })
+
+/**
+ * Lane-synchronization cleanliness. A document is clean while the CONTENT
+ * recorded by its last reconciled publish is still current:
+ * - Current provenance compares content versions, so workflow-only
+ *   transitions (which bump updatedAt but not contentVersion) cannot make
+ *   unchanged content dirty.
+ * - Provenance recorded before contentVersion existed falls back to the
+ *   updatedAt comparison it was written under.
+ * - Legacy rows that predate provenance entirely honor their
+ *   lastPublishedUpdatedAt === updatedAt marker until the next edit or
+ *   publish migrates them (markPublishedSnapshot clears the legacy field).
+ * Recording provenance never bumps updatedAt or contentVersion, so every
+ * comparison is stable across reconciliation replays; closing the lane
+ * unmerged clears the provenance and the document becomes dirty again.
+ */
+function isCleanForPublish(d: {
+  updatedAt: number
+  contentVersion?: number
+  lastPublishedUpdatedAt?: number
+  publishedProvenance?: { publishedContentVersion?: number; publishedUpdatedAt: number }
+}): boolean {
+  if (d.publishedProvenance) {
+    if (d.publishedProvenance.publishedContentVersion !== undefined) {
+      return d.publishedProvenance.publishedContentVersion === (d.contentVersion ?? 0)
+    }
+    return d.publishedProvenance.publishedUpdatedAt === d.updatedAt
+  }
+  return d.lastPublishedUpdatedAt !== undefined && d.lastPublishedUpdatedAt === d.updatedAt
+}
 
 /**
  * Record lane-synchronization provenance after a publish reconciled this
@@ -855,9 +882,10 @@ export const markPublishedSnapshot = mutation({
     githubSha: v.string(),
     publishBranchId: v.id("publishBranches"),
     commitSha: v.string(),
-    // Optional only for replays of attempts recorded before the field
-    // existed; every new publish provides it.
+    // Optional only for replays of attempts recorded before the fields
+    // existed; every new publish provides both.
     contentRevision: v.optional(v.string()),
+    publishedContentVersion: v.optional(v.number()),
     expectedUpdatedAt: v.number(),
     userId: v.optional(v.string()),
     projectAccessToken: v.optional(v.string()),
@@ -875,6 +903,7 @@ export const markPublishedSnapshot = mutation({
       commitSha: string
       publishedUpdatedAt: number
       contentRevision?: string
+      publishedContentVersion?: number
     } = {
       publishBranchId: args.publishBranchId,
       commitSha: args.commitSha,
@@ -883,11 +912,24 @@ export const markPublishedSnapshot = mutation({
     if (args.contentRevision !== undefined) {
       publishedProvenance.contentRevision = args.contentRevision
     }
-    await ctx.db.patch(args.id, { githubSha: args.githubSha, publishedProvenance })
+    if (args.publishedContentVersion !== undefined) {
+      publishedProvenance.publishedContentVersion = args.publishedContentVersion
+    }
+    await ctx.db.patch(args.id, {
+      githubSha: args.githubSha,
+      publishedProvenance,
+      // Lazy migration: the legacy cleanliness marker is superseded the
+      // first time real provenance lands.
+      lastPublishedUpdatedAt: undefined,
+    })
     // synchronized: the planned snapshot is still the document's current
-    // content, so it is now clean. A concurrent edit leaves it dirty - the
-    // provenance still truthfully records what landed on the lane.
-    return { synchronized: doc.updatedAt === args.expectedUpdatedAt }
+    // content, so it is now clean. A concurrent content edit leaves it
+    // dirty - the provenance still truthfully records what landed.
+    const synchronized =
+      args.publishedContentVersion !== undefined
+        ? args.publishedContentVersion === (doc.contentVersion ?? 0)
+        : doc.updatedAt === args.expectedUpdatedAt
+    return { synchronized }
   },
 })
 

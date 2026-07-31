@@ -34,6 +34,7 @@ vi.mock("@/lib/github", () => ({
   getCommitDetailsForPublish: vi.fn(),
   getFile: vi.fn(),
   getFileForPublish: vi.fn(),
+  getPullRequestCommitsForPublish: vi.fn(),
   GitHubReadError: class GitHubReadError extends Error {},
   updatePullRequest: vi.fn(),
 }))
@@ -63,6 +64,7 @@ import {
   getCommitDetailsForPublish,
   getFile,
   getFileForPublish,
+  getPullRequestCommitsForPublish,
   updatePullRequest,
 } from "@/lib/github"
 import { getRepoRole } from "@/lib/github-permissions"
@@ -1985,23 +1987,53 @@ describe("POST /api/github/publish-ops", () => {
 
       // Second publish: the create op is committed (no longer pending), the
       // document is still dirty, and the lane now contains exactly the
-      // published content. Nothing has changed - no commit may happen.
+      // published content. Nothing may be committed - but the document must
+      // be reconciled clean instead of dead-ending as permanently dirty.
       mockPublishQueries({
         pendingOps: [],
         dirtyDocs: [
-          { _id: "doc_1", filePath: "posts/hello.mdx", body, frontmatter: {}, updatedAt: 5, githubSha: "blob-1" },
+          {
+            _id: "doc_1",
+            filePath: "posts/hello.mdx",
+            body,
+            frontmatter: {},
+            updatedAt: 5,
+            contentVersion: 3,
+            githubSha: "blob-1",
+          },
         ],
       })
       vi.mocked(getFileForPublish).mockResolvedValue({
         status: "found",
         file: { content: body, sha: "blob-1", name: "hello.mdx", path: "content/posts/hello.mdx" },
       } as never)
+      const snapshotCalls: Array<Record<string, unknown>> = []
+      convexMutationMock.mockImplementation(async (_fn: unknown, args: unknown) => {
+        if (args && typeof args === "object" && "publishBranchId" in (args as Record<string, unknown>)) {
+          snapshotCalls.push(args as Record<string, unknown>)
+        }
+        return undefined
+      })
 
       const second = await POST(buildRequest({ projectId: "project_123" }))
       const secondPayload = await second.json()
 
-      expect(second.status).toBe(400)
-      expect(secondPayload.error).toMatch(/no valid operations/i)
+      expect(second.status).toBe(200)
+      expect(secondPayload.ok).toBe(true)
+      expect(secondPayload.synchronizedOnly).toBe(true)
+      // The document's provenance now records the lane head as its holding
+      // commit, at the planned content version - clean without a commit.
+      expect(snapshotCalls).toEqual([
+        expect.objectContaining({
+          id: "doc_1",
+          publishBranchId: "publish_branch_1",
+          commitSha: "authority-sha-1",
+          githubSha: "blob-1",
+          publishedContentVersion: 3,
+          expectedUpdatedAt: 5,
+        }),
+      ])
+      // Still exactly one Git commit across both publishes.
       expect(batchCommitPublishLaneAtExpectedHead).toHaveBeenCalledTimes(1)
     })
 
@@ -2264,6 +2296,162 @@ describe("POST /api/github/publish-ops", () => {
         expect.arrayContaining([expect.objectContaining({ path: "content/posts/restored.mdx" })]),
         expect.any(String),
       )
+    })
+
+    it("adopts a committing attempt's commit from the merged PR's history and finalizes the lane", async () => {
+      // The lane merged (branch possibly deleted) while an attempt sat at
+      // the commit boundary - and its commit DID make it into the merged
+      // PR. Blind superseding here would leave pending ops that conflict
+      // with the already-merged content.
+      mockPublishQueries({
+        pendingOps: [],
+        dirtyDocs: [],
+        activePublishAttempt: committedAttempt({ status: "committing", commitSha: undefined }),
+        attemptLane: { ...recoveryLane, status: "merged" },
+      })
+      vi.mocked(getPullRequestCommitsForPublish).mockResolvedValue([
+        { sha: "unrelated-sha", message: "docs: something else", parents: ["older-sha"] },
+        {
+          sha: "merged-sha-1",
+          message: `chore(content): via RepoPress\n\nRepoPress-Publish-Attempt: ${PLAN_DIGEST}`,
+          parents: ["authority-sha-1"],
+        },
+      ] as never)
+      const attemptCalls: Array<Record<string, unknown>> = []
+      const laneCleanupCalls: Array<Record<string, unknown>> = []
+      convexMutationMock.mockImplementation(async (_fn: unknown, args: unknown) => {
+        if (args && typeof args === "object") {
+          const record = args as Record<string, unknown>
+          if (record.id === "attempt_1") attemptCalls.push(record)
+          if (record.id === "publish_branch_1" && !("lastCommitSha" in record)) laneCleanupCalls.push(record)
+        }
+        return undefined
+      })
+
+      const response = await POST(buildRequest({ projectId: "project_123" }))
+      const payload = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(payload.recovered).toBe(true)
+      expect(payload.laneFinalized).toBe(true)
+      expect(payload.commitSha).toBe("merged-sha-1")
+      // The proof came from the merged PR's commit list, not the (possibly
+      // deleted) branch head, and no new commit was created.
+      expect(getBranchHeadForPublish).not.toHaveBeenCalled()
+      expect(batchCommitPublishLaneAtExpectedHead).not.toHaveBeenCalled()
+      // recordCommit adopted the merged SHA; markReconciled closed it out.
+      expect(attemptCalls).toEqual([
+        expect.objectContaining({ id: "attempt_1", commitSha: "merged-sha-1" }),
+        expect.objectContaining({ id: "attempt_1" }),
+      ])
+      // Shared merge finalization ran (default action, not an invalidation).
+      expect(laneCleanupCalls).toEqual([expect.objectContaining({ id: "publish_branch_1" })])
+      expect(laneCleanupCalls[0].action).toBeUndefined()
+    })
+
+    it("supersedes a committing attempt provably absent from the merged PR and publishes fresh", async () => {
+      mockPublishQueries({
+        activePublishAttempt: committedAttempt({ status: "committing", commitSha: undefined }),
+        attemptLane: { ...recoveryLane, status: "merged" },
+      })
+      // The merged PR's commits carry no attempt trailer: the attempt's
+      // commit is not part of what merged, so its content is not in base.
+      vi.mocked(getPullRequestCommitsForPublish).mockResolvedValue([
+        { sha: "other-sha", message: "chore: unrelated", parents: ["authority-sha-1"] },
+      ] as never)
+
+      const response = await POST(buildRequest({ projectId: "project_123" }))
+      const payload = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(payload.ok).toBe(true)
+      expect(payload.recovered).toBeUndefined()
+      // Superseded, then the staged work published fresh - exactly one commit.
+      expect(convexMutationMock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ id: "attempt_1" }))
+      expect(batchCommitPublishLaneAtExpectedHead).toHaveBeenCalledTimes(1)
+    })
+
+    it("finalizes the merged lane after reconciling a committed attempt whose commit merged", async () => {
+      const laneCleanupCalls: Array<Record<string, unknown>> = []
+      mockPublishQueries({
+        pendingOps: [],
+        dirtyDocs: [],
+        activePublishAttempt: committedAttempt(),
+        attemptLane: { ...recoveryLane, status: "merged" },
+      })
+      vi.mocked(getPullRequestCommitsForPublish).mockResolvedValue([
+        { sha: "commit-sha-1", message: "chore(content): via RepoPress", parents: ["authority-sha-1"] },
+      ] as never)
+      convexMutationMock.mockImplementation(async (_fn: unknown, args: unknown) => {
+        if (args && typeof args === "object") {
+          const record = args as Record<string, unknown>
+          if (record.id === "publish_branch_1" && !("lastCommitSha" in record)) laneCleanupCalls.push(record)
+        }
+        return undefined
+      })
+
+      const response = await POST(buildRequest({ projectId: "project_123" }))
+      const payload = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(payload.recovered).toBe(true)
+      expect(payload.laneFinalized).toBe(true)
+      // Idempotent shared finalization cleans up the rows this recovery
+      // just re-marked committed - nothing is stranded after the webhook.
+      expect(laneCleanupCalls).toEqual([expect.objectContaining({ id: "publish_branch_1" })])
+      expect(laneCleanupCalls[0].action).toBeUndefined()
+      expect(batchCommitPublishLaneAtExpectedHead).not.toHaveBeenCalled()
+    })
+
+    it("restores a committed attempt's work when its recorded commit is NOT in the merged PR", async () => {
+      const laneCleanupCalls: Array<Record<string, unknown>> = []
+      mockPublishQueries({
+        pendingOps: [],
+        dirtyDocs: [],
+        activePublishAttempt: committedAttempt(),
+        attemptLane: { ...recoveryLane, status: "merged" },
+      })
+      // The recorded commit landed on the lane OUTSIDE the merge (e.g.
+      // after the PR closed): its content never reached the base branch.
+      vi.mocked(getPullRequestCommitsForPublish).mockResolvedValue([
+        { sha: "different-sha", message: "chore: something merged", parents: ["authority-sha-1"] },
+      ] as never)
+      convexMutationMock.mockImplementation(async (_fn: unknown, args: unknown) => {
+        if (args && typeof args === "object") {
+          const record = args as Record<string, unknown>
+          if (record.id === "publish_branch_1" && !("lastCommitSha" in record)) laneCleanupCalls.push(record)
+        }
+        return undefined
+      })
+
+      const response = await POST(buildRequest({ projectId: "project_123" }))
+      const payload = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(payload.recovered).toBe(true)
+      expect(payload.laneInvalidated).toBe(true)
+      expect(payload.warning).toMatch(/restored/i)
+      // Explicit invalidation, NOT finalization - finalizing would spend
+      // work that never merged.
+      expect(laneCleanupCalls).toEqual([expect.objectContaining({ id: "publish_branch_1", action: "invalidate" })])
+    })
+
+    it("fails closed when a merged lane has no recorded pull request", async () => {
+      mockPublishQueries({
+        activePublishAttempt: committedAttempt({ status: "committing", commitSha: undefined }),
+        attemptLane: { ...recoveryLane, status: "merged", prNumber: undefined },
+      })
+
+      const response = await POST(buildRequest({ projectId: "project_123" }))
+      const payload = await response.json()
+
+      expect(response.status).toBe(409)
+      expect(payload.error).toMatch(/no recorded pull request/i)
+      expect(convexMutationMock).not.toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ id: "attempt_1" }),
+      )
+      expect(batchCommitPublishLaneAtExpectedHead).not.toHaveBeenCalled()
     })
 
     it("reconciles a committed attempt on a closed lane, then finishes the deferred invalidation", async () => {

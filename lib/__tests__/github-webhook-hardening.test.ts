@@ -55,26 +55,34 @@ function createWebhookCtx({
       patch: vi.fn(),
       delete: vi.fn(),
       query: vi.fn((table: string) => ({
-        withIndex: (indexName: string) => ({
-          first: vi.fn().mockImplementation(async () => {
+        withIndex: (indexName: string, cb?: (q: unknown) => unknown) => {
+          // Record eq() values so lane-scoped indexes (e.g.
+          // by_publishBranchId_status) select rows like the real ones.
+          const eq: Record<string, unknown> = {}
+          const recorder: Record<string, unknown> = {
+            eq: (field: string, value: unknown) => {
+              eq[field] = value
+              return recorder
+            },
+          }
+          cb?.(recorder)
+          const rows = (() => {
             if (table === "publishBranches" && indexName === "by_prNumber") {
-              return publishBranch
+              return publishBranch ? [publishBranch] : []
             }
-
-            return null
-          }),
-          collect: vi.fn().mockImplementation(async () => {
-            if (table === "explorerOps" && indexName === "by_projectId_status") {
-              return explorerOps
-            }
-
-            if (table === "mediaOps" && indexName === "by_projectId_status") {
-              return mediaOps
-            }
-
-            return []
-          }),
-        }),
+            const source = table === "explorerOps" ? explorerOps : table === "mediaOps" ? mediaOps : []
+            return source.filter((row) =>
+              Object.entries(eq).every(
+                ([field, value]) => field === "projectId" || (row as Record<string, unknown>)[field] === value,
+              ),
+            )
+          })()
+          return {
+            first: vi.fn().mockImplementation(async () => rows[0] ?? null),
+            collect: vi.fn().mockImplementation(async () => rows),
+            take: vi.fn().mockImplementation(async (count: number) => rows.slice(0, count)),
+          }
+        },
       })),
     },
     scheduler: {

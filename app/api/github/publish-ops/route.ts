@@ -15,6 +15,7 @@ import {
   getBranchHeadForPublish,
   getCommitDetailsForPublish,
   getFileForPublish,
+  getPullRequestCommitsForPublish,
   type PublishFileReadResult,
   updatePullRequest,
 } from "@/lib/github"
@@ -288,6 +289,17 @@ export async function POST(request: Request) {
     // Exact serialized bytes planned per content path - the source of each
     // document association's content-specific revision digest.
     const serializedContentByRepoPath = new Map<string, string>()
+    // Dirty documents whose serialized content is already byte-identical on
+    // the publish authority. They need no commit, but they DO need their
+    // provenance reconciled - otherwise workflow-only changes (or a revert
+    // back to published content) dead-end as permanently dirty.
+    const redundantSynchronizations: Array<{
+      documentId: Id<"documents">
+      githubSha: string
+      contentRevision: string
+      contentVersion: number
+      expectedUpdatedAt: number
+    }> = []
 
     for (const { source: op, repoPath } of resolvedPendingOps) {
       if (op.opType === "create") {
@@ -372,6 +384,13 @@ export async function POST(request: Request) {
       // this document - skipping it prevents empty "update" commits on
       // every publish after a create/update landed.
       if (existing?.status === "found" && existing.file.content === serialized.content) {
+        redundantSynchronizations.push({
+          documentId: doc._id,
+          githubSha: existing.file.sha,
+          contentRevision: sha256Hex(serialized.content),
+          contentVersion: doc.contentVersion ?? 0,
+          expectedUpdatedAt: doc.updatedAt,
+        })
         continue
       }
       operations.push({
@@ -405,6 +424,44 @@ export async function POST(request: Request) {
     }
 
     if (operations.length === 0) {
+      // Everything staged serializes to bytes already on the publish lane.
+      // Reconcile the documents clean WITHOUT a commit: their provenance
+      // records the lane head as the holding commit. Idempotent and
+      // replay-safe like any snapshot stamp, so no attempt row is needed -
+      // a partial failure simply leaves the rest dirty for a retry.
+      if (publishBranch && redundantSynchronizations.length > 0) {
+        let failedCount = 0
+        for (const redundant of redundantSynchronizations) {
+          try {
+            await convex.mutation(api.documents.markPublishedSnapshot, {
+              id: redundant.documentId,
+              githubSha: redundant.githubSha,
+              publishBranchId: publishBranch._id,
+              commitSha: authoritySha,
+              contentRevision: redundant.contentRevision,
+              publishedContentVersion: redundant.contentVersion,
+              expectedUpdatedAt: redundant.expectedUpdatedAt,
+              userId: actingUserId,
+              projectAccessToken,
+            })
+          } catch (error) {
+            failedCount += 1
+            console.error("Redundant-content reconciliation failed:", { documentId: redundant.documentId, error })
+          }
+        }
+        return NextResponse.json({
+          ok: true,
+          publishModeUsed,
+          synchronizedOnly: true,
+          prUrl: publishBranch.prUrl,
+          prNumber: publishBranch.prNumber,
+          summary: `${redundantSynchronizations.length - failedCount} document(s) reconciled without a commit (content already on ${authorityBranch})`,
+          warning:
+            failedCount > 0
+              ? `${failedCount} document(s) could not record their reconciliation; publish again to retry.`
+              : undefined,
+        })
+      }
       return NextResponse.json({ error: "No valid operations to publish" }, { status: 400 })
     }
 
@@ -516,6 +573,10 @@ export async function POST(request: Request) {
         // publish plans for the document (set for every non-delete path on
         // the success path; conflicts abort before associations are built).
         contentRevision: sha256Hex(serializedContentByRepoPath.get(repoPath) ?? ""),
+        // The document's content version at planning time - reconciliation
+        // stamps it into provenance, where cleanliness compares content
+        // versions (immune to workflow-only updatedAt bumps).
+        contentVersion: source.contentVersion ?? 0,
       }))
     let attemptId: Id<"publishAttempts">
     try {
@@ -863,12 +924,13 @@ async function refreshDocumentShasAtCommit({
     repoPath: string
     expectedUpdatedAt: number
     contentRevision?: string
+    contentVersion?: number
   }>
   actingUserId?: string
   projectAccessToken?: string
 }): Promise<{ failedCount: number }> {
   let failedCount = 0
-  for (const { documentId, repoPath, expectedUpdatedAt, contentRevision } of documentAssociations) {
+  for (const { documentId, repoPath, expectedUpdatedAt, contentRevision, contentVersion } of documentAssociations) {
     try {
       const fileAtCommit = await getFileForPublish(token, owner, repo, repoPath, commitSha)
       if (fileAtCommit.status === "absent") {
@@ -882,6 +944,7 @@ async function refreshDocumentShasAtCommit({
         publishBranchId,
         commitSha,
         contentRevision,
+        publishedContentVersion: contentVersion,
         expectedUpdatedAt,
         userId: actingUserId,
         projectAccessToken,
@@ -909,6 +972,7 @@ type RecoverablePublishAttempt = {
     repoPath: string
     expectedUpdatedAt: number
     contentRevision?: string
+    contentVersion?: number
   }>
   deleteAssociations: Array<{ opId: Id<"explorerOps">; documentId: Id<"documents">; expectedUpdatedAt: number }>
   // getActiveForProject only returns committing/committed attempts; the wider
@@ -982,26 +1046,86 @@ async function recoverPublishAttempt({
 
   // A finished lane (PR closed unmerged or merged) can never accept this
   // attempt's work again, and GitHub may already have deleted its branch -
-  // the ancestry walk below would fail closed FOREVER. A "committing"
-  // attempt provably never ran recordCommit, so markCommitted and the
-  // document refresh never ran either: every staged operation is still
-  // pending and every document still dirty. Superseding therefore loses
-  // nothing - if the CAS commit did land it sits on a finished lane
-  // (closed: explicitly abandoned unmerged; merged: identical content is
-  // skipped by the redundancy guard on the next publish).
+  // the ancestry walk below would fail closed FOREVER. Closed and merged
+  // lanes need DIFFERENT resolutions, because their content ended up in
+  // different places.
   const laneFinished = lane.status === "closed" || lane.status === "merged"
-  if (laneFinished && attempt.status === "committing") {
+
+  // CLOSED lane + committing attempt: recordCommit provably never ran, so
+  // markCommitted and the document refresh never ran either - every staged
+  // operation is still pending and every document still dirty. Superseding
+  // loses nothing: even if the CAS commit landed, it sits on a lane the
+  // user explicitly abandoned unmerged. Finish the deferred close-time
+  // invalidation now so restored operations join the fresh publish.
+  if (lane.status === "closed" && attempt.status === "committing") {
     await convex.mutation(api.publishAttempts.supersede, { id: attempt._id, ...auth })
-    if (lane.status === "closed") {
-      // Close-time invalidation deferred while this attempt was active;
-      // finish it now so the restored operations join the fresh publish.
-      await convex.mutation(api.publishBranches.finishLaneInvalidation, { id: attempt.publishBranchId, ...auth })
-      return { handled: false, stagedStateStale: true }
-    }
-    return { handled: false }
+    await convex.mutation(api.publishBranches.finishLaneCleanup, { id: attempt.publishBranchId, ...auth })
+    return { handled: false, stagedStateStale: true }
   }
 
   let commitSha = attempt.status === "committed" ? (attempt.commitSha ?? null) : null
+  // For a MERGED lane: whether the attempt's commit is part of the merged
+  // pull request. true → its content reached the base branch (finalize);
+  // false → it never landed, or landed on the branch outside the merge -
+  // either way its content is NOT in base and must be restored, not spent.
+  let mergedCommitDidMerge: boolean | null = null
+
+  if (lane.status === "merged") {
+    // The merged PR's own commit list is the proof authority - it survives
+    // head-branch deletion and is exactly the set of lane commits that
+    // merged. Blind superseding here would leave pending creates/media
+    // that conflict with (or duplicate) already-merged content; blind
+    // finalizing would spend work that never merged.
+    if (typeof lane.prNumber !== "number") {
+      return {
+        handled: true,
+        response: NextResponse.json(
+          {
+            ok: false,
+            error: `Publish lane ${attempt.branchName} is marked merged but has no recorded pull request; cannot prove whether the interrupted publish merged. Resolve the lane manually before publishing again.`,
+          },
+          { status: 409 },
+        ),
+      }
+    }
+    try {
+      const prCommits = await getPullRequestCommitsForPublish(token, owner, repo, lane.prNumber)
+      if (commitSha) {
+        const recorded = commitSha
+        mergedCommitDidMerge = prCommits.some((candidate) => candidate.sha === recorded)
+      } else {
+        const adopted = prCommits.find(
+          (candidate) =>
+            commitMessageCarriesAttempt(candidate.message, attempt.planDigest) &&
+            candidate.parents.length === 1 &&
+            candidate.parents[0] === attempt.expectedHeadSha,
+        )
+        if (!adopted) {
+          // Provably not part of what merged: every staged operation is
+          // still pending (recordCommit never ran), so supersede and let
+          // the fresh publish re-commit it to a new lane.
+          await convex.mutation(api.publishAttempts.supersede, { id: attempt._id, ...auth })
+          return { handled: false }
+        }
+        commitSha = adopted.sha
+        await convex.mutation(api.publishAttempts.recordCommit, { id: attempt._id, commitSha, ...auth })
+        mergedCommitDidMerge = true
+      }
+    } catch (error) {
+      if (error instanceof GitHubReadError) {
+        console.error("Merged-lane recovery read failed:", error)
+        return {
+          handled: true,
+          response: NextResponse.json(
+            { ok: false, error: `Publish recovery aborted: ${error.message}. Retry once GitHub reads succeed.` },
+            { status: 502 },
+          ),
+        }
+      }
+      throw error
+    }
+  }
+
   try {
     if (!commitSha) {
       const head = await getBranchHeadForPublish(token, owner, repo, attempt.branchName)
@@ -1182,6 +1306,7 @@ async function recoverPublishAttempt({
 
   let reconciliationIncomplete = false
   let laneInvalidated = false
+  let laneFinalized = false
   if (refresh.failedCount > 0) {
     reconciliationIncomplete = true
     const refreshWarning = `${refresh.failedCount} document(s) could not sync their GitHub state after commit ${commitSha}; publish again to finish reconciliation (no new commit will be created).`
@@ -1192,14 +1317,37 @@ async function recoverPublishAttempt({
       // The lane's PR was closed unmerged, so everything just reconciled
       // onto it is stranded; the close-time invalidation was deferred while
       // this attempt was active. Finish it now that the attempt resolved.
-      await convex.mutation(api.publishBranches.finishLaneInvalidation, { id: attempt.publishBranchId, ...auth })
+      await convex.mutation(api.publishBranches.finishLaneCleanup, { id: attempt.publishBranchId, ...auth })
       laneInvalidated = true
+    } else if (lane.status === "merged") {
+      if (mergedCommitDidMerge === false) {
+        // The recorded commit is NOT in the merged PR: its content never
+        // reached the base branch (it landed outside the merge, on a
+        // branch that is now finished). Restore its work for republishing
+        // instead of letting the merge finalization spend it.
+        await convex.mutation(api.publishBranches.finishLaneCleanup, {
+          id: attempt.publishBranchId,
+          action: "invalidate",
+          ...auth,
+        })
+        laneInvalidated = true
+      } else {
+        // The commit merged: run the shared merge finalization (idempotent
+        // with the webhook and client fallback paths, which deferred while
+        // this attempt was active).
+        await convex.mutation(api.publishBranches.finishLaneCleanup, { id: attempt.publishBranchId, ...auth })
+        laneFinalized = true
+      }
     }
   }
 
   const note = laneInvalidated
-    ? "Recovered a previous publish attempt whose pull request was closed without merging. Its staged operations and documents were restored; publish again to publish them to a new lane."
-    : "Recovered a previous publish attempt without committing again. Review remaining staged changes and publish again if needed."
+    ? lane.status === "merged"
+      ? "Recovered a previous publish attempt whose commit was not part of the merged pull request. Its staged operations and documents were restored; publish again to publish them to a new lane."
+      : "Recovered a previous publish attempt whose pull request was closed without merging. Its staged operations and documents were restored; publish again to publish them to a new lane."
+    : laneFinalized
+      ? "Recovered a previous publish attempt whose pull request already merged, and finalized the lane."
+      : "Recovered a previous publish attempt without committing again. Review remaining staged changes and publish again if needed."
   return {
     handled: true,
     response: NextResponse.json({
@@ -1207,6 +1355,7 @@ async function recoverPublishAttempt({
       recovered: true,
       reconciliationIncomplete: reconciliationIncomplete || undefined,
       laneInvalidated: laneInvalidated || undefined,
+      laneFinalized: laneFinalized || undefined,
       commitSha,
       prUrl,
       prNumber,

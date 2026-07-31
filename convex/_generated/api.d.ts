@@ -25,6 +25,8 @@ import type * as mediaAssets from "../mediaAssets.js";
 import type * as mediaGallery from "../mediaGallery.js";
 import type * as mediaOps from "../mediaOps.js";
 import type * as lib_laneInvalidation from "../lib/laneInvalidation.js";
+import type * as lib_laneMerge from "../lib/laneMerge.js";
+import type * as lib_mediaTombstone from "../lib/mediaTombstone.js";
 import type * as lib_publishAttemptGuard from "../lib/publishAttemptGuard.js";
 import type * as projects from "../projects.js";
 import type * as publishAttempts from "../publishAttempts.js";
@@ -57,6 +59,8 @@ declare const fullApi: ApiFromModules<{
   mediaGallery: typeof mediaGallery;
   mediaOps: typeof mediaOps;
   "lib/laneInvalidation": typeof lib_laneInvalidation;
+  "lib/laneMerge": typeof lib_laneMerge;
+  "lib/mediaTombstone": typeof lib_mediaTombstone;
   "lib/publishAttemptGuard": typeof lib_publishAttemptGuard;
   projects: typeof projects;
   publishAttempts: typeof publishAttempts;

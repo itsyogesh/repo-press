@@ -325,10 +325,40 @@ describe("publish attempt guard on undo/discard", () => {
     // orphans the just-uploaded object). The route maps this to a 409.
     expect(result).toEqual({ staged: false, reason: "publish-in-progress" })
     // The rejected NEW upload was deleted; the planned row and its bytes
-    // were untouched.
+    // were untouched, and no tombstone was needed.
     expect(ctx.storage.delete).toHaveBeenCalledWith("storage_new")
     expect(ctx.storage.delete).not.toHaveBeenCalledWith("storage_old")
+    expect(ctx.db.insert).not.toHaveBeenCalled()
     expect(patch).not.toHaveBeenCalled()
+  })
+
+  it("leaves a durable failed tombstone owning the rejected bytes when the storage delete fails", async () => {
+    const patch = vi.fn()
+    const get = vi.fn().mockResolvedValueOnce(project)
+    const ctx = createCtx(get, patch, {
+      activePublishAttempt: activeAttempt,
+      pendingMediaRow: { _id: "media_1", projectId: "project_1", convexStorageId: "storage_old" },
+    })
+    ctx.storage.delete.mockRejectedValue(new Error("storage backend unavailable"))
+
+    const result = await (stageMedia as any).handler(ctx, {
+      projectId: "project_1",
+      repoPath: "/public/uploads/pic.png",
+      fileName: "pic.png",
+      mimeType: "image/png",
+      sourceType: "convex",
+      convexStorageId: "storage_new",
+      userId: "user_owner",
+      projectAccessToken: await patToken(),
+    })
+
+    // Still a truthful 409-shaped refusal - but the unowned object now has
+    // a "failed" tombstone row so the nightly cron can retry the delete.
+    expect(result).toEqual({ staged: false, reason: "publish-in-progress" })
+    expect(ctx.db.insert).toHaveBeenCalledWith(
+      "mediaOps",
+      expect.objectContaining({ status: "failed", convexStorageId: "storage_new" }),
+    )
   })
 
   it("allows discardAll when no publish attempt is active", async () => {

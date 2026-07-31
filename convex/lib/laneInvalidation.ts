@@ -1,12 +1,22 @@
-import { resolveStoredRepoPath, type StoredPathRepresentation } from "../../lib/preview/path-policy"
+import { resolveStoredRepoPath, type StoredPathRepresentation, toContentPath } from "../../lib/preview/path-policy"
+import { internal } from "../_generated/api"
 import type { Doc, Id } from "../_generated/dataModel"
 import type { MutationCtx } from "../_generated/server"
 import { findActivePublishAttempt } from "./publishAttemptGuard"
+
+/**
+ * Rows processed per table per pass. A reused lane can accumulate several
+ * 500-operation publishes, so cleanup NEVER scans a lane's whole history in
+ * one transaction: each pass is bounded, and an incomplete pass keeps the
+ * lane's laneInvalidationPending flag set and schedules a continuation.
+ */
+export const LANE_CLEANUP_BATCH = 100
 
 export type LaneInvalidationResult =
   | { deferred: true }
   | {
       deferred: false
+      done: boolean
       restoredOpIds: Id<"explorerOps">[]
       discardedOpIds: Id<"explorerOps">[]
       restoredMediaOpIds: Id<"mediaOps">[]
@@ -14,7 +24,31 @@ export type LaneInvalidationResult =
       invalidatedDocumentIds: Id<"documents">[]
     }
 
-type LaneInvalidationCtx = Pick<MutationCtx, "db" | "storage">
+type LaneCleanupCtx = Pick<MutationCtx, "db" | "storage" | "scheduler">
+
+/** Keep the durable flag set and schedule the next bounded pass. */
+export async function scheduleLaneCleanupContinuation(ctx: LaneCleanupCtx, branch: Doc<"publishBranches">) {
+  if (!branch.laneInvalidationPending) {
+    await ctx.db.patch(branch._id, { laneInvalidationPending: true, updatedAt: Date.now() })
+  }
+  await ctx.scheduler.runAfter(0, internal.publishBranches.continueLaneCleanup, { id: branch._id })
+}
+
+/**
+ * The stored filePath values that can resolve to one repo path: the
+ * canonical content-relative form and the legacy repo-root-relative form.
+ * Lets per-path lookups use the by_projectId_filePath index instead of
+ * scanning every row of a table.
+ */
+function candidateStoredFilePaths(contentRoot: string, repoPath: string): string[] {
+  const candidates = new Set<string>([repoPath])
+  try {
+    candidates.add(toContentPath(contentRoot, repoPath))
+  } catch {
+    // Outside the content root: only the legacy form can exist.
+  }
+  return [...candidates]
+}
 
 /**
  * Invalidate the synchronization state a closed-unmerged lane left behind.
@@ -38,15 +72,18 @@ type LaneInvalidationCtx = Pick<MutationCtx, "db" | "storage">
  * detects an externally closed PR) and is idempotent: a second pass finds no
  * committed rows or provenance for the lane and changes nothing.
  *
- * While a publish attempt is at the commit boundary for the project the pass
- * DEFERS durably (laneInvalidationPending flag): the attempt may still be
- * marking ops committed / stamping provenance for this lane, and restoring
- * concurrently would let it re-strand content after this pass ran. Attempt
- * recovery and the nightly cron finish flagged lanes once the attempt
- * resolves.
+ * BOUNDED AND RESUMABLE: each invocation processes at most
+ * LANE_CLEANUP_BATCH rows per table (fetched through lane-scoped indexes,
+ * with per-path index lookups for conflict checks), and schedules a
+ * continuation while work remains. While a publish attempt is at the commit
+ * boundary for the project the pass DEFERS durably (laneInvalidationPending
+ * flag): the attempt may still be writing synchronization state for this
+ * lane, and restoring concurrently would let it re-strand content after
+ * this pass ran. Attempt recovery and the nightly cron finish flagged lanes
+ * once the attempt resolves.
  */
 export async function invalidateClosedLaneSync(
-  ctx: LaneInvalidationCtx,
+  ctx: LaneCleanupCtx,
   branch: Doc<"publishBranches">,
 ): Promise<LaneInvalidationResult> {
   const now = Date.now()
@@ -66,27 +103,50 @@ export async function invalidateClosedLaneSync(
   const discardedMediaOpIds: Id<"mediaOps">[] = []
   const invalidatedDocumentIds: Id<"documents">[] = []
 
-  // ── Explorer ops committed to this lane ──
-  const pendingOps = await ctx.db
+  // ── Explorer ops committed to this lane (bounded batch) ──
+  const committedOpsBatch = await ctx.db
     .query("explorerOps")
-    .withIndex("by_projectId_status", (q) => q.eq("projectId", branch.projectId).eq("status", "pending"))
-    .collect()
-  const pendingOpPaths = new Set(pendingOps.map(resolveOpPath))
-  const committedOps = await ctx.db
-    .query("explorerOps")
-    .withIndex("by_projectId_status", (q) => q.eq("projectId", branch.projectId).eq("status", "committed"))
-    .collect()
-  const laneOpsByPath = new Map<string, Doc<"explorerOps">[]>()
-  for (const op of committedOps) {
-    if (op.publishBranchId !== branch._id) continue
-    const repoPath = resolveOpPath(op)
-    const group = laneOpsByPath.get(repoPath) ?? []
-    group.push(op)
-    laneOpsByPath.set(repoPath, group)
+    .withIndex("by_publishBranchId_status", (q) => q.eq("publishBranchId", branch._id).eq("status", "committed"))
+    .take(LANE_CLEANUP_BATCH)
+
+  // All committed lane ops that resolve to one path, fetched through the
+  // per-path index so a create+delete pair split across batches still
+  // cancels out as a unit.
+  const committedLaneOpsAtPath = async (repoPath: string) => {
+    const mates = new Map<string, Doc<"explorerOps">>()
+    for (const filePath of candidateStoredFilePaths(contentRoot, repoPath)) {
+      const rows = await ctx.db
+        .query("explorerOps")
+        .withIndex("by_projectId_filePath", (q) => q.eq("projectId", branch.projectId).eq("filePath", filePath))
+        .collect()
+      for (const row of rows) {
+        if (row.status !== "committed" || row.publishBranchId !== branch._id) continue
+        if (resolveOpPath(row) !== repoPath) continue
+        mates.set(String(row._id), row)
+      }
+    }
+    return [...mates.values()]
   }
-  for (const [repoPath, ops] of laneOpsByPath) {
+  const hasPendingOpAtPath = async (repoPath: string) => {
+    for (const filePath of candidateStoredFilePaths(contentRoot, repoPath)) {
+      const rows = await ctx.db
+        .query("explorerOps")
+        .withIndex("by_projectId_filePath", (q) => q.eq("projectId", branch.projectId).eq("filePath", filePath))
+        .collect()
+      if (rows.some((row) => row.status === "pending" && resolveOpPath(row) === repoPath)) return true
+    }
+    return false
+  }
+
+  const handledOpIds = new Set<string>()
+  for (const batchOp of committedOpsBatch) {
+    if (handledOpIds.has(String(batchOp._id))) continue
+    const repoPath = resolveOpPath(batchOp)
+    const ops = await committedLaneOpsAtPath(repoPath)
+    for (const op of ops) handledOpIds.add(String(op._id))
+
     const cancelsOut = ops.some((op) => op.opType === "create") && ops.some((op) => op.opType === "delete")
-    if (cancelsOut || pendingOpPaths.has(repoPath)) {
+    if (cancelsOut || (await hasPendingOpAtPath(repoPath))) {
       for (const op of ops) {
         discardedOpIds.push(op._id)
         await ctx.db.delete(op._id)
@@ -108,36 +168,46 @@ export async function invalidateClosedLaneSync(
   }
 
   // ── Media ops committed to this lane (their bytes are still staged) ──
-  const pendingMediaOps = await ctx.db
+  const committedMediaBatch = await ctx.db
     .query("mediaOps")
-    .withIndex("by_projectId_status", (q) => q.eq("projectId", branch.projectId).eq("status", "pending"))
-    .collect()
-  const pendingMediaPaths = new Set(pendingMediaOps.map((op) => op.repoPath))
-  const committedMediaOps = await ctx.db
-    .query("mediaOps")
-    .withIndex("by_projectId_status", (q) => q.eq("projectId", branch.projectId).eq("status", "committed"))
-    .collect()
-  const laneMediaByPath = new Map<string, Doc<"mediaOps">[]>()
-  for (const op of committedMediaOps) {
-    if (op.publishBranchId !== branch._id) continue
-    const group = laneMediaByPath.get(op.repoPath) ?? []
-    group.push(op)
-    laneMediaByPath.set(op.repoPath, group)
-  }
+    .withIndex("by_publishBranchId_status", (q) => q.eq("publishBranchId", branch._id).eq("status", "committed"))
+    .take(LANE_CLEANUP_BATCH)
+
+  const mediaRowsAtPath = async (repoPath: string) =>
+    await ctx.db
+      .query("mediaOps")
+      .withIndex("by_projectId_repoPath", (q) => q.eq("projectId", branch.projectId).eq("repoPath", repoPath))
+      .collect()
+
   const discardMediaOp = async (op: Doc<"mediaOps">) => {
+    discardedMediaOpIds.push(op._id)
     if (op.convexStorageId) {
       try {
         await ctx.storage.delete(op.convexStorageId)
       } catch {
-        // Already gone.
+        // Keep the row as a durable "failed" tombstone so the object stays
+        // owned and the nightly cron retries the delete.
+        await ctx.db.patch(op._id, {
+          status: "failed",
+          commitSha: undefined,
+          publishBranchId: undefined,
+          updatedAt: now,
+        })
+        return
       }
     }
-    discardedMediaOpIds.push(op._id)
     await ctx.db.delete(op._id)
   }
-  for (const [repoPath, ops] of laneMediaByPath) {
-    const sorted = [...ops].sort((a, b) => b.updatedAt - a.updatedAt)
-    if (pendingMediaPaths.has(repoPath)) {
+
+  const handledMediaIds = new Set<string>()
+  for (const batchOp of committedMediaBatch) {
+    if (handledMediaIds.has(String(batchOp._id))) continue
+    const rowsAtPath = await mediaRowsAtPath(batchOp.repoPath)
+    const laneRows = rowsAtPath.filter((row) => row.status === "committed" && row.publishBranchId === branch._id)
+    for (const row of laneRows) handledMediaIds.add(String(row._id))
+
+    const sorted = [...laneRows].sort((a, b) => b.updatedAt - a.updatedAt)
+    if (rowsAtPath.some((row) => row.status === "pending")) {
       for (const op of sorted) await discardMediaOp(op)
       continue
     }
@@ -152,23 +222,29 @@ export async function invalidateClosedLaneSync(
     for (const op of older) await discardMediaOp(op)
   }
 
-  // ── Documents whose clean state points at this lane ──
-  const documents = await ctx.db
+  // ── Documents whose clean state points at this lane (bounded batch) ──
+  const documentsBatch = await ctx.db
     .query("documents")
-    .withIndex("by_projectId", (q) => q.eq("projectId", branch.projectId))
-    .collect()
-  for (const doc of documents) {
-    if (doc.publishedProvenance?.publishBranchId !== branch._id) continue
+    .withIndex("by_publishedProvenance_publishBranchId", (q) => q.eq("publishedProvenance.publishBranchId", branch._id))
+    .take(LANE_CLEANUP_BATCH)
+  for (const doc of documentsBatch) {
     invalidatedDocumentIds.push(doc._id)
     await ctx.db.patch(doc._id, { publishedProvenance: undefined })
   }
 
-  if (branch.laneInvalidationPending) {
+  const done =
+    committedOpsBatch.length < LANE_CLEANUP_BATCH &&
+    committedMediaBatch.length < LANE_CLEANUP_BATCH &&
+    documentsBatch.length < LANE_CLEANUP_BATCH
+  if (!done) {
+    await scheduleLaneCleanupContinuation(ctx, branch)
+  } else if (branch.laneInvalidationPending) {
     await ctx.db.patch(branch._id, { laneInvalidationPending: undefined, updatedAt: now })
   }
 
   return {
     deferred: false,
+    done,
     restoredOpIds,
     discardedOpIds,
     restoredMediaOpIds,

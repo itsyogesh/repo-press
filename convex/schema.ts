@@ -174,6 +174,11 @@ export default defineSchema({
     // Content
     body: v.optional(v.string()), // MDX content (draft body stored here)
     frontmatter: v.optional(v.any()), // Full frontmatter as JSON
+    // Content-specific version counter: bumped ONLY when body/frontmatter
+    // change (never by workflow/status transitions or provenance stamps).
+    // Absent counts as 0. Publish cleanliness compares this against
+    // publishedProvenance.publishedContentVersion.
+    contentVersion: v.optional(v.number()),
     coverImage: v.optional(v.string()),
     // Relationships
     authorIds: v.optional(v.array(v.id("authors"))),
@@ -187,22 +192,28 @@ export default defineSchema({
     // GitHub sync state
     githubSha: v.optional(v.string()),
     lastSyncedAt: v.optional(v.number()),
-    // DEPRECATED: superseded by publishedProvenance. Kept only so rows
-    // written by the previous revision still validate; never read or
-    // written anymore and safe to drop after a cleanup pass.
+    // LEGACY (lazily migrated): rows written before publishedProvenance
+    // existed mark cleanliness as lastPublishedUpdatedAt === updatedAt.
+    // Honored by listDirtyForProject until the next edit or publish, and
+    // cleared whenever markPublishedSnapshot records new provenance.
     lastPublishedUpdatedAt: v.optional(v.number()),
     // Lane-synchronization provenance: which publish lane and commit hold
     // this document's published snapshot, the content-specific revision
-    // (sha256 of the serialized bytes) that landed, and the updatedAt of
-    // the planned snapshot. The document is "clean" for publishing while
-    // publishedUpdatedAt === updatedAt (recording it never bumps
-    // updatedAt, so replays are no-ops); closing the lane unmerged clears
-    // the whole object and the document becomes dirty again.
+    // (sha256 of the serialized bytes), the document's contentVersion at
+    // planning time, and the planned updatedAt. The document is "clean"
+    // for publishing while publishedContentVersion === contentVersion
+    // (workflow-only transitions bump updatedAt but not contentVersion, so
+    // they cannot dirty unchanged content); recording provenance never
+    // bumps either field, so replays are no-ops. Closing the lane unmerged
+    // clears the whole object and the document becomes dirty again.
     publishedProvenance: v.optional(
       v.object({
         publishBranchId: v.id("publishBranches"),
         commitSha: v.string(),
         contentRevision: v.optional(v.string()),
+        // Optional only for provenance recorded before the field existed;
+        // those rows fall back to publishedUpdatedAt === updatedAt.
+        publishedContentVersion: v.optional(v.number()),
         publishedUpdatedAt: v.number(),
       }),
     ),
@@ -218,6 +229,9 @@ export default defineSchema({
     .index("by_projectId_status", ["projectId", "status"])
     .index("by_projectId_filePath", ["projectId", "filePath"])
     .index("by_collectionId", ["collectionId"])
+    // Bounded closed-lane invalidation: fetch exactly the documents whose
+    // clean state points at one lane, in batches.
+    .index("by_publishedProvenance_publishBranchId", ["publishedProvenance.publishBranchId"])
     .searchIndex("search_title", {
       searchField: "title",
       filterFields: ["projectId"],
@@ -355,7 +369,9 @@ export default defineSchema({
   })
     .index("by_projectId", ["projectId"])
     .index("by_projectId_status", ["projectId", "status"])
-    .index("by_projectId_filePath", ["projectId", "filePath"]),
+    .index("by_projectId_filePath", ["projectId", "filePath"])
+    // Bounded lane cleanup: fetch exactly one lane's committed ops in batches.
+    .index("by_publishBranchId_status", ["publishBranchId", "status"]),
 
   // ─── Media Ops (staged media writes for PR-based publish) ──────────────
   mediaOps: defineTable({
@@ -373,6 +389,9 @@ export default defineSchema({
     githubPath: v.optional(v.string()),
     githubSha: v.optional(v.string()),
     convexStorageId: v.optional(v.string()),
+    // "failed" rows are storage-deletion tombstones: they own a Convex
+    // storage object whose delete failed, so the nightly cron can retry
+    // until the object is gone (see mediaOps.stage / cleanupStaleUploads).
     status: v.union(v.literal("pending"), v.literal("committed"), v.literal("undone"), v.literal("failed")),
     commitSha: v.optional(v.string()),
     publishBranchId: v.optional(v.id("publishBranches")),
@@ -381,7 +400,9 @@ export default defineSchema({
   })
     .index("by_projectId", ["projectId"])
     .index("by_projectId_status", ["projectId", "status"])
-    .index("by_projectId_repoPath", ["projectId", "repoPath"]),
+    .index("by_projectId_repoPath", ["projectId", "repoPath"])
+    // Bounded lane cleanup: fetch exactly one lane's committed uploads in batches.
+    .index("by_publishBranchId_status", ["publishBranchId", "status"]),
 
   // ─── Publish Branches (PR-based publish workflow) ─────────────────
   publishBranches: defineTable({
@@ -393,9 +414,11 @@ export default defineSchema({
     status: v.union(v.literal("active"), v.literal("inactive"), v.literal("merged"), v.literal("closed")),
     lastCommitSha: v.optional(v.string()),
     committedFilePaths: v.optional(v.array(v.string())),
-    // Set when closed-lane synchronization invalidation was skipped because
-    // a publish attempt was at the commit boundary; the nightly cron (or
-    // attempt recovery) finishes it durably.
+    // Set when lane synchronization cleanup (closed-lane invalidation OR
+    // merged-lane finalization, dispatched on status) is incomplete -
+    // deferred behind an active publish attempt or split across bounded
+    // batches. The nightly cron, the scheduled continuation, and attempt
+    // recovery finish it durably.
     laneInvalidationPending: v.optional(v.boolean()),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -438,6 +461,10 @@ export default defineSchema({
         // reconcile time. Optional only for attempts recorded before the
         // field existed.
         contentRevision: v.optional(v.string()),
+        // The document's contentVersion at planning time - becomes the
+        // provenance's publishedContentVersion. Optional only for attempts
+        // recorded before the field existed.
+        contentVersion: v.optional(v.number()),
       }),
     ),
     deleteAssociations: v.array(

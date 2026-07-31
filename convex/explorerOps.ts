@@ -91,6 +91,7 @@ export const stageCreate = mutation({
     if (existingDoc) {
       // Edge case #5: If published or archived, reset to draft
       if (existingDoc.status === "published" || existingDoc.status === "archived") {
+        const writesContent = args.initialBody !== undefined || args.initialFrontmatter !== undefined
         await ctx.db.patch(existingDoc._id, {
           status: "draft",
           pathRepresentation: "content_relative_v1",
@@ -99,6 +100,7 @@ export const stageCreate = mutation({
           ...(args.title ? { title: args.title } : {}),
           ...(args.initialBody !== undefined ? { body: args.initialBody } : {}),
           ...(args.initialFrontmatter !== undefined ? { frontmatter: args.initialFrontmatter } : {}),
+          ...(writesContent ? { contentVersion: (existingDoc.contentVersion ?? 0) + 1 } : {}),
           updatedAt: now,
         })
       } else {
@@ -109,9 +111,11 @@ export const stageCreate = mutation({
         }
         if (args.initialBody !== undefined && args.initialBody !== existingDoc.body) {
           patches.body = args.initialBody
+          patches.contentVersion = (existingDoc.contentVersion ?? 0) + 1
         }
         if (args.initialFrontmatter !== undefined) {
           patches.frontmatter = args.initialFrontmatter
+          patches.contentVersion = (existingDoc.contentVersion ?? 0) + 1
         }
         if (Object.keys(patches).length > 1) {
           // More than just updatedAt
@@ -345,6 +349,7 @@ export const discardAll = mutation({
       await ctx.db.patch(doc._id, {
         body: undefined,
         frontmatter: undefined,
+        contentVersion: (doc.contentVersion ?? 0) + 1,
         updatedAt: now,
       })
     }
@@ -443,6 +448,7 @@ export const markCommitted = mutation({
               await ctx.db.patch(associatedDocument._id, {
                 body: undefined,
                 frontmatter: undefined,
+                contentVersion: (associatedDocument.contentVersion ?? 0) + 1,
                 updatedAt: now,
               })
             }

@@ -1,9 +1,10 @@
 import { v } from "convex/values"
 import type { Id } from "./_generated/dataModel"
 import type { QueryCtx } from "./_generated/server"
-import { mutation, query } from "./_generated/server"
+import { internalMutation, mutation, query } from "./_generated/server"
 import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
 import { invalidateClosedLaneSync } from "./lib/laneInvalidation"
+import { finalizeMergedLaneSync } from "./lib/laneMerge"
 
 async function getCurrentBranchForProject(
   ctx: QueryCtx,
@@ -206,7 +207,14 @@ export const updateAfterCommit = mutation({
   },
 })
 
-/** Mark a publish branch as merged (PR was merged). */
+/**
+ * Mark a publish branch as merged (PR was merged). This is the CLIENT
+ * FALLBACK merge path (usePrStatusSync detects an externally merged PR);
+ * the webhook path is githubWebhook.handlePRMerged. Both run the SAME
+ * shared, idempotent merge finalization so the lane's spent rows are
+ * cleared and its merged documents published no matter which path fires
+ * first.
+ */
 export const markMerged = mutation({
   args: {
     id: v.id("publishBranches"),
@@ -226,6 +234,7 @@ export const markMerged = mutation({
       status: "merged",
       updatedAt: Date.now(),
     })
+    return await finalizeMergedLaneSync(ctx, { ...publishBranch, status: "merged" })
   },
 })
 
@@ -261,14 +270,21 @@ export const markClosed = mutation({
 })
 
 /**
- * Finish (or run) the synchronization invalidation for an already-closed
- * lane. Used by publish-attempt recovery after it resolves an attempt whose
- * lane was closed unmerged - the close-time invalidation was deferred while
- * that attempt was active.
+ * Finish (or run) the synchronization cleanup for a finished lane. Used by
+ * publish-attempt recovery after it resolves an attempt whose lane closed
+ * or merged while the attempt was active (the event-time cleanup deferred
+ * behind the attempt).
+ *
+ * The action defaults from the lane's status - closed lanes invalidate
+ * (restore stranded work), merged lanes finalize (spend merged work).
+ * Recovery passes action:"invalidate" explicitly for a merged lane whose
+ * attempt commit provably did NOT merge: that commit's work never reached
+ * the base branch, so it must be restored, not spent.
  */
-export const finishLaneInvalidation = mutation({
+export const finishLaneCleanup = mutation({
   args: {
     id: v.id("publishBranches"),
+    action: v.optional(v.union(v.literal("invalidate"), v.literal("finalize"))),
     userId: v.optional(v.string()),
     projectAccessToken: v.optional(v.string()),
   },
@@ -280,10 +296,31 @@ export const finishLaneInvalidation = mutation({
       { projectId: publishBranch.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken },
       "editor",
     )
-    if (publishBranch.status !== "closed") {
-      throw new Error("Lane invalidation only applies to closed publish lanes")
+    if (publishBranch.status !== "closed" && publishBranch.status !== "merged") {
+      throw new Error("Lane cleanup only applies to closed or merged publish lanes")
     }
-    return await invalidateClosedLaneSync(ctx, publishBranch)
+    const action = args.action ?? (publishBranch.status === "closed" ? "invalidate" : "finalize")
+    return action === "invalidate"
+      ? await invalidateClosedLaneSync(ctx, publishBranch)
+      : await finalizeMergedLaneSync(ctx, publishBranch)
+  },
+})
+
+/**
+ * Scheduled continuation for bounded lane cleanup: re-runs the pass for a
+ * lane whose previous pass hit the batch limit, until the lane drains and
+ * the durable flag clears. Dispatches on the lane's status.
+ */
+export const continueLaneCleanup = internalMutation({
+  args: { id: v.id("publishBranches") },
+  handler: async (ctx, args) => {
+    const publishBranch = await ctx.db.get(args.id)
+    if (!publishBranch) return
+    if (publishBranch.status === "closed") {
+      await invalidateClosedLaneSync(ctx, publishBranch)
+    } else if (publishBranch.status === "merged") {
+      await finalizeMergedLaneSync(ctx, publishBranch)
+    }
   },
 })
 

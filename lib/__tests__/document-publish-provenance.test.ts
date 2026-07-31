@@ -18,7 +18,7 @@ vi.mock("@/convex/auth", () => ({
   },
 }))
 
-import { listDirtyForProject, markPublishedSnapshot } from "@/convex/documents"
+import { listDirtyForProject, markPublishedSnapshot, saveDraft } from "@/convex/documents"
 import { mintProjectAccessToken } from "@/lib/project-access-token"
 
 async function patToken() {
@@ -213,31 +213,59 @@ describe("lane-synchronization provenance", () => {
     expect("contentRevision" in patched.publishedProvenance).toBe(false)
   })
 
-  it("excludes lane-synchronized documents from the dirty list until they are edited again", async () => {
+  it("excludes lane-synchronized documents from the dirty list until their CONTENT changes", async () => {
     const get = vi.fn().mockResolvedValue(project)
     const ctx = createCtx({
       get,
       draftDocs: [
-        // Clean: published snapshot still current.
+        // Clean: content version unchanged since the publish, even though a
+        // workflow transition bumped updatedAt afterwards. This is the
+        // dead-end the content-specific version exists to prevent.
         {
-          _id: "doc_clean",
+          _id: "doc_workflow_transitioned",
           body: "# A",
           frontmatter: null,
-          updatedAt: 10,
-          publishedProvenance: { publishBranchId: "lane_1", commitSha: "commit-1", publishedUpdatedAt: 10 },
+          updatedAt: 30,
+          contentVersion: 4,
+          publishedProvenance: {
+            publishBranchId: "lane_1",
+            commitSha: "commit-1",
+            publishedContentVersion: 4,
+            publishedUpdatedAt: 10,
+          },
         },
-        // Dirty: edited after the publish.
+        // Dirty: content edited after the publish (version advanced).
         {
           _id: "doc_edited",
           body: "# B",
           frontmatter: null,
           updatedAt: 12,
-          publishedProvenance: { publishBranchId: "lane_1", commitSha: "commit-1", publishedUpdatedAt: 10 },
+          contentVersion: 5,
+          publishedProvenance: {
+            publishBranchId: "lane_1",
+            commitSha: "commit-1",
+            publishedContentVersion: 4,
+            publishedUpdatedAt: 10,
+          },
         },
         // Dirty: never published.
         { _id: "doc_new", body: "# C", frontmatter: null, updatedAt: 3 },
         // Dirty again: provenance cleared when its lane closed unmerged.
-        { _id: "doc_invalidated", body: "# D", frontmatter: null, updatedAt: 7 },
+        { _id: "doc_invalidated", body: "# D", frontmatter: null, updatedAt: 7, contentVersion: 2 },
+        // Clean: provenance recorded before contentVersion existed falls
+        // back to the updatedAt comparison it was written under.
+        {
+          _id: "doc_versionless_provenance",
+          body: "# E",
+          frontmatter: null,
+          updatedAt: 10,
+          publishedProvenance: { publishBranchId: "lane_1", commitSha: "commit-1", publishedUpdatedAt: 10 },
+        },
+        // Clean: legacy row from before provenance existed honors its
+        // lastPublishedUpdatedAt marker until edited or republished.
+        { _id: "doc_legacy_clean", body: "# F", frontmatter: null, updatedAt: 10, lastPublishedUpdatedAt: 10 },
+        // Dirty: legacy row edited after its legacy marker.
+        { _id: "doc_legacy_edited", body: "# G", frontmatter: null, updatedAt: 12, lastPublishedUpdatedAt: 10 },
       ],
     })
 
@@ -247,6 +275,57 @@ describe("lane-synchronization provenance", () => {
       projectAccessToken: await patToken(),
     })
 
-    expect(result.map((d: { _id: string }) => d._id)).toEqual(["doc_edited", "doc_new", "doc_invalidated"])
+    expect(result.map((d: { _id: string }) => d._id)).toEqual([
+      "doc_edited",
+      "doc_new",
+      "doc_invalidated",
+      "doc_legacy_edited",
+    ])
+  })
+
+  it("judges synchronization by content version and migrates the legacy marker", async () => {
+    const patch = vi.fn()
+    // A workflow transition bumped updatedAt after planning, but the
+    // content itself is untouched - the stamp still synchronizes.
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({
+        _id: "doc_1",
+        projectId: "project_1",
+        updatedAt: 30,
+        contentVersion: 4,
+        lastPublishedUpdatedAt: 9,
+      })
+      .mockResolvedValueOnce(project)
+
+    const result = await (markPublishedSnapshot as any).handler(createCtx({ get, patch }), {
+      ...snapshotArgs({ expectedUpdatedAt: 10, publishedContentVersion: 4 }),
+      projectAccessToken: await patToken(),
+    })
+
+    expect(result).toEqual({ synchronized: true })
+    const [, patched] = patch.mock.calls[0]
+    expect(patched.publishedProvenance.publishedContentVersion).toBe(4)
+    // Lazy migration: recording real provenance clears the legacy marker.
+    expect("lastPublishedUpdatedAt" in patched).toBe(true)
+    expect(patched.lastPublishedUpdatedAt).toBeUndefined()
+  })
+
+  it("saveDraft advances the content version so real edits dirty the document", async () => {
+    const patch = vi.fn()
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({ _id: "doc_1", projectId: "project_1", status: "draft", updatedAt: 5, contentVersion: 4 })
+      .mockResolvedValueOnce(project)
+
+    await (saveDraft as any).handler(createCtx({ get, patch }), {
+      id: "doc_1",
+      body: "# Edited",
+      frontmatter: { title: "Edited" },
+      userId: "user_owner",
+      projectAccessToken: await patToken(),
+    })
+
+    expect(patch).toHaveBeenCalledWith("doc_1", expect.objectContaining({ body: "# Edited", contentVersion: 5 }))
   })
 })

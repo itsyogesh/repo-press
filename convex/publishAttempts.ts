@@ -59,6 +59,7 @@ export const begin = mutation({
         repoPath: v.string(),
         expectedUpdatedAt: v.number(),
         contentRevision: v.optional(v.string()),
+        contentVersion: v.optional(v.number()),
       }),
     ),
     deleteAssociations: v.array(deleteAssociationValidator),
@@ -99,6 +100,12 @@ export const begin = mutation({
     for (const association of args.documentAssociations) {
       if (association.contentRevision !== undefined && !DIGEST_PATTERN.test(association.contentRevision)) {
         throw new Error("Publish attempt content revision must be a 64-hex digest")
+      }
+      if (
+        association.contentVersion !== undefined &&
+        (!Number.isInteger(association.contentVersion) || association.contentVersion < 0)
+      ) {
+        throw new Error("Publish attempt content version must be a non-negative integer")
       }
     }
     const opIdSet = new Set(args.opIds.map(String))
