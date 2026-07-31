@@ -5,6 +5,7 @@ import { invalidateClosedLaneSync } from "./lib/laneInvalidation"
 import { finalizeMergedLaneSync } from "./lib/laneMerge"
 import { deleteUnownedStorageOrTombstone } from "./lib/mediaTombstone"
 import { assertNoActivePublishAttempt, findActivePublishAttempt } from "./lib/publishAttemptGuard"
+import { requireCommittedAttempt, requireMediaAssociation } from "./lib/publishAttemptOwnership"
 
 /** Generate a one-time upload URL for Convex file storage. The caller POSTs raw bytes to this URL and receives a storageId in response. */
 export const generateConvexUploadUrl = mutation({
@@ -202,6 +203,20 @@ export const markCommitted = mutation({
         { projectId: op.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken },
         "editor",
       )
+
+      if (args.publishAttemptId !== undefined) {
+        const publishAttempt = await requireCommittedAttempt(ctx.db, {
+          attemptId: args.publishAttemptId,
+          projectId: op.projectId,
+          publishBranchId: args.publishBranchId,
+          commitSha: args.commitSha,
+        })
+        requireMediaAssociation(publishAttempt, {
+          mediaOpId: id,
+          repoPath: op.repoPath,
+          expectedUpdatedAt: op.updatedAt,
+        })
+      }
 
       await ctx.db.patch(id, {
         status: "committed",

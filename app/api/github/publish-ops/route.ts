@@ -948,6 +948,7 @@ async function refreshDocumentShasAtCommit({
         publishBranchId,
         publishAttemptId,
         commitSha,
+        repoPath,
         contentRevision,
         publishedContentVersion: contentVersion,
         expectedUpdatedAt,

@@ -88,6 +88,7 @@ const pendingDeleteOp = {
   filePath: "guides/start.mdx",
   pathRepresentation: "content_relative_v1",
   status: "pending",
+  updatedAt: 10,
 }
 
 const project = { _id: "project_1", userId: "user_owner", contentRoot: "content" }
@@ -165,6 +166,16 @@ describe("markCommitted post-commit reconciliation", () => {
       .fn()
       .mockResolvedValueOnce({ ...pendingDeleteOp, opType: "create" })
       .mockResolvedValueOnce(project)
+      .mockResolvedValueOnce({
+        _id: "attempt_1",
+        projectId: "project_1",
+        publishBranchId: "lane_1",
+        commitSha: "commit_1",
+        status: "committed",
+        explorerAssociations: [
+          { opId: "op_delete", repoPath: "content/guides/start.mdx", expectedUpdatedAt: pendingDeleteOp.updatedAt },
+        ],
+      })
 
     await (markCommitted as any).handler(createCtx(get, patch), {
       ids: ["op_delete"],

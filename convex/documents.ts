@@ -14,6 +14,7 @@ import {
   authorizeGitHubProjectActor,
   verifyGitHubProjectReadAccess,
 } from "./lib/githubActionAccess"
+import { requireCommittedAttempt, requireDocumentAssociation } from "./lib/publishAttemptOwnership"
 
 const TITLE_SYNC_MAX_PATH_BYTES = 1_024
 const TITLE_SYNC_MAX_TOTAL_PATH_BYTES = 128 * 1_024
@@ -883,6 +884,7 @@ export const markPublishedSnapshot = mutation({
     publishBranchId: v.id("publishBranches"),
     publishAttemptId: v.optional(v.id("publishAttempts")),
     commitSha: v.string(),
+    repoPath: v.optional(v.string()),
     // Optional only for replays of attempts recorded before the fields
     // existed; every new publish provides both.
     contentRevision: v.optional(v.string()),
@@ -899,6 +901,21 @@ export const markPublishedSnapshot = mutation({
       { projectId: doc.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken },
       "editor",
     )
+    if (args.publishAttemptId !== undefined) {
+      const publishAttempt = await requireCommittedAttempt(ctx.db, {
+        attemptId: args.publishAttemptId,
+        projectId: doc.projectId,
+        publishBranchId: args.publishBranchId,
+        commitSha: args.commitSha,
+      })
+      requireDocumentAssociation(publishAttempt, {
+        documentId: args.id,
+        repoPath: args.repoPath,
+        expectedUpdatedAt: args.expectedUpdatedAt,
+        contentRevision: args.contentRevision,
+        contentVersion: args.publishedContentVersion,
+      })
+    }
     const publishedProvenance: {
       publishBranchId: typeof args.publishBranchId
       publishAttemptId?: typeof args.publishAttemptId

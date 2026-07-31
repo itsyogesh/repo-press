@@ -4,6 +4,7 @@ import type { Id } from "./_generated/dataModel"
 import { mutation, query } from "./_generated/server"
 import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
 import { assertNoActivePublishAttempt } from "./lib/publishAttemptGuard"
+import { requireCommittedAttempt, requireExplorerAssociation } from "./lib/publishAttemptOwnership"
 
 /** Returns all pending explorer ops for a project. */
 export const listPending = query({
@@ -423,6 +424,29 @@ export const markCommitted = mutation({
           { projectId: op.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken },
           "editor",
         )
+        const repoPath =
+          op.repoPath ??
+          (typeof op.filePath === "string"
+            ? resolveStoredRepoPath(
+                access.project.contentRoot ?? "",
+                op.filePath,
+                op.pathRepresentation as StoredPathRepresentation | undefined,
+              )
+            : undefined)
+        if (args.publishAttemptId !== undefined) {
+          if (!repoPath) throw new Error("Publish attempt ownership mismatch: explorer path is missing")
+          const publishAttempt = await requireCommittedAttempt(ctx.db, {
+            attemptId: args.publishAttemptId,
+            projectId: op.projectId,
+            publishBranchId: args.publishBranchId,
+            commitSha: args.commitSha,
+          })
+          requireExplorerAssociation(publishAttempt, {
+            opId: id,
+            repoPath,
+            expectedUpdatedAt: op.updatedAt,
+          })
+        }
 
         const deleteAssociation = deletedDocumentByOpId.get(id)
         if (op.opType === "delete" && deleteAssociation) {
@@ -458,15 +482,6 @@ export const markCommitted = mutation({
           }
         }
 
-        const repoPath =
-          op.repoPath ??
-          (typeof op.filePath === "string"
-            ? resolveStoredRepoPath(
-                access.project.contentRoot ?? "",
-                op.filePath,
-                op.pathRepresentation as StoredPathRepresentation | undefined,
-              )
-            : undefined)
         await ctx.db.patch(id, {
           status: "committed",
           commitSha: args.commitSha,

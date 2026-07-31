@@ -124,9 +124,25 @@ describe("lane-synchronization provenance", () => {
       .fn()
       .mockResolvedValueOnce({ _id: "doc_1", projectId: "project_1", updatedAt: 5, contentVersion: 3 })
       .mockResolvedValueOnce(project)
+      .mockResolvedValueOnce({
+        _id: "attempt_1",
+        projectId: "project_1",
+        publishBranchId: "lane_1",
+        commitSha: "commit-1",
+        status: "committed",
+        documentAssociations: [
+          {
+            documentId: "doc_1",
+            repoPath: "content/a.mdx",
+            expectedUpdatedAt: 5,
+            contentRevision: CONTENT_REVISION,
+            contentVersion: 3,
+          },
+        ],
+      })
 
     await (markPublishedSnapshot as any).handler(createCtx({ get, patch }), {
-      ...snapshotArgs({ publishAttemptId: "attempt_1", publishedContentVersion: 3 }),
+      ...snapshotArgs({ publishAttemptId: "attempt_1", publishedContentVersion: 3, repoPath: "content/a.mdx" }),
       projectAccessToken: await patToken(),
     })
 

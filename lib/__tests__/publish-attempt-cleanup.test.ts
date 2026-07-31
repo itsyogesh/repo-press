@@ -417,7 +417,7 @@ describe("bounded attempt-scoped cleanup continuation", () => {
     )
   })
 
-  it("publishes or clears only unchanged documents whose provenance belongs to the attempt", async () => {
+  it("publishes only unchanged documents but clears owned provenance from edited restores", async () => {
     const docAttempt = {
       ...attempt,
       status: "cleanup_pending",
@@ -447,7 +447,7 @@ describe("bounded attempt-scoped cleanup continuation", () => {
         pathOutcomes: [
           { path: "content/a.mdx", disposition: "finalize", finalBlobSha: "6".repeat(40) },
           { path: "content/b.mdx", disposition: "restore" },
-          { path: "content/c.mdx", disposition: "finalize", finalBlobSha: "7".repeat(40) },
+          { path: "content/c.mdx", disposition: "restore" },
           { path: "content/d.mdx", disposition: "restore" },
         ],
       }),
@@ -488,8 +488,76 @@ describe("bounded attempt-scoped cleanup continuation", () => {
       expect.objectContaining({ status: "published", githubSha: "6".repeat(40) }),
     )
     expect(ctx.db.patch).toHaveBeenCalledWith("doc_restore", { publishedProvenance: undefined })
-    expect(ctx.db.patch).not.toHaveBeenCalledWith("doc_newer", expect.anything())
+    expect(ctx.db.patch).toHaveBeenCalledWith("doc_newer", { publishedProvenance: undefined })
     expect(ctx.db.patch).not.toHaveBeenCalledWith("doc_other", expect.anything())
+  })
+
+  it.each([
+    ["wrong lane", { publishBranchId: "lane_other" }],
+    ["wrong commit", { commitSha: "9".repeat(40) }],
+    ["wrong status", { status: "pending" }],
+    ["wrong canonical path", { repoPath: "content/other.mdx" }],
+  ])("does not mutate an explorer row with the right attempt id but %s", async (_label, rowOverride) => {
+    const ctx = createCtx([
+      { ...project },
+      { ...lane },
+      {
+        ...attempt,
+        status: "cleanup_pending",
+        cleanupId: "cleanup_1",
+        mediaAssociations: [],
+        documentAssociations: [],
+      },
+      cleanupRow({ pathOutcomes: [{ path: "content/a.mdx", disposition: "restore" }] }),
+      {
+        _id: "op_1",
+        projectId: "project_1",
+        repoPath: "content/a.mdx",
+        status: "committed",
+        publishBranchId: "lane_1",
+        publishAttemptId: "attempt_1",
+        commitSha: "1".repeat(40),
+        updatedAt: 10,
+        ...rowOverride,
+      },
+    ])
+
+    await (continueCleanup as any).handler(ctx, { cleanupId: "cleanup_1" })
+
+    expect(ctx.db.patch).not.toHaveBeenCalledWith("op_1", expect.anything())
+    expect(ctx.db.delete).not.toHaveBeenCalledWith("op_1")
+  })
+
+  it("does not clear document provenance whose persisted snapshot identity differs", async () => {
+    const ctx = createCtx([
+      { ...project },
+      { ...lane },
+      {
+        ...attempt,
+        status: "cleanup_pending",
+        cleanupId: "cleanup_1",
+        explorerAssociations: [],
+        mediaAssociations: [],
+      },
+      cleanupRow({ phase: "documents", pathOutcomes: [{ path: "content/a.mdx", disposition: "restore" }] }),
+      {
+        _id: "doc_1",
+        projectId: "project_1",
+        contentVersion: 3,
+        publishedProvenance: {
+          publishBranchId: "lane_1",
+          publishAttemptId: "attempt_1",
+          commitSha: "1".repeat(40),
+          publishedUpdatedAt: 10,
+          publishedContentVersion: 3,
+          contentRevision: "f".repeat(64),
+        },
+      },
+    ])
+
+    await (continueCleanup as any).handler(ctx, { cleanupId: "cleanup_1" })
+
+    expect(ctx.db.patch).not.toHaveBeenCalledWith("doc_1", expect.anything())
   })
 
   it.each([101, 500])("processes %i exact explorer rows in <=25-row passes without collect", async (count) => {

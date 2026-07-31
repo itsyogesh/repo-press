@@ -8,21 +8,48 @@ export const CLEANUP_BATCH_SIZE = 25
 type CleanupCtx = Pick<MutationCtx, "db" | "scheduler" | "storage">
 type PathOutcome = Doc<"publishAttemptCleanups">["pathOutcomes"][number]
 
-function rowBelongsToAttempt(
-  row: { publishAttemptId?: Id<"publishAttempts">; publishBranchId?: Id<"publishBranches">; commitSha?: string },
+function committedRowBelongsToAttempt(
+  row: {
+    status: string
+    publishAttemptId?: Id<"publishAttempts">
+    publishBranchId?: Id<"publishBranches">
+    commitSha?: string
+  },
   attempt: Doc<"publishAttempts">,
 ): boolean {
+  if (
+    row.status !== "committed" ||
+    row.publishBranchId !== attempt.publishBranchId ||
+    row.commitSha !== attempt.commitSha
+  ) {
+    return false
+  }
   if (row.publishAttemptId !== undefined) return row.publishAttemptId === attempt._id
-  return row.publishBranchId === attempt.publishBranchId && row.commitSha === attempt.commitSha
+  // Explicit compatibility path for rows committed before attempt ownership
+  // was stamped. Lane + commit remain mandatory, so a reused lane cannot
+  // capture a legacy row from another publish.
+  return true
 }
 
 function provenanceBelongsToAttempt(
   provenance: Doc<"documents">["publishedProvenance"],
   attempt: Doc<"publishAttempts">,
+  association: Doc<"publishAttempts">["documentAssociations"][number],
 ): boolean {
-  if (!provenance) return false
+  if (
+    !provenance ||
+    provenance.publishBranchId !== attempt.publishBranchId ||
+    provenance.commitSha !== attempt.commitSha ||
+    provenance.publishedUpdatedAt !== association.expectedUpdatedAt ||
+    (association.contentRevision !== undefined && provenance.contentRevision !== association.contentRevision) ||
+    (association.contentVersion !== undefined && provenance.publishedContentVersion !== association.contentVersion)
+  ) {
+    return false
+  }
   if (provenance.publishAttemptId !== undefined) return provenance.publishAttemptId === attempt._id
-  return provenance.publishBranchId === attempt.publishBranchId && provenance.commitSha === attempt.commitSha
+  // Explicit compatibility path for provenance written before attempt IDs.
+  // The immutable lane, commit, and planned snapshot still have to match.
+  return true
 }
 
 function nextPhase(phase: Doc<"publishAttemptCleanups">["phase"]) {
@@ -79,15 +106,16 @@ async function processExplorer(
   let processed = 0
   for (const association of associations) {
     const row = await ctx.db.get(association.opId)
-    if (!row || row.projectId !== attempt.projectId || !rowBelongsToAttempt(row, attempt)) continue
-    const repoPath =
-      association.repoPath ??
+    if (!row || row.projectId !== attempt.projectId || !committedRowBelongsToAttempt(row, attempt)) continue
+    const rowRepoPath =
       row.repoPath ??
       resolveStoredRepoPath(
         project?.contentRoot ?? "",
         row.filePath,
         row.pathRepresentation as StoredPathRepresentation | undefined,
       )
+    if (association.repoPath !== undefined && rowRepoPath !== association.repoPath) continue
+    const repoPath = association.repoPath ?? rowRepoPath
     const outcome = outcomeByPath.get(repoPath)
     if (!outcome) continue
     if (outcome.disposition === "finalize" || (await hasNewerPendingExplorerIntent(ctx, row, repoPath))) {
@@ -143,7 +171,14 @@ async function processMedia(
   let processed = 0
   for (const association of associations) {
     const row = await ctx.db.get(association.mediaOpId)
-    if (!row || row.projectId !== attempt.projectId || !rowBelongsToAttempt(row, attempt)) continue
+    if (
+      !row ||
+      row.projectId !== attempt.projectId ||
+      !committedRowBelongsToAttempt(row, attempt) ||
+      row.repoPath !== association.repoPath
+    ) {
+      continue
+    }
     const outcome = outcomeByPath.get(association.repoPath)
     if (!outcome) continue
     if (outcome.disposition === "finalize" || (await hasNewerPendingMediaIntent(ctx, row))) {
@@ -174,8 +209,17 @@ async function processDocuments(
     if (
       !document ||
       document.projectId !== attempt.projectId ||
-      !provenanceBelongsToAttempt(document.publishedProvenance, attempt)
+      !provenanceBelongsToAttempt(document.publishedProvenance, attempt, association)
     ) {
+      continue
+    }
+    const outcome = outcomeByPath.get(association.repoPath)
+    if (!outcome) continue
+    if (outcome.disposition === "restore") {
+      // A newer draft must survive, but provenance for a dead/excluded
+      // attempt must always be cleared so the document remains dirty.
+      await ctx.db.patch(document._id, { publishedProvenance: undefined })
+      processed += 1
       continue
     }
     const unchanged =
@@ -183,24 +227,18 @@ async function processDocuments(
         ? (document.contentVersion ?? 0) === association.contentVersion
         : document.updatedAt === association.expectedUpdatedAt
     if (!unchanged) continue
-    const outcome = outcomeByPath.get(association.repoPath)
-    if (!outcome) continue
-    if (outcome.disposition === "restore") {
-      await ctx.db.patch(document._id, { publishedProvenance: undefined })
-    } else {
-      const publishedProvenance = {
-        ...document.publishedProvenance!,
-        publishAttemptId: attempt._id,
-      }
-      await ctx.db.patch(document._id, {
-        status: "published",
-        ...(outcome.finalBlobSha ? { githubSha: outcome.finalBlobSha } : {}),
-        publishedProvenance,
-        lastSyncedAt: Date.now(),
-        publishedAt: Date.now(),
-        updatedAt: Date.now(),
-      })
+    const publishedProvenance = {
+      ...document.publishedProvenance!,
+      publishAttemptId: attempt._id,
     }
+    await ctx.db.patch(document._id, {
+      status: "published",
+      ...(outcome.finalBlobSha ? { githubSha: outcome.finalBlobSha } : {}),
+      publishedProvenance,
+      lastSyncedAt: Date.now(),
+      publishedAt: Date.now(),
+      updatedAt: Date.now(),
+    })
     processed += 1
   }
   return processed
