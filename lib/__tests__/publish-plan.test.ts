@@ -105,6 +105,12 @@ describe("buildPublishOperationDescriptors", () => {
       ]),
     ).toThrow(/base64/i)
   })
+
+  it("rejects paths outside the exact Git batch path policy", () => {
+    for (const path of [`content/${"é".repeat(2_050)}.mdx`, "content/control\u0001.mdx", "content/bidi\u202e.mdx"]) {
+      expect(() => buildPublishOperationDescriptors([{ path, action: "create", content: "safe" }])).toThrow(/path/i)
+    }
+  })
 })
 
 describe("attempt trailer", () => {

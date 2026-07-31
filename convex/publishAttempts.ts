@@ -1,11 +1,11 @@
 import { v } from "convex/values"
+import { assertCanonicalPublishOperationPath, gitRepositoryPathIdentity } from "../lib/git-path-policy"
 import { resolveStoredRepoPath, type StoredPathRepresentation } from "../lib/preview/path-policy"
 import { mutation, query } from "./_generated/server"
 import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
 import { findActivePublishAttempt } from "./lib/publishAttemptGuard"
 
 const MAX_ATTEMPT_OPERATIONS = 500
-const MAX_ATTEMPT_PATH_LENGTH = 512
 const SHA_PATTERN = /^[0-9a-f]{40}$/
 const DIGEST_PATTERN = /^[0-9a-f]{64}$/
 
@@ -17,19 +17,6 @@ const operationDescriptorValidator = v.union(
     expectedBlobSha: v.string(),
   }),
 )
-
-function assertCanonicalOperationPath(path: string) {
-  if (
-    path.length === 0 ||
-    path.length > MAX_ATTEMPT_PATH_LENGTH ||
-    path !== path.normalize("NFC") ||
-    path.startsWith("/") ||
-    path.includes("\\") ||
-    path.split("/").some((segment) => segment === "" || segment === "." || segment === "..")
-  ) {
-    throw new Error("Publish attempt operation path must be canonical")
-  }
-}
 
 const deleteAssociationValidator = v.object({
   opId: v.id("explorerOps"),
@@ -119,11 +106,12 @@ export const begin = mutation({
     }
     const descriptorPaths = new Set<string>()
     for (const descriptor of args.operationDescriptors) {
-      assertCanonicalOperationPath(descriptor.path)
-      if (descriptorPaths.has(descriptor.path)) {
+      assertCanonicalPublishOperationPath(descriptor.path)
+      const pathIdentity = gitRepositoryPathIdentity(descriptor.path)
+      if (descriptorPaths.has(pathIdentity)) {
         throw new Error("Publish attempt contains duplicate operation descriptor paths")
       }
-      descriptorPaths.add(descriptor.path)
+      descriptorPaths.add(pathIdentity)
       if (descriptor.action === "delete") {
         if ("expectedBlobSha" in descriptor) throw new Error("Delete descriptor must not contain a blob SHA")
       } else if (!SHA_PATTERN.test(descriptor.expectedBlobSha)) {

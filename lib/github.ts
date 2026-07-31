@@ -1,4 +1,9 @@
 import { Octokit } from "@octokit/rest"
+import {
+  assertCanonicalPublishOperationPath,
+  assertGitRepositoryPath,
+  gitRepositoryPathIdentity,
+} from "@/lib/git-path-policy"
 import type { PublishOperationDescriptor } from "@/lib/publish-plan"
 
 export type GitHubFile = {
@@ -528,35 +533,8 @@ function assertSha(sha: string): void {
   if (!GITHUB_SHA.test(sha)) throw new TypeError("Invalid GitHub commit SHA")
 }
 
-function hasControlOrBidi(value: string): boolean {
-  for (const character of value) {
-    const codePoint = character.codePointAt(0) ?? 0
-    if (
-      codePoint <= 0x1f ||
-      (codePoint >= 0x7f && codePoint <= 0x9f) ||
-      codePoint === 0x61c ||
-      codePoint === 0x200e ||
-      codePoint === 0x200f ||
-      (codePoint >= 0x202a && codePoint <= 0x202e) ||
-      (codePoint >= 0x2066 && codePoint <= 0x2069)
-    )
-      return true
-  }
-  return false
-}
-
 function assertRepositoryPath(path: string): void {
-  if (
-    typeof path !== "string" ||
-    path.length === 0 ||
-    Buffer.byteLength(path, "utf8") > 4_096 ||
-    path.startsWith("/") ||
-    path.includes("\\") ||
-    hasControlOrBidi(path) ||
-    path.split("/").some((part) => part === "" || part === "." || part === "..")
-  ) {
-    throw new TypeError("Invalid repository path")
-  }
+  assertGitRepositoryPath(path)
 }
 
 function ownOptionalData(object: object, key: string, label: string): unknown {
@@ -595,7 +573,7 @@ function validateBatchOperations(operations: readonly BatchOperation[]): BatchOp
     const blobSha = ownOptionalData(rawOperation, "blobSha", "Batch operation blobSha")
     if (typeof path !== "string") throw new TypeError("Batch operation path must be a string")
     assertRepositoryPath(path)
-    const identity = path.normalize("NFC").toLocaleLowerCase("en-US")
+    const identity = gitRepositoryPathIdentity(path)
     if (paths.has(identity)) throw new TypeError(`Duplicate batch operation path ${path}`)
     paths.add(identity)
     if (action !== "create" && action !== "update" && action !== "delete") {
@@ -1031,6 +1009,7 @@ async function commitBatchAtValidatedHead(
 }
 
 type GitLeaf = Readonly<{ mode: string; type: string; sha: string }>
+type IndexedGitTree = Readonly<{ leaves: Map<string, GitLeaf>; directories: Set<string> }>
 
 function ownData(object: object, key: string): unknown {
   const descriptor = Object.getOwnPropertyDescriptor(object, key)
@@ -1038,13 +1017,14 @@ function ownData(object: object, key: string): unknown {
   return descriptor.value
 }
 
-function indexGitLeaves(data: unknown): Map<string, GitLeaf> | null {
+function indexGitTree(data: unknown): IndexedGitTree | null {
   try {
     if (!data || typeof data !== "object" || Array.isArray(data)) return null
     if (ownData(data, "truncated") !== false) return null
     const rawTree = ownData(data, "tree")
     if (!Array.isArray(rawTree) || rawTree.length > MAX_VERIFY_TREE_ENTRIES) return null
     const leaves = new Map<string, GitLeaf>()
+    const directories = new Set<string>()
     let pathBytes = 0
     for (let index = 0; index < rawTree.length; index += 1) {
       const descriptor = Object.getOwnPropertyDescriptor(rawTree, String(index))
@@ -1061,11 +1041,15 @@ function indexGitLeaves(data: unknown): Map<string, GitLeaf> | null {
       assertSha(sha)
       pathBytes += Buffer.byteLength(path, "utf8")
       if (pathBytes > MAX_VERIFY_TREE_PATH_BYTES || !/^[0-7]{6}$/u.test(mode)) return null
-      if (type === "tree") continue
-      if ((type !== "blob" && type !== "commit") || leaves.has(path)) return null
+      if (type === "tree") {
+        if (directories.has(path) || leaves.has(path)) return null
+        directories.add(path)
+        continue
+      }
+      if ((type !== "blob" && type !== "commit") || leaves.has(path) || directories.has(path)) return null
       leaves.set(path, { mode, type, sha })
     }
-    return leaves
+    return { leaves, directories }
   } catch {
     return null
   }
@@ -1085,10 +1069,10 @@ function validatePublishOperationDescriptors(
     const path = ownData(rawDescriptor, "path")
     const action = ownData(rawDescriptor, "action")
     if (typeof path !== "string") throw new TypeError("Publish descriptor path must be a string")
-    assertRepositoryPath(path)
-    if (path !== path.normalize("NFC")) throw new TypeError("Publish descriptor path must be canonical")
-    if (paths.has(path)) throw new TypeError(`Duplicate publish descriptor path ${path}`)
-    paths.add(path)
+    assertCanonicalPublishOperationPath(path)
+    const pathIdentity = gitRepositoryPathIdentity(path)
+    if (paths.has(pathIdentity)) throw new TypeError(`Duplicate publish descriptor path ${path}`)
+    paths.add(pathIdentity)
     if (action === "delete") {
       if (Object.hasOwn(rawDescriptor, "expectedBlobSha")) {
         throw new TypeError("Delete publish descriptor must not contain a blob SHA")
@@ -1103,36 +1087,87 @@ function validatePublishOperationDescriptors(
   })
 }
 
-async function readGitLeavesForPublish(
+async function readGitTreeForPublish(
   octokit: ReturnType<typeof createGitHubClient>,
   owner: string,
   repo: string,
   sha: string,
-): Promise<Map<string, GitLeaf>> {
+): Promise<IndexedGitTree> {
   try {
     const { data } = await octokit.git.getTree({ owner, repo, tree_sha: sha, recursive: "1" })
-    const leaves = indexGitLeaves(data)
-    if (!leaves) throw new GitHubReadError(`GitHub returned a truncated or malformed tree for ${sha}`)
-    return leaves
+    const tree = indexGitTree(data)
+    if (!tree) throw new GitHubReadError(`GitHub returned a truncated or malformed tree for ${sha}`)
+    return tree
   } catch (error: any) {
     if (error instanceof GitHubReadError) throw error
     throw new GitHubReadError(`GitHub tree read failed for ${sha} (status: ${error?.status ?? "unknown"})`, error)
   }
 }
 
+async function readCommitForPublish(
+  octokit: ReturnType<typeof createGitHubClient>,
+  owner: string,
+  repo: string,
+  commitSha: string,
+): Promise<{ treeSha: string; parents: string[] }> {
+  try {
+    const { data } = await octokit.git.getCommit({ owner, repo, commit_sha: commitSha })
+    if (!data || typeof data !== "object" || Array.isArray(data)) {
+      throw new GitHubReadError(`GitHub returned a malformed commit for ${commitSha}`)
+    }
+    const rawTree = ownData(data, "tree")
+    const rawParents = ownData(data, "parents")
+    if (!rawTree || typeof rawTree !== "object" || Array.isArray(rawTree) || !Array.isArray(rawParents)) {
+      throw new GitHubReadError(`GitHub returned a malformed commit for ${commitSha}`)
+    }
+    const treeSha = ownData(rawTree, "sha")
+    if (typeof treeSha !== "string") throw new GitHubReadError(`GitHub returned a malformed tree for ${commitSha}`)
+    assertSha(treeSha)
+    const parents = rawParents.map((parent) => {
+      if (!parent || typeof parent !== "object" || Array.isArray(parent)) {
+        throw new GitHubReadError(`GitHub returned malformed parents for ${commitSha}`)
+      }
+      const parentSha = ownData(parent, "sha")
+      if (typeof parentSha !== "string") throw new GitHubReadError(`GitHub returned malformed parents for ${commitSha}`)
+      assertSha(parentSha)
+      return parentSha
+    })
+    return { treeSha, parents }
+  } catch (error: any) {
+    if (error instanceof GitHubReadError) throw error
+    throw new GitHubReadError(
+      `GitHub commit read failed for ${commitSha} (status: ${error?.status ?? "unknown"})`,
+      error,
+    )
+  }
+}
+
 function applyPublishDescriptors(
-  baseLeaves: Map<string, GitLeaf>,
+  baseTree: IndexedGitTree,
   descriptors: readonly PublishOperationDescriptor[],
-): Map<string, GitLeaf> {
-  const expected = new Map(baseLeaves)
+): Map<string, GitLeaf> | null {
+  const expected = new Map(baseTree.leaves)
   for (const descriptor of descriptors) {
-    if (descriptor.action === "delete") expected.delete(descriptor.path)
-    else {
+    const baseLeaf = baseTree.leaves.get(descriptor.path)
+    const baseDirectory = baseTree.directories.has(descriptor.path)
+    const baseFileExists = baseLeaf?.type === "blob"
+    if (descriptor.action === "create") {
+      if (baseLeaf || baseDirectory) return null
       expected.set(descriptor.path, {
         mode: "100644",
         type: "blob",
         sha: descriptor.expectedBlobSha,
       })
+    } else if (descriptor.action === "update") {
+      if (!baseFileExists || baseDirectory) return null
+      expected.set(descriptor.path, {
+        mode: "100644",
+        type: "blob",
+        sha: descriptor.expectedBlobSha,
+      })
+    } else {
+      if (!baseFileExists || baseDirectory) return null
+      expected.delete(descriptor.path)
     }
   }
   return expected
@@ -1167,29 +1202,15 @@ export async function verifyPublishAttemptCommitForPublish(
   assertSha(candidateSha)
   const descriptors = validatePublishOperationDescriptors(rawDescriptors)
   const octokit = createGitHubClient(accessToken)
-  try {
-    const { data } = await octokit.git.getCommit({ owner, repo, commit_sha: candidateSha })
-    if (!Array.isArray(data.parents)) throw new GitHubReadError(`GitHub returned malformed parents for ${candidateSha}`)
-    const parents = data.parents.map((parent) => {
-      if (!parent || typeof parent.sha !== "string") {
-        throw new GitHubReadError(`GitHub returned malformed parents for ${candidateSha}`)
-      }
-      assertSha(parent.sha)
-      return parent.sha
-    })
-    if (parents.length !== 1 || parents[0] !== expectedHeadSha) return false
-  } catch (error: any) {
-    if (error instanceof GitHubReadError) throw error
-    throw new GitHubReadError(
-      `GitHub commit read failed for ${candidateSha} (status: ${error?.status ?? "unknown"})`,
-      error,
-    )
-  }
-  const [baseLeaves, candidateLeaves] = await Promise.all([
-    readGitLeavesForPublish(octokit, owner, repo, expectedHeadSha),
-    readGitLeavesForPublish(octokit, owner, repo, candidateSha),
+  const candidateCommit = await readCommitForPublish(octokit, owner, repo, candidateSha)
+  if (candidateCommit.parents.length !== 1 || candidateCommit.parents[0] !== expectedHeadSha) return false
+  const baseCommit = await readCommitForPublish(octokit, owner, repo, expectedHeadSha)
+  const [baseTree, candidateTree] = await Promise.all([
+    readGitTreeForPublish(octokit, owner, repo, baseCommit.treeSha),
+    readGitTreeForPublish(octokit, owner, repo, candidateCommit.treeSha),
   ])
-  return gitLeavesEqual(applyPublishDescriptors(baseLeaves, descriptors), candidateLeaves)
+  const expectedLeaves = applyPublishDescriptors(baseTree, descriptors)
+  return expectedLeaves ? gitLeavesEqual(expectedLeaves, candidateTree.leaves) : false
 }
 
 export type PublishPathOutcome = {
@@ -1209,13 +1230,16 @@ export async function inspectPublishEffectsAtCommit(
   assertRepository(owner, repo)
   assertSha(authoritySha)
   const descriptors = validatePublishOperationDescriptors(rawDescriptors)
-  const leaves = await readGitLeavesForPublish(createGitHubClient(accessToken), owner, repo, authoritySha)
+  const octokit = createGitHubClient(accessToken)
+  const authorityCommit = await readCommitForPublish(octokit, owner, repo, authoritySha)
+  const tree = await readGitTreeForPublish(octokit, owner, repo, authorityCommit.treeSha)
   return descriptors.map((descriptor) => {
-    const finalLeaf = leaves.get(descriptor.path)
+    const finalLeaf = tree.leaves.get(descriptor.path)
+    const finalDirectory = tree.directories.has(descriptor.path)
     const finalBlobSha = finalLeaf?.type === "blob" ? finalLeaf.sha : undefined
     const disposition =
       descriptor.action === "delete"
-        ? finalLeaf === undefined
+        ? finalLeaf === undefined && !finalDirectory
           ? "finalize"
           : "restore"
         : finalLeaf?.type === "blob" && finalLeaf.mode === "100644" && finalLeaf.sha === descriptor.expectedBlobSha
@@ -1261,9 +1285,11 @@ export async function verifyBatchCommitTree(
     octokit.git.getTree({ owner, repo, tree_sha: baseSha, recursive: "1" }),
     octokit.git.getTree({ owner, repo, tree_sha: headSha, recursive: "1" }),
   ])
-  const expected = indexGitLeaves(baseTree)
-  const actual = indexGitLeaves(headTree)
-  if (!expected || !actual) return false
+  const indexedBase = indexGitTree(baseTree)
+  const indexedHead = indexGitTree(headTree)
+  if (!indexedBase || !indexedHead) return false
+  const expected = indexedBase.leaves
+  const actual = indexedHead.leaves
   for (const operation of operations) {
     const exists = expected.has(operation.path)
     if (operation.action === "create" && exists) return false

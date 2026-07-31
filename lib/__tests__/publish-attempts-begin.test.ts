@@ -422,6 +422,9 @@ describe("publishAttempts.begin transactional reference validation", () => {
     await expect(
       invoke([{ path: "content/a.mdx", action: "delete", expectedBlobSha: "a".repeat(40) }]),
     ).rejects.toThrow(/delete.*SHA/i)
+    for (const path of [`content/${"é".repeat(2_050)}.mdx`, "content/control\u0001.mdx", "content/bidi\u202e.mdx"]) {
+      await expect(invoke([{ path, action: "create", expectedBlobSha: "a".repeat(40) }])).rejects.toThrow(/path/i)
+    }
 
     expect(insert).not.toHaveBeenCalled()
   })

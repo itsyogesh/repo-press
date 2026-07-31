@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto"
+import { assertCanonicalPublishOperationPath, gitRepositoryPathIdentity } from "@/lib/git-path-policy"
 
 /**
  * Deterministic digest of a publish attempt's full intent: the lane, the
@@ -40,20 +41,6 @@ export function sha256Hex(value: string): string {
 
 const GIT_BLOB_SHA = /^[0-9a-f]{40}$/u
 
-function assertCanonicalRepoPath(path: string): void {
-  if (
-    typeof path !== "string" ||
-    path.length === 0 ||
-    Buffer.byteLength(path, "utf8") > 4_096 ||
-    path !== path.normalize("NFC") ||
-    path.startsWith("/") ||
-    path.includes("\\") ||
-    path.split("/").some((segment) => segment === "" || segment === "." || segment === "..")
-  ) {
-    throw new TypeError("Publish operation path must be a canonical repository path")
-  }
-}
-
 function decodeOperationBytes(operation: PublishOperationInput): Buffer {
   if (typeof operation.content !== "string") {
     throw new TypeError("Publish write operation requires content or a blob SHA")
@@ -88,9 +75,10 @@ export function validatePublishOperationDescriptors(
     if (!descriptor || typeof descriptor !== "object" || Array.isArray(descriptor)) {
       throw new TypeError("Publish operation descriptor must be an object")
     }
-    assertCanonicalRepoPath(descriptor.path)
-    if (paths.has(descriptor.path)) throw new TypeError(`Duplicate publish operation path ${descriptor.path}`)
-    paths.add(descriptor.path)
+    assertCanonicalPublishOperationPath(descriptor.path)
+    const pathIdentity = gitRepositoryPathIdentity(descriptor.path)
+    if (paths.has(pathIdentity)) throw new TypeError(`Duplicate publish operation path ${descriptor.path}`)
+    paths.add(pathIdentity)
     if (descriptor.action === "delete") {
       if (Object.hasOwn(descriptor, "expectedBlobSha")) {
         throw new TypeError("Delete publish descriptor must not contain a blob SHA")
@@ -116,9 +104,10 @@ export function buildPublishOperationDescriptors(
   }
   const paths = new Set<string>()
   const descriptors: PublishOperationDescriptor[] = operations.map((operation): PublishOperationDescriptor => {
-    assertCanonicalRepoPath(operation.path)
-    if (paths.has(operation.path)) throw new TypeError(`Duplicate publish operation path ${operation.path}`)
-    paths.add(operation.path)
+    assertCanonicalPublishOperationPath(operation.path)
+    const pathIdentity = gitRepositoryPathIdentity(operation.path)
+    if (paths.has(pathIdentity)) throw new TypeError(`Duplicate publish operation path ${operation.path}`)
+    paths.add(pathIdentity)
     if (operation.action === "delete") {
       if (operation.content !== undefined || operation.blobSha !== undefined) {
         throw new TypeError("Delete publish operation must not carry bytes or a blob SHA")

@@ -476,11 +476,15 @@ describe("batchCommit", () => {
   it("verifies a publish candidate only when it is the exact direct-child tree delta", async () => {
     const baseSha = "a".repeat(40)
     const candidateSha = "b".repeat(40)
+    const baseTreeSha = "1".repeat(40)
+    const candidateTreeSha = "2".repeat(40)
     const existingSha = "c".repeat(40)
     const expectedBlobSha = "d".repeat(40)
-    mockOctokit.git.getCommit.mockResolvedValue({
-      data: { message: "publish", parents: [{ sha: baseSha }], tree: { sha: "candidate-tree" } },
-    })
+    mockOctokit.git.getCommit
+      .mockResolvedValueOnce({
+        data: { message: "publish", parents: [{ sha: baseSha }], tree: { sha: candidateTreeSha } },
+      })
+      .mockResolvedValueOnce({ data: { message: "base", parents: [], tree: { sha: baseTreeSha } } })
     mockOctokit.git.getTree
       .mockResolvedValueOnce({
         data: {
@@ -503,9 +507,21 @@ describe("batchCommit", () => {
         { path: "content/new.mdx", action: "create", expectedBlobSha },
       ]),
     ).resolves.toBe(true)
+    expect(mockOctokit.git.getTree).toHaveBeenNthCalledWith(1, {
+      owner: "owner",
+      repo: "repo",
+      tree_sha: baseTreeSha,
+      recursive: "1",
+    })
+    expect(mockOctokit.git.getTree).toHaveBeenNthCalledWith(2, {
+      owner: "owner",
+      repo: "repo",
+      tree_sha: candidateTreeSha,
+      recursive: "1",
+    })
 
-    mockOctokit.git.getCommit.mockResolvedValue({
-      data: { message: "publish", parents: [{ sha: "e".repeat(40) }], tree: { sha: "candidate-tree" } },
+    mockOctokit.git.getCommit.mockResolvedValueOnce({
+      data: { message: "publish", parents: [{ sha: "e".repeat(40) }], tree: { sha: candidateTreeSha } },
     })
     await expect(
       verifyPublishAttemptCommitForPublish("token", "owner", "repo", baseSha, candidateSha, [
@@ -517,9 +533,11 @@ describe("batchCommit", () => {
   it("throws typed read errors for truncated or malformed publish trees", async () => {
     const baseSha = "a".repeat(40)
     const candidateSha = "b".repeat(40)
-    mockOctokit.git.getCommit.mockResolvedValue({
-      data: { message: "publish", parents: [{ sha: baseSha }], tree: { sha: "candidate-tree" } },
-    })
+    mockOctokit.git.getCommit
+      .mockResolvedValueOnce({
+        data: { message: "publish", parents: [{ sha: baseSha }], tree: { sha: "1".repeat(40) } },
+      })
+      .mockResolvedValueOnce({ data: { message: "base", parents: [], tree: { sha: "2".repeat(40) } } })
     mockOctokit.git.getTree.mockResolvedValue({ data: { truncated: true, tree: [] } })
 
     await expect(
@@ -528,6 +546,9 @@ describe("batchCommit", () => {
       ]),
     ).rejects.toBeInstanceOf(GitHubReadError)
 
+    mockOctokit.git.getCommit.mockResolvedValueOnce({
+      data: { message: "authority", parents: [], tree: { sha: "3".repeat(40) } },
+    })
     mockOctokit.git.getTree.mockResolvedValue({ data: { truncated: false, tree: [{ path: "bad", type: "blob" }] } })
     await expect(
       inspectPublishEffectsAtCommit("token", "owner", "repo", candidateSha, [
@@ -538,6 +559,10 @@ describe("batchCommit", () => {
 
   it("classifies each descriptor against the immutable final authority tree", async () => {
     const authoritySha = "a".repeat(40)
+    const authorityTreeSha = "1".repeat(40)
+    mockOctokit.git.getCommit.mockResolvedValue({
+      data: { message: "authority", parents: [], tree: { sha: authorityTreeSha } },
+    })
     mockOctokit.git.getTree.mockResolvedValue({
       data: {
         truncated: false,
@@ -562,6 +587,101 @@ describe("batchCommit", () => {
       { path: "content/deleted.mdx", disposition: "finalize" },
       { path: "content/still-here.mdx", disposition: "restore", finalBlobSha: "d".repeat(40) },
     ])
+    expect(mockOctokit.git.getTree).toHaveBeenCalledWith({
+      owner: "owner",
+      repo: "repo",
+      tree_sha: authorityTreeSha,
+      recursive: "1",
+    })
+  })
+
+  it("rejects descriptor actions whose base-path preconditions do not hold", async () => {
+    const baseSha = "a".repeat(40)
+    const candidateSha = "b".repeat(40)
+    const existingSha = "c".repeat(40)
+    const baseTreeSha = "1".repeat(40)
+    const candidateTreeSha = "2".repeat(40)
+    const verify = async (descriptor: Parameters<typeof verifyPublishAttemptCommitForPublish>[5][number]) => {
+      mockOctokit.git.getCommit
+        .mockResolvedValueOnce({
+          data: { message: "publish", parents: [{ sha: baseSha }], tree: { sha: candidateTreeSha } },
+        })
+        .mockResolvedValueOnce({ data: { message: "base", parents: [], tree: { sha: baseTreeSha } } })
+      mockOctokit.git.getTree
+        .mockResolvedValueOnce({
+          data: {
+            truncated: false,
+            tree: [{ path: "content/existing.mdx", type: "blob", mode: "100644", sha: existingSha }],
+          },
+        })
+        .mockResolvedValueOnce({
+          data: {
+            truncated: false,
+            tree: [{ path: "content/existing.mdx", type: "blob", mode: "100644", sha: existingSha }],
+          },
+        })
+      return verifyPublishAttemptCommitForPublish("token", "owner", "repo", baseSha, candidateSha, [descriptor])
+    }
+
+    await expect(
+      verify({ path: "content/existing.mdx", action: "create", expectedBlobSha: existingSha }),
+    ).resolves.toBe(false)
+    await expect(verify({ path: "content/missing.mdx", action: "update", expectedBlobSha: existingSha })).resolves.toBe(
+      false,
+    )
+    await expect(verify({ path: "content/missing.mdx", action: "delete" })).resolves.toBe(false)
+  })
+
+  it("treats a directory remaining at a deleted path as restore", async () => {
+    const authoritySha = "a".repeat(40)
+    mockOctokit.git.getCommit.mockResolvedValue({
+      data: { message: "authority", parents: [], tree: { sha: "1".repeat(40) } },
+    })
+    mockOctokit.git.getTree.mockResolvedValue({
+      data: {
+        truncated: false,
+        tree: [
+          { path: "content/removed", type: "tree", mode: "040000", sha: "b".repeat(40) },
+          { path: "content/removed/child.mdx", type: "blob", mode: "100644", sha: "c".repeat(40) },
+        ],
+      },
+    })
+
+    await expect(
+      inspectPublishEffectsAtCommit("token", "owner", "repo", authoritySha, [
+        { path: "content/removed", action: "delete" },
+      ]),
+    ).resolves.toEqual([{ path: "content/removed", disposition: "restore" }])
+  })
+
+  it("does not treat a Git submodule as an existing publishable file", async () => {
+    const baseSha = "a".repeat(40)
+    const candidateSha = "b".repeat(40)
+    const expectedBlobSha = "c".repeat(40)
+    mockOctokit.git.getCommit
+      .mockResolvedValueOnce({
+        data: { message: "publish", parents: [{ sha: baseSha }], tree: { sha: "1".repeat(40) } },
+      })
+      .mockResolvedValueOnce({ data: { message: "base", parents: [], tree: { sha: "2".repeat(40) } } })
+    mockOctokit.git.getTree
+      .mockResolvedValueOnce({
+        data: {
+          truncated: false,
+          tree: [{ path: "vendor/content", type: "commit", mode: "160000", sha: "d".repeat(40) }],
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          truncated: false,
+          tree: [{ path: "vendor/content", type: "blob", mode: "100644", sha: expectedBlobSha }],
+        },
+      })
+
+    await expect(
+      verifyPublishAttemptCommitForPublish("token", "owner", "repo", baseSha, candidateSha, [
+        { path: "vendor/content", action: "update", expectedBlobSha },
+      ]),
+    ).resolves.toBe(false)
   })
 })
 
