@@ -209,6 +209,7 @@ export default defineSchema({
     publishedProvenance: v.optional(
       v.object({
         publishBranchId: v.id("publishBranches"),
+        publishAttemptId: v.optional(v.id("publishAttempts")),
         commitSha: v.string(),
         contentRevision: v.optional(v.string()),
         // Optional only for provenance recorded before the field existed;
@@ -364,12 +365,18 @@ export default defineSchema({
     status: v.union(v.literal("pending"), v.literal("committed"), v.literal("undone")),
     commitSha: v.optional(v.string()),
     publishBranchId: v.optional(v.id("publishBranches")),
+    publishAttemptId: v.optional(v.id("publishAttempts")),
+    // Canonical repository path captured when the operation is planned.
+    // Newer pending intent checks use this directly instead of resolving a
+    // mixture of legacy/content-relative paths during cleanup.
+    repoPath: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_projectId", ["projectId"])
     .index("by_projectId_status", ["projectId", "status"])
     .index("by_projectId_filePath", ["projectId", "filePath"])
+    .index("by_projectId_repoPath_status", ["projectId", "repoPath", "status"])
     // Bounded lane cleanup: fetch exactly one lane's committed ops in batches.
     .index("by_publishBranchId_status", ["publishBranchId", "status"]),
 
@@ -395,6 +402,7 @@ export default defineSchema({
     status: v.union(v.literal("pending"), v.literal("committed"), v.literal("undone"), v.literal("failed")),
     commitSha: v.optional(v.string()),
     publishBranchId: v.optional(v.id("publishBranches")),
+    publishAttemptId: v.optional(v.id("publishAttempts")),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -454,6 +462,17 @@ export default defineSchema({
     // Compatibility projection for attempts created before exact descriptors.
     operationPaths: v.array(v.string()),
     opIds: v.array(v.id("explorerOps")),
+    // Canonical, versioned ownership projection used by bounded cleanup.
+    // Optional only for attempts written before attempt-scoped cleanup.
+    explorerAssociations: v.optional(
+      v.array(
+        v.object({
+          opId: v.id("explorerOps"),
+          repoPath: v.string(),
+          expectedUpdatedAt: v.number(),
+        }),
+      ),
+    ),
     // Versioned media snapshot: identity + planned repoPath + planned
     // updatedAt, so an in-place replacement racing the publish is caught
     // transactionally at begin.
@@ -487,11 +506,42 @@ export default defineSchema({
         expectedUpdatedAt: v.number(),
       }),
     ),
-    status: v.union(v.literal("committing"), v.literal("committed"), v.literal("reconciled"), v.literal("superseded")),
+    status: v.union(
+      v.literal("committing"),
+      v.literal("committed"),
+      v.literal("reconciled"),
+      v.literal("cleanup_pending"),
+      v.literal("cleaned"),
+      v.literal("superseded"),
+    ),
     commitSha: v.optional(v.string()),
+    cleanupId: v.optional(v.id("publishAttemptCleanups")),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_projectId_status", ["projectId", "status"])
     .index("by_publishBranchId_status", ["publishBranchId", "status"]),
+
+  // ─── Publish Attempt Cleanups (durable bounded reconciliation) ───
+  publishAttemptCleanups: defineTable({
+    projectId: v.id("projects"),
+    laneId: v.id("publishBranches"),
+    attemptId: v.id("publishAttempts"),
+    pathOutcomes: v.array(
+      v.object({
+        path: v.string(),
+        disposition: v.union(v.literal("finalize"), v.literal("restore")),
+        finalBlobSha: v.optional(v.string()),
+      }),
+    ),
+    authoritySha: v.optional(v.string()),
+    phase: v.union(v.literal("explorer"), v.literal("media"), v.literal("documents"), v.literal("complete")),
+    cursor: v.number(),
+    status: v.union(v.literal("pending"), v.literal("complete")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_attemptId", ["attemptId"])
+    .index("by_laneId_status", ["laneId", "status"])
+    .index("by_status", ["status"]),
 })

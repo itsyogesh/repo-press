@@ -65,7 +65,7 @@ export const stageCreate = mutation({
     initialFrontmatter: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
-    const { userId } = await resolveProjectAccess(ctx, args, "editor")
+    const { userId, project } = await resolveProjectAccess(ctx, args, "editor")
 
     // Check for existing pending op at this filePath
     const existingOp = await ctx.db
@@ -144,6 +144,7 @@ export const stageCreate = mutation({
       opType: "create",
       filePath: args.filePath,
       pathRepresentation: args.pathRepresentation,
+      repoPath: resolveStoredRepoPath(project.contentRoot ?? "", args.filePath, args.pathRepresentation),
       initialBody: args.initialBody,
       initialFrontmatter: args.initialFrontmatter,
       status: "pending",
@@ -169,7 +170,7 @@ export const stageDelete = mutation({
     previousSha: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const { userId } = await resolveProjectAccess(ctx, args, "editor")
+    const { userId, project } = await resolveProjectAccess(ctx, args, "editor")
 
     // Check for existing pending op at this path
     const existingOp = await ctx.db
@@ -190,6 +191,7 @@ export const stageDelete = mutation({
       opType: "delete",
       filePath: args.filePath,
       pathRepresentation: args.pathRepresentation,
+      repoPath: resolveStoredRepoPath(project.contentRoot ?? "", args.filePath, args.pathRepresentation),
       previousSha: args.previousSha,
       status: "pending",
       createdAt: now,
@@ -381,6 +383,7 @@ export const markCommitted = mutation({
     ),
     commitSha: v.string(),
     publishBranchId: v.optional(v.id("publishBranches")),
+    publishAttemptId: v.optional(v.id("publishAttempts")),
     userId: v.optional(v.string()),
     projectAccessToken: v.optional(v.string()),
   },
@@ -455,10 +458,21 @@ export const markCommitted = mutation({
           }
         }
 
+        const repoPath =
+          op.repoPath ??
+          (typeof op.filePath === "string"
+            ? resolveStoredRepoPath(
+                access.project.contentRoot ?? "",
+                op.filePath,
+                op.pathRepresentation as StoredPathRepresentation | undefined,
+              )
+            : undefined)
         await ctx.db.patch(id, {
           status: "committed",
           commitSha: args.commitSha,
           publishBranchId: args.publishBranchId,
+          publishAttemptId: args.publishAttemptId,
+          repoPath,
           updatedAt: now,
         })
       }

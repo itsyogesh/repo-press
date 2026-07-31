@@ -701,6 +701,7 @@ export async function POST(request: Request) {
         deleteAssociations,
         commitSha,
         publishBranchId: publishBranch._id,
+        publishAttemptId: attemptId,
         userId: actingUserId,
         projectAccessToken,
       })
@@ -712,6 +713,7 @@ export async function POST(request: Request) {
         ids: pendingMediaOps.map((op) => op._id),
         commitSha,
         publishBranchId: publishBranch._id,
+        publishAttemptId: attemptId,
         userId: actingUserId,
         projectAccessToken,
       })
@@ -727,6 +729,7 @@ export async function POST(request: Request) {
       owner,
       repo,
       publishBranchId: publishBranch._id,
+      publishAttemptId: attemptId,
       commitSha,
       documentAssociations,
       actingUserId,
@@ -907,6 +910,7 @@ async function refreshDocumentShasAtCommit({
   owner,
   repo,
   publishBranchId,
+  publishAttemptId,
   commitSha,
   documentAssociations,
   actingUserId,
@@ -917,6 +921,7 @@ async function refreshDocumentShasAtCommit({
   owner: string
   repo: string
   publishBranchId: Id<"publishBranches">
+  publishAttemptId: Id<"publishAttempts">
   commitSha: string
   documentAssociations: Array<{
     documentId: Id<"documents">
@@ -941,6 +946,7 @@ async function refreshDocumentShasAtCommit({
         id: documentId,
         githubSha: fileAtCommit.file.sha,
         publishBranchId,
+        publishAttemptId,
         commitSha,
         contentRevision,
         publishedContentVersion: contentVersion,
@@ -975,9 +981,9 @@ type RecoverablePublishAttempt = {
     contentVersion?: number
   }>
   deleteAssociations: Array<{ opId: Id<"explorerOps">; documentId: Id<"documents">; expectedUpdatedAt: number }>
-  // getActiveForProject only returns committing/committed attempts; the wider
-  // union matches the stored document type.
-  status: "committing" | "committed" | "reconciled" | "superseded"
+  // getActiveForProject also keeps durable cleanup active until its bounded
+  // continuation reaches a terminal state.
+  status: "committing" | "committed" | "cleanup_pending"
   commitSha?: string
 }
 
@@ -1017,6 +1023,16 @@ async function recoverPublishAttempt({
   projectAccessToken?: string
 }): Promise<{ handled: true; response: NextResponse } | { handled: false; stagedStateStale?: boolean }> {
   const auth = { userId: actingUserId, projectAccessToken }
+
+  if (attempt.status === "cleanup_pending") {
+    return {
+      handled: true,
+      response: NextResponse.json(
+        { ok: false, error: "A previous publish is still finishing durable cleanup. Retry shortly." },
+        { status: 409 },
+      ),
+    }
+  }
 
   // Validate the attempt's lane reference before trusting anything else.
   const lane = await convex.query(api.publishBranches.getById, { id: attempt.publishBranchId, ...auth })
@@ -1314,6 +1330,7 @@ async function recoverPublishAttempt({
       deleteAssociations: attempt.deleteAssociations,
       commitSha,
       publishBranchId: attempt.publishBranchId,
+      publishAttemptId: attempt._id,
       userId: actingUserId,
       projectAccessToken,
     })
@@ -1325,6 +1342,7 @@ async function recoverPublishAttempt({
       ids: attempt.mediaAssociations.map((association) => association.mediaOpId),
       commitSha,
       publishBranchId: attempt.publishBranchId,
+      publishAttemptId: attempt._id,
       userId: actingUserId,
       projectAccessToken,
     })
@@ -1344,6 +1362,7 @@ async function recoverPublishAttempt({
     owner,
     repo,
     publishBranchId: attempt.publishBranchId,
+    publishAttemptId: attempt._id,
     commitSha,
     documentAssociations: attempt.documentAssociations,
     actingUserId,

@@ -881,6 +881,7 @@ export const markPublishedSnapshot = mutation({
     id: v.id("documents"),
     githubSha: v.string(),
     publishBranchId: v.id("publishBranches"),
+    publishAttemptId: v.optional(v.id("publishAttempts")),
     commitSha: v.string(),
     // Optional only for replays of attempts recorded before the fields
     // existed; every new publish provides both.
@@ -900,6 +901,7 @@ export const markPublishedSnapshot = mutation({
     )
     const publishedProvenance: {
       publishBranchId: typeof args.publishBranchId
+      publishAttemptId?: typeof args.publishAttemptId
       commitSha: string
       publishedUpdatedAt: number
       contentRevision?: string
@@ -908,6 +910,9 @@ export const markPublishedSnapshot = mutation({
       publishBranchId: args.publishBranchId,
       commitSha: args.commitSha,
       publishedUpdatedAt: args.expectedUpdatedAt,
+    }
+    if (args.publishAttemptId !== undefined) {
+      publishedProvenance.publishAttemptId = args.publishAttemptId
     }
     if (args.contentRevision !== undefined) {
       publishedProvenance.contentRevision = args.contentRevision

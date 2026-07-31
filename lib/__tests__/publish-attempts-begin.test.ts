@@ -143,6 +143,36 @@ describe("publishAttempts.begin transactional reference validation", () => {
     expect(insert).not.toHaveBeenCalled()
   })
 
+  it("persists canonical explorer associations for direct cleanup by ID", async () => {
+    const insert = vi.fn().mockResolvedValue("attempt_1")
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce(project)
+      .mockResolvedValueOnce({ _id: "lane_1", projectId: "project_1", branchName: "repopress/start" })
+      .mockResolvedValueOnce({
+        _id: "op_1",
+        projectId: "project_1",
+        opType: "create",
+        filePath: "guides/a.mdx",
+        pathRepresentation: "content_relative_v1",
+        status: "pending",
+        updatedAt: 17,
+      })
+
+    await (begin as any).handler(createCtx(get, insert), {
+      ...baseArgs,
+      opIds: ["op_1"],
+      projectAccessToken: await patToken(),
+    })
+
+    expect(insert).toHaveBeenCalledWith(
+      "publishAttempts",
+      expect.objectContaining({
+        explorerAssociations: [{ opId: "op_1", repoPath: "content/guides/a.mdx", expectedUpdatedAt: 17 }],
+      }),
+    )
+  })
+
   it("rejects document associations outside the project", async () => {
     const insert = vi.fn()
     const get = vi

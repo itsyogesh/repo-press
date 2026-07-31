@@ -1,6 +1,7 @@
 import { v } from "convex/values"
 import { assertCanonicalPublishOperationPath, gitRepositoryPathIdentity } from "../lib/git-path-policy"
 import { resolveStoredRepoPath, type StoredPathRepresentation } from "../lib/preview/path-policy"
+import { internal } from "./_generated/api"
 import { mutation, query } from "./_generated/server"
 import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
 import { findActivePublishAttempt } from "./lib/publishAttemptGuard"
@@ -22,6 +23,12 @@ const deleteAssociationValidator = v.object({
   opId: v.id("explorerOps"),
   documentId: v.id("documents"),
   expectedUpdatedAt: v.number(),
+})
+
+const pathOutcomeValidator = v.object({
+  path: v.string(),
+  disposition: v.union(v.literal("finalize"), v.literal("restore")),
+  finalBlobSha: v.optional(v.string()),
 })
 
 /**
@@ -152,6 +159,11 @@ export const begin = mutation({
     }
     const contentRoot = access.project.contentRoot
     const opById = new Map<string, { opType: string; repoPath: string }>()
+    const explorerAssociations: Array<{
+      opId: (typeof args.opIds)[number]
+      repoPath: string
+      expectedUpdatedAt: number
+    }> = []
     for (const opId of args.opIds) {
       const op = await ctx.db.get(opId)
       if (!op || op.projectId !== args.projectId) {
@@ -160,14 +172,16 @@ export const begin = mutation({
       if (op.status !== "pending") {
         throw new Error("Staged changes changed since planning: an operation is no longer pending")
       }
+      const repoPath = resolveStoredRepoPath(
+        contentRoot,
+        op.filePath,
+        op.pathRepresentation as StoredPathRepresentation | undefined,
+      )
       opById.set(String(opId), {
         opType: op.opType,
-        repoPath: resolveStoredRepoPath(
-          contentRoot,
-          op.filePath,
-          op.pathRepresentation as StoredPathRepresentation | undefined,
-        ),
+        repoPath,
       })
+      explorerAssociations.push({ opId, repoPath, expectedUpdatedAt: op.updatedAt })
     }
     for (const association of args.mediaAssociations) {
       const mediaOp = await ctx.db.get(association.mediaOpId)
@@ -236,6 +250,7 @@ export const begin = mutation({
       operationDescriptors: args.operationDescriptors,
       operationPaths: args.operationDescriptors.map((descriptor) => descriptor.path),
       opIds: args.opIds,
+      explorerAssociations,
       mediaAssociations: args.mediaAssociations,
       documentAssociations: args.documentAssociations,
       deleteAssociations: args.deleteAssociations,
@@ -243,6 +258,139 @@ export const begin = mutation({
       createdAt: now,
       updatedAt: now,
     })
+  },
+})
+
+function canonicalCleanupPlan(
+  authoritySha: string | undefined,
+  pathOutcomes: Array<{ path: string; disposition: "finalize" | "restore"; finalBlobSha?: string }>,
+) {
+  return JSON.stringify({
+    authoritySha,
+    pathOutcomes: [...pathOutcomes].sort((a, b) => a.path.localeCompare(b.path)),
+  })
+}
+
+/**
+ * Atomically install the immutable cleanup decision for one resolved attempt.
+ * The attempt remains active until every bounded continuation has completed.
+ */
+export const resolveAndEnqueueCleanup = mutation({
+  args: {
+    id: v.id("publishAttempts"),
+    authoritySha: v.optional(v.string()),
+    pathOutcomes: v.array(pathOutcomeValidator),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const attempt = await ctx.db.get(args.id)
+    if (!attempt) throw new Error("Publish attempt not found")
+    await resolveProjectAccess(
+      ctx,
+      { projectId: attempt.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken },
+      "editor",
+    )
+    const lane = await ctx.db.get(attempt.publishBranchId)
+    if (!lane || lane.projectId !== attempt.projectId || lane.branchName !== attempt.branchName) {
+      throw new Error("Publish cleanup lane does not match its attempt")
+    }
+    if (lane.status !== "closed" && lane.status !== "merged") {
+      throw new Error("Publish cleanup requires a closed or merged lane")
+    }
+    if (
+      attempt.status !== "committed" &&
+      attempt.status !== "reconciled" &&
+      attempt.status !== "cleanup_pending" &&
+      attempt.status !== "cleaned"
+    ) {
+      throw new Error(`Cannot resolve cleanup for a ${attempt.status} publish attempt`)
+    }
+    if (!attempt.commitSha || !SHA_PATTERN.test(attempt.commitSha)) {
+      throw new Error("Publish cleanup requires the attempt's committed SHA")
+    }
+    if (args.authoritySha !== undefined && !SHA_PATTERN.test(args.authoritySha)) {
+      throw new Error("Publish cleanup authority must be a 40-hex SHA")
+    }
+
+    const descriptorByPath = new Map(
+      (attempt.operationDescriptors ?? []).map((descriptor) => [descriptor.path, descriptor]),
+    )
+    const descriptorPaths = new Set(descriptorByPath.keys())
+    if (descriptorPaths.size === 0 || args.pathOutcomes.length !== descriptorPaths.size) {
+      throw new Error("Publish cleanup outcomes must exactly match the attempt descriptor paths")
+    }
+    const outcomePaths = new Set<string>()
+    for (const outcome of args.pathOutcomes) {
+      assertCanonicalPublishOperationPath(outcome.path)
+      if (!descriptorPaths.has(outcome.path) || outcomePaths.has(outcome.path)) {
+        throw new Error("Publish cleanup outcomes must exactly match the attempt descriptor paths")
+      }
+      outcomePaths.add(outcome.path)
+      if (outcome.finalBlobSha !== undefined && !SHA_PATTERN.test(outcome.finalBlobSha)) {
+        throw new Error("Publish cleanup final blob must be a 40-hex SHA")
+      }
+      if (outcome.disposition === "restore" && outcome.finalBlobSha !== undefined) {
+        throw new Error("A restored publish path cannot carry a final blob SHA")
+      }
+      const descriptor = descriptorByPath.get(outcome.path)
+      if (outcome.disposition === "finalize" && descriptor?.action !== "delete") {
+        if (!outcome.finalBlobSha) throw new Error("A finalized write requires final blob evidence")
+        if (outcome.finalBlobSha !== descriptor?.expectedBlobSha) {
+          throw new Error("A finalized write blob must match the attempt descriptor")
+        }
+      }
+      if (outcome.disposition === "finalize" && descriptor?.action === "delete" && outcome.finalBlobSha !== undefined) {
+        throw new Error("A finalized delete must not carry a final blob SHA")
+      }
+    }
+    if (args.pathOutcomes.some((outcome) => outcome.disposition === "finalize") && !args.authoritySha) {
+      throw new Error("A finalizing publish cleanup requires an authority SHA")
+    }
+
+    const normalizedOutcomes = [...args.pathOutcomes].sort((a, b) => a.path.localeCompare(b.path))
+    const requestedPlan = canonicalCleanupPlan(args.authoritySha, normalizedOutcomes)
+    const existing = await ctx.db
+      .query("publishAttemptCleanups")
+      .withIndex("by_attemptId", (q) => q.eq("attemptId", attempt._id))
+      .first()
+    if (existing) {
+      if (canonicalCleanupPlan(existing.authoritySha, existing.pathOutcomes) !== requestedPlan) {
+        throw new Error("Conflicting cleanup plan already exists for this publish attempt")
+      }
+      if (
+        attempt.cleanupId !== existing._id ||
+        (attempt.status !== "cleanup_pending" && attempt.status !== "cleaned")
+      ) {
+        throw new Error("Publish attempt and cleanup plan disagree")
+      }
+      if (existing.status === "pending") {
+        await ctx.scheduler.runAfter(0, (internal as any).publishAttemptCleanups.continueCleanup, {
+          cleanupId: existing._id,
+        })
+      }
+      return { cleanupId: existing._id, reused: true as const }
+    }
+    if (attempt.cleanupId || attempt.status === "cleanup_pending" || attempt.status === "cleaned") {
+      throw new Error("Publish attempt cleanup state is missing its durable plan")
+    }
+
+    const now = Date.now()
+    const cleanupId = await ctx.db.insert("publishAttemptCleanups", {
+      projectId: attempt.projectId,
+      laneId: attempt.publishBranchId,
+      attemptId: attempt._id,
+      pathOutcomes: normalizedOutcomes,
+      authoritySha: args.authoritySha,
+      phase: "explorer",
+      cursor: 0,
+      status: "pending",
+      createdAt: now,
+      updatedAt: now,
+    })
+    await ctx.db.patch(attempt._id, { status: "cleanup_pending", cleanupId, updatedAt: now })
+    await ctx.scheduler.runAfter(0, (internal as any).publishAttemptCleanups.continueCleanup, { cleanupId })
+    return { cleanupId, reused: false as const }
   },
 })
 

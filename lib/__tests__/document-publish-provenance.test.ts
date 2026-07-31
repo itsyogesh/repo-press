@@ -118,6 +118,30 @@ describe("lane-synchronization provenance", () => {
     expect(patched.updatedAt).toBeUndefined()
   })
 
+  it("records exact publish-attempt ownership in document provenance", async () => {
+    const patch = vi.fn()
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({ _id: "doc_1", projectId: "project_1", updatedAt: 5, contentVersion: 3 })
+      .mockResolvedValueOnce(project)
+
+    await (markPublishedSnapshot as any).handler(createCtx({ get, patch }), {
+      ...snapshotArgs({ publishAttemptId: "attempt_1", publishedContentVersion: 3 }),
+      projectAccessToken: await patToken(),
+    })
+
+    expect(patch).toHaveBeenCalledWith(
+      "doc_1",
+      expect.objectContaining({
+        publishedProvenance: expect.objectContaining({
+          publishBranchId: "lane_1",
+          publishAttemptId: "attempt_1",
+          publishedContentVersion: 3,
+        }),
+      }),
+    )
+  })
+
   it("replays the same lane/commit/revision association as a no-op", async () => {
     const patch = vi.fn()
     const alreadyStamped = {

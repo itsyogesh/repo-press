@@ -1,15 +1,16 @@
 import type { Doc, Id } from "../_generated/dataModel"
 import type { DatabaseReader } from "../_generated/server"
 
-const ACTIVE_STATUSES = ["committing", "committed"] as const
+const ACTIVE_STATUSES = ["committing", "committed", "cleanup_pending"] as const
+type ActivePublishAttempt = Doc<"publishAttempts"> & { status: (typeof ACTIVE_STATUSES)[number] }
 
-function isActiveAttempt(candidate: unknown): candidate is Doc<"publishAttempts"> {
+function isActiveAttempt(candidate: unknown): candidate is ActivePublishAttempt {
   if (!candidate || typeof candidate !== "object") return false
   const attempt = candidate as Record<string, unknown>
   return (
     typeof attempt.planDigest === "string" &&
     typeof attempt.branchName === "string" &&
-    (attempt.status === "committing" || attempt.status === "committed")
+    (attempt.status === "committing" || attempt.status === "committed" || attempt.status === "cleanup_pending")
   )
 }
 

@@ -159,6 +159,32 @@ describe("markCommitted post-commit reconciliation", () => {
     expect(result).toEqual({ skippedDeleteAssociations: [], unreconciledOpIds: [] })
   })
 
+  it("records the exact attempt owner and canonical repository path", async () => {
+    const patch = vi.fn()
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({ ...pendingDeleteOp, opType: "create" })
+      .mockResolvedValueOnce(project)
+
+    await (markCommitted as any).handler(createCtx(get, patch), {
+      ids: ["op_delete"],
+      commitSha: "commit_1",
+      publishBranchId: "lane_1",
+      publishAttemptId: "attempt_1",
+      userId: "user_owner",
+      projectAccessToken: await patToken(),
+    })
+
+    expect(patch).toHaveBeenCalledWith(
+      "op_delete",
+      expect.objectContaining({
+        publishBranchId: "lane_1",
+        publishAttemptId: "attempt_1",
+        repoPath: "content/guides/start.mdx",
+      }),
+    )
+  })
+
   it("is idempotent for retries: already-committed ops are untouched and produce no errors", async () => {
     const patch = vi.fn()
     const get = vi.fn().mockResolvedValueOnce({ ...pendingDeleteOp, status: "committed" })
@@ -259,11 +285,14 @@ describe("publish attempt guard on undo/discard", () => {
     const get = vi.fn().mockResolvedValueOnce(project)
 
     await expect(
-      (discardAll as any).handler(createCtx(get, patch, { activePublishAttempt: activeAttempt }), {
-        projectId: "project_1",
-        userId: "user_owner",
-        projectAccessToken: await patToken(),
-      }),
+      (discardAll as any).handler(
+        createCtx(get, patch, { activePublishAttempt: { ...activeAttempt, status: "cleanup_pending" } }),
+        {
+          projectId: "project_1",
+          userId: "user_owner",
+          projectAccessToken: await patToken(),
+        },
+      ),
     ).rejects.toThrow(/publish is in progress/i)
 
     expect(patch).not.toHaveBeenCalled()

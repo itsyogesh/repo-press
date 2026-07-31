@@ -179,6 +179,7 @@ export const markCommitted = mutation({
     ids: v.array(v.id("mediaOps")),
     commitSha: v.string(),
     publishBranchId: v.optional(v.id("publishBranches")),
+    publishAttemptId: v.optional(v.id("publishAttempts")),
     userId: v.optional(v.string()),
     projectAccessToken: v.optional(v.string()),
   },
@@ -206,6 +207,7 @@ export const markCommitted = mutation({
         status: "committed",
         commitSha: args.commitSha,
         publishBranchId: args.publishBranchId,
+        publishAttemptId: args.publishAttemptId,
         updatedAt: now,
       })
     }
