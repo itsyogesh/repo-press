@@ -36,6 +36,7 @@ vi.mock("@/lib/github", () => ({
   getFileForPublish: vi.fn(),
   getPullRequestCommitsForPublish: vi.fn(),
   GitHubReadError: class GitHubReadError extends Error {},
+  verifyPublishAttemptCommitForPublish: vi.fn(),
   updatePullRequest: vi.fn(),
 }))
 
@@ -66,6 +67,7 @@ import {
   getFileForPublish,
   getPullRequestCommitsForPublish,
   updatePullRequest,
+  verifyPublishAttemptCommitForPublish,
 } from "@/lib/github"
 import { getRepoRole } from "@/lib/github-permissions"
 import { POST } from "../route"
@@ -187,6 +189,7 @@ describe("POST /api/github/publish-ops", () => {
     })
     vi.mocked(getBranchHeadForPublish).mockResolvedValue({ status: "found", sha: "authority-sha-1" } as never)
     vi.mocked(findOpenPublishLanePullRequest).mockResolvedValue(null as never)
+    vi.mocked(verifyPublishAttemptCommitForPublish).mockResolvedValue(true)
     convexMutationMock.mockResolvedValue(undefined as never)
     vi.mocked(branchExists).mockResolvedValue(false)
     vi.mocked(createPublishBranchFromSha).mockResolvedValue(undefined as never)
@@ -1476,6 +1479,7 @@ describe("POST /api/github/publish-ops", () => {
         branchName: "repopress/main/1234",
         expectedHeadSha: "authority-sha-1",
         planDigest: PLAN_DIGEST,
+        operationDescriptors: [{ path: "content/posts/old.mdx", action: "delete" }],
         operationPaths: ["content/posts/old.mdx"],
         opIds: ["op_delete"],
         mediaAssociations: [],
@@ -1524,6 +1528,38 @@ describe("POST /api/github/publish-ops", () => {
         expect.anything(),
         expect.objectContaining({ id: "attempt_1", commitSha: "commit-sha-1" }),
       )
+      expect(verifyPublishAttemptCommitForPublish).toHaveBeenCalledWith(
+        "gh-token",
+        "acme",
+        "docs-site",
+        "authority-sha-1",
+        "commit-sha-1",
+        [{ path: "content/posts/old.mdx", action: "delete" }],
+      )
+    })
+
+    it("fails closed instead of adopting a trailer-matching commit with the wrong tree", async () => {
+      mockPublishQueries({
+        activePublishAttempt: committedAttempt({ status: "committing", commitSha: undefined }),
+        attemptLane: recoveryLane,
+      })
+      vi.mocked(getBranchHeadForPublish).mockResolvedValue({ status: "found", sha: "commit-sha-1" } as never)
+      vi.mocked(getCommitDetailsForPublish).mockResolvedValue({
+        message: `chore(content): via RepoPress\n\nRepoPress-Publish-Attempt: ${PLAN_DIGEST}`,
+        parents: ["authority-sha-1"],
+      } as never)
+      vi.mocked(verifyPublishAttemptCommitForPublish).mockResolvedValue(false)
+
+      const response = await POST(buildRequest({ projectId: "project_123" }))
+      const payload = await response.json()
+
+      expect(response.status).toBe(409)
+      expect(payload.error).toMatch(/cannot prove/i)
+      expect(batchCommitPublishLaneAtExpectedHead).not.toHaveBeenCalled()
+      expect(convexMutationMock).not.toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ id: "attempt_1", commitSha: expect.anything() }),
+      )
     })
 
     it("recovers a committed attempt directly from its recorded SHA without GitHub reads", async () => {
@@ -1534,6 +1570,7 @@ describe("POST /api/github/publish-ops", () => {
         branchName: "repopress/main/1234",
         expectedHeadSha: "authority-sha-1",
         planDigest: PLAN_DIGEST,
+        operationDescriptors: [{ path: "content/posts/old.mdx", action: "delete" }],
         operationPaths: ["content/posts/old.mdx"],
         opIds: ["op_delete"],
         mediaAssociations: [],
@@ -1574,6 +1611,7 @@ describe("POST /api/github/publish-ops", () => {
         branchName: "repopress/main/1234",
         expectedHeadSha: "authority-sha-1",
         planDigest: PLAN_DIGEST,
+        operationDescriptors: [],
         operationPaths: [],
         opIds: [],
         mediaAssociations: [],
@@ -1643,6 +1681,7 @@ describe("POST /api/github/publish-ops", () => {
         branchName: "repopress/main/1234",
         expectedHeadSha: "authority-sha-1",
         planDigest: PLAN_DIGEST,
+        operationDescriptors: [{ path: "content/posts/old.mdx", action: "delete" }],
         operationPaths: ["content/posts/old.mdx"],
         opIds: [],
         mediaAssociations: [],
@@ -2335,6 +2374,14 @@ describe("POST /api/github/publish-ops", () => {
       expect(payload.recovered).toBe(true)
       expect(payload.laneFinalized).toBe(true)
       expect(payload.commitSha).toBe("merged-sha-1")
+      expect(verifyPublishAttemptCommitForPublish).toHaveBeenCalledWith(
+        "gh-token",
+        "acme",
+        "docs-site",
+        "authority-sha-1",
+        "merged-sha-1",
+        expect.any(Array),
+      )
       // The proof came from the merged PR's commit list, not the (possibly
       // deleted) branch head, and no new commit was created.
       expect(getBranchHeadForPublish).not.toHaveBeenCalled()

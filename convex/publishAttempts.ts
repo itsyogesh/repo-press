@@ -9,6 +9,28 @@ const MAX_ATTEMPT_PATH_LENGTH = 512
 const SHA_PATTERN = /^[0-9a-f]{40}$/
 const DIGEST_PATTERN = /^[0-9a-f]{64}$/
 
+const operationDescriptorValidator = v.union(
+  v.object({ path: v.string(), action: v.literal("delete") }),
+  v.object({
+    path: v.string(),
+    action: v.union(v.literal("create"), v.literal("update")),
+    expectedBlobSha: v.string(),
+  }),
+)
+
+function assertCanonicalOperationPath(path: string) {
+  if (
+    path.length === 0 ||
+    path.length > MAX_ATTEMPT_PATH_LENGTH ||
+    path !== path.normalize("NFC") ||
+    path.startsWith("/") ||
+    path.includes("\\") ||
+    path.split("/").some((segment) => segment === "" || segment === "." || segment === "..")
+  ) {
+    throw new Error("Publish attempt operation path must be canonical")
+  }
+}
+
 const deleteAssociationValidator = v.object({
   opId: v.id("explorerOps"),
   documentId: v.id("documents"),
@@ -44,7 +66,7 @@ export const begin = mutation({
     branchName: v.string(),
     expectedHeadSha: v.string(),
     planDigest: v.string(),
-    operationPaths: v.array(v.string()),
+    operationDescriptors: v.array(operationDescriptorValidator),
     opIds: v.array(v.id("explorerOps")),
     mediaAssociations: v.array(
       v.object({
@@ -83,18 +105,29 @@ export const begin = mutation({
     if (!args.branchName.startsWith("repopress/") || args.branchName.startsWith("repopress/install/")) {
       throw new Error("Publish attempt branch must be a repopress/ publish lane")
     }
+    if (args.operationDescriptors.length === 0) {
+      throw new Error("Publish attempt requires at least one operation descriptor")
+    }
     if (
       args.opIds.length > MAX_ATTEMPT_OPERATIONS ||
       args.mediaAssociations.length > MAX_ATTEMPT_OPERATIONS ||
       args.documentAssociations.length > MAX_ATTEMPT_OPERATIONS ||
       args.deleteAssociations.length > MAX_ATTEMPT_OPERATIONS ||
-      args.operationPaths.length > MAX_ATTEMPT_OPERATIONS * 2
+      args.operationDescriptors.length > MAX_ATTEMPT_OPERATIONS * 2
     ) {
       throw new Error("Publish attempt exceeds the staged operation bounds")
     }
-    for (const path of args.operationPaths) {
-      if (path.length === 0 || path.length > MAX_ATTEMPT_PATH_LENGTH) {
-        throw new Error("Publish attempt operation path exceeds bounds")
+    const descriptorPaths = new Set<string>()
+    for (const descriptor of args.operationDescriptors) {
+      assertCanonicalOperationPath(descriptor.path)
+      if (descriptorPaths.has(descriptor.path)) {
+        throw new Error("Publish attempt contains duplicate operation descriptor paths")
+      }
+      descriptorPaths.add(descriptor.path)
+      if (descriptor.action === "delete") {
+        if ("expectedBlobSha" in descriptor) throw new Error("Delete descriptor must not contain a blob SHA")
+      } else if (!SHA_PATTERN.test(descriptor.expectedBlobSha)) {
+        throw new Error("Publish attempt write descriptor blob SHA must be a 40-hex SHA")
       }
     }
     for (const association of args.documentAssociations) {
@@ -212,7 +245,8 @@ export const begin = mutation({
       branchName: args.branchName,
       expectedHeadSha: args.expectedHeadSha,
       planDigest: args.planDigest,
-      operationPaths: args.operationPaths,
+      operationDescriptors: args.operationDescriptors,
+      operationPaths: args.operationDescriptors.map((descriptor) => descriptor.path),
       opIds: args.opIds,
       mediaAssociations: args.mediaAssociations,
       documentAssociations: args.documentAssociations,

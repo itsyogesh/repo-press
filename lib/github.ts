@@ -1,4 +1,5 @@
 import { Octokit } from "@octokit/rest"
+import type { PublishOperationDescriptor } from "@/lib/publish-plan"
 
 export type GitHubFile = {
   name: string
@@ -1068,6 +1069,160 @@ function indexGitLeaves(data: unknown): Map<string, GitLeaf> | null {
   } catch {
     return null
   }
+}
+
+function validatePublishOperationDescriptors(
+  rawDescriptors: readonly PublishOperationDescriptor[],
+): PublishOperationDescriptor[] {
+  if (!Array.isArray(rawDescriptors) || rawDescriptors.length === 0 || rawDescriptors.length > MAX_BATCH_OPERATIONS) {
+    throw new TypeError("Publish descriptors must be a non-empty bounded array")
+  }
+  const paths = new Set<string>()
+  return rawDescriptors.map((rawDescriptor, index) => {
+    if (!rawDescriptor || typeof rawDescriptor !== "object" || Array.isArray(rawDescriptor)) {
+      throw new TypeError(`Publish descriptor ${index} must be an object`)
+    }
+    const path = ownData(rawDescriptor, "path")
+    const action = ownData(rawDescriptor, "action")
+    if (typeof path !== "string") throw new TypeError("Publish descriptor path must be a string")
+    assertRepositoryPath(path)
+    if (path !== path.normalize("NFC")) throw new TypeError("Publish descriptor path must be canonical")
+    if (paths.has(path)) throw new TypeError(`Duplicate publish descriptor path ${path}`)
+    paths.add(path)
+    if (action === "delete") {
+      if (Object.hasOwn(rawDescriptor, "expectedBlobSha")) {
+        throw new TypeError("Delete publish descriptor must not contain a blob SHA")
+      }
+      return { path, action }
+    }
+    if (action !== "create" && action !== "update") throw new TypeError("Invalid publish descriptor action")
+    const expectedBlobSha = ownData(rawDescriptor, "expectedBlobSha")
+    if (typeof expectedBlobSha !== "string") throw new TypeError("Publish descriptor blob SHA must be a string")
+    assertSha(expectedBlobSha)
+    return { path, action, expectedBlobSha }
+  })
+}
+
+async function readGitLeavesForPublish(
+  octokit: ReturnType<typeof createGitHubClient>,
+  owner: string,
+  repo: string,
+  sha: string,
+): Promise<Map<string, GitLeaf>> {
+  try {
+    const { data } = await octokit.git.getTree({ owner, repo, tree_sha: sha, recursive: "1" })
+    const leaves = indexGitLeaves(data)
+    if (!leaves) throw new GitHubReadError(`GitHub returned a truncated or malformed tree for ${sha}`)
+    return leaves
+  } catch (error: any) {
+    if (error instanceof GitHubReadError) throw error
+    throw new GitHubReadError(`GitHub tree read failed for ${sha} (status: ${error?.status ?? "unknown"})`, error)
+  }
+}
+
+function applyPublishDescriptors(
+  baseLeaves: Map<string, GitLeaf>,
+  descriptors: readonly PublishOperationDescriptor[],
+): Map<string, GitLeaf> {
+  const expected = new Map(baseLeaves)
+  for (const descriptor of descriptors) {
+    if (descriptor.action === "delete") expected.delete(descriptor.path)
+    else {
+      expected.set(descriptor.path, {
+        mode: "100644",
+        type: "blob",
+        sha: descriptor.expectedBlobSha,
+      })
+    }
+  }
+  return expected
+}
+
+function gitLeavesEqual(expected: Map<string, GitLeaf>, actual: Map<string, GitLeaf>): boolean {
+  if (expected.size !== actual.size) return false
+  for (const [path, leaf] of expected) {
+    const candidate = actual.get(path)
+    if (!candidate || candidate.mode !== leaf.mode || candidate.type !== leaf.type || candidate.sha !== leaf.sha) {
+      return false
+    }
+  }
+  return true
+}
+
+/**
+ * Prove that a candidate is exactly the CAS commit described by a durable
+ * publish attempt: it must directly parent the planned head and its complete
+ * tree must equal that head's tree with only the described changes applied.
+ */
+export async function verifyPublishAttemptCommitForPublish(
+  accessToken: string,
+  owner: string,
+  repo: string,
+  expectedHeadSha: string,
+  candidateSha: string,
+  rawDescriptors: readonly PublishOperationDescriptor[],
+): Promise<boolean> {
+  assertRepository(owner, repo)
+  assertSha(expectedHeadSha)
+  assertSha(candidateSha)
+  const descriptors = validatePublishOperationDescriptors(rawDescriptors)
+  const octokit = createGitHubClient(accessToken)
+  try {
+    const { data } = await octokit.git.getCommit({ owner, repo, commit_sha: candidateSha })
+    if (!Array.isArray(data.parents)) throw new GitHubReadError(`GitHub returned malformed parents for ${candidateSha}`)
+    const parents = data.parents.map((parent) => {
+      if (!parent || typeof parent.sha !== "string") {
+        throw new GitHubReadError(`GitHub returned malformed parents for ${candidateSha}`)
+      }
+      assertSha(parent.sha)
+      return parent.sha
+    })
+    if (parents.length !== 1 || parents[0] !== expectedHeadSha) return false
+  } catch (error: any) {
+    if (error instanceof GitHubReadError) throw error
+    throw new GitHubReadError(
+      `GitHub commit read failed for ${candidateSha} (status: ${error?.status ?? "unknown"})`,
+      error,
+    )
+  }
+  const [baseLeaves, candidateLeaves] = await Promise.all([
+    readGitLeavesForPublish(octokit, owner, repo, expectedHeadSha),
+    readGitLeavesForPublish(octokit, owner, repo, candidateSha),
+  ])
+  return gitLeavesEqual(applyPublishDescriptors(baseLeaves, descriptors), candidateLeaves)
+}
+
+export type PublishPathOutcome = {
+  path: string
+  disposition: "finalize" | "restore"
+  finalBlobSha?: string
+}
+
+/** Inspect how each attempted path exists at an immutable final authority. */
+export async function inspectPublishEffectsAtCommit(
+  accessToken: string,
+  owner: string,
+  repo: string,
+  authoritySha: string,
+  rawDescriptors: readonly PublishOperationDescriptor[],
+): Promise<PublishPathOutcome[]> {
+  assertRepository(owner, repo)
+  assertSha(authoritySha)
+  const descriptors = validatePublishOperationDescriptors(rawDescriptors)
+  const leaves = await readGitLeavesForPublish(createGitHubClient(accessToken), owner, repo, authoritySha)
+  return descriptors.map((descriptor) => {
+    const finalLeaf = leaves.get(descriptor.path)
+    const finalBlobSha = finalLeaf?.type === "blob" ? finalLeaf.sha : undefined
+    const disposition =
+      descriptor.action === "delete"
+        ? finalLeaf === undefined
+          ? "finalize"
+          : "restore"
+        : finalLeaf?.type === "blob" && finalLeaf.mode === "100644" && finalLeaf.sha === descriptor.expectedBlobSha
+          ? "finalize"
+          : "restore"
+    return { path: descriptor.path, disposition, ...(finalBlobSha ? { finalBlobSha } : {}) }
+  })
 }
 
 function operationBytes(operation: BatchOperation): Buffer | null {

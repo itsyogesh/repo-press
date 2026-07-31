@@ -18,15 +18,18 @@ import {
   getPullRequestCommitsForPublish,
   type PublishFileReadResult,
   updatePullRequest,
+  verifyPublishAttemptCommitForPublish,
 } from "@/lib/github"
 import { resolveStoredRepoPath, type StoredPathRepresentation } from "@/lib/preview/path-policy"
 import { mintServerQueryToken } from "@/lib/project-access-token"
 import { buildPublishBranchName, derivePublishBranchScope } from "@/lib/publish-branch-name"
 import { detectMetadataSource, serializePublishContent } from "@/lib/publish-content"
 import {
+  buildPublishOperationDescriptors,
   commitMessageCarriesAttempt,
   computePublishPlanDigest,
   formatPublishAttemptTrailer,
+  type PublishOperationDescriptor,
   sha256Hex,
 } from "@/lib/publish-plan"
 import { RouteAuthError, resolveRouteAuth } from "@/lib/route-auth"
@@ -538,15 +541,11 @@ export async function POST(request: Request) {
     // The attempt row (with the plan digest, also embedded in the commit
     // message trailer) is written BEFORE the commit, so a crash anywhere
     // after this point is recoverable on retry without committing again.
+    const operationDescriptors = buildPublishOperationDescriptors(operations)
     const planDigest = computePublishPlanDigest({
       branchName,
       expectedHeadSha: authoritySha,
-      operations: operations.map((operation) => ({
-        path: operation.path,
-        action: operation.action,
-        contentDigest:
-          operation.action === "delete" || typeof operation.content !== "string" ? null : sha256Hex(operation.content),
-      })),
+      operationDescriptors,
       opIds: pendingOps.map((op) => String(op._id)),
       mediaOpIds: pendingMediaOps.map((op) => String(op._id)),
       deleteAssociations: deleteAssociations.map((association) => ({
@@ -586,7 +585,7 @@ export async function POST(request: Request) {
         branchName,
         expectedHeadSha: authoritySha,
         planDigest,
-        operationPaths: operations.map((operation) => operation.path),
+        operationDescriptors,
         opIds: pendingOps.map((op) => op._id),
         mediaAssociations: pendingMediaOps.map((op) => ({
           mediaOpId: op._id,
@@ -964,6 +963,7 @@ type RecoverablePublishAttempt = {
   branchName: string
   expectedHeadSha: string
   planDigest: string
+  operationDescriptors?: PublishOperationDescriptor[]
   operationPaths: string[]
   opIds: Id<"explorerOps">[]
   mediaAssociations: Array<{ mediaOpId: Id<"mediaOps">; repoPath: string; expectedUpdatedAt: number }>
@@ -1094,18 +1094,51 @@ async function recoverPublishAttempt({
         const recorded = commitSha
         mergedCommitDidMerge = prCommits.some((candidate) => candidate.sha === recorded)
       } else {
-        const adopted = prCommits.find(
+        const candidates = prCommits.filter(
           (candidate) =>
             commitMessageCarriesAttempt(candidate.message, attempt.planDigest) &&
             candidate.parents.length === 1 &&
             candidate.parents[0] === attempt.expectedHeadSha,
         )
-        if (!adopted) {
+        if (candidates.length === 0) {
           // Provably not part of what merged: every staged operation is
           // still pending (recordCommit never ran), so supersede and let
           // the fresh publish re-commit it to a new lane.
           await convex.mutation(api.publishAttempts.supersede, { id: attempt._id, ...auth })
           return { handled: false }
+        }
+        if (candidates.length !== 1 || !attempt.operationDescriptors?.length) {
+          return {
+            handled: true,
+            response: NextResponse.json(
+              {
+                ok: false,
+                error: `Cannot prove whether the interrupted publish on ${attempt.branchName} landed from durable Git tree evidence. Manual review is required.`,
+              },
+              { status: 409 },
+            ),
+          }
+        }
+        const adopted = candidates[0]
+        const treeMatches = await verifyPublishAttemptCommitForPublish(
+          token,
+          owner,
+          repo,
+          attempt.expectedHeadSha,
+          adopted.sha,
+          attempt.operationDescriptors,
+        )
+        if (!treeMatches) {
+          return {
+            handled: true,
+            response: NextResponse.json(
+              {
+                ok: false,
+                error: `Cannot prove whether the interrupted publish on ${attempt.branchName} landed: its trailer matched but its Git tree did not. Manual review is required.`,
+              },
+              { status: 409 },
+            ),
+          }
         }
         commitSha = adopted.sha
         await convex.mutation(api.publishAttempts.recordCommit, { id: attempt._id, commitSha, ...auth })
@@ -1167,7 +1200,20 @@ async function recoverPublishAttempt({
           // someone reused the digest on a commit our CAS could not have
           // produced - unprovable, never adopted.
           if (details.parents.length === 1 && details.parents[0] === attempt.expectedHeadSha) {
-            commitSha = cursor
+            if (!attempt.operationDescriptors?.length) {
+              unprovableReason = "attempt predates durable Git operation descriptors"
+            } else {
+              const treeMatches = await verifyPublishAttemptCommitForPublish(
+                token,
+                owner,
+                repo,
+                attempt.expectedHeadSha,
+                cursor,
+                attempt.operationDescriptors,
+              )
+              if (treeMatches) commitSha = cursor
+              else unprovableReason = "attempt trailer matched but its Git tree did not"
+            }
           } else {
             unprovableReason = "attempt trailer found on a commit that is not the direct child of the expected head"
           }

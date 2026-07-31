@@ -439,6 +439,19 @@ export default defineSchema({
     branchName: v.string(),
     expectedHeadSha: v.string(),
     planDigest: v.string(),
+    operationDescriptors: v.optional(
+      v.array(
+        v.union(
+          v.object({ path: v.string(), action: v.literal("delete") }),
+          v.object({
+            path: v.string(),
+            action: v.union(v.literal("create"), v.literal("update")),
+            expectedBlobSha: v.string(),
+          }),
+        ),
+      ),
+    ),
+    // Compatibility projection for attempts created before exact descriptors.
     operationPaths: v.array(v.string()),
     opIds: v.array(v.id("explorerOps")),
     // Versioned media snapshot: identity + planned repoPath + planned

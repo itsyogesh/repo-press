@@ -40,9 +40,12 @@ import {
   createBranchFromSha,
   deleteBranchRef,
   findOpenPullRequestByHead,
+  GitHubReadError,
   getDedicatedBranchState,
   getTextFilesAtCommit,
+  inspectPublishEffectsAtCommit,
   verifyBatchCommitTree,
+  verifyPublishAttemptCommitForPublish,
 } from "../github"
 
 describe("batchCommit", () => {
@@ -468,6 +471,97 @@ describe("batchCommit", () => {
       ]),
     ).resolves.toBe(false)
     expect(treeGetter).not.toHaveBeenCalled()
+  })
+
+  it("verifies a publish candidate only when it is the exact direct-child tree delta", async () => {
+    const baseSha = "a".repeat(40)
+    const candidateSha = "b".repeat(40)
+    const existingSha = "c".repeat(40)
+    const expectedBlobSha = "d".repeat(40)
+    mockOctokit.git.getCommit.mockResolvedValue({
+      data: { message: "publish", parents: [{ sha: baseSha }], tree: { sha: "candidate-tree" } },
+    })
+    mockOctokit.git.getTree
+      .mockResolvedValueOnce({
+        data: {
+          truncated: false,
+          tree: [{ path: "existing.txt", type: "blob", mode: "100644", sha: existingSha }],
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          truncated: false,
+          tree: [
+            { path: "existing.txt", type: "blob", mode: "100644", sha: existingSha },
+            { path: "content/new.mdx", type: "blob", mode: "100644", sha: expectedBlobSha },
+          ],
+        },
+      })
+
+    await expect(
+      verifyPublishAttemptCommitForPublish("token", "owner", "repo", baseSha, candidateSha, [
+        { path: "content/new.mdx", action: "create", expectedBlobSha },
+      ]),
+    ).resolves.toBe(true)
+
+    mockOctokit.git.getCommit.mockResolvedValue({
+      data: { message: "publish", parents: [{ sha: "e".repeat(40) }], tree: { sha: "candidate-tree" } },
+    })
+    await expect(
+      verifyPublishAttemptCommitForPublish("token", "owner", "repo", baseSha, candidateSha, [
+        { path: "content/new.mdx", action: "create", expectedBlobSha },
+      ]),
+    ).resolves.toBe(false)
+  })
+
+  it("throws typed read errors for truncated or malformed publish trees", async () => {
+    const baseSha = "a".repeat(40)
+    const candidateSha = "b".repeat(40)
+    mockOctokit.git.getCommit.mockResolvedValue({
+      data: { message: "publish", parents: [{ sha: baseSha }], tree: { sha: "candidate-tree" } },
+    })
+    mockOctokit.git.getTree.mockResolvedValue({ data: { truncated: true, tree: [] } })
+
+    await expect(
+      verifyPublishAttemptCommitForPublish("token", "owner", "repo", baseSha, candidateSha, [
+        { path: "content/new.mdx", action: "create", expectedBlobSha: "d".repeat(40) },
+      ]),
+    ).rejects.toBeInstanceOf(GitHubReadError)
+
+    mockOctokit.git.getTree.mockResolvedValue({ data: { truncated: false, tree: [{ path: "bad", type: "blob" }] } })
+    await expect(
+      inspectPublishEffectsAtCommit("token", "owner", "repo", candidateSha, [
+        { path: "content/new.mdx", action: "create", expectedBlobSha: "d".repeat(40) },
+      ]),
+    ).rejects.toBeInstanceOf(GitHubReadError)
+  })
+
+  it("classifies each descriptor against the immutable final authority tree", async () => {
+    const authoritySha = "a".repeat(40)
+    mockOctokit.git.getTree.mockResolvedValue({
+      data: {
+        truncated: false,
+        tree: [
+          { path: "content/matching.mdx", type: "blob", mode: "100644", sha: "b".repeat(40) },
+          { path: "content/changed.mdx", type: "blob", mode: "100644", sha: "c".repeat(40) },
+          { path: "content/still-here.mdx", type: "blob", mode: "100644", sha: "d".repeat(40) },
+        ],
+      },
+    })
+
+    await expect(
+      inspectPublishEffectsAtCommit("token", "owner", "repo", authoritySha, [
+        { path: "content/matching.mdx", action: "update", expectedBlobSha: "b".repeat(40) },
+        { path: "content/changed.mdx", action: "update", expectedBlobSha: "e".repeat(40) },
+        { path: "content/deleted.mdx", action: "delete" },
+        { path: "content/still-here.mdx", action: "delete" },
+      ]),
+    ).resolves.toEqual([
+      { path: "content/matching.mdx", disposition: "finalize", finalBlobSha: "b".repeat(40) },
+      { path: "content/changed.mdx", disposition: "restore", finalBlobSha: "c".repeat(40) },
+      { path: "content/deleted.mdx", disposition: "finalize" },
+      { path: "content/still-here.mdx", disposition: "restore", finalBlobSha: "d".repeat(40) },
+    ])
   })
 })
 

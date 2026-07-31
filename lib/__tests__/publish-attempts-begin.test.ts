@@ -57,7 +57,7 @@ const baseArgs = {
   branchName: "repopress/start",
   expectedHeadSha: "a".repeat(40),
   planDigest: "d".repeat(64),
-  operationPaths: ["content/a.mdx"],
+  operationDescriptors: [{ path: "content/a.mdx", action: "update", expectedBlobSha: "b".repeat(40) }],
   opIds: [],
   mediaAssociations: [],
   documentAssociations: [],
@@ -87,7 +87,12 @@ describe("publishAttempts.begin transactional reference validation", () => {
     expect(result).toBe("attempt_1")
     expect(insert).toHaveBeenCalledWith(
       "publishAttempts",
-      expect.objectContaining({ status: "committing", planDigest: "d".repeat(64) }),
+      expect.objectContaining({
+        status: "committing",
+        planDigest: "d".repeat(64),
+        operationDescriptors: baseArgs.operationDescriptors,
+        operationPaths: ["content/a.mdx"],
+      }),
     )
   })
 
@@ -386,6 +391,37 @@ describe("publishAttempts.begin transactional reference validation", () => {
         projectAccessToken: await patToken(),
       }),
     ).rejects.toThrow(/staged operation bounds/i)
+
+    expect(insert).not.toHaveBeenCalled()
+  })
+
+  it("rejects duplicate, non-canonical, and malformed operation descriptors", async () => {
+    const insert = vi.fn()
+    const get = vi.fn().mockResolvedValue(project)
+    const invoke = (operationDescriptors: unknown[]) =>
+      (begin as any).handler(createCtx(get, insert), {
+        ...baseArgs,
+        operationDescriptors,
+        projectAccessToken: awaitToken,
+      })
+    const awaitToken = await patToken()
+
+    await expect(invoke([])).rejects.toThrow(/descriptor/i)
+    await expect(
+      invoke([
+        { path: "content/a.mdx", action: "create", expectedBlobSha: "a".repeat(40) },
+        { path: "content/a.mdx", action: "delete" },
+      ]),
+    ).rejects.toThrow(/duplicate/i)
+    await expect(
+      invoke([{ path: "content/./a.mdx", action: "create", expectedBlobSha: "a".repeat(40) }]),
+    ).rejects.toThrow(/path/i)
+    await expect(invoke([{ path: "content/a.mdx", action: "update", expectedBlobSha: "not-a-sha" }])).rejects.toThrow(
+      /blob SHA/i,
+    )
+    await expect(
+      invoke([{ path: "content/a.mdx", action: "delete", expectedBlobSha: "a".repeat(40) }]),
+    ).rejects.toThrow(/delete.*SHA/i)
 
     expect(insert).not.toHaveBeenCalled()
   })

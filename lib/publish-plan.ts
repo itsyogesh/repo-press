@@ -13,17 +13,22 @@ import { createHash } from "node:crypto"
 
 export const PUBLISH_ATTEMPT_TRAILER = "RepoPress-Publish-Attempt"
 
-export type PublishPlanOperation = {
+export type PublishOperationDescriptor =
+  | { path: string; action: "delete" }
+  | { path: string; action: "create" | "update"; expectedBlobSha: string }
+
+export type PublishOperationInput = {
   path: string
   action: "create" | "update" | "delete"
-  /** sha256 hex of the operation content; null for deletes / blob-backed ops */
-  contentDigest: string | null
+  content?: string
+  contentEncoding?: "utf-8" | "base64"
+  blobSha?: string
 }
 
 export type PublishPlan = {
   branchName: string
   expectedHeadSha: string
-  operations: PublishPlanOperation[]
+  operationDescriptors: PublishOperationDescriptor[]
   opIds: string[]
   mediaOpIds: string[]
   deleteAssociations: Array<{ opId: string; documentId: string; expectedUpdatedAt: number }>
@@ -33,16 +38,118 @@ export function sha256Hex(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex")
 }
 
+const GIT_BLOB_SHA = /^[0-9a-f]{40}$/u
+
+function assertCanonicalRepoPath(path: string): void {
+  if (
+    typeof path !== "string" ||
+    path.length === 0 ||
+    Buffer.byteLength(path, "utf8") > 4_096 ||
+    path !== path.normalize("NFC") ||
+    path.startsWith("/") ||
+    path.includes("\\") ||
+    path.split("/").some((segment) => segment === "" || segment === "." || segment === "..")
+  ) {
+    throw new TypeError("Publish operation path must be a canonical repository path")
+  }
+}
+
+function decodeOperationBytes(operation: PublishOperationInput): Buffer {
+  if (typeof operation.content !== "string") {
+    throw new TypeError("Publish write operation requires content or a blob SHA")
+  }
+  if (operation.contentEncoding !== "base64") return Buffer.from(operation.content, "utf8")
+  if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(operation.content)) {
+    throw new TypeError("Publish operation contains malformed base64")
+  }
+  const bytes = Buffer.from(operation.content, "base64")
+  if (bytes.toString("base64") !== operation.content) {
+    throw new TypeError("Publish operation contains non-canonical base64")
+  }
+  return bytes
+}
+
+export function gitBlobSha(bytes: Uint8Array): string {
+  const body = Buffer.from(bytes)
+  return createHash("sha1")
+    .update(Buffer.from(`blob ${body.byteLength}\0`, "utf8"))
+    .update(body)
+    .digest("hex")
+}
+
+export function validatePublishOperationDescriptors(
+  descriptors: readonly PublishOperationDescriptor[],
+): PublishOperationDescriptor[] {
+  if (!Array.isArray(descriptors) || descriptors.length === 0) {
+    throw new TypeError("Publish operation descriptors must be a non-empty array")
+  }
+  const paths = new Set<string>()
+  return descriptors.map((descriptor) => {
+    if (!descriptor || typeof descriptor !== "object" || Array.isArray(descriptor)) {
+      throw new TypeError("Publish operation descriptor must be an object")
+    }
+    assertCanonicalRepoPath(descriptor.path)
+    if (paths.has(descriptor.path)) throw new TypeError(`Duplicate publish operation path ${descriptor.path}`)
+    paths.add(descriptor.path)
+    if (descriptor.action === "delete") {
+      if (Object.hasOwn(descriptor, "expectedBlobSha")) {
+        throw new TypeError("Delete publish descriptor must not contain a blob SHA")
+      }
+      return { path: descriptor.path, action: "delete" }
+    }
+    if (descriptor.action !== "create" && descriptor.action !== "update") {
+      throw new TypeError("Invalid publish descriptor action")
+    }
+    if (!GIT_BLOB_SHA.test(descriptor.expectedBlobSha)) {
+      throw new TypeError("Publish descriptor blob SHA must be a 40-hex Git blob SHA")
+    }
+    return { path: descriptor.path, action: descriptor.action, expectedBlobSha: descriptor.expectedBlobSha }
+  })
+}
+
+/** Build immutable recovery descriptors from the exact bytes sent to Git. */
+export function buildPublishOperationDescriptors(
+  operations: readonly PublishOperationInput[],
+): PublishOperationDescriptor[] {
+  if (!Array.isArray(operations) || operations.length === 0) {
+    throw new TypeError("Publish operations must be a non-empty array")
+  }
+  const paths = new Set<string>()
+  const descriptors: PublishOperationDescriptor[] = operations.map((operation): PublishOperationDescriptor => {
+    assertCanonicalRepoPath(operation.path)
+    if (paths.has(operation.path)) throw new TypeError(`Duplicate publish operation path ${operation.path}`)
+    paths.add(operation.path)
+    if (operation.action === "delete") {
+      if (operation.content !== undefined || operation.blobSha !== undefined) {
+        throw new TypeError("Delete publish operation must not carry bytes or a blob SHA")
+      }
+      return { path: operation.path, action: "delete" }
+    }
+    if (operation.action !== "create" && operation.action !== "update") {
+      throw new TypeError("Invalid publish operation action")
+    }
+    if (operation.blobSha !== undefined) {
+      if (!GIT_BLOB_SHA.test(operation.blobSha)) {
+        throw new TypeError("Publish operation blob SHA must be a 40-hex Git blob SHA")
+      }
+      return { path: operation.path, action: operation.action, expectedBlobSha: operation.blobSha }
+    }
+    return {
+      path: operation.path,
+      action: operation.action,
+      expectedBlobSha: gitBlobSha(decodeOperationBytes(operation)),
+    }
+  })
+  return validatePublishOperationDescriptors(descriptors)
+}
+
 export function computePublishPlanDigest(plan: PublishPlan): string {
+  const operationDescriptors = validatePublishOperationDescriptors(plan.operationDescriptors)
   const canonical = {
     branchName: plan.branchName,
     expectedHeadSha: plan.expectedHeadSha,
-    operations: [...plan.operations]
-      .map((operation) => ({
-        path: operation.path,
-        action: operation.action,
-        contentDigest: operation.contentDigest,
-      }))
+    operationDescriptors: operationDescriptors
+      .map((operation) => ({ ...operation }))
       .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : a.action.localeCompare(b.action))),
     opIds: [...plan.opIds].sort(),
     mediaOpIds: [...plan.mediaOpIds].sort(),

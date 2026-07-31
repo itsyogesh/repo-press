@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  buildPublishOperationDescriptors,
   commitMessageCarriesAttempt,
   computePublishPlanDigest,
   formatPublishAttemptTrailer,
@@ -9,10 +10,10 @@ import {
 const basePlan: PublishPlan = {
   branchName: "repopress/hello",
   expectedHeadSha: "a".repeat(40),
-  operations: [
-    { path: "content/b.mdx", action: "update", contentDigest: "digest-b" },
-    { path: "content/a.mdx", action: "create", contentDigest: "digest-a" },
-    { path: "content/c.mdx", action: "delete", contentDigest: null },
+  operationDescriptors: [
+    { path: "content/b.mdx", action: "update", expectedBlobSha: "b".repeat(40) },
+    { path: "content/a.mdx", action: "create", expectedBlobSha: "a".repeat(40) },
+    { path: "content/c.mdx", action: "delete" },
   ],
   opIds: ["op_2", "op_1"],
   mediaOpIds: ["media_1"],
@@ -23,7 +24,7 @@ describe("computePublishPlanDigest", () => {
   it("is deterministic under array reordering", () => {
     const reordered: PublishPlan = {
       ...basePlan,
-      operations: [...basePlan.operations].reverse(),
+      operationDescriptors: [...basePlan.operationDescriptors].reverse(),
       opIds: [...basePlan.opIds].reverse(),
     }
     expect(computePublishPlanDigest(reordered)).toBe(computePublishPlanDigest(basePlan))
@@ -35,11 +36,11 @@ describe("computePublishPlanDigest", () => {
     )
   })
 
-  it("changes when an operation's content digest changes", () => {
+  it("changes when an operation's expected blob changes", () => {
     const changed: PublishPlan = {
       ...basePlan,
-      operations: basePlan.operations.map((operation) =>
-        operation.path === "content/a.mdx" ? { ...operation, contentDigest: "digest-a2" } : operation,
+      operationDescriptors: basePlan.operationDescriptors.map((operation) =>
+        operation.path === "content/a.mdx" ? { ...operation, expectedBlobSha: "c".repeat(40) } : operation,
       ),
     }
     expect(computePublishPlanDigest(changed)).not.toBe(computePublishPlanDigest(basePlan))
@@ -49,6 +50,60 @@ describe("computePublishPlanDigest", () => {
     expect(computePublishPlanDigest({ ...basePlan, branchName: "repopress/other" })).not.toBe(
       computePublishPlanDigest(basePlan),
     )
+  })
+
+  it("rejects malformed durable descriptors before hashing the plan", () => {
+    expect(() =>
+      computePublishPlanDigest({
+        ...basePlan,
+        operationDescriptors: [{ path: "content/a.mdx", action: "delete", expectedBlobSha: "a".repeat(40) } as never],
+      }),
+    ).toThrow(/delete.*SHA/i)
+    expect(() =>
+      computePublishPlanDigest({
+        ...basePlan,
+        operationDescriptors: [
+          { path: "content/a.mdx", action: "create", expectedBlobSha: "a".repeat(40) },
+          { path: "content/a.mdx", action: "update", expectedBlobSha: "b".repeat(40) },
+        ],
+      }),
+    ).toThrow(/duplicate/i)
+  })
+})
+
+describe("buildPublishOperationDescriptors", () => {
+  it("hashes the exact UTF-8 and decoded base64 bytes as Git blobs", () => {
+    expect(
+      buildPublishOperationDescriptors([
+        { path: "content/hello.mdx", action: "update", content: "hello\n", contentEncoding: "utf-8" },
+        { path: "public/logo.bin", action: "create", content: "AAEC/w==", contentEncoding: "base64" },
+        { path: "content/old.mdx", action: "delete" },
+      ]),
+    ).toEqual([
+      { path: "content/hello.mdx", action: "update", expectedBlobSha: "ce013625030ba8dba906f756967f9e9ca394464a" },
+      { path: "public/logo.bin", action: "create", expectedBlobSha: "f971a5e28b6c4cb237ca3c7349e33bb600dbc907" },
+      { path: "content/old.mdx", action: "delete" },
+    ])
+  })
+
+  it("uses an existing blob SHA without rehashing bytes", () => {
+    expect(
+      buildPublishOperationDescriptors([{ path: "public/logo.png", action: "update", blobSha: "f".repeat(40) }]),
+    ).toEqual([{ path: "public/logo.png", action: "update", expectedBlobSha: "f".repeat(40) }])
+  })
+
+  it("rejects non-canonical duplicate paths and malformed write bytes", () => {
+    expect(() =>
+      buildPublishOperationDescriptors([
+        { path: "content/Cafe\u0301.mdx", action: "create", content: "one" },
+        { path: "content/Café.mdx", action: "update", content: "two" },
+      ]),
+    ).toThrow(/canonical|duplicate/i)
+    expect(() =>
+      buildPublishOperationDescriptors([
+        { path: "public/logo.bin", action: "create", content: "not base64!", contentEncoding: "base64" },
+      ]),
+    ).toThrow(/base64/i)
   })
 })
 
