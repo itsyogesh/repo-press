@@ -35,11 +35,14 @@ The compatible sandbox is a browser-static rendering environment, not a Next.js,
 
 Product preview code imports platform capabilities from `@repopress/preview` instead of framework modules. The first capability surface is deliberately small:
 
-- `Link`: renders a safe anchor. Navigation is inert in Studio and cannot target the parent frame.
-- `Image`: renders a safe image after URL policy validation and records a media fidelity loss when exact framework optimization is unavailable.
-- `resolveAssetUrl`: resolves supported repository and media references without exposing credentials.
+- `PreviewBox`, `PreviewStack`, `PreviewInline`, `PreviewText`, and `PreviewList`: compose a bounded structural view from semantic variants rather than arbitrary CSS.
+- `PreviewAction`: renders an inert action label. It cannot navigate, submit, or target the parent frame.
+- `PreviewImage`: renders a labelled media placeholder and records media fidelity loss. The pilot preserves the sandbox's `img-src 'none'` network boundary.
+- `PreviewIcon`: renders one of a small allowlisted set of inert symbols.
 
 Production code remains free to use `next/link`, `next/image`, Astro assets, Remix links, or another framework. A product may share view code between production and preview by injecting its platform bindings, but RepoPress does not require a particular source layout.
+
+The pilot targets structural and authoring fidelity, not pixel equivalence. Product code chooses from frozen semantic options such as `tone`, `surface`, `spacing`, `align`, and `size`. RepoPress owns the rendering and CSS for those options; Merry owns how it composes them. Arbitrary product CSS, inline styles, remote images, and raw navigation remain outside this first capability version. This avoids a hidden framework or CSS-build dependency and leaves a clean path to a separately reviewed signed-style capability later.
 
 Fidelity labels retain their existing meanings:
 
@@ -100,10 +103,10 @@ Diagnostics identify the failing stage without returning repository source, cred
 
 ## Merry component contracts
 
-- `CoverImage`: `src` image/string and required `alt`; preview uses the safe Image capability and product-owned preset mapping.
+- `CoverImage`: `src` image/string and required `alt`; preview uses the media placeholder capability and product-owned preset labels.
 - `InfoBox`: `type` enum (`info`, `tip`, `warning`) plus required MDX children.
 - `Checklist`: required bounded list expression for `items`; rendered as a static semantic list.
-- `CTABox`: required `title`, `description`, `buttonText`, and `buttonHref`; preview Link is inert and visibly marked as a preview action.
+- `CTABox`: required `title`, `description`, `buttonText`, and `buttonHref`; preview action is inert and visibly marked as a preview action.
 - `LetterPaper`: optional `title`, `showStamp`, and `templateText` plus required MDX children; query construction is displayed but navigation remains inert.
 
 The existing source serialization remains import-free because Merry's production MDX map supplies these names.
@@ -155,5 +158,6 @@ The full RepoPress test, typecheck, lint, production-build, Convex-codegen, inde
 - Executing arbitrary production repository components in RepoPress.
 - Emulating complete Next.js, Astro, Remix, or server-component runtimes.
 - Network access, live application data, navigation, forms, or side effects in preview.
+- Arbitrary product CSS or remote media loading inside the compatible sandbox.
 - A public third-party marketplace or automatic approval of unknown component code.
 - Native-fidelity infrastructure.
