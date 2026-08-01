@@ -99,6 +99,7 @@ export async function POST(request: Request) {
           token,
           owner,
           repo,
+          serverQueryToken,
           actingUserId,
           projectAccessToken,
         })

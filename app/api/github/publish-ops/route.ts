@@ -113,6 +113,7 @@ export async function POST(request: Request) {
         repo,
         title,
         description,
+        serverQueryToken,
         actingUserId,
         projectAccessToken,
       })
@@ -1048,6 +1049,7 @@ export async function recoverPublishAttempt({
   repo,
   title,
   description,
+  serverQueryToken,
   actingUserId,
   projectAccessToken,
 }: {
@@ -1059,6 +1061,7 @@ export async function recoverPublishAttempt({
   repo: string
   title?: string
   description?: string
+  serverQueryToken: string
   actingUserId?: string
   projectAccessToken?: string
 }): Promise<{ handled: true; response: NextResponse } | { handled: false; stagedStateStale?: boolean }> {
@@ -1150,7 +1153,7 @@ export async function recoverPublishAttempt({
         id: attempt._id,
         authoritySha: mergeCommitSha,
         pathOutcomes,
-        arbitrateMergedPaths: true,
+        serverQueryToken,
         ...auth,
       })
       return {
@@ -1202,6 +1205,7 @@ export async function recoverPublishAttempt({
         path: descriptor.path,
         disposition: "restore" as const,
       })),
+      serverQueryToken,
       ...auth,
     })
     return {

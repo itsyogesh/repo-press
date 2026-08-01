@@ -5,11 +5,13 @@ import {
   gitRepositoryPathIdentity,
 } from "../lib/git-path-policy"
 import { resolveStoredRepoPath, type StoredPathRepresentation } from "../lib/preview/path-policy"
+import { verifyServerQueryToken } from "../lib/project-access-token"
 import { internal } from "./_generated/api"
 import { mutation, query } from "./_generated/server"
 import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
 import { assertPublishAttemptAssociationClosure } from "./lib/publishAttemptClosure"
 import { findActivePublishAttempt } from "./lib/publishAttemptGuard"
+import { assertCleanupAuthorityForLane } from "./lib/publishCleanupAuthority"
 
 const MAX_ATTEMPT_OPERATIONS = 500
 const SHA_PATTERN = /^[0-9a-f]{40}$/
@@ -385,7 +387,7 @@ export const resolveAndEnqueueCleanup = mutation({
     id: v.id("publishAttempts"),
     authoritySha: v.optional(v.string()),
     pathOutcomes: v.array(pathOutcomeValidator),
-    arbitrateMergedPaths: v.optional(v.boolean()),
+    serverQueryToken: v.string(),
     userId: v.optional(v.string()),
     projectAccessToken: v.optional(v.string()),
   },
@@ -397,16 +399,16 @@ export const resolveAndEnqueueCleanup = mutation({
       { projectId: attempt.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken },
       "editor",
     )
+    if (!(await verifyServerQueryToken(args.serverQueryToken))) {
+      throw new Error("Unauthorized: valid server proof is required for publish cleanup")
+    }
     const lane = await ctx.db.get(attempt.publishBranchId)
     if (!lane || lane.projectId !== attempt.projectId || lane.branchName !== attempt.branchName) {
       throw new Error("Publish cleanup lane does not match its attempt")
     }
-    if (lane.status !== "closed" && lane.status !== "merged") {
-      throw new Error("Publish cleanup requires a closed or merged lane")
-    }
+    const cleanupMode = assertCleanupAuthorityForLane(lane, args.authoritySha, args.pathOutcomes)
     const mergedWithoutRecordedCommit =
-      args.arbitrateMergedPaths === true &&
-      lane.status === "merged" &&
+      cleanupMode.kind === "merged" &&
       attempt.status === "committing" &&
       !attempt.commitSha &&
       lane.mergeCommitSha === args.authoritySha
@@ -462,16 +464,13 @@ export const resolveAndEnqueueCleanup = mutation({
     }
     assertPublishAttemptAssociationClosure(attempt)
 
+    const existing = await ctx.db
+      .query("publishAttemptCleanups")
+      .withIndex("by_attemptId", (q) => q.eq("attemptId", attempt._id))
+      .first()
     let normalizedOutcomes = [...args.pathOutcomes].sort((a, b) => a.path.localeCompare(b.path))
-    if (args.arbitrateMergedPaths) {
-      if (
-        lane.status !== "merged" ||
-        lane.mergeVerificationState !== "pending" ||
-        !args.authoritySha ||
-        lane.mergeCommitSha !== args.authoritySha
-      ) {
-        throw new Error("Merged path arbitration requires the lane's pending immutable merge authority")
-      }
+    if (cleanupMode.kind === "merged") {
+      const mergeAuthoritySha = cleanupMode.authoritySha
       const unresolved = await Promise.all(
         (["cleanup_pending", "committing", "committed", "reconciled"] as const).map((status) =>
           ctx.db
@@ -492,19 +491,19 @@ export const resolveAndEnqueueCleanup = mutation({
         const existingClaim = await ctx.db
           .query("publishLanePathResolutions")
           .withIndex("by_lane_authority_path", (q) =>
-            q.eq("laneId", lane._id).eq("authoritySha", args.authoritySha!).eq("repoPath", outcome.path),
+            q.eq("laneId", lane._id).eq("authoritySha", mergeAuthoritySha).eq("repoPath", outcome.path),
           )
           .first()
         if (existingClaim && existingClaim.claimedAttemptId !== attempt._id) {
           arbitrated.push({ path: outcome.path, disposition: "discard" })
           continue
         }
-        if (!existingClaim && outcome.disposition === "finalize") {
+        if (!existing && !existingClaim && outcome.disposition === "finalize") {
           const now = Date.now()
           await ctx.db.insert("publishLanePathResolutions", {
             projectId: attempt.projectId,
             laneId: lane._id,
-            authoritySha: args.authoritySha,
+            authoritySha: mergeAuthoritySha,
             repoPath: outcome.path,
             claimedAttemptId: attempt._id,
             createdAt: now,
@@ -516,10 +515,6 @@ export const resolveAndEnqueueCleanup = mutation({
       normalizedOutcomes = arbitrated
     }
     const requestedPlan = canonicalCleanupPlan(args.authoritySha, normalizedOutcomes)
-    const existing = await ctx.db
-      .query("publishAttemptCleanups")
-      .withIndex("by_attemptId", (q) => q.eq("attemptId", attempt._id))
-      .first()
     if (existing) {
       if (canonicalCleanupPlan(existing.authoritySha, existing.pathOutcomes) !== requestedPlan) {
         throw new Error("Conflicting cleanup plan already exists for this publish attempt")

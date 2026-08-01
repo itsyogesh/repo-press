@@ -22,6 +22,7 @@ import {
   resolveAndEnqueueCleanup,
   supersedeClosedPending,
 } from "@/convex/publishAttempts"
+import { mintServerQueryToken } from "@/lib/project-access-token"
 
 type Row = Record<string, any> & { _id: string }
 
@@ -38,6 +39,8 @@ const lane: Row = {
   branchName: "repopress/start",
   baseBranch: "main",
   status: "merged",
+  mergeCommitSha: "3".repeat(40),
+  mergeVerificationState: "pending",
 }
 const attempt: Row = {
   _id: "attempt_1",
@@ -74,6 +77,13 @@ const outcomes = [
   { path: "content/a.mdx", disposition: "finalize", finalBlobSha: "b".repeat(40) },
   { path: "public/pic.png", disposition: "restore" },
 ] as const
+
+let serverQueryToken: string
+
+beforeEach(async () => {
+  process.env.BETTER_AUTH_SECRET = "publish-cleanup-test-secret"
+  serverQueryToken = await mintServerQueryToken()
+})
 
 function createCtx(initialRows: Row[]) {
   const tables = new Map<string, Row[]>([
@@ -237,6 +247,7 @@ describe("publish attempt cleanup enqueue", () => {
       id: "attempt_1",
       authoritySha: "3".repeat(40),
       pathOutcomes: outcomes,
+      serverQueryToken,
       userId: "user_owner",
     })
 
@@ -286,7 +297,7 @@ describe("publish attempt cleanup enqueue", () => {
       id: "attempt_1",
       authoritySha: "3".repeat(40),
       pathOutcomes: [{ path: "content/a.mdx", disposition: "finalize", finalBlobSha: "b".repeat(40) }],
-      arbitrateMergedPaths: true,
+      serverQueryToken,
       userId: "user_owner",
     })
 
@@ -318,7 +329,7 @@ describe("publish attempt cleanup enqueue", () => {
         id: "attempt_1",
         authoritySha: "3".repeat(40),
         pathOutcomes: [{ path: "content/a.mdx", disposition: "finalize", finalBlobSha: "b".repeat(40) }],
-        arbitrateMergedPaths: true,
+        serverQueryToken,
         userId: "user_owner",
       }),
     ).resolves.toEqual({ cleanupId: "cleanup_1", reused: false })
@@ -395,6 +406,7 @@ describe("publish attempt cleanup enqueue", () => {
         id: "attempt_1",
         authoritySha: "3".repeat(40),
         pathOutcomes: outcomes,
+        serverQueryToken,
         userId: "user_owner",
       }),
     ).resolves.toEqual({ cleanupId: "cleanup_1", reused: true })
@@ -406,6 +418,7 @@ describe("publish attempt cleanup enqueue", () => {
         id: "attempt_1",
         authoritySha: "3".repeat(40),
         pathOutcomes: [{ path: outcomes[0].path, disposition: "restore" }, outcomes[1]],
+        serverQueryToken,
         userId: "user_owner",
       }),
     ).rejects.toThrow(/conflicting cleanup plan/i)
@@ -417,6 +430,7 @@ describe("publish attempt cleanup enqueue", () => {
       (resolveAndEnqueueCleanup as any).handler(ctx, {
         id: "attempt_1",
         pathOutcomes: outcomes,
+        serverQueryToken,
         userId: "user_owner",
       }),
     ).rejects.toThrow(/authority/i)
@@ -425,6 +439,7 @@ describe("publish attempt cleanup enqueue", () => {
         id: "attempt_1",
         authoritySha: "3".repeat(40),
         pathOutcomes: [...outcomes, { path: "content/not-in-plan.mdx", disposition: "restore" }],
+        serverQueryToken,
         userId: "user_owner",
       }),
     ).rejects.toThrow(/exactly match/i)
@@ -441,6 +456,7 @@ describe("publish attempt cleanup enqueue", () => {
           { path: "content/a.mdx", disposition: "finalize" },
           { path: "public/pic.png", disposition: "restore" },
         ],
+        serverQueryToken,
         userId: "user_owner",
       }),
     ).rejects.toThrow(/finalized write.*blob/i)
@@ -469,10 +485,65 @@ describe("publish attempt cleanup enqueue", () => {
         id: "attempt_1",
         authoritySha: "3".repeat(40),
         pathOutcomes: outcomes,
+        serverQueryToken,
         userId: "user_owner",
       }),
     ).rejects.toThrow(/association.*descriptor/i)
     expect(ctx.db.insert).not.toHaveBeenCalled()
+  })
+
+  it("rejects editor-authorized cleanup enqueue without server proof", async () => {
+    const ctx = createCtx([{ ...project }, { ...lane }, { ...attempt }])
+
+    await expect(
+      (resolveAndEnqueueCleanup as any).handler(ctx, {
+        id: "attempt_1",
+        authoritySha: "3".repeat(40),
+        pathOutcomes: outcomes,
+        userId: "user_owner",
+      }),
+    ).rejects.toThrow(/server/i)
+
+    expect(ctx.db.insert).not.toHaveBeenCalled()
+    expect(ctx.db.patch).not.toHaveBeenCalled()
+    expect(ctx.scheduler.runAfter).not.toHaveBeenCalled()
+  })
+
+  it("derives merged authority from the lane even when the old arbitration flag is false or omitted", async () => {
+    const restoreOnly = outcomes.map(({ path }) => ({ path, disposition: "restore" as const }))
+
+    for (const oldFlag of [false, undefined]) {
+      const ctx = createCtx([{ ...project }, { ...lane }, { ...attempt }])
+      await expect(
+        (resolveAndEnqueueCleanup as any).handler(ctx, {
+          id: "attempt_1",
+          authoritySha: oldFlag === false ? undefined : "4".repeat(40),
+          pathOutcomes: restoreOnly,
+          ...(oldFlag === undefined ? {} : { arbitrateMergedPaths: oldFlag }),
+          serverQueryToken,
+          userId: "user_owner",
+        }),
+      ).rejects.toThrow(/merge authority/i)
+      expect(ctx.db.insert).not.toHaveBeenCalled()
+      expect(ctx.db.patch).not.toHaveBeenCalled()
+    }
+  })
+
+  it("rejects finalize or discard cleanup plans for a closed lane", async () => {
+    const ctx = createCtx([{ ...project }, { ...lane, status: "closed" }, { ...attempt }])
+
+    await expect(
+      (resolveAndEnqueueCleanup as any).handler(ctx, {
+        id: "attempt_1",
+        authoritySha: "3".repeat(40),
+        pathOutcomes: outcomes,
+        serverQueryToken,
+        userId: "user_owner",
+      }),
+    ).rejects.toThrow(/closed.*restore/i)
+
+    expect(ctx.db.insert).not.toHaveBeenCalled()
+    expect(ctx.db.patch).not.toHaveBeenCalled()
   })
 })
 
@@ -480,6 +551,65 @@ describe("bounded attempt-scoped cleanup continuation", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     safeGetAuthUserMock.mockResolvedValue({ _id: "user_owner" })
+  })
+
+  it("rejects stale merged authority before explorer cleanup mutates or advances", async () => {
+    const staleCleanup = cleanupRow({ authoritySha: "4".repeat(40), phase: "explorer" })
+    const cleanupAttempt = { ...attempt, status: "cleanup_pending", cleanupId: "cleanup_1" }
+    const ctx = createCtx([
+      { ...project },
+      { ...lane },
+      cleanupAttempt,
+      staleCleanup,
+      {
+        _id: "op_1",
+        projectId: "project_1",
+        repoPath: "content/a.mdx",
+        status: "committed",
+        publishBranchId: "lane_1",
+        publishAttemptId: "attempt_1",
+        commitSha: "1".repeat(40),
+        updatedAt: 10,
+      },
+    ])
+
+    await expect((continueCleanup as any).handler(ctx, { cleanupId: "cleanup_1" })).rejects.toThrow(/merge authority/i)
+
+    expect(ctx.db.delete).not.toHaveBeenCalled()
+    expect(ctx.db.patch).not.toHaveBeenCalled()
+    expect(ctx.storage.delete).not.toHaveBeenCalled()
+    expect(ctx.scheduler.runAfter).not.toHaveBeenCalled()
+    expect(staleCleanup.cursor).toBe(0)
+  })
+
+  it("rejects a corrupt closed finalize plan before media or storage mutation", async () => {
+    const corruptCleanup = cleanupRow({ phase: "media", authoritySha: undefined })
+    const cleanupAttempt = { ...attempt, status: "cleanup_pending", cleanupId: "cleanup_1" }
+    const ctx = createCtx([
+      { ...project },
+      { ...lane, status: "closed" },
+      cleanupAttempt,
+      corruptCleanup,
+      {
+        _id: "media_1",
+        projectId: "project_1",
+        repoPath: "public/pic.png",
+        status: "committed",
+        publishBranchId: "lane_1",
+        publishAttemptId: "attempt_1",
+        commitSha: "1".repeat(40),
+        convexStorageId: "storage_1",
+        updatedAt: 10,
+      },
+    ])
+
+    await expect((continueCleanup as any).handler(ctx, { cleanupId: "cleanup_1" })).rejects.toThrow(/closed.*restore/i)
+
+    expect(ctx.db.delete).not.toHaveBeenCalled()
+    expect(ctx.db.patch).not.toHaveBeenCalled()
+    expect(ctx.storage.delete).not.toHaveBeenCalled()
+    expect(ctx.scheduler.runAfter).not.toHaveBeenCalled()
+    expect(corruptCleanup.cursor).toBe(0)
   })
 
   it("finalizes exact pending associations for a merged committing attempt without fabricating its commit SHA", async () => {
@@ -705,6 +835,7 @@ describe("bounded attempt-scoped cleanup continuation", () => {
 
     Object.assign(cleanup, { phase: "documents", cursor: 0, status: "pending" })
     Object.assign(cleanupAttempt, { status: "cleanup_pending" })
+    Object.assign(ctx._tables.get("publishBranches")[0], { mergeVerificationState: "pending" })
     ctx.db.patch.mockClear()
     await (continueCleanup as any).handler(ctx, { cleanupId: "cleanup_1" })
 

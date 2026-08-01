@@ -2636,7 +2636,7 @@ describe("POST /api/github/publish-ops", () => {
         expect.objectContaining({
           id: "attempt_1",
           authoritySha: "a".repeat(40),
-          arbitrateMergedPaths: true,
+          serverQueryToken: expect.any(String),
           pathOutcomes: [{ path: "content/posts/old.mdx", disposition: "finalize" }],
         }),
       ])
@@ -2700,7 +2700,7 @@ describe("POST /api/github/publish-ops", () => {
       expect(payload.cleanupPending).toBe(true)
       expect(convexMutationMock).toHaveBeenCalledWith(
         expect.anything(),
-        expect.objectContaining({ id: "attempt_1", arbitrateMergedPaths: true }),
+        expect.objectContaining({ id: "attempt_1", serverQueryToken: expect.any(String) }),
       )
       expect(batchCommitPublishLaneAtExpectedHead).not.toHaveBeenCalled()
     })
@@ -2807,7 +2807,7 @@ describe("POST /api/github/publish-ops", () => {
       expect(payload.error).toMatch(/truncated tree/i)
       expect(convexMutationMock).not.toHaveBeenCalledWith(
         expect.anything(),
-        expect.objectContaining({ id: "attempt_1", arbitrateMergedPaths: true }),
+        expect.objectContaining({ id: "attempt_1" }),
       )
     })
 
@@ -2837,6 +2837,7 @@ describe("POST /api/github/publish-ops", () => {
       expect(attemptCalls).toEqual([
         expect.objectContaining({
           id: "attempt_1",
+          serverQueryToken: expect.any(String),
           pathOutcomes: [{ path: "content/posts/old.mdx", disposition: "restore" }],
         }),
       ])

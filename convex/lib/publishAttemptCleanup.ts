@@ -5,6 +5,7 @@ import type { Doc, Id } from "../_generated/dataModel"
 import type { MutationCtx } from "../_generated/server"
 import { deleteOwnedMediaStorageOrKeepTombstone } from "./mediaTombstone"
 import { assertPublishAttemptOutcomeClosure } from "./publishAttemptClosure"
+import { assertCleanupAuthorityForLane } from "./publishCleanupAuthority"
 
 export const CLEANUP_BATCH_SIZE = 25
 
@@ -405,6 +406,7 @@ export async function processPublishAttemptCleanupBatch(ctx: CleanupCtx, cleanup
   ) {
     throw new Error("Publish cleanup references no longer match its attempt and lane")
   }
+  assertCleanupAuthorityForLane(lane, cleanup.authoritySha, cleanup.pathOutcomes)
 
   const outcomeByPath = new Map(cleanup.pathOutcomes.map((outcome) => [outcome.path, outcome]))
   assertPublishAttemptOutcomeClosure(attempt, new Set(outcomeByPath.keys()))
