@@ -79,6 +79,40 @@ export const getActiveForProject = query({
 })
 
 /**
+ * Newest attempt that still owns synchronization state on one verified
+ * closed lane. Reused lanes can contain several reconciled publishes, so
+ * lifecycle sync drains these one at a time in reverse creation order.
+ */
+export const getNewestUnresolvedForLane = query({
+  args: {
+    projectId: v.id("projects"),
+    laneId: v.id("publishBranches"),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const access = await resolveProjectReader(ctx, args)
+    if (!access) return null
+    const lane = await ctx.db.get(args.laneId)
+    if (!lane || lane.projectId !== args.projectId || lane.status !== "closed") return null
+    const candidates = await Promise.all(
+      (["cleanup_pending", "committing", "committed", "reconciled"] as const).map((status) =>
+        ctx.db
+          .query("publishAttempts")
+          .withIndex("by_publishBranchId_status", (q) => q.eq("publishBranchId", lane._id).eq("status", status))
+          .order("desc")
+          .first(),
+      ),
+    )
+    return (
+      candidates
+        .filter((candidate): candidate is NonNullable<typeof candidate> => Boolean(candidate))
+        .sort((a, b) => b.createdAt - a.createdAt)[0] ?? null
+    )
+  },
+})
+
+/**
  * Record a publish attempt just before the CAS commit. Refuses while another
  * attempt is still active - the route must recover or supersede it first.
  */

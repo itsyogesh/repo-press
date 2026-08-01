@@ -17,9 +17,10 @@ type LaneCleanupCtx = Pick<MutationCtx, "db" | "storage" | "scheduler">
 
 /**
  * Finalize a MERGED publish lane: its commits reached the base branch, so
- * the lane's committed explorer/media ops are spent (rows deleted, staged
- * media bytes released) and the documents whose committed paths merged are
- * published.
+ * legacy committed explorer/media ops are spent (rows deleted, staged media
+ * bytes released). Documents are eligible only when they carry explicit
+ * pre-attempt provenance for this lane; lane-wide paths are never document
+ * authority.
  *
  * This is the ONE merge-finalization implementation, reached only after
  * server-verified GitHub authority has been persisted. Webhook delivery,
@@ -93,79 +94,57 @@ export async function finalizeMergedLaneSync(
     await ctx.db.delete(op._id)
   }
 
-  const done = committedOpsBatch.length < LANE_CLEANUP_BATCH && committedMediaBatch.length < LANE_CLEANUP_BATCH
-  if (!done) {
+  const legacyRowsDone =
+    committedOpsBatch.length < LANE_CLEANUP_BATCH && committedMediaBatch.length < LANE_CLEANUP_BATCH
+  if (!legacyRowsDone) {
     await scheduleLaneCleanupContinuation(ctx, branch, "finalize_legacy")
-    return { deferred: false, done, clearedOpIds, clearedMediaOpIds, publishedDocumentIds }
+    return { deferred: false, done: false, clearedOpIds, clearedMediaOpIds, publishedDocumentIds }
   }
 
-  // ── Final pass: publish the documents whose committed paths merged ──
-  // committedFilePaths are full repo paths (with contentRoot prefix), but
-  // document filePaths are relative to contentRoot - strip the prefix when
-  // matching. Skipped entirely when nothing was recorded (safe default).
-  const committedPaths = branch.committedFilePaths
-  if (committedPaths && committedPaths.length > 0) {
-    const project = await ctx.db.get(branch.projectId)
-    const contentRoot = project?.contentRoot ?? ""
-    const committedRelativePaths = new Set(
-      committedPaths.map((p) => {
-        if (contentRoot && p.startsWith(`${contentRoot}/`)) {
-          return p.slice(contentRoot.length + 1)
-        }
-        if (contentRoot && p.startsWith(contentRoot)) {
-          return p.slice(contentRoot.length)
-        }
-        return p
-      }),
-    )
-
-    const collectStatus = (status: "draft" | "approved" | "in_review" | "scheduled") =>
+  // ── Final pass: publish only explicitly-owned legacy snapshots ──
+  // Modern provenance always carries publishAttemptId and is reconciled only
+  // by immutable-tree attempt cleanup. The compound index excludes it before
+  // mutation, so a lane path can never publish a newer/modern document.
+  const statuses = ["draft", "approved", "in_review", "scheduled"] as const
+  const legacyDocumentBatches = await Promise.all(
+    statuses.map((status) =>
       ctx.db
         .query("documents")
-        .withIndex("by_projectId_status", (q) => q.eq("projectId", branch.projectId).eq("status", status))
-        .take(LANE_CLEANUP_BATCH)
-
-    const draftDocs = await collectStatus("draft")
-    const approvedDocs = await collectStatus("approved")
-    const reviewDocs = await collectStatus("in_review")
-    const scheduledDocs = await collectStatus("scheduled")
-    const publishableDocs = [...draftDocs, ...approvedDocs].filter(
-      (d) => d.body != null && committedRelativePaths.has(d.filePath),
-    )
-    // Docs in non-publishable states pass through draft first.
-    const otherDocs = [...reviewDocs, ...scheduledDocs].filter(
-      (d) => d.body != null && committedRelativePaths.has(d.filePath),
-    )
-
-    for (const doc of publishableDocs) {
-      if (doc.status === "published") continue
-      // Do NOT set githubSha here - the merge commit SHA is a git commit
-      // SHA, not a blob SHA. The correct blob SHAs were already stored by
-      // the publish-ops route before the PR was created.
-      await ctx.db.patch(doc._id, {
-        status: "published",
-        lastSyncedAt: now,
-        publishedAt: now,
-        updatedAt: now,
-      })
-      publishedDocumentIds.push(doc._id)
+        .withIndex("by_publishedProvenance_lane_attempt_status", (q) =>
+          q
+            .eq("publishedProvenance.publishBranchId", branch._id)
+            .eq("publishedProvenance.publishAttemptId", undefined)
+            .eq("status", status),
+        )
+        .take(LANE_CLEANUP_BATCH),
+    ),
+  )
+  for (const doc of legacyDocumentBatches.flat()) {
+    const provenance = doc.publishedProvenance
+    if (!provenance || provenance.publishAttemptId !== undefined || provenance.publishBranchId !== branch._id) continue
+    const unchanged =
+      provenance.publishedContentVersion !== undefined
+        ? provenance.publishedContentVersion === (doc.contentVersion ?? 0)
+        : provenance.publishedUpdatedAt === doc.updatedAt
+    if (!unchanged || doc.body == null) {
+      // The recorded legacy snapshot no longer represents current content.
+      // Drop only stale synchronization provenance; preserve the edit and its
+      // workflow status for a future publish.
+      await ctx.db.patch(doc._id, { publishedProvenance: undefined })
+      continue
     }
-    for (const doc of otherDocs) {
-      if (doc.status === "published") continue
-      await ctx.db.patch(doc._id, { status: "draft", updatedAt: now })
-      await ctx.db.patch(doc._id, {
-        status: "published",
-        lastSyncedAt: now,
-        publishedAt: now,
-        updatedAt: now,
-      })
-      publishedDocumentIds.push(doc._id)
-    }
-
-    if ([draftDocs, approvedDocs, reviewDocs, scheduledDocs].some((rows) => rows.length === LANE_CLEANUP_BATCH)) {
-      await scheduleLaneCleanupContinuation(ctx, branch, "finalize_legacy")
-      return { deferred: false, done: false, clearedOpIds, clearedMediaOpIds, publishedDocumentIds }
-    }
+    // Do not bump content updatedAt: timestamp-based legacy provenance uses
+    // that value as its immutable snapshot identity.
+    await ctx.db.patch(doc._id, {
+      status: "published",
+      lastSyncedAt: now,
+      publishedAt: now,
+    })
+    publishedDocumentIds.push(doc._id)
+  }
+  if (legacyDocumentBatches.some((rows) => rows.length === LANE_CLEANUP_BATCH)) {
+    await scheduleLaneCleanupContinuation(ctx, branch, "finalize_legacy")
+    return { deferred: false, done: false, clearedOpIds, clearedMediaOpIds, publishedDocumentIds }
   }
 
   if (branch.laneInvalidationPending) {
@@ -176,5 +155,5 @@ export async function finalizeMergedLaneSync(
     })
   }
 
-  return { deferred: false, done, clearedOpIds, clearedMediaOpIds, publishedDocumentIds }
+  return { deferred: false, done: true, clearedOpIds, clearedMediaOpIds, publishedDocumentIds }
 }

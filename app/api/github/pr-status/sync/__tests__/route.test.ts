@@ -123,6 +123,68 @@ describe("POST /api/github/pr-status/sync", () => {
     await expect(response.json()).resolves.toEqual(expect.objectContaining({ verificationPending: true }))
   })
 
+  it("restores a normal reconciled attempt when its exact lane closes unmerged with no pending editor work", async () => {
+    mockPr({ state: "closed", merged: false, merge_commit_sha: null })
+    const attempt = {
+      _id: "attempt_reconciled",
+      projectId: "project_1",
+      publishBranchId: "lane_1",
+      status: "reconciled",
+    }
+    convexQueryMock.mockReset().mockResolvedValueOnce(project).mockResolvedValueOnce(attempt)
+    convexMutationMock.mockResolvedValue({ state: "closed", verificationPending: true })
+    recoverMock.mockResolvedValue({
+      handled: true,
+      response: Response.json({ ok: true, cleanupPending: true }),
+    })
+
+    const response = await POST(request(command))
+
+    expect(response.status).toBe(200)
+    expect(recoverMock).toHaveBeenCalledWith(
+      expect.objectContaining({ attempt, projectId: "project_1", token: "gh-token", owner: "acme", repo: "docs" }),
+    )
+    await expect(response.json()).resolves.toEqual(
+      expect.objectContaining({ merged: false, verificationPending: true }),
+    )
+  })
+
+  it("keeps retrying a reused closed lane until multiple attempts drain newest-first", async () => {
+    mockPr({ state: "closed", merged: false, merge_commit_sha: null })
+    const newer = {
+      _id: "attempt_newer",
+      projectId: "project_1",
+      publishBranchId: "lane_1",
+      status: "reconciled",
+    }
+    const older = {
+      _id: "attempt_older",
+      projectId: "project_1",
+      publishBranchId: "lane_1",
+      status: "committed",
+    }
+    convexQueryMock
+      .mockReset()
+      .mockResolvedValueOnce(project)
+      .mockResolvedValueOnce(newer)
+      .mockResolvedValueOnce(project)
+      .mockResolvedValueOnce(older)
+    convexMutationMock.mockResolvedValue({ state: "closed", verificationPending: true })
+    recoverMock.mockResolvedValue({
+      handled: true,
+      response: Response.json({ ok: true, cleanupPending: true }),
+    })
+
+    const first = await POST(request(command))
+    const second = await POST(request(command))
+
+    expect(first.status).toBe(200)
+    expect(second.status).toBe(200)
+    expect(recoverMock.mock.calls.map(([args]) => args.attempt._id)).toEqual(["attempt_newer", "attempt_older"])
+    await expect(first.json()).resolves.toEqual(expect.objectContaining({ verificationPending: true }))
+    await expect(second.json()).resolves.toEqual(expect.objectContaining({ verificationPending: true }))
+  })
+
   it("rejects base or head identity mismatch without recording lifecycle state", async () => {
     mockPr({ base: { ref: "release", repo: { full_name: "acme/docs" } } })
 

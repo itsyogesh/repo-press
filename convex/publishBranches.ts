@@ -5,7 +5,7 @@ import { internalMutation, mutation, query } from "./_generated/server"
 import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
 import { invalidateClosedLaneSync } from "./lib/laneInvalidation"
 import { finalizeMergedLaneSync } from "./lib/laneMerge"
-import { completeMergeVerificationIfIdle } from "./lib/publishAttemptCleanup"
+import { completeCloseVerificationIfIdle, completeMergeVerificationIfIdle } from "./lib/publishAttemptCleanup"
 
 async function getCurrentBranchForProject(
   ctx: QueryCtx,
@@ -41,9 +41,10 @@ export const getCurrentForProject = query({
 })
 
 /**
- * Lane whose GitHub PR status should be synchronized. Unlike the reusable
- * current-lane query, this can return a legacy merged lane missing its
- * immutable merge authority so the authenticated fallback can backfill it.
+ * Lane whose GitHub PR status should be synchronized. Unfinished verified
+ * merge/close cleanup takes priority over open lanes so React reactivity
+ * cannot cancel the retry loop; a legacy merged lane missing immutable
+ * authority is also returned for authenticated backfill.
  */
 export const getStatusSyncCandidateForProject = query({
   args: {
@@ -54,6 +55,29 @@ export const getStatusSyncCandidateForProject = query({
   handler: async (ctx, args) => {
     const access = await resolveProjectReader(ctx, args)
     if (!access) return null
+    const [pendingMerged, pendingClosed] = await Promise.all([
+      ctx.db
+        .query("publishBranches")
+        .withIndex("by_projectId_mergeVerificationState", (q) =>
+          q.eq("projectId", args.projectId).eq("mergeVerificationState", "pending"),
+        )
+        .order("desc")
+        .first(),
+      ctx.db
+        .query("publishBranches")
+        .withIndex("by_projectId_closeVerificationState", (q) =>
+          q.eq("projectId", args.projectId).eq("closeVerificationState", "pending"),
+        )
+        .order("desc")
+        .first(),
+    ])
+    const pendingLifecycle = [
+      pendingMerged?.status === "merged" ? pendingMerged : null,
+      pendingClosed?.status === "closed" ? pendingClosed : null,
+    ]
+      .filter((lane): lane is NonNullable<typeof lane> => Boolean(lane?.prNumber))
+      .sort((a, b) => b.updatedAt - a.updatedAt)[0]
+    if (pendingLifecycle) return pendingLifecycle
     for (const status of ["active", "inactive"] as const) {
       const lane = await ctx.db
         .query("publishBranches")
@@ -244,9 +268,12 @@ export const finishLaneCleanup = internalMutation({
       throw new Error("Lane cleanup only applies to closed or merged publish lanes")
     }
     if (!publishBranch.laneCleanupAction) throw new Error("Legacy lane cleanup requires a persisted action")
-    return publishBranch.laneCleanupAction === "restore_legacy"
-      ? await invalidateClosedLaneSync(ctx, publishBranch)
-      : await finalizeMergedLaneSync(ctx, publishBranch)
+    const result =
+      publishBranch.laneCleanupAction === "restore_legacy"
+        ? await invalidateClosedLaneSync(ctx, publishBranch)
+        : await finalizeMergedLaneSync(ctx, publishBranch)
+    if (publishBranch.status === "closed") await completeCloseVerificationIfIdle(ctx, publishBranch._id)
+    return result
   },
 })
 
@@ -263,6 +290,7 @@ export const continueLaneCleanup = internalMutation({
     if (!publishBranch) return
     if (publishBranch.laneCleanupAction === "restore_legacy") {
       await invalidateClosedLaneSync(ctx, publishBranch)
+      await completeCloseVerificationIfIdle(ctx, publishBranch._id)
     } else if (publishBranch.laneCleanupAction === "finalize_legacy") {
       await finalizeMergedLaneSync(ctx, publishBranch)
       await completeMergeVerificationIfIdle(ctx, publishBranch._id)

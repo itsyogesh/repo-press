@@ -4,6 +4,7 @@ import type { Doc, Id } from "./_generated/dataModel"
 import type { MutationCtx } from "./_generated/server"
 import { mutation } from "./_generated/server"
 import { invalidateClosedLaneSync } from "./lib/laneInvalidation"
+import { completeCloseVerificationIfIdle } from "./lib/publishAttemptCleanup"
 import { recordMergedLaneAuthority } from "./lib/publishBranchMerge"
 
 const identityValidators = {
@@ -81,9 +82,12 @@ async function closeLane(ctx: MutationCtx, lane: Doc<"publishBranches">, identit
     repoName: project.repoName,
     laneInvalidationPending: true,
     laneCleanupAction: "restore_legacy",
+    closeVerificationState: "pending" as const,
     updatedAt: Date.now(),
   })
-  return await invalidateClosedLaneSync(ctx, closedLane)
+  const cleanup = await invalidateClosedLaneSync(ctx, closedLane)
+  const complete = await completeCloseVerificationIfIdle(ctx, lane._id)
+  return { cleanup, verificationPending: !complete }
 }
 
 /** Signed GitHub webhook merge path, scoped by complete PR identity. */
@@ -136,7 +140,7 @@ export const recordVerifiedPullRequestState = mutation({
       if (!args.mergeCommitSha) throw new Error("Merged pull request is missing its commit authority")
       return await recordMergedLaneAuthority(ctx, lane, { ...args, mergeCommitSha: args.mergeCommitSha })
     }
-    await closeLane(ctx, lane, args)
-    return { state: "closed" as const }
+    const closed = await closeLane(ctx, lane, args)
+    return { state: "closed" as const, verificationPending: closed.verificationPending }
   },
 })

@@ -16,7 +16,12 @@ vi.mock("@/convex/auth", () => ({
 
 import { CLEANUP_BATCH_SIZE } from "@/convex/lib/publishAttemptCleanup"
 import { continueCleanup } from "@/convex/publishAttemptCleanups"
-import { getActiveForProject, resolveAndEnqueueCleanup, supersedeClosedPending } from "@/convex/publishAttempts"
+import {
+  getActiveForProject,
+  getNewestUnresolvedForLane,
+  resolveAndEnqueueCleanup,
+  supersedeClosedPending,
+} from "@/convex/publishAttempts"
 
 type Row = Record<string, any> & { _id: string }
 
@@ -185,6 +190,40 @@ describe("publish attempt cleanup enqueue", () => {
 
     const selected = await (getActiveForProject as any).handler(ctx, {
       projectId: "project_1",
+      userId: "user_owner",
+    })
+
+    expect(selected?._id).toBe("attempt_2")
+  })
+
+  it("selects unresolved closed-lane attempts newest-first for the exact lane", async () => {
+    const olderCommitted = { ...attempt, status: "committed", createdAt: 1, updatedAt: 1 }
+    const newerReconciled = {
+      ...attempt,
+      _id: "attempt_2",
+      status: "reconciled",
+      createdAt: 2,
+      updatedAt: 2,
+    }
+    const otherLaneAttempt = {
+      ...attempt,
+      _id: "attempt_other",
+      publishBranchId: "lane_other",
+      status: "reconciled",
+      createdAt: 3,
+      updatedAt: 3,
+    }
+    const ctx = createCtx([
+      { ...project },
+      { ...lane, status: "closed" },
+      olderCommitted,
+      newerReconciled,
+      otherLaneAttempt,
+    ])
+
+    const selected = await (getNewestUnresolvedForLane as any).handler(ctx, {
+      projectId: "project_1",
+      laneId: "lane_1",
       userId: "user_owner",
     })
 
@@ -534,6 +573,69 @@ describe("bounded attempt-scoped cleanup continuation", () => {
     expect(ctx.db.patch).not.toHaveBeenCalledWith(
       "lane_1",
       expect.objectContaining({ mergeVerificationState: "complete" }),
+    )
+  })
+
+  it("completes closed-lane verification after the final attempt-scoped restore cleanup", async () => {
+    const ctx = createCtx([
+      { ...project },
+      {
+        ...lane,
+        status: "closed",
+        closeVerificationState: "pending",
+      },
+      {
+        ...attempt,
+        status: "cleanup_pending",
+        cleanupId: "cleanup_1",
+        explorerAssociations: [],
+        mediaAssociations: [],
+        documentAssociations: [],
+        operationDescriptors: [],
+        operationPaths: [],
+      },
+      cleanupRow({ phase: "documents", cursor: 0, pathOutcomes: [], authoritySha: undefined }),
+    ])
+
+    await (continueCleanup as any).handler(ctx, { cleanupId: "cleanup_1" })
+
+    expect(ctx.db.patch).toHaveBeenCalledWith("attempt_1", expect.objectContaining({ status: "cleaned" }))
+    expect(ctx.db.patch).toHaveBeenCalledWith("lane_1", expect.objectContaining({ closeVerificationState: "complete" }))
+  })
+
+  it("does not complete closed-lane verification while an older reused-lane attempt remains", async () => {
+    const ctx = createCtx([
+      { ...project },
+      {
+        ...lane,
+        status: "closed",
+        closeVerificationState: "pending",
+      },
+      {
+        ...attempt,
+        status: "cleanup_pending",
+        cleanupId: "cleanup_1",
+        explorerAssociations: [],
+        mediaAssociations: [],
+        documentAssociations: [],
+        operationDescriptors: [],
+        operationPaths: [],
+        createdAt: 2,
+      },
+      {
+        ...attempt,
+        _id: "attempt_older",
+        status: "reconciled",
+        createdAt: 1,
+      },
+      cleanupRow({ phase: "documents", cursor: 0, pathOutcomes: [], authoritySha: undefined }),
+    ])
+
+    await (continueCleanup as any).handler(ctx, { cleanupId: "cleanup_1" })
+
+    expect(ctx.db.patch).not.toHaveBeenCalledWith(
+      "lane_1",
+      expect.objectContaining({ closeVerificationState: "complete" }),
     )
   })
 

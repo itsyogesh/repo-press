@@ -76,13 +76,21 @@ export async function POST(request: Request) {
       serverQueryToken,
     })
 
-    let verificationPending = pr.merged && (recorded as { verificationState?: string }).verificationState !== "complete"
-    if (pr.merged) {
+    const recordedState = recorded as { verificationState?: string; verificationPending?: boolean }
+    let verificationPending =
+      recordedState.verificationPending === true || (pr.merged && recordedState.verificationState !== "complete")
+    if (pr.merged || pr.state === "closed") {
       const queryAuth = { userId: actingUserId, projectAccessToken }
-      const attempt = await convex.query(api.publishAttempts.getActiveForProject, {
-        projectId: project._id,
-        ...queryAuth,
-      })
+      const attempt = pr.merged
+        ? await convex.query(api.publishAttempts.getActiveForProject, {
+            projectId: project._id,
+            ...queryAuth,
+          })
+        : await convex.query(api.publishAttempts.getNewestUnresolvedForLane, {
+            projectId: project._id,
+            laneId: laneId as Id<"publishBranches">,
+            ...queryAuth,
+          })
       if (attempt) {
         const recovery = await recoverPublishAttempt({
           convex,
@@ -98,6 +106,9 @@ export async function POST(request: Request) {
           const recoveryBody = (await recovery.response.clone().json()) as { error?: string }
           if (!recoveryBody.error?.includes("still finishing durable cleanup")) return recovery.response
         }
+        // One request dispatches exactly the newest unresolved attempt. The
+        // hook retries while true, allowing a reused lane to drain every
+        // older attempt after this cleanup becomes terminal.
         verificationPending = true
       }
     }

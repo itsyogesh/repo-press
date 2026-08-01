@@ -5,6 +5,7 @@ import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
 import { invalidateClosedLaneSync } from "./lib/laneInvalidation"
 import { finalizeMergedLaneSync } from "./lib/laneMerge"
 import { deleteUnownedStorageOrTombstone } from "./lib/mediaTombstone"
+import { completeCloseVerificationIfIdle, completeMergeVerificationIfIdle } from "./lib/publishAttemptCleanup"
 import { assertNoActivePublishAttempt, findActivePublishAttempt } from "./lib/publishAttemptGuard"
 import { requireCommittedAttempt, requireMediaAssociation } from "./lib/publishAttemptOwnership"
 
@@ -386,7 +387,11 @@ export const cleanupStaleUploads = internalMutation({
         branch.status === "merged"
           ? await finalizeMergedLaneSync(ctx, branch)
           : await invalidateClosedLaneSync(ctx, branch)
-      if (!cleanup.deferred && cleanup.done) lanesCleaned++
+      if (!cleanup.deferred && cleanup.done) {
+        if (branch.status === "merged") await completeMergeVerificationIfIdle(ctx, branch._id)
+        else await completeCloseVerificationIfIdle(ctx, branch._id)
+        lanesCleaned++
+      }
     }
 
     return { processed, tombstonesCleared, lanesCleaned }

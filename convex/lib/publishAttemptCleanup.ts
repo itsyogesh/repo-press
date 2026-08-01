@@ -107,14 +107,45 @@ export async function completeMergeVerificationIfIdle(ctx: Pick<CleanupCtx, "db"
   await ctx.db.patch(lane._id, { mergeVerificationState: "complete", updatedAt: Date.now() })
 }
 
-async function maybeCompleteMergeVerification(ctx: CleanupCtx, cleanup: Doc<"publishAttemptCleanups">) {
-  if (!cleanup.authoritySha) return
+/** Complete a verified unmerged close only after every lane cleanup is terminal. */
+export async function completeCloseVerificationIfIdle(ctx: Pick<CleanupCtx, "db">, laneId: Id<"publishBranches">) {
+  const lane = await ctx.db.get(laneId)
+  if (
+    !lane ||
+    lane.status !== "closed" ||
+    lane.closeVerificationState !== "pending" ||
+    lane.laneInvalidationPending ||
+    lane.laneCleanupAction
+  )
+    return false
+  for (const status of ["cleanup_pending", "committing", "committed", "reconciled"] as const) {
+    const unresolved = await ctx.db
+      .query("publishAttempts")
+      .withIndex("by_publishBranchId_status", (q) => q.eq("publishBranchId", lane._id).eq("status", status))
+      .first()
+    if (unresolved) return false
+  }
+  const pendingCleanup = await ctx.db
+    .query("publishAttemptCleanups")
+    .withIndex("by_laneId_status", (q) => q.eq("laneId", lane._id).eq("status", "pending"))
+    .first()
+  if (pendingCleanup) return false
+  await ctx.db.patch(lane._id, { closeVerificationState: "complete", updatedAt: Date.now() })
+  return true
+}
+
+async function maybeCompleteLaneVerification(ctx: CleanupCtx, cleanup: Doc<"publishAttemptCleanups">) {
   const lane = await ctx.db.get(cleanup.laneId)
-  if (!lane || lane.mergeCommitSha !== cleanup.authoritySha) return
+  if (!lane) return
   if (lane.laneCleanupAction) {
     await ctx.scheduler.runAfter(0, (internal as any).publishBranches.continueLaneCleanup, { id: lane._id })
     return
   }
+  if (lane.status === "closed") {
+    await completeCloseVerificationIfIdle(ctx, cleanup.laneId)
+    return
+  }
+  if (!cleanup.authoritySha || lane.mergeCommitSha !== cleanup.authoritySha) return
   await completeMergeVerificationIfIdle(ctx, cleanup.laneId)
 }
 
@@ -130,7 +161,7 @@ async function moveToNextPhase(
     if (attempt.status === "cleanup_pending") {
       await ctx.db.patch(attempt._id, { status: "cleaned", updatedAt: now })
     }
-    await maybeCompleteMergeVerification(ctx, cleanup)
+    await maybeCompleteLaneVerification(ctx, cleanup)
     return { done: true, processed: 0 }
   }
   await ctx.db.patch(cleanup._id, { phase, cursor: 0, updatedAt: now })
@@ -423,7 +454,7 @@ export async function processPublishAttemptCleanupBatch(ctx: CleanupCtx, cleanup
     const now = Date.now()
     await ctx.db.patch(cleanup._id, { phase, cursor: 0, status: "complete", updatedAt: now })
     await ctx.db.patch(attempt._id, { status: "cleaned", updatedAt: now })
-    await maybeCompleteMergeVerification(ctx, cleanup)
+    await maybeCompleteLaneVerification(ctx, cleanup)
     return { done: true, processed }
   }
   await ctx.db.patch(cleanup._id, { phase, cursor: 0, updatedAt: Date.now() })

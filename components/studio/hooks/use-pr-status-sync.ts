@@ -43,7 +43,7 @@ export function usePrStatusSync({
       !projectId ||
       !laneId ||
       prNumber == null ||
-      !["active", "inactive", "merged"].includes(laneStatus ?? "") ||
+      !["active", "inactive", "merged", "closed"].includes(laneStatus ?? "") ||
       !owner ||
       !repo ||
       !headBranch ||

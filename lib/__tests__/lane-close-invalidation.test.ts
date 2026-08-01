@@ -206,6 +206,37 @@ describe("closed-lane synchronization invalidation", () => {
     expect(candidate?._id).toBe("lane_1")
   })
 
+  it("keeps a verified closed lane visible while modern attempt restoration is pending", async () => {
+    const closedPending = laneDoc({ status: "closed", closeVerificationState: "pending" })
+    const newerActive = laneDoc({ _id: "lane_active", status: "active", prNumber: 43, createdAt: 2, updatedAt: 2 })
+    const ctx = createLaneCtx({ publishBranches: [closedPending, newerActive] })
+
+    const candidate = await (getStatusSyncCandidateForProject as any).handler(ctx, {
+      projectId: "project_1",
+      userId: "user_owner",
+      projectAccessToken: await patToken(),
+    })
+
+    expect(candidate?._id).toBe("lane_1")
+  })
+
+  it("keeps a merged lane visible until immutable-tree verification completes", async () => {
+    const mergedPending = laneDoc({
+      status: "merged",
+      mergeCommitSha: "a".repeat(40),
+      mergeVerificationState: "pending",
+    })
+    const ctx = createLaneCtx({ publishBranches: [mergedPending] })
+
+    const candidate = await (getStatusSyncCandidateForProject as any).handler(ctx, {
+      projectId: "project_1",
+      userId: "user_owner",
+      projectAccessToken: await patToken(),
+    })
+
+    expect(candidate?._id).toBe("lane_1")
+  })
+
   it("restores the lane's committed ops, media, and document provenance for republishing", async () => {
     const ctx = createLaneCtx({
       explorerOps: [
@@ -451,7 +482,45 @@ describe("closed-lane synchronization invalidation", () => {
 
     expect(ctx.db.patch).toHaveBeenCalledWith("lane_1", expect.objectContaining({ status: "closed" }))
     expect(ctx.db.patch).toHaveBeenCalledWith("doc_lane", { publishedProvenance: undefined })
-    expect(result).toEqual({ state: "closed" })
+    expect(result).toEqual({ state: "closed", verificationPending: false })
+  })
+
+  it("keeps close verification pending while a reconciled modern attempt still owns lane state", async () => {
+    const lane = laneDoc({ status: "active" })
+    const ctx = createLaneCtx({
+      activePublishAttempt: {
+        _id: "attempt_reconciled",
+        projectId: "project_1",
+        publishBranchId: "lane_1",
+        branchName: "repopress/start",
+        planDigest: "d".repeat(64),
+        status: "reconciled",
+        createdAt: 10,
+      },
+      publishBranches: [lane],
+    })
+
+    const result = await (recordVerifiedPullRequestState as any).handler(ctx, {
+      laneId: "lane_1",
+      projectId: "project_1",
+      prNumber: 42,
+      repoOwner: "acme",
+      repoName: "docs-site",
+      baseRepoFullName: "acme/docs-site",
+      baseBranch: "main",
+      headRepoFullName: "acme/docs-site",
+      headBranch: "repopress/start",
+      state: "closed",
+      merged: false,
+      serverQueryToken: await mintServerQueryToken(),
+    })
+
+    expect(result).toEqual({ state: "closed", verificationPending: true })
+    expect(ctx.db.patch).toHaveBeenCalledWith("lane_1", expect.objectContaining({ closeVerificationState: "pending" }))
+    expect(ctx.db.patch).not.toHaveBeenCalledWith(
+      "lane_1",
+      expect.objectContaining({ closeVerificationState: "complete" }),
+    )
   })
 
   it("handlePRClosed (webhook path) closes the lane AND invalidates its synchronization", async () => {
@@ -640,6 +709,11 @@ describe("merged-lane finalization", () => {
           status: "draft",
           body: "# A",
           updatedAt: 5,
+          publishedProvenance: {
+            publishBranchId: "lane_1",
+            commitSha: "legacy-commit",
+            publishedUpdatedAt: 5,
+          },
         },
         {
           _id: "doc_unrelated",
@@ -673,6 +747,45 @@ describe("merged-lane finalization", () => {
     expect(replay).toEqual(
       expect.objectContaining({ done: true, clearedOpIds: [], clearedMediaOpIds: [], publishedDocumentIds: [] }),
     )
+  })
+
+  it("never publishes an attempt-owned or newer-edited document during legacy continuation", async () => {
+    const lane = mergedLane({ laneInvalidationPending: true, laneCleanupAction: "finalize_legacy" })
+    const modernProvenance = {
+      publishBranchId: "lane_1",
+      publishAttemptId: "attempt_modern",
+      commitSha: "1".repeat(40),
+      publishedUpdatedAt: 10,
+      publishedContentVersion: 3,
+    }
+    const ctx = createLaneCtx({
+      activePublishAttempt: {
+        _id: "attempt_modern",
+        projectId: "project_1",
+        publishBranchId: "lane_1",
+        branchName: "repopress/start",
+        planDigest: "d".repeat(64),
+        status: "reconciled",
+      },
+      publishBranches: [lane],
+      documents: [
+        {
+          _id: "doc_modern_edited",
+          projectId: "project_1",
+          filePath: "guides/a.mdx",
+          status: "draft",
+          body: "newer edit",
+          contentVersion: 4,
+          updatedAt: 20,
+          publishedProvenance: modernProvenance,
+        },
+      ],
+    })
+
+    const result = await finalizeMergedLaneSync(ctx, lane as any)
+
+    expect(result).toEqual(expect.objectContaining({ done: true, publishedDocumentIds: [] }))
+    expect(ctx.db.patch).not.toHaveBeenCalledWith("doc_modern_edited", expect.anything())
   })
 
   it("defers durably while a publish attempt is at the commit boundary", async () => {
@@ -712,6 +825,11 @@ describe("merged-lane finalization", () => {
           status: "draft",
           body: "# A",
           updatedAt: 5,
+          publishedProvenance: {
+            publishBranchId: "lane_1",
+            commitSha: "legacy-commit",
+            publishedUpdatedAt: 5,
+          },
         },
       ],
     })

@@ -237,6 +237,11 @@ export default defineSchema({
       "publishedProvenance.publishBranchId",
       "publishedProvenance.publishAttemptId",
     ])
+    .index("by_publishedProvenance_lane_attempt_status", [
+      "publishedProvenance.publishBranchId",
+      "publishedProvenance.publishAttemptId",
+      "status",
+    ])
     .searchIndex("search_title", {
       searchField: "title",
       filterFields: ["projectId"],
@@ -436,6 +441,7 @@ export default defineSchema({
     // before any staged state is finalized.
     mergeCommitSha: v.optional(v.string()),
     mergeVerificationState: v.optional(v.union(v.literal("pending"), v.literal("complete"))),
+    closeVerificationState: v.optional(v.union(v.literal("pending"), v.literal("complete"))),
     lastCommitSha: v.optional(v.string()),
     committedFilePaths: v.optional(v.array(v.string())),
     // Set when lane synchronization cleanup (closed-lane invalidation OR
@@ -453,6 +459,7 @@ export default defineSchema({
     .index("by_prNumber", ["prNumber"])
     .index("by_repo_pr_head_base", ["repoOwner", "repoName", "prNumber", "branchName", "baseBranch"])
     .index("by_projectId_mergeVerificationState", ["projectId", "mergeVerificationState"])
+    .index("by_projectId_closeVerificationState", ["projectId", "closeVerificationState"])
     .index("by_laneInvalidationPending", ["laneInvalidationPending"]),
 
   // ─── Publish Attempts (durable commit/reconcile boundary) ─────────

@@ -66,4 +66,25 @@ describe("usePrStatusSync", () => {
     await waitFor(() => expect(warning).toHaveBeenCalled())
     expect(mutationMock).not.toHaveBeenCalled()
   })
+
+  it("continues synchronizing a verified closed lane while restoration is pending", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({
+        state: "closed",
+        merged: false,
+        mergeCommitSha: null,
+        baseRef: "main",
+        baseRepoFullName: "acme/docs",
+        headRef: "repopress/start",
+        headRepoFullName: "acme/docs",
+        verificationPending: false,
+      }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    renderHook(() => usePrStatusSync({ ...props, laneStatus: "closed" } as any))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+  })
 })
