@@ -4,8 +4,7 @@ import { internal } from "../_generated/api"
 import type { Doc, Id } from "../_generated/dataModel"
 import type { MutationCtx } from "../_generated/server"
 import { deleteOwnedMediaStorageOrKeepTombstone } from "./mediaTombstone"
-import { assertPublishAttemptOutcomeClosure } from "./publishAttemptClosure"
-import { assertCleanupAuthorityForLane } from "./publishCleanupAuthority"
+import { assertValidPublishCleanupPlan } from "./publishCleanupAuthority"
 
 export const CLEANUP_BATCH_SIZE = 25
 
@@ -394,22 +393,25 @@ export async function processPublishAttemptCleanupBatch(ctx: CleanupCtx, cleanup
   }
   const attempt = await ctx.db.get(cleanup.attemptId)
   const lane = await ctx.db.get(cleanup.laneId)
-  if (
-    !attempt ||
-    !lane ||
-    attempt.projectId !== cleanup.projectId ||
-    attempt.publishBranchId !== cleanup.laneId ||
-    lane.projectId !== cleanup.projectId ||
-    lane.branchName !== attempt.branchName ||
-    attempt.cleanupId !== cleanup._id ||
-    attempt.status !== "cleanup_pending"
-  ) {
-    throw new Error("Publish cleanup references no longer match its attempt and lane")
-  }
-  assertCleanupAuthorityForLane(lane, cleanup.authoritySha, cleanup.pathOutcomes)
+  const project = await ctx.db.get(cleanup.projectId)
+  assertValidPublishCleanupPlan({
+    project,
+    lane,
+    attempt,
+    plan: {
+      projectId: cleanup.projectId,
+      laneId: cleanup.laneId,
+      attemptId: cleanup.attemptId,
+      cleanupId: cleanup._id,
+      authoritySha: cleanup.authoritySha,
+      pathOutcomes: cleanup.pathOutcomes,
+    },
+    stage: "continuation",
+  })
+  // The full validator above establishes these live references.
+  if (!attempt || !lane) throw new Error("Publish cleanup references disappeared during validation")
 
   const outcomeByPath = new Map(cleanup.pathOutcomes.map((outcome) => [outcome.path, outcome]))
-  assertPublishAttemptOutcomeClosure(attempt, new Set(outcomeByPath.keys()))
   const explorerAssociations =
     attempt.explorerAssociations ??
     attempt.opIds.map((opId) => ({ opId, repoPath: undefined, expectedUpdatedAt: undefined }))

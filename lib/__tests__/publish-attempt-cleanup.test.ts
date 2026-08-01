@@ -176,6 +176,15 @@ function cleanupRow(overrides: Record<string, unknown> = {}): Row {
   }
 }
 
+function expectNoCleanupWrites(ctx: ReturnType<typeof createCtx>, cleanup: Row) {
+  expect(ctx.db.patch).not.toHaveBeenCalled()
+  expect(ctx.db.delete).not.toHaveBeenCalled()
+  expect(ctx.db.insert).not.toHaveBeenCalled()
+  expect(ctx.storage.delete).not.toHaveBeenCalled()
+  expect(ctx.scheduler.runAfter).not.toHaveBeenCalled()
+  expect(cleanup.cursor).toBe(0)
+}
+
 describe("publish attempt cleanup enqueue", () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -545,6 +554,24 @@ describe("publish attempt cleanup enqueue", () => {
     expect(ctx.db.insert).not.toHaveBeenCalled()
     expect(ctx.db.patch).not.toHaveBeenCalled()
   })
+
+  it("rejects a merged cleanup plan without a nonempty base branch before arbitration writes", async () => {
+    const ctx = createCtx([{ ...project }, { ...lane, baseBranch: "" }, { ...attempt }])
+
+    await expect(
+      (resolveAndEnqueueCleanup as any).handler(ctx, {
+        id: "attempt_1",
+        authoritySha: "3".repeat(40),
+        pathOutcomes: outcomes,
+        serverQueryToken,
+        userId: "user_owner",
+      }),
+    ).rejects.toThrow(/base branch/i)
+
+    expect(ctx.db.insert).not.toHaveBeenCalled()
+    expect(ctx.db.patch).not.toHaveBeenCalled()
+    expect(ctx.scheduler.runAfter).not.toHaveBeenCalled()
+  })
 })
 
 describe("bounded attempt-scoped cleanup continuation", () => {
@@ -574,12 +601,7 @@ describe("bounded attempt-scoped cleanup continuation", () => {
     ])
 
     await expect((continueCleanup as any).handler(ctx, { cleanupId: "cleanup_1" })).rejects.toThrow(/merge authority/i)
-
-    expect(ctx.db.delete).not.toHaveBeenCalled()
-    expect(ctx.db.patch).not.toHaveBeenCalled()
-    expect(ctx.storage.delete).not.toHaveBeenCalled()
-    expect(ctx.scheduler.runAfter).not.toHaveBeenCalled()
-    expect(staleCleanup.cursor).toBe(0)
+    expectNoCleanupWrites(ctx, staleCleanup)
   })
 
   it("rejects a corrupt closed finalize plan before media or storage mutation", async () => {
@@ -604,12 +626,80 @@ describe("bounded attempt-scoped cleanup continuation", () => {
     ])
 
     await expect((continueCleanup as any).handler(ctx, { cleanupId: "cleanup_1" })).rejects.toThrow(/closed.*restore/i)
+    expectNoCleanupWrites(ctx, corruptCleanup)
+  })
 
-    expect(ctx.db.delete).not.toHaveBeenCalled()
-    expect(ctx.db.patch).not.toHaveBeenCalled()
-    expect(ctx.storage.delete).not.toHaveBeenCalled()
-    expect(ctx.scheduler.runAfter).not.toHaveBeenCalled()
-    expect(corruptCleanup.cursor).toBe(0)
+  it.each([
+    {
+      name: "empty merged base branch",
+      phase: "media",
+      laneOverrides: { baseBranch: "" },
+      pathOutcomes: outcomes,
+      error: /base branch/i,
+    },
+    {
+      name: "mismatched finalized write blob",
+      phase: "explorer",
+      pathOutcomes: [{ path: "content/a.mdx", disposition: "finalize", finalBlobSha: "9".repeat(40) }, outcomes[1]],
+      error: /blob/i,
+    },
+    {
+      name: "missing finalized write blob",
+      phase: "media",
+      pathOutcomes: [outcomes[0], { path: "public/pic.png", disposition: "finalize" }],
+      error: /blob/i,
+    },
+    {
+      name: "duplicate outcome",
+      phase: "explorer",
+      pathOutcomes: [...outcomes, { ...outcomes[1] }],
+      error: /exactly match|duplicate/i,
+    },
+    {
+      name: "extra outcome",
+      phase: "media",
+      pathOutcomes: [...outcomes, { path: "content/extra.mdx", disposition: "restore" }],
+      error: /exactly match/i,
+    },
+    {
+      name: "noncanonical outcome",
+      phase: "explorer",
+      pathOutcomes: [...outcomes, { path: "/content/extra.mdx", disposition: "restore" }],
+      error: /canonical|path/i,
+    },
+  ])("rejects $name before $phase cleanup writes", async ({ phase, laneOverrides, pathOutcomes, error }) => {
+    const corruptCleanup = cleanupRow({ phase, pathOutcomes })
+    const cleanupAttempt = { ...attempt, status: "cleanup_pending", cleanupId: "cleanup_1" }
+    const ctx = createCtx([
+      { ...project },
+      { ...lane, ...laneOverrides },
+      cleanupAttempt,
+      corruptCleanup,
+      {
+        _id: "op_1",
+        projectId: "project_1",
+        repoPath: "content/a.mdx",
+        status: "committed",
+        publishBranchId: "lane_1",
+        publishAttemptId: "attempt_1",
+        commitSha: "1".repeat(40),
+        updatedAt: 10,
+      },
+      {
+        _id: "media_1",
+        projectId: "project_1",
+        repoPath: "public/pic.png",
+        status: "committed",
+        publishBranchId: "lane_1",
+        publishAttemptId: "attempt_1",
+        commitSha: "1".repeat(40),
+        convexStorageId: "storage_1",
+        updatedAt: 10,
+      },
+    ])
+
+    await expect((continueCleanup as any).handler(ctx, { cleanupId: "cleanup_1" })).rejects.toThrow(error)
+    expectNoCleanupWrites(ctx, corruptCleanup)
   })
 
   it("finalizes exact pending associations for a merged committing attempt without fabricating its commit SHA", async () => {
@@ -857,13 +947,17 @@ describe("bounded attempt-scoped cleanup continuation", () => {
         ...attempt,
         status: "cleanup_pending",
         cleanupId: "cleanup_1",
-        explorerAssociations: [],
+        explorerAssociations: [{ opId: "op_1", repoPath: "content/a.mdx", expectedUpdatedAt: 10 }],
         mediaAssociations: [],
         documentAssociations: [],
-        operationDescriptors: [],
-        operationPaths: [],
+        operationDescriptors: [{ path: "content/a.mdx", action: "update", expectedBlobSha: "b".repeat(40) }],
+        operationPaths: ["content/a.mdx"],
       },
-      cleanupRow({ phase: "documents", cursor: 0, pathOutcomes: [] }),
+      cleanupRow({
+        phase: "documents",
+        cursor: 0,
+        pathOutcomes: [{ path: "content/a.mdx", disposition: "finalize", finalBlobSha: "b".repeat(40) }],
+      }),
     ])
 
     await (continueCleanup as any).handler(ctx, { cleanupId: "cleanup_1" })
@@ -961,13 +1055,18 @@ describe("bounded attempt-scoped cleanup continuation", () => {
         ...attempt,
         status: "cleanup_pending",
         cleanupId: "cleanup_1",
-        explorerAssociations: [],
+        explorerAssociations: [{ opId: "op_1", repoPath: "content/a.mdx", expectedUpdatedAt: 10 }],
         mediaAssociations: [],
         documentAssociations: [],
-        operationDescriptors: [],
-        operationPaths: [],
+        operationDescriptors: [{ path: "content/a.mdx", action: "update", expectedBlobSha: "b".repeat(40) }],
+        operationPaths: ["content/a.mdx"],
       },
-      cleanupRow({ phase: "documents", cursor: 0, pathOutcomes: [], authoritySha: undefined }),
+      cleanupRow({
+        phase: "documents",
+        cursor: 0,
+        pathOutcomes: [{ path: "content/a.mdx", disposition: "restore" }],
+        authoritySha: undefined,
+      }),
     ])
 
     await (continueCleanup as any).handler(ctx, { cleanupId: "cleanup_1" })
@@ -988,11 +1087,11 @@ describe("bounded attempt-scoped cleanup continuation", () => {
         ...attempt,
         status: "cleanup_pending",
         cleanupId: "cleanup_1",
-        explorerAssociations: [],
+        explorerAssociations: [{ opId: "op_1", repoPath: "content/a.mdx", expectedUpdatedAt: 10 }],
         mediaAssociations: [],
         documentAssociations: [],
-        operationDescriptors: [],
-        operationPaths: [],
+        operationDescriptors: [{ path: "content/a.mdx", action: "update", expectedBlobSha: "b".repeat(40) }],
+        operationPaths: ["content/a.mdx"],
         createdAt: 2,
       },
       {
@@ -1001,7 +1100,12 @@ describe("bounded attempt-scoped cleanup continuation", () => {
         status: "reconciled",
         createdAt: 1,
       },
-      cleanupRow({ phase: "documents", cursor: 0, pathOutcomes: [], authoritySha: undefined }),
+      cleanupRow({
+        phase: "documents",
+        cursor: 0,
+        pathOutcomes: [{ path: "content/a.mdx", disposition: "restore" }],
+        authoritySha: undefined,
+      }),
     ])
 
     await (continueCleanup as any).handler(ctx, { cleanupId: "cleanup_1" })
@@ -1327,7 +1431,7 @@ describe("bounded attempt-scoped cleanup continuation", () => {
     "finalize",
     "restore",
   ] as const)("uses canonical Git identity to %s leading-slash media while leaving an excluded redundant document alone", async (disposition) => {
-    const finalBlobSha = disposition === "finalize" ? "8".repeat(40) : undefined
+    const finalBlobSha = disposition === "finalize" ? "c".repeat(40) : undefined
     const ctx = createCtx([
       { ...project },
       { ...lane },
@@ -1405,7 +1509,7 @@ describe("bounded attempt-scoped cleanup continuation", () => {
     ])
 
     await expect((continueCleanup as any).handler(ctx, { cleanupId: "cleanup_1" })).rejects.toThrow(
-      /association.*outcome/i,
+      /association.*outcome|outcomes must exactly/i,
     )
     expect(ctx.db.patch).not.toHaveBeenCalledWith("cleanup_1", expect.anything())
     expect(ctx.db.patch).not.toHaveBeenCalledWith("attempt_1", expect.anything())
@@ -1610,7 +1714,11 @@ describe("bounded attempt-scoped cleanup continuation", () => {
       repoPath: `content/${index}.mdx`,
       expectedUpdatedAt: 10,
     }))
-    const pathOutcomes = associations.map(({ repoPath: path }) => ({ path, disposition: "finalize" as const }))
+    const pathOutcomes = associations.map(({ repoPath: path }) => ({
+      path,
+      disposition: "finalize" as const,
+      finalBlobSha: "4".repeat(40),
+    }))
     const rows: Row[] = [
       { ...project },
       { ...lane },

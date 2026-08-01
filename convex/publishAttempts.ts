@@ -9,9 +9,8 @@ import { verifyServerQueryToken } from "../lib/project-access-token"
 import { internal } from "./_generated/api"
 import { mutation, query } from "./_generated/server"
 import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
-import { assertPublishAttemptAssociationClosure } from "./lib/publishAttemptClosure"
 import { findActivePublishAttempt } from "./lib/publishAttemptGuard"
-import { assertCleanupAuthorityForLane } from "./lib/publishCleanupAuthority"
+import { assertValidPublishCleanupPlan } from "./lib/publishCleanupAuthority"
 
 const MAX_ATTEMPT_OPERATIONS = 500
 const SHA_PATTERN = /^[0-9a-f]{40}$/
@@ -394,7 +393,7 @@ export const resolveAndEnqueueCleanup = mutation({
   handler: async (ctx, args) => {
     const attempt = await ctx.db.get(args.id)
     if (!attempt) throw new Error("Publish attempt not found")
-    await resolveProjectAccess(
+    const { project } = await resolveProjectAccess(
       ctx,
       { projectId: attempt.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken },
       "editor",
@@ -403,66 +402,15 @@ export const resolveAndEnqueueCleanup = mutation({
       throw new Error("Unauthorized: valid server proof is required for publish cleanup")
     }
     const lane = await ctx.db.get(attempt.publishBranchId)
-    if (!lane || lane.projectId !== attempt.projectId || lane.branchName !== attempt.branchName) {
-      throw new Error("Publish cleanup lane does not match its attempt")
+    const plan = {
+      projectId: attempt.projectId,
+      laneId: attempt.publishBranchId,
+      attemptId: attempt._id,
+      authoritySha: args.authoritySha,
+      pathOutcomes: args.pathOutcomes,
     }
-    const cleanupMode = assertCleanupAuthorityForLane(lane, args.authoritySha, args.pathOutcomes)
-    const mergedWithoutRecordedCommit =
-      cleanupMode.kind === "merged" &&
-      attempt.status === "committing" &&
-      !attempt.commitSha &&
-      lane.mergeCommitSha === args.authoritySha
-    if (
-      !mergedWithoutRecordedCommit &&
-      attempt.status !== "committed" &&
-      attempt.status !== "reconciled" &&
-      attempt.status !== "cleanup_pending" &&
-      attempt.status !== "cleaned"
-    ) {
-      throw new Error(`Cannot resolve cleanup for a ${attempt.status} publish attempt`)
-    }
-    if (!mergedWithoutRecordedCommit && (!attempt.commitSha || !SHA_PATTERN.test(attempt.commitSha))) {
-      throw new Error("Publish cleanup requires the attempt's committed SHA")
-    }
-    if (args.authoritySha !== undefined && !SHA_PATTERN.test(args.authoritySha)) {
-      throw new Error("Publish cleanup authority must be a 40-hex SHA")
-    }
-
-    const descriptorByPath = new Map(
-      (attempt.operationDescriptors ?? []).map((descriptor) => [descriptor.path, descriptor]),
-    )
-    const descriptorPaths = new Set(descriptorByPath.keys())
-    if (descriptorPaths.size === 0 || args.pathOutcomes.length !== descriptorPaths.size) {
-      throw new Error("Publish cleanup outcomes must exactly match the attempt descriptor paths")
-    }
-    const outcomePaths = new Set<string>()
-    for (const outcome of args.pathOutcomes) {
-      assertCanonicalPublishOperationPath(outcome.path)
-      if (!descriptorPaths.has(outcome.path) || outcomePaths.has(outcome.path)) {
-        throw new Error("Publish cleanup outcomes must exactly match the attempt descriptor paths")
-      }
-      outcomePaths.add(outcome.path)
-      if (outcome.finalBlobSha !== undefined && !SHA_PATTERN.test(outcome.finalBlobSha)) {
-        throw new Error("Publish cleanup final blob must be a 40-hex SHA")
-      }
-      if (outcome.disposition !== "finalize" && outcome.finalBlobSha !== undefined) {
-        throw new Error("A non-finalized publish path cannot carry a final blob SHA")
-      }
-      const descriptor = descriptorByPath.get(outcome.path)
-      if (outcome.disposition === "finalize" && descriptor?.action !== "delete") {
-        if (!outcome.finalBlobSha) throw new Error("A finalized write requires final blob evidence")
-        if (outcome.finalBlobSha !== descriptor?.expectedBlobSha) {
-          throw new Error("A finalized write blob must match the attempt descriptor")
-        }
-      }
-      if (outcome.disposition === "finalize" && descriptor?.action === "delete" && outcome.finalBlobSha !== undefined) {
-        throw new Error("A finalized delete must not carry a final blob SHA")
-      }
-    }
-    if (args.pathOutcomes.some((outcome) => outcome.disposition === "finalize") && !args.authoritySha) {
-      throw new Error("A finalizing publish cleanup requires an authority SHA")
-    }
-    assertPublishAttemptAssociationClosure(attempt)
+    const cleanupMode = assertValidPublishCleanupPlan({ project, lane, attempt, plan, stage: "enqueue" })
+    if (!lane) throw new Error("Publish cleanup lane disappeared during validation")
 
     const existing = await ctx.db
       .query("publishAttemptCleanups")
@@ -514,6 +462,13 @@ export const resolveAndEnqueueCleanup = mutation({
       }
       normalizedOutcomes = arbitrated
     }
+    assertValidPublishCleanupPlan({
+      project,
+      lane,
+      attempt,
+      plan: { ...plan, pathOutcomes: normalizedOutcomes },
+      stage: "enqueue",
+    })
     const requestedPlan = canonicalCleanupPlan(args.authoritySha, normalizedOutcomes)
     if (existing) {
       if (canonicalCleanupPlan(existing.authoritySha, existing.pathOutcomes) !== requestedPlan) {
