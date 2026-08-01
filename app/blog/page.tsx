@@ -28,34 +28,36 @@ export default function BlogIndexPage() {
         {/* Header */}
         <section className="border-b border-border/40 py-16 md:py-24">
           <div className="container mx-auto px-4">
-            <h1 className="text-section-heading">Blog</h1>
-            <p className="mt-4 text-section-subheading max-w-2xl">
+            <h1 className="rp-display text-4xl md:text-5xl">Blog</h1>
+            <p className="mt-4 max-w-[52ch] text-lg leading-8 text-muted-foreground">
               News, updates, and insights from the RepoPress team.
             </p>
           </div>
         </section>
 
-        {/* Post grid */}
+        {/* Post list */}
         <section className="py-12 md:py-16">
           <div className="container mx-auto px-4">
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="border-t border-border">
               {posts.map((post) => (
                 <Link
                   key={post.slug}
                   href={`/blog/${post.slug}`}
-                  className="group flex flex-col bg-card border border-border rounded-2xl p-6 hover:border-primary/50 transition-colors"
+                  className="group flex items-center justify-between gap-6 border-b border-border py-6"
                 >
-                  <time dateTime={post.date} className="text-caption">
-                    {formatDate(post.date)}
-                  </time>
-                  <h2 className="mt-3 text-xl font-semibold text-foreground group-hover:text-primary transition-colors">
-                    {post.title}
-                  </h2>
-                  <p className="mt-2 flex-1 text-muted-foreground text-sm leading-relaxed">{post.excerpt}</p>
-                  <span className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-primary">
-                    Read more
-                    <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-                  </span>
+                  <div className="min-w-0">
+                    <time
+                      dateTime={post.date}
+                      className="font-mono text-[0.6875rem] uppercase tracking-[0.18em] text-muted-foreground/55"
+                    >
+                      {formatDate(post.date)}
+                    </time>
+                    <h2 className="mt-1.5 rp-display text-lg text-foreground transition-colors group-hover:text-primary">
+                      {post.title}
+                    </h2>
+                    <p className="mt-1 line-clamp-2 text-sm leading-6 text-muted-foreground">{post.excerpt}</p>
+                  </div>
+                  <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground/40 transition-all group-hover:translate-x-0.5 group-hover:text-primary" />
                 </Link>
               ))}
             </div>

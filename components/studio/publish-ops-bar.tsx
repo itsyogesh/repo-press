@@ -111,19 +111,19 @@ export function PublishOpsBar({
 
   return (
     <div className="shrink-0 border-t border-studio-border bg-studio-canvas-inset/70 px-3 py-3">
-      <div className="rounded-[1.25rem] border border-studio-border/70 bg-studio-canvas px-3 py-3 shadow-sm">
+      <div className="rounded-md border border-studio-border/70 bg-studio-canvas px-3 py-3">
         <div className="flex items-start gap-3">
           <button
             type="button"
             className="flex min-w-0 flex-1 items-start gap-3 text-left transition-opacity hover:opacity-90"
             onClick={() => setIsExpanded(!isExpanded)}
           >
-            <div className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-studio-accent/15 bg-studio-accent-muted text-studio-accent">
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-md border border-studio-accent/15 bg-studio-accent-muted text-studio-accent">
               <GitPullRequest className="h-4 w-4" />
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold text-studio-fg">
+                <span className="text-sm font-medium text-studio-fg">
                   {total} pending change{total !== 1 ? "s" : ""}
                 </span>
                 {isExpanded ? (
@@ -163,7 +163,7 @@ export function PublishOpsBar({
         </div>
 
         {isExpanded && (
-          <div className="mt-3 space-y-3 rounded-[1rem] border border-studio-border/60 bg-studio-canvas-inset/35 p-3 text-xs">
+          <div className="mt-3 space-y-3 rounded-md border border-studio-border/60 bg-studio-canvas-inset/35 p-3 text-xs">
             {newFiles.length > 0 && (
               <div className="space-y-1">
                 <div className="flex items-center gap-1 text-studio-success">
@@ -250,7 +250,7 @@ export function PublishOpsBar({
           <Button
             variant="ghost"
             size="sm"
-            className="h-9 flex-1 rounded-xl border border-studio-border/70 text-xs text-studio-fg-muted hover:bg-studio-danger/10 hover:text-studio-danger"
+            className="h-9 flex-1 rounded-md border border-studio-border/70 text-xs text-studio-fg-muted hover:bg-studio-danger/10 hover:text-studio-danger"
             disabled={isDiscarding}
             onClick={onDiscard}
           >
@@ -259,7 +259,7 @@ export function PublishOpsBar({
           </Button>
           <Button
             size="sm"
-            className="h-9 flex-1 rounded-xl bg-studio-accent text-xs text-studio-accent-fg shadow-sm hover:bg-studio-accent/90"
+            className="h-9 flex-1 rounded-md bg-studio-accent text-xs text-studio-accent-fg hover:bg-studio-accent/90"
             onClick={onPublish}
           >
             {hasCurrentLane

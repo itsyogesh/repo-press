@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation"
 import { StudioLayout } from "@/components/studio/studio-layout"
-import { StudioPageThemeToggle } from "@/components/studio/studio-page-theme-toggle"
 import { api } from "@/convex/_generated/api"
 import type { Doc, Id } from "@/convex/_generated/dataModel"
 import { getGitHubToken } from "@/lib/auth-server"
@@ -145,19 +144,6 @@ export default async function StudioPage({
 
   return (
     <div className="h-screen flex flex-col overflow-hidden">
-      <div className="shrink-0 border-b bg-background">
-        <div className="w-full px-2 sm:px-3 py-3 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-4">
-            <h1 className="text-lg font-semibold">
-              {owner}/{repo}
-            </h1>
-          </div>
-          <div className="flex items-center gap-2">
-            <StudioPageThemeToggle />
-          </div>
-        </div>
-      </div>
-
       <div className="flex-1 min-h-0">
         <StudioLayout
           tree={[]}

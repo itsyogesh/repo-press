@@ -29,7 +29,7 @@ export function FrontmatterField({ field, value, onChange, selectedFilePath }: F
 
   const labelEl = (
     <div className="flex items-center gap-1.5">
-      <Label htmlFor={id} className="font-semibold text-sm text-studio-fg">
+      <Label htmlFor={id} className="font-medium text-sm text-studio-fg">
         {field.actualFieldName}
       </Label>
       {field.required && (

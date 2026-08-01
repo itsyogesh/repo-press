@@ -114,7 +114,7 @@ export function AddProjectDialog({ owner, repo, defaultBranch, open, onOpenChang
     >
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Add Project</DialogTitle>
+          <DialogTitle className="rp-display">Add Project</DialogTitle>
           <DialogDescription>
             Add a new content project to {owner}/{repo}. This will update the config file on GitHub.
           </DialogDescription>

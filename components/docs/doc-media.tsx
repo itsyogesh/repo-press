@@ -20,7 +20,7 @@ export const DocsImage = React.forwardRef<
   return (
     <div
       ref={ref}
-      className="my-6 overflow-hidden rounded-xl border bg-muted/30 flex flex-col group relative text-left font-sans shadow-sm"
+      className="my-6 overflow-hidden rounded-lg border bg-muted/30 flex flex-col group relative text-left font-sans"
     >
       {resolvedSrc ? (
         <div className="relative">
@@ -43,7 +43,7 @@ export const DocsImage = React.forwardRef<
         <div className="aspect-video flex items-center justify-center">
           <div className="text-muted-foreground flex flex-col items-center gap-2">
             <Info className="h-8 w-8 opacity-20" />
-            <span className="text-[10px] uppercase font-bold tracking-widest opacity-50">No Source</span>
+            <span className="text-[10px] uppercase font-medium tracking-widest opacity-50">No Source</span>
           </div>
         </div>
       )}
@@ -70,7 +70,7 @@ export const DocsVideo = React.forwardRef<
   return (
     <div
       ref={ref}
-      className="my-6 relative aspect-video overflow-hidden rounded-xl border bg-foreground text-background flex items-center justify-center text-left font-sans shadow-lg"
+      className="my-6 relative aspect-video overflow-hidden rounded-lg border bg-foreground text-background flex items-center justify-center text-left font-sans"
     >
       {hasVideo ? (
         videoInfo?.provider === "direct" ? (
@@ -91,10 +91,10 @@ export const DocsVideo = React.forwardRef<
         )
       ) : (
         <div className="flex flex-col items-center gap-2 text-background/60">
-          <div className="size-12 rounded-full border-2 border-background/20 bg-background/5 flex items-center justify-center">
+          <div className="size-12 rounded-full border border-background/20 bg-background/5 flex items-center justify-center">
             <div className="ml-1 size-0 border-t-[8px] border-t-transparent border-l-[12px] border-l-background/70 border-b-[8px] border-b-transparent" />
           </div>
-          <span className="text-[10px] uppercase font-bold tracking-widest opacity-50">
+          <span className="text-[10px] uppercase font-medium tracking-widest opacity-50">
             Video: {title || "No Source"}
           </span>
         </div>
@@ -112,10 +112,10 @@ export const Callout = React.forwardRef<
   { children: React.ReactNode; type?: "info" | "warning" | "success" | "error" }
 >(({ children, type = "info" }, ref) => {
   const styles = {
-    info: "border-blue-500/20 bg-blue-500/10",
-    warning: "border-amber-500/20 bg-amber-500/10",
-    success: "border-green-500/20 bg-green-500/10",
-    error: "border-red-500/20 bg-red-500/10",
+    info: "border-primary/20 bg-primary/10",
+    warning: "border-warning/30 bg-warning/10",
+    success: "border-success/30 bg-success/10",
+    error: "border-destructive/20 bg-destructive/10",
   }
 
   return (

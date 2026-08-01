@@ -39,7 +39,7 @@ export function StudioToolbar({
 }: StudioToolbarProps) {
   return (
     <DiffSourceToggleWrapper options={["rich-text", "source"]}>
-      <div className="flex flex-wrap items-center gap-2 rounded-[1rem] border border-studio-border/70 bg-studio-canvas-inset/45 p-2 shadow-sm">
+      <div className="flex flex-wrap items-center gap-2 rounded-md border border-studio-border/70 bg-studio-canvas-inset/45 p-2">
         <ToolbarCluster label="Insert">
           <InsertJsxButton
             owner={owner}
@@ -84,11 +84,11 @@ function ToolbarCluster({ label, children }: { label: string; children: React.Re
   return (
     <div
       className={cn(
-        "flex items-center gap-0.5 rounded-xl border border-studio-border/70 bg-studio-canvas px-1.5 py-1 shadow-sm",
+        "flex items-center gap-0.5 rounded-md border border-studio-border/70 bg-studio-canvas px-1.5 py-1",
         "before:pointer-events-none",
       )}
     >
-      <span className="hidden px-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-studio-fg-muted xl:inline">
+      <span className="hidden px-1 text-[10px] font-medium uppercase tracking-[0.16em] text-studio-fg-muted xl:inline">
         {label}
       </span>
       {children}

@@ -427,7 +427,7 @@ function GalleryThumbnail({ asset, thumbUrl, isSelected, isStaged, onClick }: Ga
 
       {/* Staged badge */}
       {isStaged && (
-        <span className="absolute top-1 right-1 bg-studio-attention text-white text-[9px] font-semibold leading-none px-1 py-0.5 rounded-sm">
+        <span className="absolute top-1 right-1 bg-studio-attention text-white text-[9px] font-medium leading-none px-1 py-0.5 rounded-sm">
           Staged
         </span>
       )}

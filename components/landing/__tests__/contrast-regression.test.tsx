@@ -36,6 +36,35 @@ function extractDarkVar(css: string, variableName: string) {
   return extractBlockVar(css, /\.dark\s*{([\s\S]*?)}/, variableName)
 }
 
+// Tokens are mapped onto a shared raw ramp via var() indirection
+// (e.g. --primary: var(--slate)); follow the chain to the literal value.
+function resolveCssVar(css: string, scope: "root" | "dark", variableName: string, depth = 0): string {
+  if (depth > 10) {
+    throw new Error(`var() resolution too deep for ${variableName}`)
+  }
+  let value: string
+  try {
+    value = scope === "dark" ? extractDarkVar(css, variableName) : extractRootVar(css, variableName)
+  } catch (err) {
+    // .dark inherits any token it doesn't redefine from :root
+    if (scope === "dark") {
+      value = extractRootVar(css, variableName)
+    } else {
+      throw err
+    }
+  }
+  const varRef = value.match(/^var\((--[\w-]+)\)$/)
+  return varRef ? resolveCssVar(css, scope, varRef[1], depth + 1) : value
+}
+
+function resolveRootVar(css: string, variableName: string) {
+  return resolveCssVar(css, "root", variableName)
+}
+
+function resolveDarkVar(css: string, variableName: string) {
+  return resolveCssVar(css, "dark", variableName)
+}
+
 function parseOklch(color: string) {
   const match = color.match(/oklch\(([\d.]+)\s+([\d.]+)\s+([\d.]+)\)/)
   if (!match) {
@@ -85,16 +114,16 @@ describe("landing contrast regressions", () => {
   it("keeps critical light and dark theme tokens above WCAG AA contrast", () => {
     const css = readFileSync(path.join(process.cwd(), "app/globals.css"), "utf8")
 
-    const primary = parseOklch(extractRootVar(css, "--primary"))
-    const primaryForeground = parseOklch(extractRootVar(css, "--primary-foreground"))
-    const muted = parseOklch(extractRootVar(css, "--muted"))
-    const mutedForeground = parseOklch(extractRootVar(css, "--muted-foreground"))
-    const destructive = parseOklch(extractRootVar(css, "--destructive"))
-    const destructiveForeground = parseOklch(extractRootVar(css, "--destructive-foreground"))
-    const darkPrimary = parseOklch(extractDarkVar(css, "--primary"))
-    const darkPrimaryForeground = parseOklch(extractDarkVar(css, "--primary-foreground"))
+    const primary = parseOklch(resolveRootVar(css, "--primary"))
+    const primaryForeground = parseOklch(resolveRootVar(css, "--primary-foreground"))
+    const muted = parseOklch(resolveRootVar(css, "--muted"))
+    const mutedForeground = parseOklch(resolveRootVar(css, "--muted-foreground"))
+    const destructive = parseOklch(resolveRootVar(css, "--destructive"))
+    const destructiveForeground = parseOklch(resolveRootVar(css, "--destructive-foreground"))
+    const darkPrimary = parseOklch(resolveDarkVar(css, "--primary"))
+    const darkPrimaryForeground = parseOklch(resolveDarkVar(css, "--primary-foreground"))
 
-    expect(extractRootVar(css, "--primary-foreground")).toBe("oklch(0.985 0.002 247.839)")
+    expect(resolveRootVar(css, "--primary-foreground")).toBe("oklch(1 0 0)")
     expect(contrastRatio(primaryForeground, primary)).toBeGreaterThanOrEqual(4.5)
     expect(contrastRatio(mutedForeground, muted)).toBeGreaterThanOrEqual(4.5)
     expect(contrastRatio(destructiveForeground, destructive)).toBeGreaterThanOrEqual(4.5)

@@ -14,7 +14,7 @@ export default function PrivacyPage() {
       <main className="flex-1">
         <div className="container mx-auto px-4 py-16 md:py-24">
           <div className="max-w-3xl mx-auto">
-            <h1 className="text-3xl md:text-4xl font-semibold tracking-tight text-foreground mb-8">Privacy Policy</h1>
+            <h1 className="rp-display mb-8 text-3xl md:text-4xl">Privacy Policy</h1>
 
             <p className="text-muted-foreground leading-relaxed mb-8">
               Your privacy matters. This policy explains what information RepoPress collects, how we use it, and the
@@ -23,7 +23,7 @@ export default function PrivacyPage() {
             </p>
 
             {/* Information We Collect */}
-            <h2 className="text-xl font-semibold text-foreground mt-8 mb-4">Information We Collect</h2>
+            <h2 className="rp-display text-xl mt-8 mb-4">Information We Collect</h2>
             <p className="text-muted-foreground leading-relaxed mb-4">
               When you sign in to RepoPress via GitHub OAuth, we receive and store the following information from your
               GitHub account:
@@ -49,7 +49,7 @@ export default function PrivacyPage() {
             </p>
 
             {/* How We Use Your Information */}
-            <h2 className="text-xl font-semibold text-foreground mt-8 mb-4">How We Use Your Information</h2>
+            <h2 className="rp-display text-xl mt-8 mb-4">How We Use Your Information</h2>
             <p className="text-muted-foreground leading-relaxed mb-4">We use the information we collect to:</p>
             <ul className="list-disc list-inside space-y-2 text-muted-foreground">
               <li>Authenticate you and maintain your session</li>
@@ -59,7 +59,7 @@ export default function PrivacyPage() {
             </ul>
 
             {/* Data Storage */}
-            <h2 className="text-xl font-semibold text-foreground mt-8 mb-4">Data Storage</h2>
+            <h2 className="rp-display text-xl mt-8 mb-4">Data Storage</h2>
             <p className="text-muted-foreground leading-relaxed mb-4">RepoPress uses a two-tier approach to data:</p>
             <ul className="list-disc list-inside space-y-2 text-muted-foreground">
               <li>
@@ -82,7 +82,7 @@ export default function PrivacyPage() {
             </ul>
 
             {/* Third-Party Services */}
-            <h2 className="text-xl font-semibold text-foreground mt-8 mb-4">Third-Party Services</h2>
+            <h2 className="rp-display text-xl mt-8 mb-4">Third-Party Services</h2>
             <p className="text-muted-foreground leading-relaxed mb-4">
               RepoPress integrates with the following third-party services:
             </p>
@@ -128,7 +128,7 @@ export default function PrivacyPage() {
             </ul>
 
             {/* Cookies */}
-            <h2 className="text-xl font-semibold text-foreground mt-8 mb-4">Cookies</h2>
+            <h2 className="rp-display text-xl mt-8 mb-4">Cookies</h2>
             <p className="text-muted-foreground leading-relaxed">
               RepoPress uses cookies strictly for session management. We use a session token cookie to keep you signed
               in and identify your authenticated session. We do not use cookies for advertising, tracking, or analytics
@@ -136,7 +136,7 @@ export default function PrivacyPage() {
             </p>
 
             {/* Your Rights */}
-            <h2 className="text-xl font-semibold text-foreground mt-8 mb-4">Your Rights</h2>
+            <h2 className="rp-display text-xl mt-8 mb-4">Your Rights</h2>
             <p className="text-muted-foreground leading-relaxed mb-4">You have the right to:</p>
             <ul className="list-disc list-inside space-y-2 text-muted-foreground">
               <li>
@@ -166,7 +166,7 @@ export default function PrivacyPage() {
             </ul>
 
             {/* Contact */}
-            <h2 className="text-xl font-semibold text-foreground mt-8 mb-4">Contact</h2>
+            <h2 className="rp-display text-xl mt-8 mb-4">Contact</h2>
             <p className="text-muted-foreground leading-relaxed">
               If you have any questions about this privacy policy or how we handle your data, please open an issue on
               our{" "}

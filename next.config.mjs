@@ -66,6 +66,11 @@ export function createPreviewSandboxHeaders(studioOriginValue, environment = pro
 
 /** @type {import('next').NextConfig} */
 export const nextConfig = {
+  // Pin the workspace root to this project — a stray pnpm-lock.yaml in the
+  // home dir was otherwise inferred as the Turbopack root.
+  turbopack: {
+    root: import.meta.dirname,
+  },
   async headers() {
     return [
       {

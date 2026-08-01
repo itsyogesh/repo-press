@@ -1,8 +1,17 @@
 "use client"
 
 import { useQuery } from "convex/react"
-import { Plus } from "lucide-react"
+import { FolderGit2, Plus } from "lucide-react"
 import { useRouter } from "next/navigation"
+import {
+  DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { api } from "@/convex/_generated/api"
 import { useStudio } from "./studio-context"
@@ -12,9 +21,10 @@ interface ProjectSwitcherProps {
   owner: string
   repo: string
   branch: string
+  variant?: "select" | "menu"
 }
 
-export function ProjectSwitcher({ currentProjectId, owner, repo, branch }: ProjectSwitcherProps) {
+export function ProjectSwitcher({ currentProjectId, owner, repo, branch, variant = "select" }: ProjectSwitcherProps) {
   const router = useRouter()
   const { projectAccessToken } = useStudio()
 
@@ -39,6 +49,34 @@ export function ProjectSwitcher({ currentProjectId, owner, repo, branch }: Proje
     params.set("branch", branch)
     params.set("projectId", projectId)
     router.push(`/dashboard/${owner}/${repo}/studio?${params.toString()}`)
+  }
+
+  if (variant === "menu") {
+    return (
+      <DropdownMenuSub>
+        <DropdownMenuSubTrigger className="md:hidden">
+          <FolderGit2 className="h-4 w-4" />
+          Switch project
+        </DropdownMenuSubTrigger>
+        <DropdownMenuSubContent>
+          <DropdownMenuRadioGroup value={currentProjectId} onValueChange={handleChange}>
+            {projects.map((project) => (
+              <DropdownMenuRadioItem key={project._id} value={project._id}>
+                <span className="font-medium">{project.contentRoot || "/"}</span>
+                {project.detectedFramework && (
+                  <span className="text-muted-foreground">({project.detectedFramework})</span>
+                )}
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onSelect={() => handleChange("new")}>
+            <Plus className="h-3 w-3" />
+            New project...
+          </DropdownMenuItem>
+        </DropdownMenuSubContent>
+      </DropdownMenuSub>
+    )
   }
 
   return (

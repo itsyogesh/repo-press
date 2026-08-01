@@ -21,7 +21,7 @@ export function PreviewStatus({ isCompiling, warnings, className }: PreviewStatu
             variant="outline"
             size="sm"
             className={cn(
-              "h-7 gap-1.5 px-2 rounded-full text-[10px] uppercase tracking-wider font-bold shadow-sm transition-colors",
+              "h-7 gap-1.5 px-2 rounded-full text-[10px] uppercase tracking-wider font-medium transition-colors",
               isCompiling
                 ? "border-studio-accent/25 bg-studio-accent-muted text-studio-accent hover:bg-studio-accent-muted/80"
                 : warnings.length > 0
@@ -50,7 +50,7 @@ export function PreviewStatus({ isCompiling, warnings, className }: PreviewStatu
           >
             <div
               className={cn(
-                "flex items-center gap-2 font-bold text-xs uppercase tracking-wider",
+                "flex items-center gap-2 font-medium text-xs uppercase tracking-wider",
                 warnings.length > 0 ? "text-studio-attention" : "text-studio-success",
               )}
             >

@@ -5,7 +5,11 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 let pathname = "/"
 
 vi.mock("next/navigation", () => ({ usePathname: () => pathname }))
-vi.mock("next/font/google", () => ({ Geist: () => ({}), Geist_Mono: () => ({}) }))
+vi.mock("next/font/google", () => ({
+  Geist: () => ({ variable: "font-geist-sans" }),
+  Geist_Mono: () => ({ variable: "font-geist-mono" }),
+  Instrument_Serif: () => ({ variable: "font-instrument-serif" }),
+}))
 vi.mock("@/components/providers", () => ({
   Providers: ({ children }: { children: ReactNode }) => <div data-testid="theme-provider">{children}</div>,
 }))

@@ -149,7 +149,9 @@ export function StatusActions({ documentId, currentStatus }: StatusActionsProps)
       <Dialog open={reviewDialogOpen} onOpenChange={setReviewDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{pendingAction === "in_review" ? "Submit for Review" : "Request Changes"}</DialogTitle>
+            <DialogTitle className="rp-display">
+              {pendingAction === "in_review" ? "Submit for Review" : "Request Changes"}
+            </DialogTitle>
             <DialogDescription>
               {pendingAction === "in_review"
                 ? "Add an optional note for the reviewer."

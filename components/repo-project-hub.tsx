@@ -97,13 +97,13 @@ function HubProjectCard({
   const updatedOn = formatUtcDate(project.updatedAt)
 
   return (
-    <article className="surface-card flex h-full flex-col rounded-[1.5rem] border p-5 sm:p-6">
+    <article className="flex h-full flex-col rounded-lg border border-border bg-background p-5 sm:p-6">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <p className="font-mono text-[0.65rem] uppercase tracking-[0.2em] text-muted-foreground">
             {project.contentRoot || "Repository root"}
           </p>
-          <h3 className="mt-3 truncate text-xl font-semibold tracking-[-0.03em] text-foreground">{project.name}</h3>
+          <h3 className="mt-3 truncate rp-display text-xl">{project.name}</h3>
         </div>
 
         {canManage ? (
@@ -304,7 +304,7 @@ export function RepoProjectHub({
 
   return (
     <div className="flex flex-col gap-8">
-      <section className="surface-card rounded-[2rem] border p-6 sm:p-8">
+      <section className="rounded-lg border border-border bg-background p-6 sm:p-8">
         <div className="flex flex-col gap-8 xl:flex-row xl:items-start xl:justify-between">
           <div className="max-w-3xl">
             <Button
@@ -323,7 +323,7 @@ export function RepoProjectHub({
               Repository hub
             </p>
             <p className="mt-4 font-mono text-[0.7rem] uppercase tracking-[0.2em] text-muted-foreground">{owner}</p>
-            <h1 className="mt-2 text-3xl font-semibold tracking-[-0.05em] text-foreground sm:text-4xl">{repo}</h1>
+            <h1 className="rp-display mt-2 text-3xl sm:text-4xl">{repo}</h1>
             <p className="mt-4 text-sm leading-7 text-muted-foreground sm:text-base">{configDescription}</p>
 
             <div className="mt-5 flex flex-wrap gap-2">
@@ -378,25 +378,27 @@ export function RepoProjectHub({
         </div>
 
         <div className="mt-8 grid gap-3 sm:grid-cols-3">
-          <div className="rounded-[1.5rem] border border-border/70 bg-background/80 p-4">
+          <div className="rounded-md border border-border/70 bg-background/80 p-4">
             <p className="font-mono text-[0.62rem] uppercase tracking-[0.18em] text-muted-foreground">Projects</p>
-            <p className="mt-3 text-2xl font-semibold tracking-[-0.03em] text-foreground">{activeProjects.length}</p>
+            <p className="mt-3 font-mono text-2xl font-medium tabular-nums text-foreground">{activeProjects.length}</p>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
               Active editing surfaces connected to this repository.
             </p>
           </div>
-          <div className="rounded-[1.5rem] border border-border/70 bg-background/80 p-4">
+          <div className="rounded-md border border-border/70 bg-background/80 p-4">
             <p className="font-mono text-[0.62rem] uppercase tracking-[0.18em] text-muted-foreground">
               Needs attention
             </p>
-            <p className="mt-3 text-2xl font-semibold tracking-[-0.03em] text-foreground">{orphanedProjects.length}</p>
+            <p className="mt-3 font-mono text-2xl font-medium tabular-nums text-foreground">
+              {orphanedProjects.length}
+            </p>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
               Projects removed from config but still present until cleaned up.
             </p>
           </div>
-          <div className="rounded-[1.5rem] border border-border/70 bg-background/80 p-4">
+          <div className="rounded-md border border-border/70 bg-background/80 p-4">
             <p className="font-mono text-[0.62rem] uppercase tracking-[0.18em] text-muted-foreground">Access</p>
-            <p className="mt-3 text-2xl font-semibold tracking-[-0.03em] text-foreground capitalize">{role}</p>
+            <p className="mt-3 font-mono text-2xl font-medium capitalize text-foreground">{role}</p>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
               {isWriter
                 ? "You can add or modify projects in this repository."
@@ -439,7 +441,7 @@ export function RepoProjectHub({
               <p className="font-mono text-[0.68rem] uppercase tracking-[0.22em] text-muted-foreground">
                 Needs attention
               </p>
-              <h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-foreground">Removed from config</h2>
+              <h2 className="mt-2 rp-display text-2xl">Removed from config</h2>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">
                 These projects were removed from the repository config but still exist in RepoPress until cleaned up.
               </p>
@@ -473,7 +475,7 @@ export function RepoProjectHub({
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="font-mono text-[0.68rem] uppercase tracking-[0.22em] text-muted-foreground">Projects</p>
-            <h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-foreground">
+            <h2 className="mt-2 rp-display text-2xl">
               {activeProjects.length > 0 ? "Content surfaces for this repository" : "No projects connected yet"}
             </h2>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
@@ -516,11 +518,11 @@ export function RepoProjectHub({
             })}
           </div>
         ) : !orphanedProjects.length ? (
-          <div className="flex flex-col items-center justify-center rounded-[1.75rem] border border-dashed border-border/70 bg-muted/20 px-6 py-14 text-center">
+          <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border/70 bg-muted/20 px-6 py-14 text-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-background text-muted-foreground">
               <Folder className="h-5 w-5" />
             </div>
-            <h3 className="mt-5 text-lg font-semibold tracking-[-0.03em] text-foreground">No projects found</h3>
+            <h3 className="mt-5 rp-display text-lg">No projects found</h3>
             {hasConfig && syncError ? (
               <p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">
                 A config file was found but sync failed. Retry sync, then come back here to open the generated projects.

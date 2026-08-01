@@ -77,8 +77,8 @@ function LiveConfigurePreview({ def, formState }: { def: AuthoringComponent; for
   ) {
     return (
       <div className="w-full max-w-sm space-y-3">
-        <div className="w-full aspect-video rounded-xl border border-studio-border overflow-hidden bg-studio-canvas-inset">
-          <StudioVideoPreview url={formState.src} className="w-full h-full rounded-xl" />
+        <div className="w-full aspect-video rounded-lg border border-studio-border overflow-hidden bg-studio-canvas-inset">
+          <StudioVideoPreview url={formState.src} className="w-full h-full rounded-lg" />
         </div>
         {typeof formState.title === "string" && formState.title && (
           <p className="text-xs font-medium text-studio-fg text-center">{formState.title}</p>
@@ -97,12 +97,12 @@ function LiveConfigurePreview({ def, formState }: { def: AuthoringComponent; for
         : { background: "bg-studio-canvas-inset", border: "border-studio-border" }
 
     return (
-      <div className={cn("w-full max-w-sm rounded-xl border p-4 space-y-2", style.background, style.border)}>
+      <div className={cn("w-full max-w-sm rounded-lg border p-4 space-y-2", style.background, style.border)}>
         <div className="flex items-center gap-2">
           <span aria-hidden="true" className="text-sm">
             ℹ
           </span>
-          <p className="text-xs font-semibold text-studio-fg">{title || "Callout"}</p>
+          <p className="text-xs font-medium text-studio-fg">{title || "Callout"}</p>
         </div>
         <div className="space-y-1.5 pl-5">
           <div className="w-full h-1.5 rounded-full bg-studio-fg/10" />
@@ -347,9 +347,7 @@ export function ComponentInsertModal({
               <div className="px-6 pt-5 pb-4 border-b border-studio-border shrink-0">
                 <div className="flex items-start justify-between mb-3">
                   <div>
-                    <DialogTitle className="text-xl font-semibold tracking-tight text-studio-fg">
-                      Insert Component
-                    </DialogTitle>
+                    <DialogTitle className="rp-display text-xl text-studio-fg">Insert Component</DialogTitle>
                     <DialogDescription className="text-xs text-studio-fg-muted mt-0.5">
                       Extend your document with a reusable component
                     </DialogDescription>
@@ -386,9 +384,9 @@ export function ComponentInsertModal({
                       type="button"
                       onClick={() => setActiveCategory(cat)}
                       className={cn(
-                        "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold transition-all duration-150 whitespace-nowrap shrink-0",
+                        "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium transition-all duration-150 whitespace-nowrap shrink-0",
                         activeCategory === cat
-                          ? "bg-studio-accent text-white shadow-sm border border-studio-accent"
+                          ? "bg-studio-accent text-white border border-studio-accent"
                           : "text-studio-fg hover:text-studio-accent hover:bg-studio-canvas-inset",
                       )}
                     >
@@ -514,7 +512,7 @@ export function ComponentInsertModal({
                     <button
                       type="button"
                       onClick={() => setShowPreview(!showPreview)}
-                      className="flex items-center gap-1.5 text-[12px] font-semibold text-studio-fg-muted hover:text-studio-fg transition-colors group"
+                      className="flex items-center gap-1.5 text-[12px] font-medium text-studio-fg-muted hover:text-studio-fg transition-colors group"
                       title="Preview the generated JSX code"
                     >
                       <Code className="h-4 w-4 transition-colors group-hover:text-studio-accent" />
@@ -548,8 +546,8 @@ export function ComponentInsertModal({
                         disabled={hasErrors}
                         size="sm"
                         className={cn(
-                          "h-9 px-6 text-xs font-semibold tracking-wide",
-                          hasErrors ? "opacity-50 cursor-not-allowed" : "shadow-sm",
+                          "h-9 px-6 text-xs font-medium tracking-wide",
+                          hasErrors ? "opacity-50 cursor-not-allowed" : "",
                         )}
                         title={hasErrors ? "Fill all required fields" : "Insert this component"}
                       >

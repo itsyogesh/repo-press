@@ -34,7 +34,7 @@ export function ProfileContent() {
       <div className="mx-auto w-full max-w-2xl px-4 py-10 sm:px-6">
         <div className="flex flex-col gap-6">
           <Skeleton className="h-8 w-48" />
-          <Skeleton className="h-64 w-full rounded-xl" />
+          <Skeleton className="h-64 w-full rounded-lg" />
         </div>
       </div>
     )
@@ -57,20 +57,20 @@ export function ProfileContent() {
       <div className="flex flex-col gap-8">
         <div>
           <p className="font-mono text-[0.72rem] uppercase tracking-[0.24em] text-muted-foreground">Account</p>
-          <h1 className="mt-3 text-3xl font-semibold tracking-[-0.05em] text-foreground">Profile</h1>
+          <h1 className="rp-display mt-3 text-2xl">Profile</h1>
         </div>
 
         <Card className="overflow-hidden border-border/70">
           <CardContent className="p-6 sm:p-8">
             <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
-              <Avatar className="h-20 w-20 shrink-0 rounded-xl">
+              <Avatar className="h-20 w-20 shrink-0 rounded-full">
                 <AvatarImage src={avatarUrl} alt={displayName} />
-                <AvatarFallback className="rounded-xl text-lg">{getInitials(displayName)}</AvatarFallback>
+                <AvatarFallback className="rounded-full text-lg">{getInitials(displayName)}</AvatarFallback>
               </Avatar>
 
               <div className="min-w-0 flex-1 space-y-4">
                 <div>
-                  <h2 className="text-xl font-semibold tracking-tight text-foreground">{displayName}</h2>
+                  <h2 className="rp-display text-xl">{displayName}</h2>
                   {user.email && (
                     <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
                       <Mail className="h-3.5 w-3.5 shrink-0" />
@@ -110,7 +110,7 @@ export function ProfileContent() {
                   <p className="text-xs text-muted-foreground">{user.email ?? "Connected"}</p>
                 </div>
               </div>
-              <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[0.65rem] font-medium text-emerald-600 dark:text-emerald-400">
+              <span className="rounded-full bg-studio-success-muted px-2 py-0.5 text-[0.65rem] font-medium text-studio-success">
                 Active
               </span>
             </div>

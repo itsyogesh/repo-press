@@ -4,14 +4,19 @@ RepoPress is a Git-native headless CMS for GitHub repositories. It provides visu
 
 ## 🎨 Design System
 
-**Read `DESIGN.md` at the repo root before building any UI.** It is the authoritative design system specification for RepoPress, covering color tokens, typography, component patterns, spacing, elevation, and an agent prompt guide. Key rules:
+**Read `docs/design-system/README.md` before building any UI.** It is the authoritative design spec. Key rules:
 
-- Font: Geist Sans (UI) + Geist Mono (code, paths, technical labels)
-- Colors: Balanced monochrome tokens (`bg-background`, `bg-card`, `bg-muted`) + one Signal Slate accent (`oklch(0.52 0.13 255)` light / `oklch(0.72 0.11 255)` dark) for CTAs and active states only
-- Weights: 400 (body) | 500 (UI labels, nav) | 600 (headings) - never raw `font-bold` in UI chrome
-- Radius: 6px inputs/buttons | 8px cards | 10px modals
-- Always use semantic tokens (`text-foreground`, `text-muted-foreground`, `border-border`); never raw hex or `bg-white`/`text-black`
-- Reject "AI slop": no equal-weight icon-card grids, no default shadcn gray layouts, no safe corporate section templates
+**"RepoPress Editorial"** — warm monochrome, Instrument Serif display, hairlines + whitespace. No card shadows, no icon grids, no gradient backgrounds.
+
+- **Fonts**: Geist Sans (UI) + Geist Mono (code, paths, overlines, technical labels) + Instrument Serif (display headlines only)
+- **Accent**: Signal Slate (`oklch(0.52 0.13 255)` light / `oklch(0.72 0.11 255)` dark) — the **only** chromatic color
+- **Weights**: 400 body | 500 UI labels/nav (`font-medium`) | 600 headings (`font-semibold`) — **never `font-bold` in chrome**
+- **Radius**: chips 4px | badges 6px | inputs/buttons 8px (`rounded-md`) | dropdowns/popovers 12px (`rounded-lg`) | cards 12px (`rounded-lg`) | modals 14px (`rounded-xl`) | pills `rounded-full`
+- **Tokens only**: always `bg-background`, `text-foreground`, `bg-muted`, `text-muted-foreground`, `border-border` — never `bg-white`, `text-black`, or raw hex
+- **No glass**: `glass-*` utilities are removed from all consumer components; no `backdrop-filter: blur` in chrome
+- **No gloss**: `surface-card` is removed; `Card` is flat `bg-card border-border`
+- **Elevation**: modals/floating menus keep `shadow-lg`/`shadow-md`; decorative `shadow-sm` on chrome elements is banned
+- **Anti-patterns**: no equal-weight icon-card grids, no default shadcn gray layouts, no gradient backgrounds ("AI slop")
 
 ## ⚠️ Git Best Practices - CRITICAL
 

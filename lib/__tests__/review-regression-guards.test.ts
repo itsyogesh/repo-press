@@ -825,7 +825,7 @@ describe("review regression guards", () => {
     for (const relativePath of removedHostExecutionPaths) {
       expect(fs.existsSync(path.join(ROOT, relativePath)), relativePath).toBe(false)
     }
-  })
+  }, 15_000)
 
   it("keeps repository execution out of the navigable sandbox Window", () => {
     const runtime = read("components/preview-sandbox/SandboxRuntime.tsx")

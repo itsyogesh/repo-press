@@ -95,7 +95,7 @@ export default async function SettingsPage({ params }: SettingsPageProps) {
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-2">
             <Settings className="h-6 w-6 text-muted-foreground" />
-            <h1 className="text-3xl font-semibold tracking-tight text-foreground">Project Settings</h1>
+            <h1 className="rp-display text-2xl">Project Settings</h1>
           </div>
           <p className="text-muted-foreground">
             Manage your projects for {owner}/{repo}
@@ -106,7 +106,7 @@ export default async function SettingsPage({ params }: SettingsPageProps) {
           {settingsLoadError ? (
             <Card className="overflow-hidden border-destructive/30 bg-destructive/5 shadow-sm">
               <CardHeader className="pb-3">
-                <CardTitle className="text-lg">Settings unavailable</CardTitle>
+                <CardTitle className="rp-display text-lg">Settings unavailable</CardTitle>
                 <CardDescription>{settingsLoadError}</CardDescription>
               </CardHeader>
               <CardContent className="pt-0">
@@ -122,10 +122,10 @@ export default async function SettingsPage({ params }: SettingsPageProps) {
                   <div className="flex items-start justify-between">
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
-                        <CardTitle className="text-xl">{project.name}</CardTitle>
+                        <CardTitle className="rp-display text-xl">{project.name}</CardTitle>
                         <Badge
                           variant="secondary"
-                          className="h-5 px-1.5 text-[10px] uppercase font-bold tracking-tight bg-muted/50"
+                          className="h-5 px-1.5 text-[10px] uppercase font-medium tracking-tight bg-muted/50"
                         >
                           {project.contentType}
                         </Badge>
@@ -139,13 +139,13 @@ export default async function SettingsPage({ params }: SettingsPageProps) {
                 <CardContent className="space-y-6 pt-0">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                     <div className="space-y-1">
-                      <p className="text-muted-foreground text-xs font-bold uppercase tracking-wider">Source</p>
+                      <p className="text-muted-foreground text-xs font-medium uppercase tracking-wider">Source</p>
                       <p className="font-mono bg-muted/30 px-2 py-1 rounded border text-[12px] inline-block">
                         {project.frameworkSource === "config" ? "repopress.config.json" : "Manual / Detected"}
                       </p>
                     </div>
                     <div className="space-y-1">
-                      <p className="text-muted-foreground text-xs font-bold uppercase tracking-wider">Framework</p>
+                      <p className="text-muted-foreground text-xs font-medium uppercase tracking-wider">Framework</p>
                       <p className="font-medium">{project.detectedFramework || "Generic"}</p>
                     </div>
                   </div>
@@ -161,7 +161,7 @@ export default async function SettingsPage({ params }: SettingsPageProps) {
               </Card>
             ))
           ) : (
-            <div className="text-center py-12 border-2 border-dashed rounded-xl bg-muted/5">
+            <div className="text-center py-12 border-2 border-dashed rounded-lg bg-muted/5">
               <p className="text-muted-foreground">No projects found for this repository.</p>
               <Button variant="link" asChild className="mt-2">
                 <Link href={`/dashboard/${owner}/${repo}/setup`}>Configure a project</Link>

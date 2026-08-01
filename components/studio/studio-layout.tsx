@@ -21,10 +21,11 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
 import { Skeleton } from "@/components/ui/skeleton"
+import { StatusBadge } from "@/components/ui/status-badge"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
-import { DOCUMENT_STATUS_CONFIG, type DocumentStatus, isPublishableDocumentStatus } from "@/lib/document-status"
+import { type DocumentStatus, isPublishableDocumentStatus } from "@/lib/document-status"
 import { getFrameworkAdapter } from "@/lib/framework-adapters"
 import { type FileTreeNode, findTreeNode } from "@/lib/github"
 import type { PreviewResult } from "@/lib/preview/contracts"
@@ -219,7 +220,7 @@ function StudioNoSelectionLoading() {
           <Skeleton className="h-8 w-52 mx-auto" />
           <Skeleton className="h-4 w-96 mx-auto max-w-full" />
         </div>
-        <div className="mx-auto max-w-2xl rounded-[1.75rem] border border-studio-border/70 bg-studio-canvas-inset/30 p-4 shadow-sm">
+        <div className="mx-auto max-w-2xl rounded-lg border border-studio-border/70 bg-studio-canvas-inset/30 p-4">
           <div className="mx-auto max-w-xl space-y-3">
             <Skeleton className="h-11 w-full rounded-md" />
             <div className="space-y-1 rounded-lg border border-studio-border bg-studio-canvas-inset/30 p-2">
@@ -255,12 +256,12 @@ function StudioPreviewLoading() {
 
       <div className="flex-1 overflow-y-auto bg-studio-canvas-inset/30">
         <div className="mx-auto max-w-[920px] p-5">
-          <div className="rounded-[1.5rem] border border-studio-border/70 bg-studio-canvas p-7 shadow-sm">
+          <div className="rounded-lg border border-studio-border/70 bg-studio-canvas p-7">
             <div className="space-y-4">
               <Skeleton className="h-4 w-24 rounded-full" />
               <Skeleton className="h-10 w-2/3" />
               <Skeleton className="h-5 w-1/2" />
-              <Skeleton className="h-52 w-full rounded-[1.25rem]" />
+              <Skeleton className="h-52 w-full rounded-lg" />
               <Skeleton className="h-4 w-full" />
               <Skeleton className="h-4 w-11/12" />
               <Skeleton className="h-4 w-10/12" />
@@ -372,7 +373,7 @@ function StudioSidebarRail({
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-10 w-10 rounded-xl text-studio-fg transition-colors hover:bg-studio-canvas-inset"
+                className="h-10 w-10 rounded-md text-studio-fg transition-colors hover:bg-studio-canvas-inset"
                 title="Expand sidebar"
                 aria-label="Expand sidebar"
                 onClick={onExpand}
@@ -1350,7 +1351,6 @@ function StudioLayoutInner({
   const showSidebarRail = !isMobile && isSidebarCollapsed
 
   const currentStatus: DocumentStatus = (document?.status as DocumentStatus | undefined) ?? "draft"
-  const statusInfo = DOCUMENT_STATUS_CONFIG[currentStatus] || DOCUMENT_STATUS_CONFIG.draft
   const canPublish = isPublishableDocumentStatus(currentStatus)
   const historyHref = buildHistoryHref({ owner, repo, branch, projectId })
 
@@ -1375,7 +1375,6 @@ function StudioLayoutInner({
             contentRoot={contentRoot}
             documentId={document?._id}
             currentStatus={currentStatus}
-            statusInfo={statusInfo}
             onSave={saveDraft}
             isSaving={isSaving || isFileLoading}
           />
@@ -1443,7 +1442,7 @@ function StudioLayoutInner({
                               asChild
                               variant="ghost"
                               size="sm"
-                              className="h-9 w-full justify-between rounded-xl border border-studio-border bg-studio-canvas px-3 text-xs hover:bg-studio-canvas-inset"
+                              className="h-9 w-full justify-between rounded-md border border-studio-border bg-studio-canvas px-3 text-xs hover:bg-studio-canvas-inset"
                             >
                               <Link href={historyHref}>
                                 <span className="inline-flex items-center gap-2">
@@ -1463,7 +1462,7 @@ function StudioLayoutInner({
                               asChild
                               variant="ghost"
                               size="sm"
-                              className="h-9 w-full justify-start rounded-xl border border-studio-border bg-studio-canvas px-3 text-xs hover:bg-studio-canvas-inset"
+                              className="h-9 w-full justify-start rounded-md border border-studio-border bg-studio-canvas px-3 text-xs hover:bg-studio-canvas-inset"
                             >
                               <Link href={`/dashboard/${owner}/${repo}/settings`}>
                                 <span className="inline-flex items-center gap-2">
@@ -1517,7 +1516,7 @@ function StudioLayoutInner({
                 {openFiles.length > 0 && (
                   <div className="shrink-0 border-b border-studio-border bg-studio-canvas">
                     <div className="flex items-center gap-2 overflow-x-auto px-3 py-2">
-                      <span className="hidden shrink-0 text-[10px] font-semibold uppercase tracking-[0.16em] text-studio-fg-muted md:inline">
+                      <span className="hidden shrink-0 text-[10px] font-medium uppercase tracking-[0.16em] text-studio-fg-muted md:inline">
                         Open
                       </span>
                       {openFiles.map((path: string) => {
@@ -1527,7 +1526,7 @@ function StudioLayoutInner({
                           <div
                             key={path}
                             className={cn(
-                              "group flex h-9 items-center gap-2 rounded-xl border px-2.5 text-xs shadow-sm transition-colors",
+                              "group flex h-9 items-center gap-2 rounded-md border px-2.5 text-xs transition-colors",
                               isActive
                                 ? "border-studio-accent/30 bg-studio-accent-muted text-studio-fg"
                                 : "border-studio-border/70 bg-studio-canvas-inset/40 text-studio-fg-muted hover:bg-studio-canvas-inset/70",
@@ -1585,7 +1584,7 @@ function StudioLayoutInner({
                         canPublish={canPublish}
                         statusBadge={
                           <div className="flex items-center gap-1">
-                            <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
+                            <StatusBadge status={currentStatus} />
                             {document && <StatusActions documentId={document._id} currentStatus={currentStatus} />}
                           </div>
                         }
@@ -1605,11 +1604,11 @@ function StudioLayoutInner({
                     <StudioNoSelectionLoading />
                   ) : (
                     <div className="flex h-full items-center justify-center bg-studio-canvas-inset/20 px-6 py-8">
-                      <div className="w-full max-w-xl rounded-xl bg-studio-canvas p-6 shadow-sm">
+                      <div className="w-full max-w-xl rounded-lg border border-studio-border/60 bg-studio-canvas p-6">
                         <div className="space-y-5">
                           <div className="space-y-3 text-left">
                             <div className="space-y-2">
-                              <h2 className="text-2xl font-semibold tracking-tight text-studio-fg">
+                              <h2 className="rp-display text-2xl text-studio-fg">
                                 Open a file and keep the whole studio in flow
                               </h2>
                               <p className="max-w-xl text-sm leading-6 text-studio-fg-muted">
@@ -1669,7 +1668,7 @@ function StudioLayoutInner({
                                     navigateToFile(firstResult.path)
                                   }
                                 }}
-                                className="h-11 rounded-xl border-studio-border bg-studio-canvas pl-10 pr-10 shadow-sm"
+                                className="h-11 rounded-md border-studio-border bg-studio-canvas pl-10 pr-10"
                                 placeholder="Search docs..."
                               />
                               <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
@@ -1707,7 +1706,7 @@ function StudioLayoutInner({
                                       <li key={file.path}>
                                         <button
                                           type="button"
-                                          className="flex w-full items-start gap-2 rounded-xl px-2 py-2 text-left transition-colors hover:bg-studio-canvas-inset"
+                                          className="flex w-full items-start gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-studio-canvas-inset"
                                           onClick={() => navigateToFile(file.path)}
                                         >
                                           <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-studio-fg-muted" />
@@ -1732,7 +1731,7 @@ function StudioLayoutInner({
                                     <li key={file.path}>
                                       <button
                                         type="button"
-                                        className="flex w-full items-start gap-2 rounded-xl px-2 py-2 text-left transition-colors hover:bg-studio-canvas-inset"
+                                        className="flex w-full items-start gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-studio-canvas-inset"
                                         onClick={() => navigateToFile(file.path)}
                                       >
                                         <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-studio-fg-muted" />
@@ -1860,7 +1859,7 @@ function StudioLayoutInner({
         >
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Discard all pending changes?</AlertDialogTitle>
+              <AlertDialogTitle className="rp-display">Discard all pending changes?</AlertDialogTitle>
               <AlertDialogDescription>
                 This will revert all your staged creations, deletions, and edits. This action cannot be undone.
               </AlertDialogDescription>

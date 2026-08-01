@@ -18,7 +18,6 @@ import Link from "next/link"
 import * as React from "react"
 import { toast } from "sonner"
 import { syncProjectsFromConfigAction } from "@/app/dashboard/[owner]/[repo]/actions"
-import { Badge } from "@/components/ui/badge"
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -29,23 +28,22 @@ import {
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { StatusBadge } from "@/components/ui/status-badge"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import type { DocumentStatus } from "@/lib/document-status"
 import type { FileTreeNode } from "@/lib/github"
 import { buildHistoryHref } from "@/lib/studio/history-link"
 import { ProjectSwitcher } from "./project-switcher"
 import { StatusActions } from "./status-actions"
 import { useStudio } from "./studio-context"
+import { StudioPageThemeMenuItem, StudioPageThemeToggle } from "./studio-page-theme-toggle"
 import { useViewMode } from "./view-mode-context"
 
 interface StudioHeaderProps {
   selectedFile: FileTreeNode | null
   contentRoot?: string
   documentId?: string
-  currentStatus: string
-  statusInfo: {
-    label: string
-    variant: "default" | "secondary" | "outline" | "destructive"
-  }
+  currentStatus: DocumentStatus
   onSave: () => void
   isSaving: boolean
 }
@@ -55,7 +53,6 @@ export function StudioHeader({
   contentRoot,
   documentId,
   currentStatus,
-  statusInfo,
   onSave,
   isSaving,
 }: StudioHeaderProps) {
@@ -90,9 +87,9 @@ export function StudioHeader({
   const filename = pathSegments.pop()
 
   return (
-    <header className="flex h-full w-full min-w-0 items-center gap-3">
+    <header className="flex h-full w-full min-w-0 items-center gap-2 sm:gap-3">
       <div className="flex min-w-0 flex-1 items-center gap-3 overflow-hidden">
-        <div className="flex shrink-0 items-center gap-1 rounded-xl border border-studio-border/70 bg-studio-canvas-inset/70 p-1 shadow-sm">
+        <div className="flex shrink-0 items-center gap-1 rounded-md border border-studio-border/70 bg-studio-canvas-inset/70 p-1">
           <Button
             variant="ghost"
             size="icon"
@@ -118,8 +115,8 @@ export function StudioHeader({
           </Button>
         </div>
 
-        <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden rounded-xl border border-studio-border/70 bg-studio-canvas-inset/45 px-3 py-2 shadow-sm">
-          <div className="hidden shrink-0 items-center gap-2 rounded-full border border-studio-border/60 bg-studio-canvas px-2.5 py-1 text-[11px] font-medium text-studio-fg-muted xl:flex">
+        <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden rounded-md border border-studio-border/70 bg-studio-canvas-inset/45 px-3 py-2">
+          <div className="hidden shrink-0 items-center gap-2 rounded-full border border-studio-border/60 bg-studio-canvas px-2.5 py-1 font-mono text-[11px] font-medium text-studio-fg-muted xl:flex">
             <span className="truncate text-studio-fg">
               {owner}/{repo}
             </span>
@@ -131,7 +128,7 @@ export function StudioHeader({
           </div>
 
           <div className="min-w-0 flex-1 overflow-x-auto">
-            <Breadcrumb className="min-w-max text-sm">
+            <Breadcrumb className="min-w-max font-mono text-sm">
               <BreadcrumbList className="flex-nowrap whitespace-nowrap">
                 {pathSegments.map((seg) => (
                   <React.Fragment key={`breadcrumb-${seg}`}>
@@ -153,17 +150,19 @@ export function StudioHeader({
         </div>
       </div>
 
-      <div className="ml-auto flex shrink-0 items-center gap-2">
+      <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
         {selectedFile && (
-          <div className="hidden items-center gap-1 rounded-xl border border-studio-border/70 bg-studio-canvas-inset/50 px-2.5 py-1.5 lg:flex">
-            <Badge variant={statusInfo.variant} className="capitalize">
-              {statusInfo.label}
-            </Badge>
+          <div className="hidden items-center gap-1 rounded-md border border-studio-border/70 bg-studio-canvas-inset/50 px-2.5 py-1.5 lg:flex">
+            <StatusBadge status={currentStatus} />
             {documentId && <StatusActions documentId={documentId} currentStatus={currentStatus as any} />}
           </div>
         )}
 
-        {projectId ? <ProjectSwitcher currentProjectId={projectId} owner={owner} repo={repo} branch={branch} /> : null}
+        {projectId ? (
+          <div className="hidden md:block">
+            <ProjectSwitcher currentProjectId={projectId} owner={owner} repo={repo} branch={branch} />
+          </div>
+        ) : null}
 
         <ToggleGroup
           type="single"
@@ -171,18 +170,12 @@ export function StudioHeader({
           onValueChange={(val) => {
             if (val) setViewMode(val as any)
           }}
-          className="hidden rounded-xl border border-studio-border/70 bg-studio-canvas-inset/50 p-1 shadow-sm md:flex"
+          className="hidden rounded-md border border-studio-border/70 bg-studio-canvas-inset/50 p-1 md:flex"
         >
-          <ToggleGroupItem
-            value="editor"
-            className="h-7 rounded-lg px-2.5 text-xs data-[state=on]:bg-studio-canvas data-[state=on]:shadow-sm"
-          >
+          <ToggleGroupItem value="editor" className="h-7 rounded-sm px-2.5 text-xs data-[state=on]:bg-studio-canvas">
             Editor
           </ToggleGroupItem>
-          <ToggleGroupItem
-            value="split"
-            className="h-7 rounded-lg px-2.5 text-xs data-[state=on]:bg-studio-canvas data-[state=on]:shadow-sm"
-          >
+          <ToggleGroupItem value="split" className="h-7 rounded-sm px-2.5 text-xs data-[state=on]:bg-studio-canvas">
             Split
           </ToggleGroupItem>
         </ToggleGroup>
@@ -190,26 +183,35 @@ export function StudioHeader({
         <Button
           variant="default"
           size="sm"
-          className="h-9 gap-2 rounded-xl bg-studio-accent px-3 text-studio-accent-fg shadow-sm hover:bg-studio-accent/90"
+          className="h-9 w-9 gap-2 rounded-md bg-studio-accent px-0 text-studio-accent-fg hover:bg-studio-accent/90 sm:w-auto sm:px-3"
           onClick={onSave}
           disabled={!selectedFile || isSaving}
+          aria-label={isSaving ? "Saving draft" : "Save draft"}
         >
           {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-          <span>{isSaving ? "Saving…" : "Save draft"}</span>
+          <span className="hidden sm:inline">{isSaving ? "Saving…" : "Save draft"}</span>
         </Button>
+
+        <div className="hidden sm:block">
+          <StudioPageThemeToggle />
+        </div>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
               size="icon"
-              className="h-9 w-9 rounded-xl border border-studio-border/70 bg-studio-canvas-inset/45 shadow-sm hover:bg-studio-canvas-inset"
+              className="h-9 w-9 rounded-md border border-studio-border/70 bg-studio-canvas-inset/45 hover:bg-studio-canvas-inset"
             >
               <MoreVertical className="h-4 w-4" />
               <span className="sr-only">More options</span>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            {projectId ? (
+              <ProjectSwitcher currentProjectId={projectId} owner={owner} repo={repo} branch={branch} variant="menu" />
+            ) : null}
+            <StudioPageThemeMenuItem />
             <DropdownMenuItem
               onClick={() => {
                 setSidebarState(sidebarState === "expanded" ? "collapsed" : "expanded")
@@ -258,11 +260,11 @@ export function StudioHeader({
             onCloseAutoFocus={(e) => e.preventDefault()}
           >
             <DialogHeader>
-              <DialogTitle>Keyboard Shortcuts</DialogTitle>
+              <DialogTitle className="rp-display">Keyboard Shortcuts</DialogTitle>
               <DialogDescription>Use shortcuts to navigate and edit without leaving the keyboard.</DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4 md:grid-cols-2">
-              <div className="rounded-2xl border border-studio-border/70 bg-studio-canvas-inset/35 p-4">
+              <div className="rounded-md border border-studio-border/70 bg-studio-canvas-inset/35 p-4">
                 <h4 className="mb-3 text-sm font-medium text-studio-fg">General</h4>
                 <ul className="space-y-2 text-sm text-studio-fg-muted">
                   <li className="flex justify-between">
@@ -291,7 +293,7 @@ export function StudioHeader({
                   </li>
                 </ul>
               </div>
-              <div className="rounded-2xl border border-studio-border/70 bg-studio-canvas-inset/35 p-4">
+              <div className="rounded-md border border-studio-border/70 bg-studio-canvas-inset/35 p-4">
                 <h4 className="mb-3 text-sm font-medium text-studio-fg">View</h4>
                 <ul className="space-y-2 text-sm text-studio-fg-muted">
                   <li className="flex justify-between">

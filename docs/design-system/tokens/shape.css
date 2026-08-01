@@ -1,0 +1,50 @@
+/* ============================================================
+   RepoPress — Shape, elevation & motion tokens
+   ------------------------------------------------------------
+   Radius: inputs/buttons 8px, cards 12px, modals 14px.
+   Editorial-soft, NOT pillowy. Borders are whisper-weight 1px
+   hairlines; prefer shadow-as-border (1px ring) over heavy drops.
+   Motion: tasteful, honor prefers-reduced-motion.
+   ============================================================ */
+
+:root {
+  /* ---- Radius ---- */
+  --radius-xs:   4px;    /* chips, tags, toolbar buttons */
+  --radius-sm:   6px;    /* badges, small controls */
+  --radius:      8px;    /* inputs, buttons (default) */
+  --radius-md:   10px;   /* dropdowns, popovers */
+  --radius-lg:   12px;   /* cards, panels */
+  --radius-xl:   14px;   /* modals, dialogs */
+  --radius-2xl:  20px;   /* large featured marketing panels */
+  --radius-full: 9999px; /* pills, avatars, toggles */
+
+  /* ---- Border widths ---- */
+  --border-width: 1px;   /* never 2px on UI chrome */
+
+  /* ---- Elevation (light) — monochrome, hierarchy not decoration ---- */
+  --shadow-ring:  0 0 0 1px oklch(0 0 0 / 0.06);
+  --shadow-1:     0 1px 3px oklch(0 0 0 / 0.05);
+  --shadow-2:     0 4px 16px oklch(0 0 0 / 0.08), 0 0 0 1px oklch(0 0 0 / 0.04);
+  --shadow-3:     0 8px 32px oklch(0 0 0 / 0.12), 0 0 0 1px oklch(0 0 0 / 0.06);
+
+  /* soft accent glow for hero focal points (use sparingly) */
+  --glow-slate:   0 0 80px -20px oklch(0.52 0.13 255 / 0.35);
+
+  /* ---- Motion ---- */
+  --ease-out:      cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-in-out:   cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-fast:    120ms;
+  --dur-base:    200ms;
+  --dur-slow:    380ms;
+  --dur-reveal:  600ms;
+}
+
+.dark,
+[data-theme="dark"] {
+  --shadow-ring:  0 0 0 1px oklch(1 0 0 / 0.06);
+  --shadow-1:     0 2px 8px oklch(0 0 0 / 0.24), 0 0 0 1px oklch(1 0 0 / 0.05);
+  --shadow-2:     0 8px 24px oklch(0 0 0 / 0.40), 0 0 0 1px oklch(1 0 0 / 0.07);
+  --shadow-3:     0 16px 48px oklch(0 0 0 / 0.56), 0 0 0 1px oklch(1 0 0 / 0.08);
+  --glow-slate:   0 0 90px -20px oklch(0.72 0.11 255 / 0.40);
+}

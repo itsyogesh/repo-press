@@ -63,9 +63,7 @@ export default function AboutPage() {
         {/* Hero */}
         <section className="container mx-auto px-4 py-16 md:py-24">
           <div className="max-w-3xl mx-auto text-center">
-            <h1 className="text-3xl md:text-5xl font-semibold tracking-tight text-foreground mb-6">
-              A visual editor for content that lives in GitHub
-            </h1>
+            <h1 className="rp-display mb-6 text-3xl md:text-5xl">A visual editor for content that lives in GitHub</h1>
             <p className="text-lg md:text-xl text-muted-foreground leading-relaxed max-w-2xl mx-auto">
               RepoPress exists because updating a blog post or documentation page shouldn&apos;t require a terminal.
               Your content stays in your repository. We just make it easier to edit.
@@ -77,7 +75,7 @@ export default function AboutPage() {
         <section className="border-y border-border/40 bg-muted/30">
           <div className="container mx-auto px-4 py-16 md:py-20">
             <div className="max-w-3xl mx-auto">
-              <h2 className="text-xl font-semibold text-foreground mb-4">Why we built this</h2>
+              <h2 className="rp-display text-xl mb-4">Why we built this</h2>
               <p className="text-muted-foreground leading-relaxed mb-6">
                 If your website runs on GitHub - whether it is a documentation site, a blog, or a marketing page -
                 updating content means opening a code editor, writing Markdown, and pushing a commit. That works for
@@ -100,11 +98,11 @@ export default function AboutPage() {
         {/* Principles */}
         <section className="container mx-auto px-4 py-16 md:py-20">
           <div className="max-w-3xl mx-auto">
-            <h2 className="text-xl font-semibold text-foreground mb-8">What We Believe</h2>
+            <h2 className="rp-display text-xl mb-8">What We Believe</h2>
             <div className="grid gap-8 sm:grid-cols-2">
               {principles.map((principle) => (
                 <div key={principle.title}>
-                  <h3 className="font-semibold text-foreground mb-2">{principle.title}</h3>
+                  <h3 className="rp-display mb-2">{principle.title}</h3>
                   <p className="text-sm text-muted-foreground leading-relaxed">{principle.description}</p>
                 </div>
               ))}
@@ -116,11 +114,11 @@ export default function AboutPage() {
         <section className="border-y border-border/40 bg-muted/30">
           <div className="container mx-auto px-4 py-16 md:py-20">
             <div className="max-w-3xl mx-auto">
-              <h2 className="text-xl font-semibold text-foreground mb-8">Built with</h2>
+              <h2 className="rp-display text-xl mb-8">Built with</h2>
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {techStack.map((tech) => (
                   <div key={tech.name} className="rounded-lg border border-border/60 bg-card p-4">
-                    <h3 className="font-semibold text-card-foreground mb-1">{tech.name}</h3>
+                    <h3 className="rp-display mb-1">{tech.name}</h3>
                     <p className="text-sm text-muted-foreground">{tech.description}</p>
                   </div>
                 ))}
@@ -132,10 +130,10 @@ export default function AboutPage() {
         {/* Creator */}
         <section className="container mx-auto px-4 py-16 md:py-20">
           <div className="max-w-3xl mx-auto">
-            <h2 className="text-xl font-semibold text-foreground mb-4">Created By</h2>
+            <h2 className="rp-display text-xl mb-4">Created By</h2>
             <div className="flex flex-col sm:flex-row sm:items-center gap-4 rounded-lg border border-border/60 bg-card p-6">
               <div className="flex-1">
-                <h3 className="font-semibold text-card-foreground text-lg mb-1">@itsyogesh</h3>
+                <h3 className="rp-display text-lg mb-1">@itsyogesh</h3>
                 <p className="text-sm text-muted-foreground leading-relaxed">
                   Building open-source tools that help teams publish content without learning Git.
                 </p>
@@ -168,7 +166,7 @@ export default function AboutPage() {
         <section className="border-t border-border/40 bg-muted/30">
           <div className="container mx-auto px-4 py-16 md:py-20">
             <div className="max-w-3xl mx-auto text-center">
-              <h2 className="text-xl font-semibold text-foreground mb-4">Free and open source</h2>
+              <h2 className="rp-display text-xl mb-4">Free and open source</h2>
               <p className="text-muted-foreground leading-relaxed mb-6 max-w-xl mx-auto">
                 RepoPress is MIT licensed. Browse the code, report issues, or contribute. RepoPress improves with every
                 contribution and bug report.
