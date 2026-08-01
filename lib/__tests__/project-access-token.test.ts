@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it } from "vitest"
 import {
   mintGitHubAccountLookupToken,
+  mintGitHubIdentityBootstrapToken,
   mintProjectAccessToken,
   mintServerQueryToken,
   verifyGitHubAccountLookupToken,
+  verifyGitHubIdentityBootstrapToken,
   verifyProjectAccessToken,
   verifyServerQueryToken,
 } from "../project-access-token"
@@ -53,6 +55,34 @@ describe("project access token", () => {
 
     await expect(verifyGitHubAccountLookupToken(token, "12345")).resolves.toBe(true)
     await expect(verifyGitHubAccountLookupToken(token, "54321")).resolves.toBe(false)
+  })
+
+  it("round-trips signed GitHub identity claims without carrying the PAT", async () => {
+    const token = await mintGitHubIdentityBootstrapToken({
+      githubAccountId: "12345",
+      githubUsername: "octocat",
+      name: "The Octocat",
+      image: "https://avatars.githubusercontent.com/u/12345",
+    })
+
+    await expect(verifyGitHubIdentityBootstrapToken(token)).resolves.toEqual({
+      githubAccountId: "12345",
+      githubUsername: "octocat",
+      name: "The Octocat",
+      image: "https://avatars.githubusercontent.com/u/12345",
+    })
+    expect(decodeURIComponent(token)).not.toContain("github_pat")
+  })
+
+  it("rejects tampered GitHub identity bootstrap claims", async () => {
+    const token = await mintGitHubIdentityBootstrapToken({
+      githubAccountId: "12345",
+      githubUsername: "octocat",
+      name: null,
+      image: null,
+    })
+
+    await expect(verifyGitHubIdentityBootstrapToken(token.replace("octocat", "attacker"))).resolves.toBeNull()
   })
 })
 

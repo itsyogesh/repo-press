@@ -3,7 +3,7 @@ import { ConvexHttpClient } from "convex/browser"
 import { cookies } from "next/headers"
 import { api } from "@/convex/_generated/api"
 import { createGitHubClient } from "@/lib/github"
-import { mintGitHubAccountLookupToken } from "@/lib/project-access-token"
+import { mintGitHubIdentityBootstrapToken } from "@/lib/project-access-token"
 
 const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL
 const convexSiteUrl = process.env.NEXT_PUBLIC_CONVEX_SITE_URL
@@ -52,12 +52,13 @@ export async function getPatAuthUserId(token: string): Promise<string | null> {
   try {
     const octokit = createGitHubClient(token)
     const { data } = await octokit.users.getAuthenticated()
-    const githubAccountId = String(data.id)
-    const lookupToken = await mintGitHubAccountLookupToken(githubAccountId)
-    const userId = await convexServerClient.query(api.auth.resolveUserIdByGitHubAccount, {
-      githubAccountId,
-      lookupToken,
+    const bootstrapToken = await mintGitHubIdentityBootstrapToken({
+      githubAccountId: String(data.id),
+      githubUsername: data.login,
+      name: data.name?.trim() || null,
+      image: data.avatar_url || null,
     })
+    const userId = await convexServerClient.mutation(api.auth.resolveOrCreatePatUser, { bootstrapToken })
     return userId ?? null
   } catch {
     return null
