@@ -107,6 +107,7 @@ function compatibleAttemptKey(resolution: VerifiedCompatiblePreviewResolution): 
     authority.tenantId,
     authority.projectId,
     authority.baseCommit,
+    authority.documentPath,
     authority.sessionId,
     authority.snapshotVersion,
     authority.rendererProfile,
@@ -119,6 +120,7 @@ function compatibleAuthorityKey(authority: CompatiblePreviewAuthorityContext): s
     authority.tenantId,
     authority.projectId,
     authority.baseCommit,
+    authority.documentPath,
     authority.sessionId,
     authority.snapshotVersion,
   ])

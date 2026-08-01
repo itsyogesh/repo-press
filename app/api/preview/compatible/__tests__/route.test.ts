@@ -194,6 +194,7 @@ describe("POST /api/preview/compatible", () => {
       tenantId: "tenant-1",
       projectId: "project-1",
       baseCommit: BASE_SHA,
+      documentPath: "content/blog/post.mdx",
       snapshotVersion: 9,
     })
     expect(body.previewResult.sessionId).toBe(body.authority.sessionId)
@@ -210,6 +211,7 @@ describe("POST /api/preview/compatible", () => {
       }),
     )
     expect(JSON.parse(body.resolution).artifact.documentSource).toBe("# Hello\n\n<InfoBox>Safe</InfoBox>")
+    expect(JSON.parse(body.resolution).authority.documentPath).toBe("content/blog/post.mdx")
   })
 
   it("rejects malformed, cross-origin, and non-JSON requests before loading authority", async () => {

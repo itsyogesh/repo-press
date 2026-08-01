@@ -57,6 +57,7 @@ const authorityContext: CompatiblePreviewAuthorityContext = {
   tenantId: "tenant-1",
   projectId: "project-1",
   baseCommit: "abc123",
+  documentPath: "content/example.mdx",
   sessionId: "session-1",
   snapshotVersion: 1,
 }
@@ -643,7 +644,12 @@ describe("CompatiblePreviewFrame", () => {
     await waitFor(() => expect(screen.queryByTitle("Compatible component preview")).not.toBeInTheDocument())
     expect(screen.getAllByRole("heading", { name: "Safe" })).toHaveLength(2)
 
-    for (const mismatch of [{ tenantId: "tenant-2" }, { projectId: "project-2" }, { baseCommit: "def456" }]) {
+    for (const mismatch of [
+      { tenantId: "tenant-2" },
+      { projectId: "project-2" },
+      { baseCommit: "def456" },
+      { documentPath: "content/other.mdx" },
+    ]) {
       rerender(
         <Preview
           previewResult={compatiblePreviewResult()}

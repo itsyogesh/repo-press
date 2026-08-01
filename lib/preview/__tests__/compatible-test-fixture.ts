@@ -47,6 +47,7 @@ export async function createSignedCompatibleFixture(options?: {
   tenantId?: string
   projectId?: string
   baseCommit?: string
+  documentPath?: string
   sessionId?: string
   snapshotVersion?: number
   documentSource?: string
@@ -78,6 +79,7 @@ export async function createSignedCompatibleFixture(options?: {
     tenantId: options?.tenantId ?? "tenant-1",
     projectId: options?.projectId ?? "project-1",
     baseCommit: options?.baseCommit ?? "abc123",
+    documentPath: options?.documentPath ?? "content/example.mdx",
     sessionId: options?.sessionId ?? "session-1",
     snapshotVersion: options?.snapshotVersion ?? 1,
     ...(rendererProfile === null ? {} : { rendererProfile }),
@@ -101,6 +103,7 @@ export async function createSignedCompatibleFixture(options?: {
       tenantId: authorityWithoutSignature.tenantId,
       projectId: authorityWithoutSignature.projectId,
       baseCommit: authorityWithoutSignature.baseCommit,
+      documentPath: authorityWithoutSignature.documentPath,
       sessionId: authorityWithoutSignature.sessionId,
       snapshotVersion: authorityWithoutSignature.snapshotVersion,
     },

@@ -34,6 +34,7 @@ function payloadFor(body: { snapshotVersion: number; documentSource: string }) {
     tenantId: "tenant-1",
     projectId: "project-1",
     baseCommit: BASE_SHA,
+    documentPath: "content/post.mdx",
     sessionId: `session-${body.snapshotVersion}`,
     snapshotVersion: body.snapshotVersion,
   }
@@ -181,6 +182,26 @@ describe("useCompatiblePreview", () => {
     await act(async () => first.resolve(successResponse(requestBodies[0])))
     expect(hook.result.current.compatibleAuthority?.snapshotVersion).toBe(requestBodies[1].snapshotVersion)
     expect(JSON.parse(hook.result.current.compatibleResolution ?? "{}").artifact.documentSource).toBe("# New")
+  })
+
+  it("rejects a response signed for a different document path", async () => {
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body))
+      const payload = payloadFor(body)
+      payload.authority.documentPath = "content/other.mdx"
+      const signed = JSON.parse(payload.resolution)
+      signed.authority.documentPath = "content/other.mdx"
+      payload.resolution = JSON.stringify(signed)
+      return new Response(JSON.stringify(payload), { status: 200 })
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const hook = renderHook(() => useCompatiblePreview(defaults))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(hook.result.current.previewResult.fidelity).toBe("generic")
   })
 
   it("aborts on identity changes and unmount, and clears pending timers", async () => {

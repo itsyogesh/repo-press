@@ -50,6 +50,7 @@ describe("compatible artifact transport", () => {
     tenantId: "tenant-1",
     projectId: "project-1",
     baseCommit: "abc123",
+    documentPath: "content/example.mdx",
     sessionId: "session-1",
     snapshotVersion: 1,
   }
@@ -84,6 +85,7 @@ describe("compatible artifact transport", () => {
       { tenantId: "tenant-2" },
       { projectId: "project-2" },
       { baseCommit: "def456" },
+      { documentPath: "content/other.mdx" },
       { sessionId: "session-2" },
       { snapshotVersion: 2 },
     ]) {

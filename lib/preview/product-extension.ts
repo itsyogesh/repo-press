@@ -95,6 +95,7 @@ export const compatiblePreviewRouteResponseSchema = z
       signedAuthority.tenantId !== response.authority.tenantId ||
       signedAuthority.projectId !== response.authority.projectId ||
       signedAuthority.baseCommit !== response.authority.baseCommit ||
+      signedAuthority.documentPath !== response.authority.documentPath ||
       signedAuthority.sessionId !== response.authority.sessionId ||
       signedAuthority.snapshotVersion !== response.authority.snapshotVersion
     ) {

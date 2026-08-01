@@ -44,6 +44,7 @@ const authority = {
   tenantId: "tenant-1",
   projectId: "project-1",
   baseCommit: BASE_COMMIT,
+  documentPath: "content/merry.mdx",
   sessionId: "session-1",
   snapshotVersion: 4,
 }
@@ -132,6 +133,7 @@ describe("compatible preview signer", () => {
       },
       { ...resolution, authority: { ...resolution.authority, projectId: "project-2" } },
       { ...resolution, authority: { ...resolution.authority, baseCommit: "c".repeat(40) } },
+      { ...resolution, authority: { ...resolution.authority, documentPath: "content/other.mdx" } },
       { ...resolution, authority: { ...resolution.authority, sessionId: "session-2" } },
       { ...resolution, authority: { ...resolution.authority, snapshotVersion: 5 } },
       { ...resolution, authority: { ...resolution.authority, expiresAt: resolution.authority.expiresAt - 1 } },

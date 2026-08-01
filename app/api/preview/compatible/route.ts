@@ -140,6 +140,7 @@ export async function POST(request: Request) {
       tenantId: String(project.userId),
       projectId: String(project._id),
       baseCommit: currentHead,
+      documentPath: input.filePath,
       sessionId,
       snapshotVersion: input.snapshotVersion,
     }

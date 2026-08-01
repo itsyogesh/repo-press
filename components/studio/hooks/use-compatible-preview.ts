@@ -88,6 +88,7 @@ export function useCompatiblePreview(input: UseCompatiblePreviewInput) {
           if (
             parsed.data.authority.projectId !== projectId ||
             parsed.data.authority.baseCommit !== baseCommitSha ||
+            parsed.data.authority.documentPath !== filePath ||
             parsed.data.authority.snapshotVersion !== requestedSnapshot
           ) {
             return null

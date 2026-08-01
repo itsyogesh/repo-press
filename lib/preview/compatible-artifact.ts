@@ -61,6 +61,7 @@ export const signedCompatiblePreviewResolutionSchema = z
         tenantId: z.string().min(1).max(256),
         projectId: z.string().min(1).max(256),
         baseCommit: z.string().min(1).max(256),
+        documentPath: sourcePathSchema,
         sessionId: z.string().min(1).max(256),
         snapshotVersion: z.number().int().positive().safe(),
         rendererProfile: z.literal(COMPATIBLE_RENDERER_PROFILE),
@@ -79,6 +80,7 @@ export const compatiblePreviewAuthorityContextSchema = z
     tenantId: z.string().min(1).max(256),
     projectId: z.string().min(1).max(256),
     baseCommit: z.string().min(1).max(256),
+    documentPath: sourcePathSchema,
     sessionId: z.string().min(1).max(256),
     snapshotVersion: z.number().int().positive().safe(),
   })
@@ -213,6 +215,7 @@ function isExpectedAuthorityContext(input: CompatiblePreviewAuthorityContext): b
     isBoundedIdentifier(input.tenantId) &&
     isBoundedIdentifier(input.projectId) &&
     isBoundedIdentifier(input.baseCommit) &&
+    isNormalizedSourcePath(input.documentPath) &&
     isBoundedIdentifier(input.sessionId) &&
     Number.isSafeInteger(input.snapshotVersion) &&
     input.snapshotVersion > 0
@@ -227,6 +230,7 @@ function authorityMatches(
     authority.tenantId === expected.tenantId &&
     authority.projectId === expected.projectId &&
     authority.baseCommit === expected.baseCommit &&
+    authority.documentPath === expected.documentPath &&
     authority.sessionId === expected.sessionId &&
     authority.snapshotVersion === expected.snapshotVersion
   )
@@ -272,6 +276,7 @@ function preflightCompatibleResolutionWire(
     authority.tenantId !== expected.tenantId ||
     authority.projectId !== expected.projectId ||
     authority.baseCommit !== expected.baseCommit ||
+    authority.documentPath !== expected.documentPath ||
     authority.sessionId !== expected.sessionId ||
     authority.snapshotVersion !== expected.snapshotVersion
   ) {
@@ -593,6 +598,7 @@ export function parseAssembledCompatibleResolution(input: Uint8Array): SignedCom
       tenantId: String(shallow.authority.tenantId ?? ""),
       projectId: String(shallow.authority.projectId ?? ""),
       baseCommit: String(shallow.authority.baseCommit ?? ""),
+      documentPath: String(shallow.authority.documentPath ?? ""),
       sessionId: String(shallow.authority.sessionId ?? ""),
       snapshotVersion: Number(shallow.authority.snapshotVersion),
     }
