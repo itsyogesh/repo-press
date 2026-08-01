@@ -11,10 +11,6 @@ crons.interval("cleanup stale media uploads", { hours: 24 }, internal.mediaOps.c
 
 // Re-dispatch bounded attempt cleanups whose scheduled continuation was lost
 // or failed. The indexed retry cursor rotates permanently failing jobs.
-crons.interval(
-  "resume pending publish cleanups",
-  { minutes: 5 },
-  (internal as any).publishAttemptCleanups.resumePendingCleanups,
-)
+crons.interval("resume pending publish cleanups", { minutes: 5 }, internal.publishAttemptCleanups.resumePendingCleanups)
 
 export default crons

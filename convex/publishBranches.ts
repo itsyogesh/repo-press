@@ -59,14 +59,14 @@ export const getStatusSyncCandidateForProject = query({
     const [pendingMerged, pendingClosed] = await Promise.all([
       ctx.db
         .query("publishBranches")
-        .withIndex("by_projectId_mergeVerificationState_lastStatusCheckedAt_createdAt", (q) =>
+        .withIndex("by_project_merge_lastStatusCheckedAt", (q) =>
           q.eq("projectId", args.projectId).eq("mergeVerificationState", "pending"),
         )
         .order("asc")
         .first(),
       ctx.db
         .query("publishBranches")
-        .withIndex("by_projectId_closeVerificationState_lastStatusCheckedAt_createdAt", (q) =>
+        .withIndex("by_project_close_lastStatusCheckedAt", (q) =>
           q.eq("projectId", args.projectId).eq("closeVerificationState", "pending"),
         )
         .order("asc")

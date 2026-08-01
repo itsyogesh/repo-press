@@ -1,4 +1,4 @@
-import type { Role } from "@/lib/roles"
+import type { Role } from "./roles"
 
 const encoder = new TextEncoder()
 

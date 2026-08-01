@@ -488,13 +488,13 @@ export default defineSchema({
     .index("by_repo_key_pr_head_base", ["repoOwnerKey", "repoNameKey", "prNumber", "branchName", "baseBranch"])
     .index("by_projectId_mergeVerificationState", ["projectId", "mergeVerificationState"])
     .index("by_projectId_closeVerificationState", ["projectId", "closeVerificationState"])
-    .index("by_projectId_mergeVerificationState_lastStatusCheckedAt_createdAt", [
+    .index("by_project_merge_lastStatusCheckedAt", [
       "projectId",
       "mergeVerificationState",
       "lastStatusCheckedAt",
       "createdAt",
     ])
-    .index("by_projectId_closeVerificationState_lastStatusCheckedAt_createdAt", [
+    .index("by_project_close_lastStatusCheckedAt", [
       "projectId",
       "closeVerificationState",
       "lastStatusCheckedAt",

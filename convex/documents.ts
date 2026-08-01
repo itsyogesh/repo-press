@@ -1039,7 +1039,7 @@ export const syncTreeTitles = action({
       throw new Error(`file list exceeds ${TITLE_SYNC_MAX_FILES} entries`)
     }
     for (let index = 0; index < args.files.length; index++) {
-      if (!Object.hasOwn(args.files, index)) throw new Error("Invalid file list")
+      if (Object.getOwnPropertyDescriptor(args.files, index) === undefined) throw new Error("Invalid file list")
     }
     const seenPaths = new Set<string>()
     let totalPathBytes = 0
