@@ -253,6 +253,35 @@ describe("publish attempt cleanup enqueue", () => {
       }),
     ).rejects.toThrow(/finalized write.*blob/i)
   })
+
+  it("rejects enqueue when a persisted association is outside the descriptor closure", async () => {
+    const ctx = createCtx([
+      { ...project },
+      { ...lane },
+      {
+        ...attempt,
+        documentAssociations: [
+          {
+            documentId: "doc_1",
+            repoPath: "content/unplanned.mdx",
+            expectedUpdatedAt: 10,
+            contentRevision: "e".repeat(64),
+            contentVersion: 3,
+          },
+        ],
+      },
+    ])
+
+    await expect(
+      (resolveAndEnqueueCleanup as any).handler(ctx, {
+        id: "attempt_1",
+        authoritySha: "3".repeat(40),
+        pathOutcomes: outcomes,
+        userId: "user_owner",
+      }),
+    ).rejects.toThrow(/association.*descriptor/i)
+    expect(ctx.db.insert).not.toHaveBeenCalled()
+  })
 })
 
 describe("bounded attempt-scoped cleanup continuation", () => {
@@ -271,6 +300,12 @@ describe("bounded attempt-scoped cleanup continuation", () => {
         { opId: "op_restore", repoPath: "content/b.mdx", expectedUpdatedAt: 10 },
         { opId: "op_other_attempt", repoPath: "content/c.mdx", expectedUpdatedAt: 10 },
       ],
+      operationDescriptors: ["a", "b", "c"].map((name) => ({
+        path: `content/${name}.mdx`,
+        action: "update",
+        expectedBlobSha: "4".repeat(40),
+      })),
+      operationPaths: ["content/a.mdx", "content/b.mdx", "content/c.mdx"],
       mediaAssociations: [],
       documentAssociations: [],
     }
@@ -332,7 +367,15 @@ describe("bounded attempt-scoped cleanup continuation", () => {
     const ctx = createCtx([
       { ...project },
       { ...lane },
-      { ...attempt, status: "cleanup_pending", cleanupId: "cleanup_1" },
+      {
+        ...attempt,
+        status: "cleanup_pending",
+        cleanupId: "cleanup_1",
+        operationDescriptors: [{ path: "content/a.mdx", action: "update", expectedBlobSha: "b".repeat(40) }],
+        operationPaths: ["content/a.mdx"],
+        mediaAssociations: [],
+        documentAssociations: [],
+      },
       cleanupRow({ pathOutcomes: [{ path: "content/a.mdx", disposition: "restore" }] }),
       {
         _id: "op_1",
@@ -369,6 +412,12 @@ describe("bounded attempt-scoped cleanup continuation", () => {
         { mediaOpId: "media_restore", repoPath: "public/keep.png", expectedUpdatedAt: 10 },
         { mediaOpId: "media_finalize", repoPath: "public/drop.png", expectedUpdatedAt: 10 },
       ],
+      operationDescriptors: ["keep", "drop"].map((name) => ({
+        path: `public/${name}.png`,
+        action: "create",
+        expectedBlobSha: "5".repeat(40),
+      })),
+      operationPaths: ["public/keep.png", "public/drop.png"],
       documentAssociations: [],
     }
     const ctx = createCtx([
@@ -417,6 +466,94 @@ describe("bounded attempt-scoped cleanup continuation", () => {
     )
   })
 
+  it.each([
+    "finalize",
+    "restore",
+  ] as const)("uses canonical Git identity to %s leading-slash media while leaving an excluded redundant document alone", async (disposition) => {
+    const finalBlobSha = disposition === "finalize" ? "8".repeat(40) : undefined
+    const ctx = createCtx([
+      { ...project },
+      { ...lane },
+      {
+        ...attempt,
+        status: "cleanup_pending",
+        cleanupId: "cleanup_1",
+        operationDescriptors: [{ path: "public/pic.png", action: "create", expectedBlobSha: "c".repeat(40) }],
+        operationPaths: ["public/pic.png"],
+        explorerAssociations: [],
+        mediaAssociations: [{ mediaOpId: "media_1", repoPath: "public/pic.png", expectedUpdatedAt: 10 }],
+        // A byte-identical dirty document is deliberately not owned by
+        // this mutating attempt and therefore has no cleanup association.
+        documentAssociations: [],
+      },
+      cleanupRow({
+        phase: "media",
+        pathOutcomes: [{ path: "public/pic.png", disposition, ...(finalBlobSha ? { finalBlobSha } : {}) }],
+      }),
+      {
+        _id: "media_1",
+        projectId: "project_1",
+        repoPath: "/public/pic.png",
+        status: "committed",
+        publishBranchId: "lane_1",
+        publishAttemptId: "attempt_1",
+        commitSha: "1".repeat(40),
+        convexStorageId: "storage_1",
+        updatedAt: 10,
+      },
+      {
+        _id: "doc_redundant",
+        projectId: "project_1",
+        contentVersion: 4,
+        publishedProvenance: undefined,
+      },
+    ])
+
+    await (continueCleanup as any).handler(ctx, { cleanupId: "cleanup_1" })
+
+    if (disposition === "finalize") {
+      expect(ctx.storage.delete).toHaveBeenCalledWith("storage_1")
+      expect(ctx.db.delete).toHaveBeenCalledWith("media_1")
+    } else {
+      expect(ctx.db.patch).toHaveBeenCalledWith("media_1", expect.objectContaining({ status: "pending" }))
+      expect(ctx.storage.delete).not.toHaveBeenCalled()
+    }
+    expect(ctx.db.patch).not.toHaveBeenCalledWith("doc_redundant", expect.anything())
+  })
+
+  it("fails closed without advancing when an association has no persisted cleanup outcome", async () => {
+    const ctx = createCtx([
+      { ...project },
+      { ...lane },
+      {
+        ...attempt,
+        status: "cleanup_pending",
+        cleanupId: "cleanup_1",
+        operationDescriptors: [{ path: "content/a.mdx", action: "update", expectedBlobSha: "b".repeat(40) }],
+        operationPaths: ["content/a.mdx"],
+        mediaAssociations: [],
+        documentAssociations: [],
+      },
+      cleanupRow({ pathOutcomes: [{ path: "public/pic.png", disposition: "restore" }] }),
+      {
+        _id: "op_1",
+        projectId: "project_1",
+        repoPath: "content/a.mdx",
+        status: "committed",
+        publishBranchId: "lane_1",
+        publishAttemptId: "attempt_1",
+        commitSha: "1".repeat(40),
+        updatedAt: 10,
+      },
+    ])
+
+    await expect((continueCleanup as any).handler(ctx, { cleanupId: "cleanup_1" })).rejects.toThrow(
+      /association.*outcome/i,
+    )
+    expect(ctx.db.patch).not.toHaveBeenCalledWith("cleanup_1", expect.anything())
+    expect(ctx.db.patch).not.toHaveBeenCalledWith("attempt_1", expect.anything())
+  })
+
   it("publishes only unchanged documents but clears owned provenance from edited restores", async () => {
     const docAttempt = {
       ...attempt,
@@ -430,6 +567,12 @@ describe("bounded attempt-scoped cleanup continuation", () => {
         { documentId: "doc_newer", repoPath: "content/c.mdx", expectedUpdatedAt: 10, contentVersion: 3 },
         { documentId: "doc_other", repoPath: "content/d.mdx", expectedUpdatedAt: 10, contentVersion: 3 },
       ],
+      operationDescriptors: ["a", "b", "c", "d"].map((name) => ({
+        path: `content/${name}.mdx`,
+        action: "update",
+        expectedBlobSha: "6".repeat(40),
+      })),
+      operationPaths: ["content/a.mdx", "content/b.mdx", "content/c.mdx", "content/d.mdx"],
     }
     const provenance = {
       publishBranchId: "lane_1",
@@ -496,7 +639,6 @@ describe("bounded attempt-scoped cleanup continuation", () => {
     ["wrong lane", { publishBranchId: "lane_other" }],
     ["wrong commit", { commitSha: "9".repeat(40) }],
     ["wrong status", { status: "pending" }],
-    ["wrong canonical path", { repoPath: "content/other.mdx" }],
   ])("does not mutate an explorer row with the right attempt id but %s", async (_label, rowOverride) => {
     const ctx = createCtx([
       { ...project },
@@ -505,6 +647,8 @@ describe("bounded attempt-scoped cleanup continuation", () => {
         ...attempt,
         status: "cleanup_pending",
         cleanupId: "cleanup_1",
+        operationDescriptors: [{ path: "content/a.mdx", action: "update", expectedBlobSha: "b".repeat(40) }],
+        operationPaths: ["content/a.mdx"],
         mediaAssociations: [],
         documentAssociations: [],
       },
@@ -528,6 +672,39 @@ describe("bounded attempt-scoped cleanup continuation", () => {
     expect(ctx.db.delete).not.toHaveBeenCalledWith("op_1")
   })
 
+  it("fails closed without advancing when an owned explorer row path differs from its association", async () => {
+    const ctx = createCtx([
+      { ...project },
+      { ...lane },
+      {
+        ...attempt,
+        status: "cleanup_pending",
+        cleanupId: "cleanup_1",
+        operationDescriptors: [{ path: "content/a.mdx", action: "update", expectedBlobSha: "b".repeat(40) }],
+        operationPaths: ["content/a.mdx"],
+        mediaAssociations: [],
+        documentAssociations: [],
+      },
+      cleanupRow({ pathOutcomes: [{ path: "content/a.mdx", disposition: "restore" }] }),
+      {
+        _id: "op_1",
+        projectId: "project_1",
+        repoPath: "content/other.mdx",
+        status: "committed",
+        publishBranchId: "lane_1",
+        publishAttemptId: "attempt_1",
+        commitSha: "1".repeat(40),
+        updatedAt: 10,
+      },
+    ])
+
+    await expect((continueCleanup as any).handler(ctx, { cleanupId: "cleanup_1" })).rejects.toThrow(
+      /row path.*association/i,
+    )
+    expect(ctx.db.patch).not.toHaveBeenCalledWith("cleanup_1", expect.anything())
+    expect(ctx.db.patch).not.toHaveBeenCalledWith("attempt_1", expect.anything())
+  })
+
   it("does not clear document provenance whose persisted snapshot identity differs", async () => {
     const ctx = createCtx([
       { ...project },
@@ -538,6 +715,8 @@ describe("bounded attempt-scoped cleanup continuation", () => {
         cleanupId: "cleanup_1",
         explorerAssociations: [],
         mediaAssociations: [],
+        operationDescriptors: [{ path: "content/a.mdx", action: "update", expectedBlobSha: "b".repeat(40) }],
+        operationPaths: ["content/a.mdx"],
       },
       cleanupRow({ phase: "documents", pathOutcomes: [{ path: "content/a.mdx", disposition: "restore" }] }),
       {
@@ -575,6 +754,12 @@ describe("bounded attempt-scoped cleanup continuation", () => {
         status: "cleanup_pending",
         cleanupId: "cleanup_1",
         explorerAssociations: associations,
+        operationDescriptors: associations.map(({ repoPath: path }) => ({
+          path,
+          action: "update",
+          expectedBlobSha: "4".repeat(40),
+        })),
+        operationPaths: associations.map(({ repoPath }) => repoPath),
         mediaAssociations: [],
         documentAssociations: [],
       },

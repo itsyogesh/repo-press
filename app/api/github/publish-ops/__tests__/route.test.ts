@@ -927,6 +927,12 @@ describe("POST /api/github/publish-ops", () => {
         publishBranchId: "publish_branch_2",
       }),
     )
+    expect(convexMutationMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        mediaAssociations: [expect.objectContaining({ mediaOpId: "media_op_1", repoPath: "public/uploads/hero.png" })],
+      }),
+    )
   })
 
   it("publishes Convex-backed media from the storage URL returned by Convex", async () => {
@@ -2074,6 +2080,81 @@ describe("POST /api/github/publish-ops", () => {
       ])
       // Still exactly one Git commit across both publishes.
       expect(batchCommitPublishLaneAtExpectedHead).toHaveBeenCalledTimes(1)
+    })
+
+    it("keeps a redundant document out of a mixed media attempt and its cleanup ownership", async () => {
+      const body = "# Already on lane\n"
+      mockPublishQueries({
+        dirtyDocs: [
+          {
+            _id: "doc_redundant",
+            filePath: "posts/already.mdx",
+            body,
+            frontmatter: {},
+            updatedAt: 5,
+            contentVersion: 4,
+            githubSha: "blob-existing",
+          },
+        ],
+        pendingMediaOps: [
+          {
+            _id: "media_real",
+            projectId: "project_123",
+            repoPath: "/public/uploads/real.png",
+            sourceType: "blob",
+            blobUrl: "https://blob.example/real.png",
+            updatedAt: 9,
+          },
+        ],
+      })
+      vi.spyOn(globalThis, "fetch").mockResolvedValue({
+        ok: true,
+        arrayBuffer: vi.fn().mockResolvedValue(Uint8Array.from([1, 2, 3]).buffer),
+      } as never)
+      vi.mocked(getFileForPublish).mockImplementation(async (...callArgs: unknown[]) => {
+        const path = String(callArgs[3])
+        const ref = String(callArgs[4])
+        if (ref === "authority-sha-1" && path === "content/posts/already.mdx") {
+          return {
+            status: "found",
+            file: { content: body, sha: "blob-existing", name: "already.mdx", path },
+          }
+        }
+        if (ref === "authority-sha-1" && path === "public/uploads/real.png") return { status: "absent" }
+        return { status: "found", file: { content: "", sha: "synced-sha", name: "", path } }
+      })
+      const mutationCalls: Array<Record<string, unknown>> = []
+      convexMutationMock.mockImplementation(async (_fn: unknown, args: unknown) => {
+        if (args && typeof args === "object") {
+          const record = args as Record<string, unknown>
+          mutationCalls.push(record)
+          if ("planDigest" in record) return "attempt_1"
+        }
+        return undefined
+      })
+
+      const response = await POST(buildRequest({ projectId: "project_123" }))
+
+      expect(response.status).toBe(200)
+      expect(mutationCalls).toContainEqual(
+        expect.objectContaining({
+          mediaAssociations: [
+            expect.objectContaining({ mediaOpId: "media_real", repoPath: "public/uploads/real.png" }),
+          ],
+          documentAssociations: [],
+        }),
+      )
+      expect(mutationCalls).not.toContainEqual(
+        expect.objectContaining({ id: "doc_redundant", githubSha: expect.anything() }),
+      )
+      expect(batchCommitPublishLaneAtExpectedHead).toHaveBeenCalledWith(
+        "gh-token",
+        "acme",
+        "docs-site",
+        expect.anything(),
+        [expect.objectContaining({ path: "public/uploads/real.png", action: "create" })],
+        expect.any(String),
+      )
     })
 
     it("does not adopt a commit that only mentions the digest outside an exact trailer line", async () => {

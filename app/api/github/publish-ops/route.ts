@@ -2,6 +2,7 @@ import { ConvexHttpClient } from "convex/browser"
 import { NextResponse } from "next/server"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
+import { canonicalGitPathFromUrlPath } from "@/lib/git-path-policy"
 import type { BatchOperation } from "@/lib/github"
 import {
   BranchHeadMovedError,
@@ -179,7 +180,7 @@ export async function POST(request: Request) {
     }
 
     for (const mediaOp of pendingMediaOps) {
-      const normalizedPath = normalizeMediaPath(mediaOp.repoPath)
+      const normalizedPath = canonicalGitPathFromUrlPath(mediaOp.repoPath)
       pathsToFetch.set(`media:${normalizedPath}`, normalizedPath)
     }
 
@@ -199,7 +200,7 @@ export async function POST(request: Request) {
       const stagedRepoPaths = new Set<string>([
         ...resolvedPendingOps.map(({ repoPath }) => repoPath),
         ...resolvedDirtyDocs.map(({ repoPath }) => repoPath),
-        ...pendingMediaOps.map((mediaOp) => normalizeMediaPath(mediaOp.repoPath)),
+        ...pendingMediaOps.map((mediaOp) => canonicalGitPathFromUrlPath(mediaOp.repoPath)),
       ])
       const overlaps = openPublishBranches.flatMap((branch) =>
         branch._id === currentPublishBranchId
@@ -562,8 +563,9 @@ export async function POST(request: Request) {
     const deleteOpPaths = new Set(
       resolvedPendingOps.filter(({ source }) => source.opType === "delete").map(({ repoPath }) => repoPath),
     )
+    const plannedOperationPaths = new Set(operationDescriptors.map((descriptor) => descriptor.path))
     const documentAssociations = resolvedDirtyDocs
-      .filter(({ repoPath }) => !deleteOpPaths.has(repoPath))
+      .filter(({ repoPath }) => !deleteOpPaths.has(repoPath) && plannedOperationPaths.has(repoPath))
       .map(({ source, repoPath }) => ({
         documentId: source._id,
         repoPath,
@@ -589,7 +591,7 @@ export async function POST(request: Request) {
         opIds: pendingOps.map((op) => op._id),
         mediaAssociations: pendingMediaOps.map((op) => ({
           mediaOpId: op._id,
-          repoPath: op.repoPath,
+          repoPath: canonicalGitPathFromUrlPath(op.repoPath),
           expectedUpdatedAt: op.updatedAt,
         })),
         documentAssociations,
@@ -1513,10 +1515,6 @@ async function cleanupOrphanedPublishBranch({
   }
 }
 
-function normalizeMediaPath(repoPath: string) {
-  return repoPath.replace(/^\/+/, "")
-}
-
 async function buildMediaBatchOperations({
   convex,
   projectId,
@@ -1543,7 +1541,7 @@ async function buildMediaBatchOperations({
   const operations: BatchOperation[] = []
 
   for (const mediaOp of pendingMediaOps) {
-    const normalizedPath = normalizeMediaPath(mediaOp.repoPath)
+    const normalizedPath = canonicalGitPathFromUrlPath(mediaOp.repoPath)
     const baseVersion = prefetchResults.get(`media:${normalizedPath}`)
     const baseVersionSha = baseVersion?.status === "found" ? baseVersion.file.sha : null
     const expectedBaseSha = mediaOp.githubSha ?? null

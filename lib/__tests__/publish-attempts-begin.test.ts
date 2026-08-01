@@ -78,9 +78,17 @@ describe("publishAttempts.begin transactional reference validation", () => {
       .fn()
       .mockResolvedValueOnce(project)
       .mockResolvedValueOnce({ _id: "lane_1", projectId: "project_1", branchName: "repopress/start" })
+      .mockResolvedValueOnce({
+        _id: "doc_1",
+        projectId: "project_1",
+        filePath: "a.mdx",
+        pathRepresentation: "content_relative_v1",
+        updatedAt: 5,
+      })
 
     const result = await (begin as any).handler(createCtx(get, insert), {
       ...baseArgs,
+      documentAssociations: [{ documentId: "doc_1", repoPath: "content/a.mdx", expectedUpdatedAt: 5 }],
       projectAccessToken: await patToken(),
     })
 
@@ -94,6 +102,23 @@ describe("publishAttempts.begin transactional reference validation", () => {
         operationPaths: ["content/a.mdx"],
       }),
     )
+  })
+
+  it("rejects an operation descriptor that has no owning persisted association", async () => {
+    const insert = vi.fn()
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce(project)
+      .mockResolvedValueOnce({ _id: "lane_1", projectId: "project_1", branchName: "repopress/start" })
+
+    await expect(
+      (begin as any).handler(createCtx(get, insert), {
+        ...baseArgs,
+        projectAccessToken: await patToken(),
+      }),
+    ).rejects.toThrow(/descriptor.*association/i)
+
+    expect(insert).not.toHaveBeenCalled()
   })
 
   it("rejects a lane belonging to another project", async () => {
@@ -161,6 +186,7 @@ describe("publishAttempts.begin transactional reference validation", () => {
 
     await (begin as any).handler(createCtx(get, insert), {
       ...baseArgs,
+      operationDescriptors: [{ path: "content/guides/a.mdx", action: "create", expectedBlobSha: "b".repeat(40) }],
       opIds: ["op_1"],
       projectAccessToken: await patToken(),
     })
@@ -304,7 +330,8 @@ describe("publishAttempts.begin transactional reference validation", () => {
     await expect(
       (begin as any).handler(createCtx(get, insert), {
         ...baseArgs,
-        mediaAssociations: [{ mediaOpId: "media_1", repoPath: "/public/uploads/pic.png", expectedUpdatedAt: 5 }],
+        operationDescriptors: [{ path: "public/uploads/pic.png", action: "create", expectedBlobSha: "b".repeat(40) }],
+        mediaAssociations: [{ mediaOpId: "media_1", repoPath: "public/uploads/pic.png", expectedUpdatedAt: 5 }],
         projectAccessToken: await patToken(),
       }),
     ).rejects.toThrow(/media upload was replaced/i)
@@ -329,10 +356,55 @@ describe("publishAttempts.begin transactional reference validation", () => {
     await expect(
       (begin as any).handler(createCtx(get, insert), {
         ...baseArgs,
-        mediaAssociations: [{ mediaOpId: "media_1", repoPath: "/public/uploads/pic.png", expectedUpdatedAt: 5 }],
+        operationDescriptors: [{ path: "public/uploads/pic.png", action: "create", expectedBlobSha: "b".repeat(40) }],
+        mediaAssociations: [{ mediaOpId: "media_1", repoPath: "public/uploads/pic.png", expectedUpdatedAt: 5 }],
         projectAccessToken: await patToken(),
       }),
     ).rejects.toThrow(/media upload path no longer matches/i)
+
+    expect(insert).not.toHaveBeenCalled()
+  })
+
+  it("persists a leading-slash media URL as the canonical Git descriptor path", async () => {
+    const insert = vi.fn().mockResolvedValue("attempt_1")
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce(project)
+      .mockResolvedValueOnce({ _id: "lane_1", projectId: "project_1", branchName: "repopress/start" })
+      .mockResolvedValueOnce({
+        _id: "media_1",
+        projectId: "project_1",
+        repoPath: "/public/uploads/pic.png",
+        status: "pending",
+        updatedAt: 5,
+      })
+
+    await (begin as any).handler(createCtx(get, insert), {
+      ...baseArgs,
+      operationDescriptors: [{ path: "public/uploads/pic.png", action: "create", expectedBlobSha: "b".repeat(40) }],
+      mediaAssociations: [{ mediaOpId: "media_1", repoPath: "public/uploads/pic.png", expectedUpdatedAt: 5 }],
+      projectAccessToken: await patToken(),
+    })
+
+    expect(insert).toHaveBeenCalledWith(
+      "publishAttempts",
+      expect.objectContaining({
+        mediaAssociations: [{ mediaOpId: "media_1", repoPath: "public/uploads/pic.png", expectedUpdatedAt: 5 }],
+      }),
+    )
+  })
+
+  it("rejects an association whose canonical path has no operation descriptor", async () => {
+    const insert = vi.fn()
+    const get = vi.fn().mockResolvedValueOnce(project)
+
+    await expect(
+      (begin as any).handler(createCtx(get, insert), {
+        ...baseArgs,
+        documentAssociations: [{ documentId: "doc_1", repoPath: "content/unplanned.mdx", expectedUpdatedAt: 5 }],
+        projectAccessToken: await patToken(),
+      }),
+    ).rejects.toThrow(/association.*descriptor/i)
 
     expect(insert).not.toHaveBeenCalled()
   })

@@ -1,7 +1,9 @@
+import { canonicalGitPathFromUrlPath } from "../../lib/git-path-policy"
 import { resolveStoredRepoPath, type StoredPathRepresentation } from "../../lib/preview/path-policy"
 import { internal } from "../_generated/api"
 import type { Doc, Id } from "../_generated/dataModel"
 import type { MutationCtx } from "../_generated/server"
+import { assertPublishAttemptOutcomeClosure } from "./publishAttemptClosure"
 
 export const CLEANUP_BATCH_SIZE = 25
 
@@ -114,10 +116,12 @@ async function processExplorer(
         row.filePath,
         row.pathRepresentation as StoredPathRepresentation | undefined,
       )
-    if (association.repoPath !== undefined && rowRepoPath !== association.repoPath) continue
+    if (association.repoPath !== undefined && rowRepoPath !== association.repoPath) {
+      throw new Error("Publish cleanup explorer row path does not match its persisted association")
+    }
     const repoPath = association.repoPath ?? rowRepoPath
     const outcome = outcomeByPath.get(repoPath)
-    if (!outcome) continue
+    if (!outcome) throw new Error("Publish cleanup explorer association has no persisted outcome")
     if (outcome.disposition === "finalize" || (await hasNewerPendingExplorerIntent(ctx, row, repoPath))) {
       await ctx.db.delete(row._id)
     } else {
@@ -171,16 +175,12 @@ async function processMedia(
   let processed = 0
   for (const association of associations) {
     const row = await ctx.db.get(association.mediaOpId)
-    if (
-      !row ||
-      row.projectId !== attempt.projectId ||
-      !committedRowBelongsToAttempt(row, attempt) ||
-      row.repoPath !== association.repoPath
-    ) {
-      continue
+    if (!row || row.projectId !== attempt.projectId || !committedRowBelongsToAttempt(row, attempt)) continue
+    if (canonicalGitPathFromUrlPath(row.repoPath) !== association.repoPath) {
+      throw new Error("Publish cleanup media row path does not match its persisted association")
     }
     const outcome = outcomeByPath.get(association.repoPath)
-    if (!outcome) continue
+    if (!outcome) throw new Error("Publish cleanup media association has no persisted outcome")
     if (outcome.disposition === "finalize" || (await hasNewerPendingMediaIntent(ctx, row))) {
       await deleteMediaOrKeepTombstone(ctx, row)
     } else {
@@ -214,7 +214,7 @@ async function processDocuments(
       continue
     }
     const outcome = outcomeByPath.get(association.repoPath)
-    if (!outcome) continue
+    if (!outcome) throw new Error("Publish cleanup document association has no persisted outcome")
     if (outcome.disposition === "restore") {
       // A newer draft must survive, but provenance for a dead/excluded
       // attempt must always be cleared so the document remains dirty.
@@ -266,6 +266,7 @@ export async function processPublishAttemptCleanupBatch(ctx: CleanupCtx, cleanup
   }
 
   const outcomeByPath = new Map(cleanup.pathOutcomes.map((outcome) => [outcome.path, outcome]))
+  assertPublishAttemptOutcomeClosure(attempt, new Set(outcomeByPath.keys()))
   const explorerAssociations =
     attempt.explorerAssociations ??
     attempt.opIds.map((opId) => ({ opId, repoPath: undefined, expectedUpdatedAt: undefined }))

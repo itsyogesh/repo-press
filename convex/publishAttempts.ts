@@ -1,9 +1,14 @@
 import { v } from "convex/values"
-import { assertCanonicalPublishOperationPath, gitRepositoryPathIdentity } from "../lib/git-path-policy"
+import {
+  assertCanonicalPublishOperationPath,
+  canonicalGitPathFromUrlPath,
+  gitRepositoryPathIdentity,
+} from "../lib/git-path-policy"
 import { resolveStoredRepoPath, type StoredPathRepresentation } from "../lib/preview/path-policy"
 import { internal } from "./_generated/api"
 import { mutation, query } from "./_generated/server"
 import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
+import { assertPublishAttemptAssociationClosure } from "./lib/publishAttemptClosure"
 import { findActivePublishAttempt } from "./lib/publishAttemptGuard"
 
 const MAX_ATTEMPT_OPERATIONS = 500
@@ -112,6 +117,7 @@ export const begin = mutation({
       throw new Error("Publish attempt exceeds the staged operation bounds")
     }
     const descriptorPaths = new Set<string>()
+    const descriptorByIdentity = new Map<string, (typeof args.operationDescriptors)[number]>()
     for (const descriptor of args.operationDescriptors) {
       assertCanonicalPublishOperationPath(descriptor.path)
       const pathIdentity = gitRepositoryPathIdentity(descriptor.path)
@@ -119,6 +125,7 @@ export const begin = mutation({
         throw new Error("Publish attempt contains duplicate operation descriptor paths")
       }
       descriptorPaths.add(pathIdentity)
+      descriptorByIdentity.set(pathIdentity, descriptor)
       if (descriptor.action === "delete") {
         if ("expectedBlobSha" in descriptor) throw new Error("Delete descriptor must not contain a blob SHA")
       } else if (!SHA_PATTERN.test(descriptor.expectedBlobSha)) {
@@ -134,6 +141,26 @@ export const begin = mutation({
         (!Number.isInteger(association.contentVersion) || association.contentVersion < 0)
       ) {
         throw new Error("Publish attempt content version must be a non-negative integer")
+      }
+      assertCanonicalPublishOperationPath(association.repoPath)
+      const descriptor = descriptorByIdentity.get(gitRepositoryPathIdentity(association.repoPath))
+      if (
+        !descriptor ||
+        descriptor.path !== association.repoPath ||
+        (descriptor.action !== "create" && descriptor.action !== "update")
+      ) {
+        throw new Error("Publish attempt document association has no matching write descriptor")
+      }
+    }
+    for (const association of args.mediaAssociations) {
+      assertCanonicalPublishOperationPath(association.repoPath)
+      const descriptor = descriptorByIdentity.get(gitRepositoryPathIdentity(association.repoPath))
+      if (
+        !descriptor ||
+        descriptor.path !== association.repoPath ||
+        (descriptor.action !== "create" && descriptor.action !== "update")
+      ) {
+        throw new Error("Publish attempt media association has no matching write descriptor")
       }
     }
     const opIdSet = new Set(args.opIds.map(String))
@@ -158,6 +185,7 @@ export const begin = mutation({
       throw new Error("Publish attempt lane does not match the project's publish branch")
     }
     const contentRoot = access.project.contentRoot
+    const coveredDescriptorIdentities = new Set<string>()
     const opById = new Map<string, { opType: string; repoPath: string }>()
     const explorerAssociations: Array<{
       opId: (typeof args.opIds)[number]
@@ -181,6 +209,11 @@ export const begin = mutation({
         opType: op.opType,
         repoPath,
       })
+      const descriptor = descriptorByIdentity.get(gitRepositoryPathIdentity(repoPath))
+      if (!descriptor || descriptor.path !== repoPath || descriptor.action !== op.opType) {
+        throw new Error("Publish attempt explorer association has no matching operation descriptor")
+      }
+      coveredDescriptorIdentities.add(gitRepositoryPathIdentity(repoPath))
       explorerAssociations.push({ opId, repoPath, expectedUpdatedAt: op.updatedAt })
     }
     for (const association of args.mediaAssociations) {
@@ -195,12 +228,18 @@ export const begin = mutation({
       // bumps updatedAt, and a moved upload changes repoPath - both must
       // reject rather than committing stale bytes and then marking the
       // NEW row committed.
-      if (mediaOp.repoPath !== association.repoPath) {
+      if (canonicalGitPathFromUrlPath(mediaOp.repoPath) !== association.repoPath) {
         throw new Error("Staged changes changed since planning: a media upload path no longer matches")
       }
       if (mediaOp.updatedAt !== association.expectedUpdatedAt) {
         throw new Error("Staged changes changed since planning: a media upload was replaced")
       }
+      const descriptor = descriptorByIdentity.get(gitRepositoryPathIdentity(association.repoPath))
+      const expectedAction = mediaOp.githubSha ? "update" : "create"
+      if (!descriptor || descriptor.path !== association.repoPath || descriptor.action !== expectedAction) {
+        throw new Error("Publish attempt media association does not match its operation descriptor")
+      }
+      coveredDescriptorIdentities.add(gitRepositoryPathIdentity(association.repoPath))
     }
     const validateDocumentSnapshot = async (association: {
       documentId: (typeof args.documentAssociations)[number]["documentId"]
@@ -225,11 +264,16 @@ export const begin = mutation({
     }
     for (const association of args.documentAssociations) {
       await validateDocumentSnapshot(association)
+      coveredDescriptorIdentities.add(gitRepositoryPathIdentity(association.repoPath))
     }
     for (const association of args.deleteAssociations) {
       const owningOp = opById.get(String(association.opId))
       if (!owningOp || owningOp.opType !== "delete") {
         throw new Error("Delete association must reference a pending delete operation included in this attempt")
+      }
+      const descriptor = descriptorByIdentity.get(gitRepositoryPathIdentity(owningOp.repoPath))
+      if (!descriptor || descriptor.path !== owningOp.repoPath || descriptor.action !== "delete") {
+        throw new Error("Delete association has no matching delete descriptor")
       }
       // The associated document must still match the planned snapshot AND
       // resolve to the same path as its owning delete operation.
@@ -238,6 +282,9 @@ export const begin = mutation({
         repoPath: owningOp.repoPath,
         expectedUpdatedAt: association.expectedUpdatedAt,
       })
+    }
+    if (coveredDescriptorIdentities.size !== descriptorByIdentity.size) {
+      throw new Error("Publish attempt operation descriptor has no owning persisted association")
     }
 
     const now = Date.now()
@@ -347,6 +394,7 @@ export const resolveAndEnqueueCleanup = mutation({
     if (args.pathOutcomes.some((outcome) => outcome.disposition === "finalize") && !args.authoritySha) {
       throw new Error("A finalizing publish cleanup requires an authority SHA")
     }
+    assertPublishAttemptAssociationClosure(attempt)
 
     const normalizedOutcomes = [...args.pathOutcomes].sort((a, b) => a.path.localeCompare(b.path))
     const requestedPlan = canonicalCleanupPlan(args.authoritySha, normalizedOutcomes)

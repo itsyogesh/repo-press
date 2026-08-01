@@ -41,6 +41,13 @@ export function assertCanonicalPublishOperationPath(path: string): void {
   }
 }
 
+/** Project a URL-style repository path onto the canonical path Git stores. */
+export function canonicalGitPathFromUrlPath(path: string): string {
+  const canonicalPath = path.replace(/^\/+/, "").normalize("NFC")
+  assertCanonicalPublishOperationPath(canonicalPath)
+  return canonicalPath
+}
+
 /** GitHub path comparisons used by the existing batch write boundary. */
 export function gitRepositoryPathIdentity(path: string): string {
   return path.normalize("NFC").toLocaleLowerCase("en-US")

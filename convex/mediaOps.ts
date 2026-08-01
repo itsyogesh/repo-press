@@ -1,4 +1,5 @@
 import { v } from "convex/values"
+import { canonicalGitPathFromUrlPath } from "../lib/git-path-policy"
 import { internalMutation, mutation, query } from "./_generated/server"
 import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
 import { invalidateClosedLaneSync } from "./lib/laneInvalidation"
@@ -213,7 +214,7 @@ export const markCommitted = mutation({
         })
         requireMediaAssociation(publishAttempt, {
           mediaOpId: id,
-          repoPath: op.repoPath,
+          repoPath: canonicalGitPathFromUrlPath(op.repoPath),
           expectedUpdatedAt: op.updatedAt,
         })
       }
