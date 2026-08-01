@@ -70,8 +70,11 @@ export function assertValidPublishCleanupPlan({
 
   let mode: { kind: "closed" } | { kind: "merged"; authoritySha: string }
   if (lane.status === "closed") {
-    if (plan.authoritySha !== undefined || plan.pathOutcomes.some((outcome) => outcome.disposition !== "restore")) {
-      throw new Error("Closed publish cleanup requires no authority and restore-only outcomes")
+    if (
+      (plan.authoritySha !== undefined && !SHA_PATTERN.test(plan.authoritySha)) ||
+      plan.pathOutcomes.some((outcome) => outcome.disposition !== "restore")
+    ) {
+      throw new Error("Closed publish cleanup requires restore-only outcomes and a valid optional base authority")
     }
     mode = { kind: "closed" }
   } else if (lane.status === "merged") {
@@ -153,10 +156,14 @@ export function assertValidPublishCleanupPlan({
       throw new Error("Publish cleanup outcomes must exactly match unique attempt descriptor paths")
     }
     outcomePaths.add(identity)
-    if (outcome.disposition !== "finalize") {
-      if (outcome.finalBlobSha !== undefined) {
-        throw new Error("A non-finalized publish path cannot carry final blob evidence")
+    if (outcome.disposition === "restore") {
+      if (outcome.finalBlobSha !== undefined && (!plan.authoritySha || !SHA_PATTERN.test(outcome.finalBlobSha))) {
+        throw new Error("A restored publish path needs a valid authority before carrying baseline blob evidence")
       }
+      continue
+    }
+    if (outcome.disposition === "discard") {
+      if (outcome.finalBlobSha !== undefined) throw new Error("A discarded publish path cannot carry blob evidence")
       continue
     }
     if (descriptor.action === "delete") {

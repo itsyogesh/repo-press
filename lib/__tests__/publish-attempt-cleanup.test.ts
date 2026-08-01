@@ -14,12 +14,17 @@ vi.mock("@/convex/auth", () => ({
   authComponent: { safeGetAuthUser: safeGetAuthUserMock },
 }))
 
+import * as explorerOpsModule from "@/convex/explorerOps"
 import { CLEANUP_BATCH_SIZE } from "@/convex/lib/publishAttemptCleanup"
-import { continueCleanup } from "@/convex/publishAttemptCleanups"
+import { continueCleanup, resumePendingCleanups } from "@/convex/publishAttemptCleanups"
 import {
   getActiveForProject,
   getNewestUnresolvedForLane,
+  markReconciled,
+  recordCommit,
   resolveAndEnqueueCleanup,
+  resumeCleanup,
+  supersede,
   supersedeClosedPending,
 } from "@/convex/publishAttempts"
 import { mintServerQueryToken } from "@/lib/project-access-token"
@@ -115,7 +120,13 @@ function createCtx(initialRows: Row[]) {
     )
   const chain = (rows: Row[]) => ({
     first: vi.fn(async () => rows[0] ?? null),
-    order: vi.fn((_direction: string) => chain([...rows].sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0)))),
+    order: vi.fn((direction: "asc" | "desc") =>
+      chain(
+        [...rows].sort((a, b) =>
+          direction === "asc" ? (a.createdAt ?? 0) - (b.createdAt ?? 0) : (b.createdAt ?? 0) - (a.createdAt ?? 0),
+        ),
+      ),
+    ),
     take: vi.fn(async (count: number) => rows.slice(0, count)),
     collect: vi.fn(async () => {
       throw new Error("cleanup must not call collect")
@@ -384,7 +395,11 @@ describe("publish attempt cleanup enqueue", () => {
     ])
 
     await expect(
-      (supersedeClosedPending as any).handler(ctx, { id: "attempt_1", userId: "user_owner" }),
+      (supersedeClosedPending as any).handler(ctx, {
+        id: "attempt_1",
+        serverQueryToken,
+        userId: "user_owner",
+      }),
     ).resolves.toBeUndefined()
     expect(ctx.db.patch).toHaveBeenCalledWith("attempt_1", expect.objectContaining({ status: "superseded" }))
 
@@ -396,7 +411,11 @@ describe("publish attempt cleanup enqueue", () => {
       { ...doc },
     ])
     await expect(
-      (supersedeClosedPending as any).handler(raced, { id: "attempt_1", userId: "user_owner" }),
+      (supersedeClosedPending as any).handler(raced, {
+        id: "attempt_1",
+        serverQueryToken,
+        userId: "user_owner",
+      }),
     ).rejects.toThrow(/no longer pending/i)
     expect(raced.db.patch).not.toHaveBeenCalledWith("attempt_1", expect.objectContaining({ status: "superseded" }))
   })
@@ -431,6 +450,111 @@ describe("publish attempt cleanup enqueue", () => {
         userId: "user_owner",
       }),
     ).rejects.toThrow(/conflicting cleanup plan/i)
+  })
+
+  it("requeues the exact persisted cleanup without creating another plan", async () => {
+    const existing = cleanupRow({ phase: "media", cursor: 7 })
+    const ctx = createCtx([
+      { ...project },
+      { ...lane },
+      { ...attempt, status: "cleanup_pending", cleanupId: "cleanup_1" },
+      existing,
+    ])
+
+    await expect(
+      (resumeCleanup as any).handler(ctx, {
+        id: "attempt_1",
+        serverQueryToken,
+        userId: "user_owner",
+      }),
+    ).resolves.toEqual({ cleanupId: "cleanup_1", scheduled: true })
+
+    expect(ctx.db.insert).not.toHaveBeenCalled()
+    expect(existing.phase).toBe("media")
+    expect(existing.cursor).toBe(7)
+    expect(ctx.scheduler.runAfter).toHaveBeenCalledTimes(1)
+    expect(ctx.scheduler.runAfter).toHaveBeenCalledWith(0, expect.anything(), { cleanupId: "cleanup_1" })
+  })
+
+  it("watchdogs pending cleanups in a bounded batch and advances their retry cursor", async () => {
+    const pending = Array.from({ length: 30 }, (_, index) =>
+      cleanupRow({
+        _id: `cleanup_${index + 1}`,
+        attemptId: `attempt_${index + 1}`,
+        createdAt: index + 1,
+        updatedAt: index + 1,
+      }),
+    )
+    const ctx = createCtx(pending)
+
+    const result = await (resumePendingCleanups as any).handler(ctx, {})
+
+    expect(result).toEqual({ scheduled: 25 })
+    expect(ctx.scheduler.runAfter).toHaveBeenCalledTimes(25)
+    expect(ctx.db.patch).toHaveBeenCalledTimes(25)
+    expect(ctx.db.patch).toHaveBeenCalledWith(
+      "cleanup_1",
+      expect.objectContaining({ lastRescheduledAt: expect.any(Number) }),
+    )
+  })
+
+  it("requires server proof for Git-truth attempt transitions and validates commit SHAs", async () => {
+    const committing = { ...attempt, status: "committing", commitSha: undefined }
+    const ctx = createCtx([{ ...project }, { ...lane, status: "active" }, committing])
+
+    await expect(
+      (recordCommit as any).handler(ctx, {
+        id: "attempt_1",
+        commitSha: "1".repeat(40),
+        userId: "user_owner",
+      }),
+    ).rejects.toThrow(/server proof/i)
+    await expect((supersede as any).handler(ctx, { id: "attempt_1", userId: "user_owner" })).rejects.toThrow(
+      /server proof/i,
+    )
+    await expect(
+      (recordCommit as any).handler(ctx, {
+        id: "attempt_1",
+        commitSha: "not-a-sha",
+        serverQueryToken,
+        userId: "user_owner",
+      }),
+    ).rejects.toThrow(/commit sha/i)
+
+    await (recordCommit as any).handler(ctx, {
+      id: "attempt_1",
+      commitSha: "1".repeat(40),
+      serverQueryToken,
+      userId: "user_owner",
+    })
+    await expect((markReconciled as any).handler(ctx, { id: "attempt_1", userId: "user_owner" })).rejects.toThrow(
+      /server proof/i,
+    )
+    await expect(
+      (markReconciled as any).handler(ctx, {
+        id: "attempt_1",
+        serverQueryToken,
+        userId: "user_owner",
+      }),
+    ).resolves.toBeUndefined()
+
+    const supersedeCtx = createCtx([
+      { ...project },
+      { ...lane, status: "active" },
+      { ...attempt, status: "committing", commitSha: undefined },
+    ])
+    await expect(
+      (supersede as any).handler(supersedeCtx, {
+        id: "attempt_1",
+        serverQueryToken,
+        userId: "user_owner",
+      }),
+    ).resolves.toBeUndefined()
+    expect(supersedeCtx.db.patch).toHaveBeenCalledWith("attempt_1", expect.objectContaining({ status: "superseded" }))
+  })
+
+  it("does not expose bulk committed-operation deletion to editors", () => {
+    expect((explorerOpsModule as Record<string, unknown>).clearCommittedForProject).toBeUndefined()
   })
 
   it("rejects outcomes outside the attempt and finalize plans without an authority", async () => {
@@ -1615,7 +1739,7 @@ describe("bounded attempt-scoped cleanup continuation", () => {
     expect(ctx.db.patch).not.toHaveBeenCalledWith("attempt_1", expect.anything())
   })
 
-  it("publishes only unchanged documents but clears owned provenance from edited restores", async () => {
+  it("publishes unchanged documents and resets restored documents to the verified Git baseline", async () => {
     const docAttempt = {
       ...attempt,
       status: "cleanup_pending",
@@ -1650,7 +1774,7 @@ describe("bounded attempt-scoped cleanup continuation", () => {
         phase: "documents",
         pathOutcomes: [
           { path: "content/a.mdx", disposition: "finalize", finalBlobSha: "6".repeat(40) },
-          { path: "content/b.mdx", disposition: "restore" },
+          { path: "content/b.mdx", disposition: "restore", finalBlobSha: "7".repeat(40) },
           { path: "content/c.mdx", disposition: "restore" },
           { path: "content/d.mdx", disposition: "restore" },
         ],
@@ -1667,6 +1791,7 @@ describe("bounded attempt-scoped cleanup continuation", () => {
         projectId: "project_1",
         status: "draft",
         contentVersion: 3,
+        githubSha: "1".repeat(40),
         publishedProvenance: provenance,
       },
       {
@@ -1674,6 +1799,7 @@ describe("bounded attempt-scoped cleanup continuation", () => {
         projectId: "project_1",
         status: "draft",
         contentVersion: 4,
+        githubSha: "1".repeat(40),
         publishedProvenance: provenance,
       },
       {
@@ -1699,8 +1825,14 @@ describe("bounded attempt-scoped cleanup continuation", () => {
         }),
       }),
     )
-    expect(ctx.db.patch).toHaveBeenCalledWith("doc_restore", { publishedProvenance: undefined })
-    expect(ctx.db.patch).toHaveBeenCalledWith("doc_newer", { publishedProvenance: undefined })
+    expect(ctx.db.patch).toHaveBeenCalledWith("doc_restore", {
+      githubSha: "7".repeat(40),
+      publishedProvenance: undefined,
+    })
+    expect(ctx.db.patch).toHaveBeenCalledWith("doc_newer", {
+      githubSha: undefined,
+      publishedProvenance: undefined,
+    })
     expect(ctx.db.patch).not.toHaveBeenCalledWith("doc_other", expect.anything())
   })
 

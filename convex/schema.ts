@@ -481,6 +481,18 @@ export default defineSchema({
     .index("by_repo_key_pr_head_base", ["repoOwnerKey", "repoNameKey", "prNumber", "branchName", "baseBranch"])
     .index("by_projectId_mergeVerificationState", ["projectId", "mergeVerificationState"])
     .index("by_projectId_closeVerificationState", ["projectId", "closeVerificationState"])
+    .index("by_projectId_mergeVerificationState_lastStatusCheckedAt_createdAt", [
+      "projectId",
+      "mergeVerificationState",
+      "lastStatusCheckedAt",
+      "createdAt",
+    ])
+    .index("by_projectId_closeVerificationState_lastStatusCheckedAt_createdAt", [
+      "projectId",
+      "closeVerificationState",
+      "lastStatusCheckedAt",
+      "createdAt",
+    ])
     .index("by_laneInvalidationPending", ["laneInvalidationPending"]),
 
   // ─── Publish Attempts (durable commit/reconcile boundary) ─────────
@@ -585,12 +597,14 @@ export default defineSchema({
     phase: v.union(v.literal("explorer"), v.literal("media"), v.literal("documents"), v.literal("complete")),
     cursor: v.number(),
     status: v.union(v.literal("pending"), v.literal("complete")),
+    lastRescheduledAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_attemptId", ["attemptId"])
     .index("by_laneId_status", ["laneId", "status"])
-    .index("by_status", ["status"]),
+    .index("by_status", ["status"])
+    .index("by_status_lastRescheduledAt_createdAt", ["status", "lastRescheduledAt", "createdAt"]),
 
   // A merged lane may contain several publish attempts that touch the same
   // path. The first (newest) attempt whose descriptor matches the immutable

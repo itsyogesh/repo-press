@@ -58,17 +58,17 @@ export const getStatusSyncCandidateForProject = query({
     const [pendingMerged, pendingClosed] = await Promise.all([
       ctx.db
         .query("publishBranches")
-        .withIndex("by_projectId_mergeVerificationState", (q) =>
+        .withIndex("by_projectId_mergeVerificationState_lastStatusCheckedAt_createdAt", (q) =>
           q.eq("projectId", args.projectId).eq("mergeVerificationState", "pending"),
         )
-        .order("desc")
+        .order("asc")
         .first(),
       ctx.db
         .query("publishBranches")
-        .withIndex("by_projectId_closeVerificationState", (q) =>
+        .withIndex("by_projectId_closeVerificationState_lastStatusCheckedAt_createdAt", (q) =>
           q.eq("projectId", args.projectId).eq("closeVerificationState", "pending"),
         )
-        .order("desc")
+        .order("asc")
         .first(),
     ])
     const pendingLifecycle = [
@@ -76,7 +76,12 @@ export const getStatusSyncCandidateForProject = query({
       pendingClosed?.status === "closed" ? pendingClosed : null,
     ]
       .filter((lane): lane is NonNullable<typeof lane> => Boolean(lane?.prNumber))
-      .sort((a, b) => b.updatedAt - a.updatedAt)[0]
+      .sort(
+        (a, b) =>
+          (a.lastStatusCheckedAt ?? 0) - (b.lastStatusCheckedAt ?? 0) ||
+          a.createdAt - b.createdAt ||
+          String(a._id).localeCompare(String(b._id)),
+      )[0]
     if (pendingLifecycle) return pendingLifecycle
     const openCandidates = await Promise.all(
       (["active", "inactive"] as const).map(async (status) => {

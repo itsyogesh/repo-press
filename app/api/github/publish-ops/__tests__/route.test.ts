@@ -2670,7 +2670,7 @@ describe("POST /api/github/publish-ops", () => {
         expect.anything(),
         expect.objectContaining({
           id: "attempt_1",
-          pathOutcomes: [{ path: "content/posts/old.mdx", disposition: "restore" }],
+          pathOutcomes: [{ path: "content/posts/old.mdx", disposition: "restore", finalBlobSha: "f".repeat(40) }],
         }),
       )
       expect(batchCommitPublishLaneAtExpectedHead).not.toHaveBeenCalled()
@@ -2731,12 +2731,12 @@ describe("POST /api/github/publish-ops", () => {
         expect.anything(),
         expect.objectContaining({
           id: "attempt_1",
-          pathOutcomes: [{ path: "content/posts/old.mdx", disposition: "restore" }],
+          pathOutcomes: [{ path: "content/posts/old.mdx", disposition: "restore", finalBlobSha: "f".repeat(40) }],
         }),
       )
     })
 
-    it("normalizes diagnostic final blobs when a later merge commit overwrote an attempted update", async () => {
+    it("preserves the final-tree baseline when a later merge commit overwrote an attempted update", async () => {
       mockPublishQueries({
         pendingOps: [],
         dirtyDocs: [],
@@ -2761,7 +2761,7 @@ describe("POST /api/github/publish-ops", () => {
         expect.anything(),
         expect.objectContaining({
           id: "attempt_1",
-          pathOutcomes: [{ path: "content/posts/old.mdx", disposition: "restore" }],
+          pathOutcomes: [{ path: "content/posts/old.mdx", disposition: "restore", finalBlobSha: "c".repeat(40) }],
         }),
       )
     })
@@ -2826,6 +2826,10 @@ describe("POST /api/github/publish-ops", () => {
         }
         return undefined
       })
+      vi.mocked(getBranchHeadForPublish).mockResolvedValue({ status: "found", sha: "9".repeat(40) })
+      vi.mocked(inspectPublishEffectsAtCommit).mockResolvedValue([
+        { path: "content/posts/old.mdx", disposition: "restore", finalBlobSha: "8".repeat(40) },
+      ])
 
       const response = await POST(buildRequest({ projectId: "project_123" }))
       const payload = await response.json()
@@ -2837,12 +2841,39 @@ describe("POST /api/github/publish-ops", () => {
       expect(attemptCalls).toEqual([
         expect.objectContaining({
           id: "attempt_1",
+          authoritySha: "9".repeat(40),
           serverQueryToken: expect.any(String),
-          pathOutcomes: [{ path: "content/posts/old.mdx", disposition: "restore" }],
+          pathOutcomes: [{ path: "content/posts/old.mdx", disposition: "restore", finalBlobSha: "8".repeat(40) }],
         }),
       ])
+      expect(inspectPublishEffectsAtCommit).toHaveBeenCalledWith(
+        "gh-token",
+        "acme",
+        "docs-site",
+        "9".repeat(40),
+        expect.any(Array),
+      )
       // Never open a PR for a finished lane.
       expect(createPullRequest).not.toHaveBeenCalled()
+      expect(batchCommitPublishLaneAtExpectedHead).not.toHaveBeenCalled()
+    })
+
+    it("requeues a cleanup-pending attempt when a publish retry observes a lost continuation", async () => {
+      mockPublishQueries({
+        pendingOps: [],
+        dirtyDocs: [],
+        activePublishAttempt: committedAttempt({ status: "cleanup_pending" }),
+      })
+
+      const response = await POST(buildRequest({ projectId: "project_123" }))
+      const payload = await response.json()
+
+      expect(response.status).toBe(409)
+      expect(payload.error).toMatch(/durable cleanup/i)
+      const retryMutationArgs = convexMutationMock.mock.calls.map(([, args]) => args)
+      expect(retryMutationArgs).toContainEqual(
+        expect.objectContaining({ id: "attempt_1", serverQueryToken: expect.any(String) }),
+      )
       expect(batchCommitPublishLaneAtExpectedHead).not.toHaveBeenCalled()
     })
   })

@@ -21,10 +21,14 @@ vi.mock("@/convex/auth", () => ({
 import { begin } from "@/convex/publishAttempts"
 import { mintProjectAccessToken } from "@/lib/project-access-token"
 
-function createCtx(get: ReturnType<typeof vi.fn>, insert = vi.fn()) {
+function createCtx(get: (...args: unknown[]) => unknown, insert = vi.fn()) {
   return {
     db: {
-      get,
+      get: vi.fn(async (...args: unknown[]) => {
+        const row = (await get(...args)) as Record<string, unknown> | null | undefined
+        if (row?._id === "lane_1" && row.status === undefined) return { ...row, status: "active" }
+        return row
+      }),
       insert,
       patch: vi.fn(),
       delete: vi.fn(),
@@ -102,6 +106,29 @@ describe("publishAttempts.begin transactional reference validation", () => {
         operationPaths: ["content/a.mdx"],
       }),
     )
+  })
+
+  it.each([
+    "inactive",
+    "closed",
+    "merged",
+  ] as const)("rejects a publish attempt when the lane became %s before begin", async (status) => {
+    const insert = vi.fn()
+    const get = vi.fn().mockResolvedValueOnce(project).mockResolvedValueOnce({
+      _id: "lane_1",
+      projectId: "project_1",
+      branchName: "repopress/start",
+      status,
+    })
+
+    await expect(
+      (begin as any).handler(createCtx(get, insert), {
+        ...baseArgs,
+        projectAccessToken: await patToken(),
+      }),
+    ).rejects.toThrow(/active publish lane/i)
+
+    expect(insert).not.toHaveBeenCalled()
   })
 
   it("rejects an operation descriptor that has no owning persisted association", async () => {

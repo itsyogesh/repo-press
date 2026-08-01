@@ -155,9 +155,18 @@ function createLaneCtx({
     )
   }
 
-  const chain = (rows: Array<Record<string, unknown>>): any => ({
+  const chain = (rows: Array<Record<string, unknown>>, indexName?: string): any => ({
     first: vi.fn().mockImplementation(async () => rows[0] ?? null),
-    order: vi.fn().mockImplementation(() => chain(rows)),
+    order: vi.fn().mockImplementation((direction: "asc" | "desc") => {
+      if (!indexName?.includes("lastStatusCheckedAt")) return chain(rows, indexName)
+      const ordered = [...rows].sort(
+        (a, b) =>
+          ((a.lastStatusCheckedAt as number | undefined) ?? 0) - ((b.lastStatusCheckedAt as number | undefined) ?? 0) ||
+          ((a.createdAt as number | undefined) ?? 0) - ((b.createdAt as number | undefined) ?? 0) ||
+          String(a._id).localeCompare(String(b._id)),
+      )
+      return chain(direction === "asc" ? ordered : ordered.reverse(), indexName)
+    }),
     collect: vi.fn().mockImplementation(async () => rows),
     take: vi.fn().mockImplementation(async (count: number) => rows.slice(0, count)),
     filter: () => {
@@ -191,7 +200,7 @@ function createLaneCtx({
       query: vi.fn((table: string) => ({
         withIndex: (indexName: string, cb?: (q: unknown) => unknown) => {
           cleanupTrace.indexes.push({ table, name: indexName })
-          return chain(rowsFor(table, captureIndexCriteria(cb)))
+          return chain(rowsFor(table, captureIndexCriteria(cb)), indexName)
         },
         filter: () => {
           if (table !== "mediaOps") return chain([])
@@ -276,6 +285,66 @@ describe("closed-lane synchronization invalidation", () => {
     })
 
     expect(candidate?._id).toBe("lane_1")
+  })
+
+  it.each([
+    ["merged", "mergeVerificationState"],
+    ["closed", "closeVerificationState"],
+  ] as const)("rotates fairly across pending %s lifecycle lanes", async (status, verificationField) => {
+    const justChecked = laneDoc({
+      _id: "lane_just_checked",
+      status,
+      [verificationField]: "pending",
+      createdAt: 20,
+      updatedAt: 30,
+      lastStatusCheckedAt: 30,
+    })
+    const waiting = laneDoc({
+      _id: "lane_waiting",
+      status,
+      [verificationField]: "pending",
+      createdAt: 10,
+      updatedAt: 10,
+      lastStatusCheckedAt: 10,
+    })
+    const ctx = createLaneCtx({ publishBranches: [justChecked, waiting] })
+
+    const candidate = await (getStatusSyncCandidateForProject as any).handler(ctx, {
+      projectId: "project_1",
+      userId: "user_owner",
+      projectAccessToken: await patToken(),
+    })
+
+    expect(candidate?._id).toBe("lane_waiting")
+  })
+
+  it("rotates fairly between pending merged and closed lifecycle lanes", async () => {
+    const mergedJustChecked = laneDoc({
+      _id: "lane_merged",
+      status: "merged",
+      mergeVerificationState: "pending",
+      mergeCommitSha: "a".repeat(40),
+      createdAt: 20,
+      updatedAt: 30,
+      lastStatusCheckedAt: 30,
+    })
+    const closedWaiting = laneDoc({
+      _id: "lane_closed",
+      status: "closed",
+      closeVerificationState: "pending",
+      createdAt: 10,
+      updatedAt: 10,
+      lastStatusCheckedAt: 10,
+    })
+    const ctx = createLaneCtx({ publishBranches: [mergedJustChecked, closedWaiting] })
+
+    const candidate = await (getStatusSyncCandidateForProject as any).handler(ctx, {
+      projectId: "project_1",
+      userId: "user_owner",
+      projectAccessToken: await patToken(),
+    })
+
+    expect(candidate?._id).toBe("lane_closed")
   })
 
   it("selects the least-recently-checked open lane instead of starving an older inactive PR", async () => {

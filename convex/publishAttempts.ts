@@ -241,8 +241,8 @@ export const begin = mutation({
     // this transaction - otherwise a discard/undo/save that raced planning
     // could be committed silently from stale in-memory content.
     const lane = await ctx.db.get(args.publishBranchId)
-    if (!lane || lane.projectId !== args.projectId || lane.branchName !== args.branchName) {
-      throw new Error("Publish attempt lane does not match the project's publish branch")
+    if (!lane || lane.projectId !== args.projectId || lane.branchName !== args.branchName || lane.status !== "active") {
+      throw new Error("Publish attempt lane does not match the project's exact active publish lane")
     }
     const contentRoot = access.project.contentRoot
     const coveredDescriptorIdentities = new Set<string>()
@@ -518,6 +518,60 @@ export const resolveAndEnqueueCleanup = mutation({
 })
 
 /**
+ * Re-dispatch one exact persisted cleanup after a lost/failed continuation.
+ * The immutable plan is revalidated before scheduling; no caller can replace
+ * its authority, outcomes, phase, or cursor.
+ */
+export const resumeCleanup = mutation({
+  args: {
+    id: v.id("publishAttempts"),
+    serverQueryToken: v.string(),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const attempt = await ctx.db.get(args.id)
+    if (!attempt) throw new Error("Publish attempt not found")
+    const { project } = await resolveProjectAccess(
+      ctx,
+      { projectId: attempt.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken },
+      "editor",
+    )
+    if (!(await verifyServerQueryToken(args.serverQueryToken))) {
+      throw new Error("Unauthorized: valid server proof is required to resume publish cleanup")
+    }
+    if (attempt.status !== "cleanup_pending" || !attempt.cleanupId) {
+      throw new Error("Publish attempt has no pending durable cleanup")
+    }
+    const cleanup = await ctx.db.get(attempt.cleanupId)
+    const lane = await ctx.db.get(attempt.publishBranchId)
+    if (!cleanup || cleanup.status !== "pending") {
+      throw new Error("Publish attempt cleanup state is missing its pending durable plan")
+    }
+    assertValidPublishCleanupPlan({
+      project,
+      lane,
+      attempt,
+      plan: {
+        projectId: cleanup.projectId,
+        laneId: cleanup.laneId,
+        attemptId: cleanup.attemptId,
+        cleanupId: cleanup._id,
+        authoritySha: cleanup.authoritySha,
+        pathOutcomes: cleanup.pathOutcomes,
+      },
+      stage: "continuation",
+    })
+    const now = Date.now()
+    await ctx.db.patch(cleanup._id, { lastRescheduledAt: now, updatedAt: now })
+    await ctx.scheduler.runAfter(0, (internal as any).publishAttemptCleanups.continueCleanup, {
+      cleanupId: cleanup._id,
+    })
+    return { cleanupId: cleanup._id, scheduled: true as const }
+  },
+})
+
+/**
  * Record the landed commit SHA. Valid from "committing" (normal flow and
  * recovery of a crash between commit and this record) and idempotently from
  * "committed" when the same SHA is re-recorded on retry.
@@ -526,6 +580,7 @@ export const recordCommit = mutation({
   args: {
     id: v.id("publishAttempts"),
     commitSha: v.string(),
+    serverQueryToken: v.string(),
     userId: v.optional(v.string()),
     projectAccessToken: v.optional(v.string()),
   },
@@ -537,6 +592,10 @@ export const recordCommit = mutation({
       { projectId: attempt.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken },
       "editor",
     )
+    if (!(await verifyServerQueryToken(args.serverQueryToken))) {
+      throw new Error("Unauthorized: valid server proof is required to record Git commit truth")
+    }
+    if (!SHA_PATTERN.test(args.commitSha)) throw new Error("Publish attempt commit SHA must be 40-hex")
     if (attempt.status === "committed" && attempt.commitSha === args.commitSha) return
     if (attempt.status !== "committing") {
       throw new Error(`Cannot record a commit on a ${attempt.status} publish attempt`)
@@ -549,6 +608,7 @@ export const recordCommit = mutation({
 export const markReconciled = mutation({
   args: {
     id: v.id("publishAttempts"),
+    serverQueryToken: v.string(),
     userId: v.optional(v.string()),
     projectAccessToken: v.optional(v.string()),
   },
@@ -560,6 +620,9 @@ export const markReconciled = mutation({
       { projectId: attempt.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken },
       "editor",
     )
+    if (!(await verifyServerQueryToken(args.serverQueryToken))) {
+      throw new Error("Unauthorized: valid server proof is required to record reconciliation truth")
+    }
     if (attempt.status === "reconciled") return
     if (attempt.status !== "committed") {
       throw new Error(`Cannot reconcile a ${attempt.status} publish attempt`)
@@ -577,6 +640,7 @@ export const markReconciled = mutation({
 export const supersede = mutation({
   args: {
     id: v.id("publishAttempts"),
+    serverQueryToken: v.string(),
     userId: v.optional(v.string()),
     projectAccessToken: v.optional(v.string()),
   },
@@ -588,6 +652,9 @@ export const supersede = mutation({
       { projectId: attempt.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken },
       "editor",
     )
+    if (!(await verifyServerQueryToken(args.serverQueryToken))) {
+      throw new Error("Unauthorized: valid server proof is required to supersede a publish attempt")
+    }
     if (attempt.status === "superseded") return
     if (attempt.status !== "committing") {
       throw new Error(`Cannot supersede a ${attempt.status} publish attempt`)
@@ -604,6 +671,7 @@ export const supersede = mutation({
 export const supersedeClosedPending = mutation({
   args: {
     id: v.id("publishAttempts"),
+    serverQueryToken: v.string(),
     userId: v.optional(v.string()),
     projectAccessToken: v.optional(v.string()),
   },
@@ -615,6 +683,9 @@ export const supersedeClosedPending = mutation({
       { projectId: attempt.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken },
       "editor",
     )
+    if (!(await verifyServerQueryToken(args.serverQueryToken))) {
+      throw new Error("Unauthorized: valid server proof is required to supersede a closed-lane attempt")
+    }
     if (attempt.status === "superseded") return
     if (attempt.status !== "committing" || attempt.commitSha) {
       throw new Error(`Cannot safely supersede a ${attempt.status} publish attempt`)

@@ -662,6 +662,7 @@ export async function POST(request: Request) {
       if (error instanceof BranchHeadMovedError) {
         await convex.mutation(api.publishAttempts.supersede, {
           id: attemptId,
+          serverQueryToken,
           userId: actingUserId,
           projectAccessToken,
         })
@@ -678,6 +679,7 @@ export async function POST(request: Request) {
     await convex.mutation(api.publishAttempts.recordCommit, {
       id: attemptId,
       commitSha,
+      serverQueryToken,
       userId: actingUserId,
       projectAccessToken,
     })
@@ -784,6 +786,7 @@ export async function POST(request: Request) {
     } else {
       await convex.mutation(api.publishAttempts.markReconciled, {
         id: attemptId,
+        serverQueryToken,
         userId: actingUserId,
         projectAccessToken,
       })
@@ -1070,6 +1073,11 @@ export async function recoverPublishAttempt({
   if (attempt.status === "cleaned" || attempt.status === "superseded") return { handled: false }
 
   if (attempt.status === "cleanup_pending") {
+    await convex.mutation(api.publishAttempts.resumeCleanup, {
+      id: attempt._id,
+      serverQueryToken,
+      ...auth,
+    })
     return {
       handled: true,
       response: NextResponse.json(
@@ -1142,13 +1150,10 @@ export async function recoverPublishAttempt({
         mergeCommitSha,
         attempt.operationDescriptors,
       )
-      // The inspector reports the blob currently occupying a restored path
-      // as diagnostic evidence (for example, a later overwrite or a
-      // delete-then-recreate). Cleanup persists only the disposition: a
-      // non-finalized blob must never become evidence for this attempt.
-      const pathOutcomes = inspectedOutcomes.map((outcome) =>
-        outcome.disposition === "finalize" ? outcome : { path: outcome.path, disposition: outcome.disposition },
-      )
+      // A restored path's blob is not evidence for this attempt, but it is
+      // the verified final-tree baseline for the next publish. Preserve it
+      // so cleanup can reset the document's optimistic-lock SHA.
+      const pathOutcomes = inspectedOutcomes
       await convex.mutation(api.publishAttempts.resolveAndEnqueueCleanup, {
         id: attempt._id,
         authoritySha: mergeCommitSha,
@@ -1184,7 +1189,11 @@ export async function recoverPublishAttempt({
 
   if (lane.status === "closed") {
     if (attempt.status === "committing") {
-      await convex.mutation(api.publishAttempts.supersedeClosedPending, { id: attempt._id, ...auth })
+      await convex.mutation(api.publishAttempts.supersedeClosedPending, {
+        id: attempt._id,
+        serverQueryToken,
+        ...auth,
+      })
       return { handled: false, stagedStateStale: true }
     }
     if (!attempt.operationDescriptors?.length) {
@@ -1199,15 +1208,47 @@ export async function recoverPublishAttempt({
         ),
       }
     }
-    await convex.mutation(api.publishAttempts.resolveAndEnqueueCleanup, {
-      id: attempt._id,
-      pathOutcomes: attempt.operationDescriptors.map((descriptor) => ({
-        path: descriptor.path,
-        disposition: "restore" as const,
-      })),
-      serverQueryToken,
-      ...auth,
-    })
+    try {
+      const baseHead = await getBranchHeadForPublish(token, owner, repo, lane.baseBranch)
+      if (baseHead.status === "absent") {
+        return {
+          handled: true,
+          response: NextResponse.json(
+            { ok: false, error: `Closed-lane recovery cannot find base branch ${lane.baseBranch}.` },
+            { status: 502 },
+          ),
+        }
+      }
+      const baseOutcomes = await inspectPublishEffectsAtCommit(
+        token,
+        owner,
+        repo,
+        baseHead.sha,
+        attempt.operationDescriptors,
+      )
+      await convex.mutation(api.publishAttempts.resolveAndEnqueueCleanup, {
+        id: attempt._id,
+        authoritySha: baseHead.sha,
+        pathOutcomes: baseOutcomes.map((outcome) => ({
+          path: outcome.path,
+          disposition: "restore" as const,
+          ...(outcome.finalBlobSha ? { finalBlobSha: outcome.finalBlobSha } : {}),
+        })),
+        serverQueryToken,
+        ...auth,
+      })
+    } catch (error) {
+      if (error instanceof GitHubReadError) {
+        return {
+          handled: true,
+          response: NextResponse.json(
+            { ok: false, error: `Closed-lane recovery aborted: ${error.message}` },
+            { status: 502 },
+          ),
+        }
+      }
+      throw error
+    }
     return {
       handled: true,
       response: NextResponse.json({
@@ -1308,11 +1349,20 @@ export async function recoverPublishAttempt({
         // provenNotLanded is the only way to reach here without a commitSha
         // (the unprovable case returned above); the extra check narrows the
         // type and guards the invariant.
-        await convex.mutation(api.publishAttempts.supersede, { id: attempt._id, ...auth })
+        await convex.mutation(api.publishAttempts.supersede, {
+          id: attempt._id,
+          serverQueryToken,
+          ...auth,
+        })
         return { handled: false }
       }
 
-      await convex.mutation(api.publishAttempts.recordCommit, { id: attempt._id, commitSha, ...auth })
+      await convex.mutation(api.publishAttempts.recordCommit, {
+        id: attempt._id,
+        commitSha,
+        serverQueryToken,
+        ...auth,
+      })
     }
   } catch (error) {
     if (error instanceof GitHubReadError) {
@@ -1423,7 +1473,11 @@ export async function recoverPublishAttempt({
     const refreshWarning = `${refresh.failedCount} document(s) could not sync their GitHub state after commit ${commitSha}; publish again to finish reconciliation (no new commit will be created).`
     warning = warning ? `${warning} ${refreshWarning}` : refreshWarning
   } else {
-    await convex.mutation(api.publishAttempts.markReconciled, { id: attempt._id, ...auth })
+    await convex.mutation(api.publishAttempts.markReconciled, {
+      id: attempt._id,
+      serverQueryToken,
+      ...auth,
+    })
   }
 
   const note =

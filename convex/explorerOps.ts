@@ -489,25 +489,3 @@ export const markCommitted = mutation({
     return { skippedDeleteAssociations, unreconciledOpIds }
   },
 })
-
-/**
- * Remove all committed explorer ops for a project (cleanup after publish).
- */
-export const clearCommittedForProject = mutation({
-  args: {
-    projectId: v.id("projects"),
-    userId: v.optional(v.string()),
-    projectAccessToken: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    await resolveProjectAccess(ctx, args, "editor")
-
-    const committed = await ctx.db
-      .query("explorerOps")
-      .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", "committed"))
-      .collect()
-    for (const op of committed) {
-      await ctx.db.delete(op._id)
-    }
-  },
-})

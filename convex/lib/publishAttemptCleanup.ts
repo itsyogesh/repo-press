@@ -341,8 +341,15 @@ async function processDocuments(
     if (!ownsRecordedProvenance && !ownsUnrecordedSnapshot) continue
     if (outcome.disposition === "restore" || outcome.disposition === "discard") {
       // A newer draft must survive, but provenance for a dead/excluded
-      // attempt must always be cleared so the document remains dirty.
-      if (ownsRecordedProvenance) await ctx.db.patch(document._id, { publishedProvenance: undefined })
+      // attempt must always be cleared so the document remains dirty. A
+      // verified restore also resets the optimistic-lock baseline to the
+      // immutable final/base tree (undefined means the path is absent).
+      if (ownsRecordedProvenance) {
+        await ctx.db.patch(document._id, {
+          ...(outcome.disposition === "restore" ? { githubSha: outcome.finalBlobSha } : {}),
+          publishedProvenance: undefined,
+        })
+      }
       processed += 1
       continue
     }
