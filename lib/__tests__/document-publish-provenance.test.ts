@@ -19,6 +19,7 @@ vi.mock("@/convex/auth", () => ({
 }))
 
 import { listDirtyForProject, markPublishedSnapshot, saveDraft } from "@/convex/documents"
+import { isDocumentContentClean } from "@/convex/lib/documentCleanliness"
 import { mintProjectAccessToken } from "@/lib/project-access-token"
 
 async function patToken() {
@@ -39,6 +40,8 @@ function snapshotArgs(overrides: Record<string, unknown> = {}) {
     id: "doc_1",
     githubSha: "blob-1",
     publishBranchId: "lane_1",
+    authorityKind: "lane",
+    authorityBranch: "repopress/main/1234",
     commitSha: "commit-1",
     contentRevision: CONTENT_REVISION,
     expectedUpdatedAt: 5,
@@ -106,6 +109,8 @@ describe("lane-synchronization provenance", () => {
     expect(patched).toEqual({
       githubSha: "blob-1",
       publishedProvenance: {
+        authorityKind: "lane",
+        authorityBranch: "repopress/main/1234",
         publishBranchId: "lane_1",
         commitSha: "commit-1",
         contentRevision: CONTENT_REVISION,
@@ -165,6 +170,8 @@ describe("lane-synchronization provenance", () => {
       projectId: "project_1",
       updatedAt: 5,
       publishedProvenance: {
+        authorityKind: "lane",
+        authorityBranch: "repopress/main/1234",
         publishBranchId: "lane_1",
         commitSha: "commit-1",
         contentRevision: CONTENT_REVISION,
@@ -292,8 +299,8 @@ describe("lane-synchronization provenance", () => {
         { _id: "doc_new", body: "# C", frontmatter: null, updatedAt: 3 },
         // Dirty again: provenance cleared when its lane closed unmerged.
         { _id: "doc_invalidated", body: "# D", frontmatter: null, updatedAt: 7, contentVersion: 2 },
-        // Clean: provenance recorded before contentVersion existed falls
-        // back to the updatedAt comparison it was written under.
+        // Dirty migration candidate: provenance recorded before
+        // contentVersion cannot prove byte identity.
         {
           _id: "doc_versionless_provenance",
           body: "# E",
@@ -301,8 +308,7 @@ describe("lane-synchronization provenance", () => {
           updatedAt: 10,
           publishedProvenance: { publishBranchId: "lane_1", commitSha: "commit-1", publishedUpdatedAt: 10 },
         },
-        // Clean: legacy row from before provenance existed honors its
-        // lastPublishedUpdatedAt marker until edited or republished.
+        // Dirty migration candidate: timestamps are not Git evidence.
         { _id: "doc_legacy_clean", body: "# F", frontmatter: null, updatedAt: 10, lastPublishedUpdatedAt: 10 },
         // Dirty: legacy row edited after its legacy marker.
         { _id: "doc_legacy_edited", body: "# G", frontmatter: null, updatedAt: 12, lastPublishedUpdatedAt: 10 },
@@ -319,8 +325,88 @@ describe("lane-synchronization provenance", () => {
       "doc_edited",
       "doc_new",
       "doc_invalidated",
+      "doc_versionless_provenance",
+      "doc_legacy_clean",
       "doc_legacy_edited",
     ])
+  })
+
+  it("uses one content-specific cleanliness predicate and never trusts legacy timestamps", () => {
+    expect(
+      isDocumentContentClean({
+        updatedAt: 99,
+        contentVersion: 3,
+        publishedProvenance: {
+          authorityKind: "base",
+          authorityBranch: "main",
+          commitSha: "a".repeat(40),
+          publishedUpdatedAt: 5,
+          publishedContentVersion: 3,
+        },
+      }),
+    ).toBe(true)
+    expect(
+      isDocumentContentClean({
+        updatedAt: 5,
+        contentVersion: 3,
+        publishedProvenance: {
+          publishBranchId: "lane_1",
+          commitSha: "a".repeat(40),
+          publishedUpdatedAt: 5,
+        },
+      }),
+    ).toBe(false)
+    expect(isDocumentContentClean({ updatedAt: 5, contentVersion: 0, lastPublishedUpdatedAt: 5 })).toBe(false)
+  })
+
+  it("records base authority without inventing a publish lane", async () => {
+    const patch = vi.fn()
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({ _id: "doc_1", projectId: "project_1", updatedAt: 5, contentVersion: 2 })
+      .mockResolvedValueOnce(project)
+
+    const result = await (markPublishedSnapshot as any).handler(createCtx({ get, patch }), {
+      ...snapshotArgs({
+        publishBranchId: undefined,
+        authorityKind: "base",
+        authorityBranch: "main",
+        publishedContentVersion: 2,
+      }),
+      projectAccessToken: await patToken(),
+    })
+
+    expect(result).toEqual({ synchronized: true })
+    expect(patch).toHaveBeenCalledWith(
+      "doc_1",
+      expect.objectContaining({
+        publishedProvenance: expect.objectContaining({
+          authorityKind: "base",
+          authorityBranch: "main",
+          commitSha: "commit-1",
+        }),
+      }),
+    )
+    expect(patch.mock.calls[0][1].publishedProvenance.publishBranchId).toBeUndefined()
+  })
+
+  it("rejects inconsistent lane and attempt provenance authority", async () => {
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({ _id: "doc_1", projectId: "project_1", updatedAt: 5, contentVersion: 2 })
+      .mockResolvedValueOnce(project)
+
+    await expect(
+      (markPublishedSnapshot as any).handler(createCtx({ get }), {
+        ...snapshotArgs({
+          authorityKind: "base",
+          authorityBranch: "main",
+          publishAttemptId: "attempt_1",
+          publishedContentVersion: 2,
+        }),
+        projectAccessToken: await patToken(),
+      }),
+    ).rejects.toThrow(/base provenance cannot reference a publish lane or attempt/i)
   })
 
   it("judges synchronization by content version and migrates the legacy marker", async () => {

@@ -1,6 +1,8 @@
 import type { Doc, Id } from "../_generated/dataModel"
 import type { MutationCtx } from "../_generated/server"
+import { isDocumentContentClean } from "./documentCleanliness"
 import { LANE_CLEANUP_BATCH, scheduleLaneCleanupContinuation } from "./laneInvalidation"
+import { deleteOwnedMediaStorageOrKeepTombstone } from "./mediaTombstone"
 import { findActivePublishAttempt } from "./publishAttemptGuard"
 
 export type LaneMergeResult =
@@ -76,22 +78,7 @@ export async function finalizeMergedLaneSync(
     .take(LANE_CLEANUP_BATCH)
   for (const op of committedMediaBatch) {
     clearedMediaOpIds.push(op._id)
-    if (op.convexStorageId) {
-      try {
-        await ctx.storage.delete(op.convexStorageId)
-      } catch {
-        // Keep the row as a durable "failed" tombstone so the object stays
-        // owned and the nightly cron retries the delete.
-        await ctx.db.patch(op._id, {
-          status: "failed",
-          commitSha: undefined,
-          publishBranchId: undefined,
-          updatedAt: now,
-        })
-        continue
-      }
-    }
-    await ctx.db.delete(op._id)
+    await deleteOwnedMediaStorageOrKeepTombstone(ctx, op)
   }
 
   const legacyRowsDone =
@@ -122,10 +109,7 @@ export async function finalizeMergedLaneSync(
   for (const doc of legacyDocumentBatches.flat()) {
     const provenance = doc.publishedProvenance
     if (!provenance || provenance.publishAttemptId !== undefined || provenance.publishBranchId !== branch._id) continue
-    const unchanged =
-      provenance.publishedContentVersion !== undefined
-        ? provenance.publishedContentVersion === (doc.contentVersion ?? 0)
-        : provenance.publishedUpdatedAt === doc.updatedAt
+    const unchanged = isDocumentContentClean(doc)
     if (!unchanged || doc.body == null) {
       // The recorded legacy snapshot no longer represents current content.
       // Drop only stale synchronization provenance; preserve the edit and its

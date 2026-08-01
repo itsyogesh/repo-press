@@ -126,6 +126,8 @@ describe("publish attempt stamp ownership", () => {
       (markPublishedSnapshot as any).handler(ctx, {
         id: "doc_1",
         githubSha: "blob_1",
+        authorityKind: "lane",
+        authorityBranch: "repopress/start",
         publishAttemptId: "attempt_1",
         publishBranchId: "lane_1",
         commitSha: "1".repeat(40),

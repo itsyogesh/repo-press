@@ -428,19 +428,48 @@ export async function POST(request: Request) {
     }
 
     if (operations.length === 0) {
-      // Everything staged serializes to bytes already on the publish lane.
+      // Everything staged serializes to bytes already on the selected Git
+      // authority (the active lane, or base when no lane is selected).
       // Reconcile the documents clean WITHOUT a commit: their provenance
-      // records the lane head as the holding commit. Idempotent and
+      // records that authority head as the holding commit. Idempotent and
       // replay-safe like any snapshot stamp, so no attempt row is needed -
       // a partial failure simply leaves the rest dirty for a retry.
-      if (publishBranch && redundantSynchronizations.length > 0) {
+      if (redundantSynchronizations.length > 0) {
+        // The equality reads above were pinned to authoritySha. Re-read the
+        // mutable ref immediately before stamping provenance so a branch
+        // move can never make an old byte comparison look current.
+        let finalAuthorityHead: Awaited<ReturnType<typeof getBranchHeadForPublish>>
+        try {
+          finalAuthorityHead = await getBranchHeadForPublish(token, owner, repo, authorityBranch)
+        } catch (error) {
+          if (error instanceof GitHubReadError) {
+            console.error("Zero-commit authority recheck failed:", error)
+            return NextResponse.json(
+              {
+                ok: false,
+                error: `Publish synchronization aborted: ${error.message}. Retry once GitHub reads succeed.`,
+              },
+              { status: 502 },
+            )
+          }
+          throw error
+        }
+        if (finalAuthorityHead.status === "absent" || finalAuthorityHead.sha !== authoritySha) {
+          return NextResponse.json(
+            { ok: false, error: `Publish authority ${authorityBranch} changed during synchronization. Retry.` },
+            { status: 409 },
+          )
+        }
+
         let failedCount = 0
         for (const redundant of redundantSynchronizations) {
           try {
-            await convex.mutation(api.documents.markPublishedSnapshot, {
+            const result = await convex.mutation(api.documents.markPublishedSnapshot, {
               id: redundant.documentId,
               githubSha: redundant.githubSha,
-              publishBranchId: publishBranch._id,
+              authorityKind: publishBranch ? "lane" : "base",
+              authorityBranch,
+              ...(publishBranch ? { publishBranchId: publishBranch._id } : {}),
               commitSha: authoritySha,
               contentRevision: redundant.contentRevision,
               publishedContentVersion: redundant.contentVersion,
@@ -448,6 +477,7 @@ export async function POST(request: Request) {
               userId: actingUserId,
               projectAccessToken,
             })
+            if (result?.synchronized === false) failedCount += 1
           } catch (error) {
             failedCount += 1
             console.error("Redundant-content reconciliation failed:", { documentId: redundant.documentId, error })
@@ -457,8 +487,8 @@ export async function POST(request: Request) {
           ok: true,
           publishModeUsed,
           synchronizedOnly: true,
-          prUrl: publishBranch.prUrl,
-          prNumber: publishBranch.prNumber,
+          prUrl: publishBranch?.prUrl,
+          prNumber: publishBranch?.prNumber,
           summary: `${redundantSynchronizations.length - failedCount} document(s) reconciled without a commit (content already on ${authorityBranch})`,
           warning:
             failedCount > 0
@@ -730,6 +760,7 @@ export async function POST(request: Request) {
       token,
       owner,
       repo,
+      authorityBranch: publishBranch.branchName,
       publishBranchId: publishBranch._id,
       publishAttemptId: attemptId,
       commitSha,
@@ -911,6 +942,7 @@ async function refreshDocumentShasAtCommit({
   token,
   owner,
   repo,
+  authorityBranch,
   publishBranchId,
   publishAttemptId,
   commitSha,
@@ -922,6 +954,7 @@ async function refreshDocumentShasAtCommit({
   token: string
   owner: string
   repo: string
+  authorityBranch: string
   publishBranchId: Id<"publishBranches">
   publishAttemptId: Id<"publishAttempts">
   commitSha: string
@@ -947,6 +980,8 @@ async function refreshDocumentShasAtCommit({
       await convex.mutation(api.documents.markPublishedSnapshot, {
         id: documentId,
         githubSha: fileAtCommit.file.sha,
+        authorityKind: "lane",
+        authorityBranch,
         publishBranchId,
         publishAttemptId,
         commitSha,
@@ -1367,6 +1402,7 @@ export async function recoverPublishAttempt({
     token,
     owner,
     repo,
+    authorityBranch: attempt.branchName,
     publishBranchId: attempt.publishBranchId,
     publishAttemptId: attempt._id,
     commitSha,

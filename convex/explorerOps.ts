@@ -3,6 +3,8 @@ import { resolveStoredRepoPath, type StoredPathRepresentation } from "../lib/pre
 import type { Id } from "./_generated/dataModel"
 import { mutation, query } from "./_generated/server"
 import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
+import { isDocumentContentClean } from "./lib/documentCleanliness"
+import { deleteOwnedMediaStorageOrKeepTombstone } from "./lib/mediaTombstone"
 import { assertNoActivePublishAttempt } from "./lib/publishAttemptGuard"
 import { requireCommittedAttempt, requireExplorerAssociation } from "./lib/publishAttemptOwnership"
 
@@ -319,13 +321,9 @@ export const discardAll = mutation({
     }
 
     for (const mediaOp of pendingMediaOps) {
-      // Delete from Convex storage before marking undone - prevents orphaned files.
       if (mediaOp.convexStorageId) {
-        try {
-          await ctx.storage.delete(mediaOp.convexStorageId)
-        } catch {
-          // File may already be gone; don't block the discard.
-        }
+        await deleteOwnedMediaStorageOrKeepTombstone(ctx, mediaOp)
+        continue
       }
       await ctx.db.patch(mediaOp._id, {
         status: "undone",
@@ -345,7 +343,8 @@ export const discardAll = mutation({
     const dirtyDocs = [...draftDocs, ...approvedDocs].filter(
       (doc) =>
         !pendingCreateIdentities.has(`${doc.pathRepresentation ?? "legacy_repo_v0"}\0${doc.filePath}`) &&
-        (doc.body != null || doc.frontmatter != null),
+        (doc.body != null || doc.frontmatter != null) &&
+        !isDocumentContentClean(doc),
     )
 
     for (const doc of dirtyDocs) {

@@ -402,7 +402,8 @@ describe("Convex ownership guards", () => {
           projectId: "project_1",
           body: "# Current version",
           frontmatter: { title: "Current" },
-          status: "draft",
+          status: "published",
+          contentVersion: 4,
         })
         .mockResolvedValueOnce({ _id: "project_1", userId: "user_owner" }),
       insert,
@@ -415,7 +416,10 @@ describe("Convex ownership guards", () => {
     })
 
     expect(insert).toHaveBeenCalled()
-    expect(patch).toHaveBeenCalled()
+    expect(patch).toHaveBeenCalledWith(
+      "doc_1",
+      expect.objectContaining({ status: "draft", contentVersion: 5, body: "# Old version" }),
+    )
   })
 
   it("keeps internal document creation idempotent for repeated sync passes", async () => {

@@ -4,7 +4,7 @@ import { internalMutation, mutation, query } from "./_generated/server"
 import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
 import { invalidateClosedLaneSync } from "./lib/laneInvalidation"
 import { finalizeMergedLaneSync } from "./lib/laneMerge"
-import { deleteUnownedStorageOrTombstone } from "./lib/mediaTombstone"
+import { deleteOwnedMediaStorageOrKeepTombstone, deleteUnownedStorageOrTombstone } from "./lib/mediaTombstone"
 import { completeCloseVerificationIfIdle, completeMergeVerificationIfIdle } from "./lib/publishAttemptCleanup"
 import { assertNoActivePublishAttempt, findActivePublishAttempt } from "./lib/publishAttemptGuard"
 import { requireCommittedAttempt, requireMediaAssociation } from "./lib/publishAttemptOwnership"
@@ -254,13 +254,11 @@ export const undoByRepoPath = mutation({
 
     if (!pending) return null
 
-    // Delete from Convex storage before marking undone - no orphans.
+    // Storage-backed rows remain owners until deletion succeeds. A failure
+    // converts this exact row into the retryable tombstone.
     if (pending.convexStorageId) {
-      try {
-        await ctx.storage.delete(pending.convexStorageId)
-      } catch {
-        // File may already be gone; don't block the undo.
-      }
+      await deleteOwnedMediaStorageOrKeepTombstone(ctx, pending)
+      return pending._id
     }
 
     await ctx.db.patch(pending._id, {
@@ -269,26 +267,6 @@ export const undoByRepoPath = mutation({
     })
 
     return pending._id
-  },
-})
-
-export const clearCommittedForProject = mutation({
-  args: {
-    projectId: v.id("projects"),
-    userId: v.optional(v.string()),
-    projectAccessToken: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    await resolveProjectAccess(ctx, args, "editor")
-
-    const committed = await ctx.db
-      .query("mediaOps")
-      .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", "committed"))
-      .collect()
-
-    for (const op of committed) {
-      await ctx.db.delete(op._id)
-    }
   },
 })
 
@@ -302,20 +280,14 @@ export const cleanupStaleUploads = internalMutation({
   handler: async (ctx) => {
     const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000 // 7 days ago
 
-    // Collect stale pending ops - no branch, old createdAt, has Convex storage.
-    // We must scan by status since we don't have a createdAt index.
+    // Bounded indexed read of stale pending uploads.
     const staleBatchSize = 100
     let processed = 0
 
     const allPending = await ctx.db
       .query("mediaOps")
-      .filter((q) =>
-        q.and(
-          q.eq(q.field("status"), "pending"),
-          q.eq(q.field("sourceType"), "convex"),
-          q.lt(q.field("createdAt"), cutoff),
-        ),
-      )
+      .withIndex("by_status_createdAt", (q) => q.eq("status", "pending").lt("createdAt", cutoff))
+      .filter((q) => q.and(q.eq(q.field("sourceType"), "convex"), q.eq(q.field("publishBranchId"), undefined)))
       .take(staleBatchSize)
 
     const now = Date.now()
@@ -331,14 +303,8 @@ export const cleanupStaleUploads = internalMutation({
       }
       if (attemptActive) continue
 
-      if (op.convexStorageId) {
-        try {
-          await ctx.storage.delete(op.convexStorageId)
-        } catch {
-          // Already gone.
-        }
-      }
-      await ctx.db.patch(op._id, { status: "undone", updatedAt: now })
+      if (op.convexStorageId) await deleteOwnedMediaStorageOrKeepTombstone(ctx, op)
+      else await ctx.db.patch(op._id, { status: "undone", updatedAt: now })
       processed++
     }
 
@@ -347,19 +313,12 @@ export const cleanupStaleUploads = internalMutation({
     // success the tombstone has served its purpose and is removed.
     const failedTombstones = await ctx.db
       .query("mediaOps")
-      .filter((q) => q.eq(q.field("status"), "failed"))
+      .withIndex("by_status_createdAt", (q) => q.eq("status", "failed"))
       .take(50)
     let tombstonesCleared = 0
     for (const tombstone of failedTombstones) {
-      if (tombstone.convexStorageId) {
-        try {
-          await ctx.storage.delete(tombstone.convexStorageId)
-        } catch {
-          continue // Still failing - keep ownership for the next run.
-        }
-      }
-      await ctx.db.delete(tombstone._id)
-      tombstonesCleared++
+      const result = await deleteOwnedMediaStorageOrKeepTombstone(ctx, tombstone)
+      if (result.deleted) tombstonesCleared++
     }
 
     // Finish lane synchronization cleanups (closed-lane invalidation or

@@ -341,6 +341,37 @@ describe("publish attempt guard on undo/discard", () => {
     expect(patch).not.toHaveBeenCalled()
   })
 
+  it("turns a failed media undo into an owning tombstone for bounded retry", async () => {
+    const patch = vi.fn()
+    const get = vi.fn().mockResolvedValue(project)
+    const ctx = createCtx(get, patch, {
+      pendingMediaRow: {
+        _id: "media_1",
+        projectId: "project_1",
+        userId: "user_owner",
+        repoPath: "/public/uploads/pic.png",
+        fileName: "pic.png",
+        mimeType: "image/png",
+        sourceType: "convex",
+        convexStorageId: "storage_1",
+        status: "pending",
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    })
+    ctx.storage.delete.mockRejectedValue(new Error("storage unavailable"))
+
+    await (undoMediaByRepoPath as any).handler(ctx, {
+      projectId: "project_1",
+      repoPath: "/public/uploads/pic.png",
+      userId: "user_owner",
+      projectAccessToken: await patToken(),
+    })
+
+    expect(patch).toHaveBeenCalledWith("media_1", expect.objectContaining({ status: "failed" }))
+    expect(patch).not.toHaveBeenCalledWith("media_1", expect.objectContaining({ status: "undone" }))
+  })
+
   it("rejects replacing a pending media upload while a publish attempt is active and deletes the new bytes", async () => {
     const patch = vi.fn()
     const get = vi.fn().mockResolvedValueOnce(project)

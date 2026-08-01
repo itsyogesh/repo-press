@@ -2,6 +2,7 @@ import { resolveStoredRepoPath, type StoredPathRepresentation, toContentPath } f
 import { internal } from "../_generated/api"
 import type { Doc, Id } from "../_generated/dataModel"
 import type { MutationCtx } from "../_generated/server"
+import { deleteOwnedMediaStorageOrKeepTombstone } from "./mediaTombstone"
 import { findActivePublishAttempt } from "./publishAttemptGuard"
 
 /**
@@ -202,22 +203,7 @@ export async function invalidateClosedLaneSync(
 
   const discardMediaOp = async (op: Doc<"mediaOps">) => {
     discardedMediaOpIds.push(op._id)
-    if (op.convexStorageId) {
-      try {
-        await ctx.storage.delete(op.convexStorageId)
-      } catch {
-        // Keep the row as a durable "failed" tombstone so the object stays
-        // owned and the nightly cron retries the delete.
-        await ctx.db.patch(op._id, {
-          status: "failed",
-          commitSha: undefined,
-          publishBranchId: undefined,
-          updatedAt: now,
-        })
-        return
-      }
-    }
-    await ctx.db.delete(op._id)
+    await deleteOwnedMediaStorageOrKeepTombstone(ctx, op)
   }
 
   const handledMediaIds = new Set<string>()

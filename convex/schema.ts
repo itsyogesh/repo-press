@@ -192,23 +192,25 @@ export default defineSchema({
     // GitHub sync state
     githubSha: v.optional(v.string()),
     lastSyncedAt: v.optional(v.number()),
-    // LEGACY (lazily migrated): rows written before publishedProvenance
-    // existed mark cleanliness as lastPublishedUpdatedAt === updatedAt.
-    // Honored by listDirtyForProject until the next edit or publish, and
-    // cleared whenever markPublishedSnapshot records new provenance.
+    // LEGACY (lazily migrated): retained for reads, but never considered
+    // clean until byte equality is proven against a final Git authority.
     lastPublishedUpdatedAt: v.optional(v.number()),
-    // Lane-synchronization provenance: which publish lane and commit hold
+    // Git-synchronization provenance: which base/lane branch and commit hold
     // this document's published snapshot, the content-specific revision
     // (sha256 of the serialized bytes), the document's contentVersion at
     // planning time, and the planned updatedAt. The document is "clean"
     // for publishing while publishedContentVersion === contentVersion
     // (workflow-only transitions bump updatedAt but not contentVersion, so
     // they cannot dirty unchanged content); recording provenance never
-    // bumps either field, so replays are no-ops. Closing the lane unmerged
-    // clears the whole object and the document becomes dirty again.
+    // bumps either field, so replays are no-ops. Lane-owned provenance also
+    // carries the publish branch (and attempt when applicable).
     publishedProvenance: v.optional(
       v.object({
-        publishBranchId: v.id("publishBranches"),
+        // Optional only for legacy rows. Every new provenance write records
+        // the explicit Git authority kind and branch.
+        authorityKind: v.optional(v.union(v.literal("base"), v.literal("lane"))),
+        authorityBranch: v.optional(v.string()),
+        publishBranchId: v.optional(v.id("publishBranches")),
         publishAttemptId: v.optional(v.id("publishAttempts")),
         commitSha: v.string(),
         contentRevision: v.optional(v.string()),
@@ -418,6 +420,7 @@ export default defineSchema({
   })
     .index("by_projectId", ["projectId"])
     .index("by_projectId_status", ["projectId", "status"])
+    .index("by_status_createdAt", ["status", "createdAt"])
     .index("by_projectId_repoPath", ["projectId", "repoPath"])
     // Bounded lane cleanup: fetch exactly one lane's committed uploads in batches.
     .index("by_publishBranchId_status", ["publishBranchId", "status"])

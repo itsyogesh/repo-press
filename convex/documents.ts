@@ -9,6 +9,7 @@ import {
 import { internal } from "./_generated/api"
 import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server"
 import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
+import { isDocumentContentClean } from "./lib/documentCleanliness"
 import {
   assertGitHubCommitSha,
   authorizeGitHubProjectActor,
@@ -831,48 +832,33 @@ export const listDirtyForProject = query({
       .query("documents")
       .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", "approved"))
       .collect()
-    return [...drafts, ...approved].filter((d) => (d.body != null || d.frontmatter != null) && !isCleanForPublish(d))
+    return [...drafts, ...approved].filter(
+      (d) => (d.body != null || d.frontmatter != null) && !isDocumentContentClean(d),
+    )
   },
 })
 
 /**
- * Lane-synchronization cleanliness. A document is clean while the CONTENT
+ * Git-synchronization cleanliness. A document is clean while the CONTENT
  * recorded by its last reconciled publish is still current:
  * - Current provenance compares content versions, so workflow-only
  *   transitions (which bump updatedAt but not contentVersion) cannot make
  *   unchanged content dirty.
- * - Provenance recorded before contentVersion existed falls back to the
- *   updatedAt comparison it was written under.
- * - Legacy rows that predate provenance entirely honor their
- *   lastPublishedUpdatedAt === updatedAt marker until the next edit or
- *   publish migrates them (markPublishedSnapshot clears the legacy field).
+ * - Provenance recorded before contentVersion existed is a migration
+ *   candidate and remains dirty until byte identity is proven against Git.
+ * - Legacy timestamp-only rows are also migration candidates, never clean.
  * Recording provenance never bumps updatedAt or contentVersion, so every
  * comparison is stable across reconciliation replays; closing the lane
  * unmerged clears the provenance and the document becomes dirty again.
  */
-function isCleanForPublish(d: {
-  updatedAt: number
-  contentVersion?: number
-  lastPublishedUpdatedAt?: number
-  publishedProvenance?: { publishedContentVersion?: number; publishedUpdatedAt: number }
-}): boolean {
-  if (d.publishedProvenance) {
-    if (d.publishedProvenance.publishedContentVersion !== undefined) {
-      return d.publishedProvenance.publishedContentVersion === (d.contentVersion ?? 0)
-    }
-    return d.publishedProvenance.publishedUpdatedAt === d.updatedAt
-  }
-  return d.lastPublishedUpdatedAt !== undefined && d.lastPublishedUpdatedAt === d.updatedAt
-}
-
 /**
- * Record lane-synchronization provenance after a publish reconciled this
- * document: which lane and commit hold the published snapshot, the
+ * Record Git-synchronization provenance after a publish reconciled this
+ * document: which base/lane branch and commit hold the published snapshot, the
  * content-specific revision that landed, and the snapshot's updatedAt.
  *
  * Deliberately IDEMPOTENT: it records what landed without ever touching
- * updatedAt, and cleanliness is derived (publishedUpdatedAt === updatedAt).
- * Replaying the same lane/commit/revision association - recovery after a
+ * updatedAt, and cleanliness is derived from the content-version match.
+ * Replaying the same authority/commit/revision association - recovery after a
  * partial reconcile, or a retry between the SHA refresh and markReconciled -
  * patches identical values, so it can neither flip a synchronized document
  * dirty nor mask a concurrent edit as clean.
@@ -881,7 +867,9 @@ export const markPublishedSnapshot = mutation({
   args: {
     id: v.id("documents"),
     githubSha: v.string(),
-    publishBranchId: v.id("publishBranches"),
+    authorityKind: v.union(v.literal("base"), v.literal("lane")),
+    authorityBranch: v.string(),
+    publishBranchId: v.optional(v.id("publishBranches")),
     publishAttemptId: v.optional(v.id("publishAttempts")),
     commitSha: v.string(),
     repoPath: v.optional(v.string()),
@@ -901,6 +889,16 @@ export const markPublishedSnapshot = mutation({
       { projectId: doc.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken },
       "editor",
     )
+    if (!args.authorityBranch) throw new Error("Publish provenance requires an authority branch")
+    if (args.authorityKind === "base" && (args.publishBranchId !== undefined || args.publishAttemptId !== undefined)) {
+      throw new Error("Base provenance cannot reference a publish lane or attempt")
+    }
+    if (args.authorityKind === "lane" && args.publishBranchId === undefined) {
+      throw new Error("Lane provenance requires a publish branch")
+    }
+    if (args.publishAttemptId !== undefined && args.authorityKind !== "lane") {
+      throw new Error("Publish attempt provenance requires lane authority")
+    }
     if (args.publishAttemptId !== undefined) {
       const publishAttempt = await requireCommittedAttempt(ctx.db, {
         attemptId: args.publishAttemptId,
@@ -917,17 +915,21 @@ export const markPublishedSnapshot = mutation({
       })
     }
     const publishedProvenance: {
-      publishBranchId: typeof args.publishBranchId
+      authorityKind: "base" | "lane"
+      authorityBranch: string
+      publishBranchId?: typeof args.publishBranchId
       publishAttemptId?: typeof args.publishAttemptId
       commitSha: string
       publishedUpdatedAt: number
       contentRevision?: string
       publishedContentVersion?: number
     } = {
-      publishBranchId: args.publishBranchId,
+      authorityKind: args.authorityKind,
+      authorityBranch: args.authorityBranch,
       commitSha: args.commitSha,
       publishedUpdatedAt: args.expectedUpdatedAt,
     }
+    if (args.publishBranchId !== undefined) publishedProvenance.publishBranchId = args.publishBranchId
     if (args.publishAttemptId !== undefined) {
       publishedProvenance.publishAttemptId = args.publishAttemptId
     }

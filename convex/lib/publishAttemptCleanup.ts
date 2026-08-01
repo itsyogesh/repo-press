@@ -3,6 +3,7 @@ import { resolveStoredRepoPath, type StoredPathRepresentation } from "../../lib/
 import { internal } from "../_generated/api"
 import type { Doc, Id } from "../_generated/dataModel"
 import type { MutationCtx } from "../_generated/server"
+import { deleteOwnedMediaStorageOrKeepTombstone } from "./mediaTombstone"
 import { assertPublishAttemptOutcomeClosure } from "./publishAttemptClosure"
 
 export const CLEANUP_BATCH_SIZE = 25
@@ -272,21 +273,7 @@ async function hasNewerPendingMediaIntent(ctx: CleanupCtx, row: Doc<"mediaOps">)
 }
 
 async function deleteMediaOrKeepTombstone(ctx: CleanupCtx, row: Doc<"mediaOps">) {
-  if (row.convexStorageId) {
-    try {
-      await ctx.storage.delete(row.convexStorageId)
-    } catch {
-      await ctx.db.patch(row._id, {
-        status: "failed",
-        commitSha: undefined,
-        publishBranchId: undefined,
-        publishAttemptId: undefined,
-        updatedAt: Date.now(),
-      })
-      return
-    }
-  }
-  await ctx.db.delete(row._id)
+  await deleteOwnedMediaStorageOrKeepTombstone(ctx, row)
 }
 
 async function processMedia(
@@ -365,8 +352,15 @@ async function processDocuments(
     if (!unchanged) continue
     if (!cleanup.authoritySha) throw new Error("Finalized publish document cleanup requires an authority SHA")
     const publishedProvenance = ownsRecordedProvenance
-      ? { ...document.publishedProvenance!, publishAttemptId: attempt._id }
+      ? {
+          ...document.publishedProvenance!,
+          authorityKind: "lane" as const,
+          authorityBranch: attempt.branchName,
+          publishAttemptId: attempt._id,
+        }
       : {
+          authorityKind: "lane" as const,
+          authorityBranch: attempt.branchName,
           publishBranchId: attempt.publishBranchId,
           publishAttemptId: attempt._id,
           commitSha: cleanup.authoritySha,

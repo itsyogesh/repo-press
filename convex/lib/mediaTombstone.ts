@@ -1,6 +1,38 @@
 import type { Id } from "../_generated/dataModel"
 import type { MutationCtx } from "../_generated/server"
 
+type StorageOwner = {
+  _id: Id<"mediaOps">
+  convexStorageId?: string
+}
+
+/**
+ * Delete bytes still owned by an existing mediaOps row. The owner row is
+ * removed only after storage succeeds; failure converts that SAME row into
+ * a retryable tombstone, so ownership is never lost or duplicated.
+ */
+export async function deleteOwnedMediaStorageOrKeepTombstone(
+  ctx: Pick<MutationCtx, "db" | "storage">,
+  row: StorageOwner,
+): Promise<{ deleted: boolean }> {
+  if (row.convexStorageId) {
+    try {
+      await ctx.storage.delete(row.convexStorageId)
+    } catch {
+      await ctx.db.patch(row._id, {
+        status: "failed",
+        commitSha: undefined,
+        publishBranchId: undefined,
+        publishAttemptId: undefined,
+        updatedAt: Date.now(),
+      })
+      return { deleted: false }
+    }
+  }
+  await ctx.db.delete(row._id)
+  return { deleted: true }
+}
+
 /**
  * Delete a Convex storage object that no mediaOps row references (or is
  * about to stop referencing). When the delete FAILS, insert a durable

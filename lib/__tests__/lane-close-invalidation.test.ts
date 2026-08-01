@@ -96,6 +96,7 @@ function createLaneCtx({
         values[field] = value
         return recorder
       },
+      lt: () => recorder,
     }
     cb?.(recorder)
     return values
@@ -758,6 +759,56 @@ describe("closed-lane synchronization invalidation", () => {
     expect(ctx.db.delete).not.toHaveBeenCalledWith("tombstone_stuck")
   })
 
+  it("keeps a stale upload as a failed tombstone when storage deletion fails", async () => {
+    const ctx = createLaneCtx({
+      mediaOps: [
+        {
+          _id: "stale_1",
+          projectId: "project_1",
+          userId: "user_owner",
+          repoPath: "/public/stale.png",
+          fileName: "stale.png",
+          mimeType: "image/png",
+          sourceType: "convex",
+          convexStorageId: "storage_stale",
+          status: "pending",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      failingStorageIds: ["storage_stale"],
+    })
+
+    await (cleanupStaleUploads as any).handler(ctx, {})
+
+    expect(ctx.db.patch).toHaveBeenCalledWith("stale_1", expect.objectContaining({ status: "failed" }))
+    expect(ctx.db.patch).not.toHaveBeenCalledWith("stale_1", expect.objectContaining({ status: "undone" }))
+    expect(ctx.db.delete).not.toHaveBeenCalledWith("stale_1")
+  })
+
+  it("bounds each stale upload pass to 100 indexed owners", async () => {
+    const mediaOps = Array.from({ length: 101 }, (_, index) => ({
+      _id: `stale_${index}`,
+      projectId: "project_1",
+      userId: "user_owner",
+      repoPath: `/public/${index}.png`,
+      fileName: `${index}.png`,
+      mimeType: "image/png",
+      sourceType: "convex",
+      convexStorageId: `storage_${index}`,
+      status: "pending",
+      createdAt: index,
+      updatedAt: index,
+    }))
+    const ctx = createLaneCtx({ mediaOps })
+
+    const result = await (cleanupStaleUploads as any).handler(ctx, {})
+
+    expect(result.processed).toBe(100)
+    expect(ctx.storage.delete).toHaveBeenCalledTimes(100)
+    expect(ctx.db.delete).not.toHaveBeenCalledWith("stale_100")
+  })
+
   it("the nightly cron keeps deferring while the project's attempt is still active", async () => {
     const lane = laneDoc({ laneInvalidationPending: true })
     const ctx = createLaneCtx({
@@ -824,10 +875,12 @@ describe("merged-lane finalization", () => {
           status: "draft",
           body: "# A",
           updatedAt: 5,
+          contentVersion: 2,
           publishedProvenance: {
             publishBranchId: "lane_1",
             commitSha: "legacy-commit",
             publishedUpdatedAt: 5,
+            publishedContentVersion: 2,
           },
         },
         {
@@ -940,10 +993,12 @@ describe("merged-lane finalization", () => {
           status: "draft",
           body: "# A",
           updatedAt: 5,
+          contentVersion: 2,
           publishedProvenance: {
             publishBranchId: "lane_1",
             commitSha: "legacy-commit",
             publishedUpdatedAt: 5,
+            publishedContentVersion: 2,
           },
         },
       ],

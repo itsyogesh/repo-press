@@ -2071,6 +2071,8 @@ describe("POST /api/github/publish-ops", () => {
       expect(snapshotCalls).toEqual([
         expect.objectContaining({
           id: "doc_1",
+          authorityKind: "lane",
+          authorityBranch: "repopress/main/1234",
           publishBranchId: "publish_branch_1",
           commitSha: "authority-sha-1",
           githubSha: "blob-1",
@@ -2080,6 +2082,180 @@ describe("POST /api/github/publish-ops", () => {
       ])
       // Still exactly one Git commit across both publishes.
       expect(batchCommitPublishLaneAtExpectedHead).toHaveBeenCalledTimes(1)
+    })
+
+    it("synchronizes byte-identical content against the base without creating a lane", async () => {
+      const body = "# Already on main\n"
+      mockPublishQueries({
+        currentPublishBranch: null,
+        dirtyDocs: [
+          {
+            _id: "doc_base",
+            filePath: "posts/base.mdx",
+            body,
+            frontmatter: {},
+            updatedAt: 5,
+            contentVersion: 3,
+          },
+        ],
+      })
+      vi.mocked(getFileForPublish).mockResolvedValue({
+        status: "found",
+        file: { content: body, sha: "blob-base", name: "base.mdx", path: "content/posts/base.mdx" },
+      } as never)
+      const stampCalls: Array<Record<string, unknown>> = []
+      convexMutationMock.mockImplementation(async (_fn, args) => {
+        stampCalls.push(args as Record<string, unknown>)
+        return { synchronized: true }
+      })
+
+      const response = await POST(buildRequest({ projectId: "project_123", publishMode: "create-new" }))
+      const payload = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(payload.synchronizedOnly).toBe(true)
+      const baseStamps = stampCalls.filter((call) => call.id === "doc_base")
+      expect(baseStamps).toEqual([
+        expect.objectContaining({
+          id: "doc_base",
+          authorityKind: "base",
+          authorityBranch: "main",
+          commitSha: "authority-sha-1",
+        }),
+      ])
+      expect(baseStamps[0]).not.toHaveProperty("publishBranchId")
+      expect(createPublishBranchFromSha).not.toHaveBeenCalled()
+      expect(batchCommitPublishLaneAtExpectedHead).not.toHaveBeenCalled()
+    })
+
+    it("rechecks the zero-commit authority head and aborts on movement without stamping", async () => {
+      const body = "# Same\n"
+      mockPublishQueries({
+        dirtyDocs: [{ _id: "doc_1", filePath: "same.mdx", body, frontmatter: {}, updatedAt: 5, contentVersion: 2 }],
+      })
+      vi.mocked(getFileForPublish).mockResolvedValue({
+        status: "found",
+        file: { content: body, sha: "blob-1", name: "same.mdx", path: "content/same.mdx" },
+      } as never)
+      vi.mocked(getBranchHeadForPublish)
+        .mockResolvedValueOnce({ status: "found", sha: "authority-sha-1" } as never)
+        .mockResolvedValueOnce({ status: "found", sha: "advanced-sha-2" } as never)
+
+      const response = await POST(buildRequest({ projectId: "project_123" }))
+
+      expect(response.status).toBe(409)
+      expect(convexMutationMock.mock.calls.some(([, args]) => (args as Record<string, unknown>)?.id === "doc_1")).toBe(
+        false,
+      )
+      expect(batchCommitPublishLaneAtExpectedHead).not.toHaveBeenCalled()
+    })
+
+    it("maps a typed final authority read failure to 502 without stamping", async () => {
+      const body = "# Same\n"
+      mockPublishQueries({
+        dirtyDocs: [{ _id: "doc_1", filePath: "same.mdx", body, frontmatter: {}, updatedAt: 5, contentVersion: 2 }],
+      })
+      vi.mocked(getFileForPublish).mockResolvedValue({
+        status: "found",
+        file: { content: body, sha: "blob-1", name: "same.mdx", path: "content/same.mdx" },
+      } as never)
+      vi.mocked(getBranchHeadForPublish)
+        .mockResolvedValueOnce({ status: "found", sha: "authority-sha-1" } as never)
+        .mockRejectedValueOnce(new GitHubReadError("head unavailable"))
+
+      const response = await POST(buildRequest({ projectId: "project_123" }))
+
+      expect(response.status).toBe(502)
+      expect(convexMutationMock.mock.calls.some(([, args]) => (args as Record<string, unknown>)?.id === "doc_1")).toBe(
+        false,
+      )
+    })
+
+    it("returns 409 when the zero-commit authority disappears before stamping", async () => {
+      const body = "# Same\n"
+      mockPublishQueries({
+        dirtyDocs: [{ _id: "doc_1", filePath: "same.mdx", body, frontmatter: {}, updatedAt: 5, contentVersion: 2 }],
+      })
+      vi.mocked(getFileForPublish).mockResolvedValue({
+        status: "found",
+        file: { content: body, sha: "blob-1", name: "same.mdx", path: "content/same.mdx" },
+      } as never)
+      vi.mocked(getBranchHeadForPublish)
+        .mockResolvedValueOnce({ status: "found", sha: "authority-sha-1" } as never)
+        .mockResolvedValueOnce({ status: "absent" } as never)
+
+      const response = await POST(buildRequest({ projectId: "project_123" }))
+
+      expect(response.status).toBe(409)
+      expect(convexMutationMock.mock.calls.some(([, args]) => (args as Record<string, unknown>)?.id === "doc_1")).toBe(
+        false,
+      )
+    })
+
+    it("counts rejected synchronization mutations and leaves them retryable", async () => {
+      const body = "# Same\n"
+      mockPublishQueries({
+        dirtyDocs: [{ _id: "doc_1", filePath: "same.mdx", body, frontmatter: {}, updatedAt: 5, contentVersion: 2 }],
+      })
+      vi.mocked(getFileForPublish).mockResolvedValue({
+        status: "found",
+        file: { content: body, sha: "blob-1", name: "same.mdx", path: "content/same.mdx" },
+      } as never)
+      convexMutationMock.mockResolvedValue({ synchronized: false } as never)
+
+      const response = await POST(buildRequest({ projectId: "project_123" }))
+      const payload = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(payload.warning).toMatch(/1 document\(s\) could not record/i)
+      expect(payload.summary).toMatch(/^0 document\(s\) reconciled/)
+    })
+
+    it("keeps a partial zero-commit synchronization retryable without creating Git state", async () => {
+      const body = "# Same\n"
+      mockPublishQueries({
+        currentPublishBranch: null,
+        dirtyDocs: [
+          { _id: "doc_a", filePath: "a.mdx", body, frontmatter: {}, updatedAt: 5, contentVersion: 2 },
+          { _id: "doc_b", filePath: "b.mdx", body, frontmatter: {}, updatedAt: 6, contentVersion: 3 },
+        ],
+      })
+      vi.mocked(getFileForPublish).mockImplementation(async (...args) => ({
+        status: "found",
+        file: { content: body, sha: `blob-${String(args[3])}`, name: "same.mdx", path: String(args[3]) },
+      }))
+      convexMutationMock.mockImplementation(async (_fn, args) => {
+        const id = (args as Record<string, unknown>)?.id
+        if (id === "doc_a") return { synchronized: true }
+        if (id === "doc_b") throw new Error("transient mutation failure")
+        return undefined
+      })
+
+      const first = await POST(buildRequest({ projectId: "project_123" }))
+      const firstPayload = await first.json()
+
+      expect(firstPayload.summary).toMatch(/^1 document\(s\) reconciled/)
+      expect(firstPayload.warning).toMatch(/1 document\(s\) could not record/i)
+      expect(batchCommitPublishLaneAtExpectedHead).not.toHaveBeenCalled()
+      expect(createPublishBranchFromSha).not.toHaveBeenCalled()
+
+      mockPublishQueries({
+        currentPublishBranch: null,
+        dirtyDocs: [{ _id: "doc_b", filePath: "b.mdx", body, frontmatter: {}, updatedAt: 6, contentVersion: 3 }],
+      })
+      const retriedIds: unknown[] = []
+      convexMutationMock.mockImplementation(async (_fn, args) => {
+        const id = (args as Record<string, unknown>)?.id
+        if (id) retriedIds.push(id)
+        return { synchronized: true }
+      })
+
+      const retry = await POST(buildRequest({ projectId: "project_123" }))
+
+      expect(retry.status).toBe(200)
+      expect(retriedIds).toEqual(["doc_b"])
+      expect(batchCommitPublishLaneAtExpectedHead).not.toHaveBeenCalled()
+      expect(createPublishBranchFromSha).not.toHaveBeenCalled()
     })
 
     it("keeps a redundant document out of a mixed media attempt and its cleanup ownership", async () => {
