@@ -400,6 +400,7 @@ export async function POST(request: Request) {
         body: doc.body || "",
         frontmatter: rewriteProxyUrls(doc.frontmatter || {}),
         metadataSource,
+        existingContent: existing?.status === "found" ? existing.file.content : undefined,
       })
       if (!serialized.ok) {
         conflicts.push({ path: repoPath, reason: serialized.reason })

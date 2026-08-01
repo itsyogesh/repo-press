@@ -1456,6 +1456,76 @@ describe("POST /api/github/publish-ops", () => {
       expect(operations[0].content).not.toMatch(/^---/)
     })
 
+    it("restores the pinned metadata export when the rich editor draft has no frontmatter fields", async () => {
+      const existingMetadata =
+        'export const metadata = {\n  title: "Original",\n  alternates: { canonical: "/hello" },\n}'
+      mockPublishQueries({
+        dirtyDocs: [{ _id: "doc_1", filePath: "posts/hello.mdx", body: "# Body (edited)\n", frontmatter: {} }],
+      })
+      vi.mocked(getFileForPublish).mockResolvedValue({
+        status: "found",
+        file: {
+          content: `${existingMetadata}\n\n# Old body\n`,
+          sha: "sha-old",
+          name: "hello.mdx",
+          path: "content/posts/hello.mdx",
+        },
+      } as never)
+
+      const response = await POST(buildRequest({ projectId: "project_123" }))
+
+      expect(response.status).toBe(200)
+      const operations = vi.mocked(batchCommitPublishLaneAtExpectedHead).mock.calls[0][4]
+      expect(operations[0].content).toBe(`${existingMetadata}\n\n# Body (edited)\n`)
+    })
+
+    it("restores a BOM-prefixed typed metadata export together with its required import", async () => {
+      const existingPreamble =
+        '\uFEFFimport type { Metadata } from "next"\r\nimport { site } from "./config"\r\n\r\nexport const metadata: Metadata = {\r\n  title: site.name,\r\n}'
+      mockPublishQueries({
+        dirtyDocs: [{ _id: "doc_1", filePath: "posts/hello.mdx", body: "# Body (edited)\n", frontmatter: {} }],
+      })
+      vi.mocked(getFileForPublish).mockResolvedValue({
+        status: "found",
+        file: {
+          content: `${existingPreamble}\r\n\r\n# Old body\r\n`,
+          sha: "sha-old",
+          name: "hello.mdx",
+          path: "content/posts/hello.mdx",
+        },
+      } as never)
+
+      const response = await POST(buildRequest({ projectId: "project_123" }))
+
+      expect(response.status).toBe(200)
+      const operations = vi.mocked(batchCommitPublishLaneAtExpectedHead).mock.calls[0][4]
+      expect(operations[0].content).toBe(`${existingPreamble}\n\n# Body (edited)\n`)
+    })
+
+    it("returns 409 for a stripped draft when the pinned metadata declaration is unsupported", async () => {
+      mockPublishQueries({
+        dirtyDocs: [{ _id: "doc_1", filePath: "posts/hello.mdx", body: "# Body (edited)\n", frontmatter: {} }],
+      })
+      vi.mocked(getFileForPublish).mockResolvedValue({
+        status: "found",
+        file: {
+          content: 'export const metadata /* keep */ = { title: "Original" }\n\n# Old body\n',
+          sha: "sha-old",
+          name: "hello.mdx",
+          path: "content/posts/hello.mdx",
+        },
+      } as never)
+
+      const response = await POST(buildRequest({ projectId: "project_123" }))
+      const payload = await response.json()
+
+      expect(response.status).toBe(409)
+      expect(payload.conflicts).toEqual([
+        expect.objectContaining({ reason: expect.stringMatching(/recover.*metadata export/i) }),
+      ])
+      expect(batchCommitPublishLaneAtExpectedHead).not.toHaveBeenCalled()
+    })
+
     it("returns 409 instead of publishing duplicate metadata when an export-embedding body also has frontmatter", async () => {
       const body = 'export const metadata = { title: "Embedded" }\n\n# Body\n'
       mockPublishQueries({

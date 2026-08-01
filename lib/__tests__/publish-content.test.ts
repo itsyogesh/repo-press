@@ -16,6 +16,20 @@ describe("detectMetadataSource", () => {
     expect(detectMetadataSource(source, "docs/a.mdx")).toBe("metadata-export")
   })
 
+  it("detects typed and BOM-prefixed metadata exports", () => {
+    const source = '\uFEFFexport const metadata: Metadata = { title: "Hi" }\r\n\r\n# Body\r\n'
+    expect(detectMetadataSource(source, "docs/a.mdx")).toBe("metadata-export")
+  })
+
+  it("conservatively detects split and commented metadata declarations", () => {
+    expect(detectMetadataSource('export const\n  metadata: Metadata = { title: "Hi" }\n\n# Body\n', "docs/a.mdx")).toBe(
+      "metadata-export",
+    )
+    expect(detectMetadataSource('export /* keep */ const metadata = { title: "Hi" }\n', "docs/a.mdx")).toBe(
+      "metadata-export",
+    )
+  })
+
   it("never reports metadata-export for non-MDX files", () => {
     const source = 'export const metadata = { title: "Hi" }\n\n# Body\n'
     expect(detectMetadataSource(source, "docs/a.md")).toBe("none")
@@ -124,6 +138,210 @@ describe("serializePublishContent", () => {
       expect(result.content).not.toMatch(/^---/)
       expect(result.content).toContain("# Body")
     }
+  })
+
+  it("restores the exact metadata export from the pinned source when the rich editor stripped it", () => {
+    const existingContent =
+      'export const metadata = {\n  title: "Original",\n  alternates: { canonical: "/hello" },\n}\n\n# Old body\n'
+    const result = serializePublishContent({
+      filePath: "docs/a.mdx",
+      body: "# Body edited in the rich editor\n",
+      frontmatter: {},
+      metadataSource: "metadata-export",
+      existingContent,
+    })
+
+    expect(result).toEqual({
+      ok: true,
+      content:
+        'export const metadata = {\n  title: "Original",\n  alternates: { canonical: "/hello" },\n}\n\n# Body edited in the rich editor\n',
+    })
+  })
+
+  it("preserves metadata declarations split before the name or assignment", () => {
+    for (const metadataExport of [
+      'export const\n  metadata = { title: "Original" }',
+      'export const metadata\n  = { title: "Original" }',
+    ]) {
+      const result = serializePublishContent({
+        filePath: "docs/a.mdx",
+        body: "# Edited\n",
+        frontmatter: {},
+        metadataSource: "metadata-export",
+        existingContent: `${metadataExport}\n\n# Old\n`,
+      })
+
+      expect(result).toEqual({
+        ok: true,
+        content: `${metadataExport}\n\n# Edited\n`,
+      })
+    }
+  })
+
+  it("preserves standalone and trailing line comments inside metadata objects", () => {
+    for (const metadataExport of [
+      'export const metadata = {\n  // SEO title\n  title: "Original",\n}',
+      'export const metadata = {\n  title: "Original", // SEO title\n  description: "Description",\n}',
+    ]) {
+      const result = serializePublishContent({
+        filePath: "docs/a.mdx",
+        body: "# Edited\n",
+        frontmatter: {},
+        metadataSource: "metadata-export",
+        existingContent: `${metadataExport}\n\n# Old\n`,
+      })
+
+      expect(result).toEqual({
+        ok: true,
+        content: `${metadataExport}\n\n# Edited\n`,
+      })
+    }
+  })
+
+  it("does not confuse structural type braces with the metadata initializer", () => {
+    for (const metadataExport of [
+      'export const metadata: { title: string }\n  = { title: "Original" }',
+      'export const metadata: Readonly<{ title: string }> =\n  { title: "Original" }',
+    ]) {
+      const result = serializePublishContent({
+        filePath: "docs/a.mdx",
+        body: "# Edited\n",
+        frontmatter: {},
+        metadataSource: "metadata-export",
+        existingContent: `${metadataExport}\n\n# Old\n`,
+      })
+
+      expect(result).toEqual({
+        ok: true,
+        content: `${metadataExport}\n\n# Edited\n`,
+      })
+    }
+  })
+
+  it("fails closed when stripped metadata cannot be recovered from the pinned source", () => {
+    const result = serializePublishContent({
+      filePath: "docs/a.mdx",
+      body: "# Body edited in the rich editor\n",
+      frontmatter: {},
+      metadataSource: "metadata-export",
+    })
+
+    expect(result).toEqual({
+      ok: false,
+      reason: expect.stringMatching(/recover.*metadata export/i),
+    })
+  })
+
+  it("recovers CRLF metadata exports containing braces and semicolons inside quoted strings", () => {
+    const existingContent =
+      'import type { Metadata } from "next"\r\n\r\nexport const metadata = {\r\n  title: "A }; still metadata",\r\n} satisfies Metadata\r\n\r\n# Old\r\n'
+    const result = serializePublishContent({
+      filePath: "docs/a.mdx",
+      body: "# Edited\n",
+      frontmatter: {},
+      metadataSource: "metadata-export",
+      existingContent,
+    })
+
+    expect(result).toEqual({
+      ok: true,
+      content:
+        'import type { Metadata } from "next"\r\n\r\nexport const metadata = {\r\n  title: "A }; still metadata",\r\n} satisfies Metadata\n\n# Edited\n',
+    })
+  })
+
+  it("fails closed on template-literal metadata instead of guessing its declaration boundary", () => {
+    const result = serializePublishContent({
+      filePath: "docs/a.mdx",
+      body: "# Edited\n",
+      frontmatter: {},
+      metadataSource: "metadata-export",
+      existingContent: "export const metadata = { title: `Hello " + "$" + "{name}` }\n\n# Old\n",
+    })
+
+    expect(result.ok).toBe(false)
+  })
+
+  it("fails closed on multiline conditional and chained-call initializers instead of truncating them", () => {
+    for (const existingContent of [
+      'export const metadata = condition\n  ? { title: "A" }\n  : { title: "B" }\n\n# Old\n',
+      'export const metadata = defineMetadata\n  ({ title: "A" })\n  .withDefaults()\n\n# Old\n',
+    ]) {
+      const result = serializePublishContent({
+        filePath: "docs/a.mdx",
+        body: "# Edited\n",
+        frontmatter: {},
+        metadataSource: "metadata-export",
+        existingContent,
+      })
+      expect(result.ok).toBe(false)
+    }
+  })
+
+  it("fails closed on continuations after a balanced object literal", () => {
+    for (const continuation of [
+      ".withDefaults()",
+      "[key]",
+      "({ fallback: true })",
+      "+ value",
+      "| value",
+      "< value",
+      "in value",
+      "instanceof Type",
+      "as Metadata",
+      "satisfies Metadata",
+    ]) {
+      const result = serializePublishContent({
+        filePath: "docs/a.mdx",
+        body: "# Edited\n",
+        frontmatter: {},
+        metadataSource: "metadata-export",
+        existingContent: `export const metadata = { title: "A" }\n${continuation}\n\n# Old\n`,
+      })
+      expect(result.ok).toBe(false)
+    }
+  })
+
+  it("does not treat punctuation at the start of a separate Markdown block as a JavaScript continuation", () => {
+    for (const body of [
+      "- list item\n",
+      "* list item\n",
+      "[link](https://example.com)\n",
+      "<Callout>Body</Callout>\n",
+      "![image](/image.png)\n",
+      "---\n",
+    ]) {
+      const result = serializePublishContent({
+        filePath: "docs/a.mdx",
+        body: "# Edited\n",
+        frontmatter: {},
+        metadataSource: "metadata-export",
+        existingContent: `export const metadata = { title: "A" }\n\n${body}`,
+      })
+
+      expect(result).toEqual({
+        ok: true,
+        content: 'export const metadata = { title: "A" }\n\n# Edited\n',
+      })
+    }
+  })
+
+  it("preserves the complete leading ESM preamble on both sides of metadata", () => {
+    const existingContent =
+      'import { site } from "./config"\n\nexport const metadata = { title: site.name }\nexport const revalidate = 3600\n\n# Old\n'
+    const result = serializePublishContent({
+      filePath: "docs/a.mdx",
+      body: "# Edited\n",
+      frontmatter: {},
+      metadataSource: "metadata-export",
+      existingContent,
+    })
+
+    expect(result).toEqual({
+      ok: true,
+      content:
+        'import { site } from "./config"\n\nexport const metadata = { title: site.name }\nexport const revalidate = 3600\n\n# Edited\n',
+    })
   })
 
   it("does not introduce an empty YAML block for plain files without metadata", () => {
