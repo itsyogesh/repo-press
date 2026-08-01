@@ -576,6 +576,72 @@ describe("bounded attempt-scoped cleanup continuation", () => {
     )
   })
 
+  it("finishes exact pending explorer, media, and document snapshots after recordCommit crashed reconciliation", async () => {
+    const recordedButUnreconciled = {
+      ...attempt,
+      status: "cleanup_pending",
+      cleanupId: "cleanup_1",
+      commitSha: "1".repeat(40),
+    }
+    const ctx = createCtx([
+      { ...project },
+      { ...lane, mergeCommitSha: "3".repeat(40), mergeVerificationState: "pending" },
+      recordedButUnreconciled,
+      cleanupRow({
+        pathOutcomes: [
+          { path: "content/a.mdx", disposition: "finalize", finalBlobSha: "b".repeat(40) },
+          { path: "public/pic.png", disposition: "finalize", finalBlobSha: "c".repeat(40) },
+        ],
+        authoritySha: "3".repeat(40),
+      }),
+      {
+        _id: "op_1",
+        projectId: "project_1",
+        filePath: "a.mdx",
+        repoPath: "content/a.mdx",
+        opType: "update",
+        status: "pending",
+        updatedAt: 10,
+      },
+      {
+        _id: "media_1",
+        projectId: "project_1",
+        repoPath: "public/pic.png",
+        status: "pending",
+        convexStorageId: "storage_1",
+        updatedAt: 10,
+      },
+      {
+        _id: "doc_1",
+        projectId: "project_1",
+        filePath: "a.mdx",
+        contentVersion: 3,
+        updatedAt: 10,
+        status: "draft",
+      },
+    ])
+
+    await (continueCleanup as any).handler(ctx, { cleanupId: "cleanup_1" })
+    expect(ctx.db.delete).toHaveBeenCalledWith("op_1")
+    expect(ctx.db.patch).not.toHaveBeenCalledWith("attempt_1", expect.objectContaining({ status: "cleaned" }))
+
+    await (continueCleanup as any).handler(ctx, { cleanupId: "cleanup_1" })
+    expect(ctx.storage.delete).toHaveBeenCalledWith("storage_1")
+    expect(ctx.db.delete).toHaveBeenCalledWith("media_1")
+    expect(ctx.db.patch).not.toHaveBeenCalledWith("attempt_1", expect.objectContaining({ status: "cleaned" }))
+
+    await (continueCleanup as any).handler(ctx, { cleanupId: "cleanup_1" })
+    expect(ctx.db.patch).toHaveBeenCalledWith(
+      "doc_1",
+      expect.objectContaining({
+        status: "published",
+        githubSha: "b".repeat(40),
+        publishedProvenance: expect.objectContaining({ publishAttemptId: "attempt_1" }),
+      }),
+    )
+    expect(ctx.db.patch).toHaveBeenCalledWith("attempt_1", expect.objectContaining({ status: "cleaned" }))
+  })
+
   it("completes closed-lane verification after the final attempt-scoped restore cleanup", async () => {
     const ctx = createCtx([
       { ...project },

@@ -23,6 +23,7 @@ describe("usePrStatusSync", () => {
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
   })
@@ -86,5 +87,77 @@ describe("usePrStatusSync", () => {
     renderHook(() => usePrStatusSync({ ...props, laneStatus: "closed" } as any))
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+  })
+
+  it("retries a transient 502 with bounded backoff and succeeds", async () => {
+    vi.useFakeTimers()
+    vi.spyOn(Math, "random").mockReturnValue(0)
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 502,
+        json: vi.fn().mockResolvedValue({ error: "temporary gateway failure" }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({
+          state: "open",
+          merged: false,
+          baseRef: "main",
+          baseRepoFullName: "acme/docs",
+          headRef: "repopress/start",
+          headRepoFullName: "acme/docs",
+          verificationPending: false,
+        }),
+      })
+    vi.stubGlobal("fetch", fetchMock)
+    vi.spyOn(console, "warn").mockImplementation(() => undefined)
+
+    const hook = renderHook(() => usePrStatusSync(props as any))
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+
+    hook.unmount()
+  })
+
+  it("does not retry a terminal 4xx response", async () => {
+    vi.useFakeTimers()
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: vi.fn().mockResolvedValue({ error: "pull request identity conflict" }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    vi.spyOn(console, "warn").mockImplementation(() => undefined)
+
+    const hook = renderHook(() => usePrStatusSync(props as any))
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    hook.unmount()
+  })
+
+  it("aborts the active request and cancels retries when unmounted", async () => {
+    vi.useFakeTimers()
+    let requestSignal: AbortSignal | undefined
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
+      requestSignal = init?.signal ?? undefined
+      return new Promise(() => undefined)
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const hook = renderHook(() => usePrStatusSync(props as any))
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+
+    hook.unmount()
+    expect(requestSignal?.aborted).toBe(true)
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 })

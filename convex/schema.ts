@@ -431,6 +431,10 @@ export default defineSchema({
     // the authenticated status-sync route backfills those rows by ID.
     repoOwner: v.optional(v.string()),
     repoName: v.optional(v.string()),
+    // Canonical lookup keys are persisted separately because GitHub treats
+    // repository owner/name casing as identity-insensitive.
+    repoOwnerKey: v.optional(v.string()),
+    repoNameKey: v.optional(v.string()),
     branchName: v.string(),
     baseBranch: v.string(),
     prNumber: v.optional(v.number()),
@@ -445,19 +449,27 @@ export default defineSchema({
     lastCommitSha: v.optional(v.string()),
     committedFilePaths: v.optional(v.array(v.string())),
     // Set when lane synchronization cleanup (closed-lane invalidation OR
-    // merged-lane finalization, dispatched on status) is incomplete -
+    // merged-lane finalization, dispatched by laneCleanupAction) is incomplete -
     // deferred behind an active publish attempt or split across bounded
     // batches. The nightly cron, the scheduled continuation, and attempt
     // recovery finish it durably.
     laneInvalidationPending: v.optional(v.boolean()),
     laneCleanupAction: v.optional(v.union(v.literal("restore_legacy"), v.literal("finalize_legacy"))),
+    // Durable round-robin cursor for bounded PR status synchronization.
+    lastStatusCheckedAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_projectId", ["projectId"])
     .index("by_projectId_status", ["projectId", "status"])
+    .index("by_projectId_status_lastStatusCheckedAt_createdAt", [
+      "projectId",
+      "status",
+      "lastStatusCheckedAt",
+      "createdAt",
+    ])
     .index("by_prNumber", ["prNumber"])
-    .index("by_repo_pr_head_base", ["repoOwner", "repoName", "prNumber", "branchName", "baseBranch"])
+    .index("by_repo_key_pr_head_base", ["repoOwnerKey", "repoNameKey", "prNumber", "branchName", "baseBranch"])
     .index("by_projectId_mergeVerificationState", ["projectId", "mergeVerificationState"])
     .index("by_projectId_closeVerificationState", ["projectId", "closeVerificationState"])
     .index("by_laneInvalidationPending", ["laneInvalidationPending"]),

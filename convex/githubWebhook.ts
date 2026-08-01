@@ -52,10 +52,10 @@ async function assertLaneIdentity(
 async function findWebhookLane(ctx: Pick<MutationCtx, "db">, identity: PullRequestIdentity) {
   const lane = await ctx.db
     .query("publishBranches")
-    .withIndex("by_repo_pr_head_base", (q) =>
+    .withIndex("by_repo_key_pr_head_base", (q) =>
       q
-        .eq("repoOwner", identity.repoOwner)
-        .eq("repoName", identity.repoName)
+        .eq("repoOwnerKey", identity.repoOwner.toLowerCase())
+        .eq("repoNameKey", identity.repoName.toLowerCase())
         .eq("prNumber", identity.prNumber)
         .eq("branchName", identity.headBranch)
         .eq("baseBranch", identity.baseBranch),
@@ -72,6 +72,8 @@ async function closeLane(ctx: MutationCtx, lane: Doc<"publishBranches">, identit
     ...lane,
     repoOwner: project.repoOwner,
     repoName: project.repoName,
+    repoOwnerKey: project.repoOwner.toLowerCase(),
+    repoNameKey: project.repoName.toLowerCase(),
     status: "closed" as const,
     laneInvalidationPending: true as const,
     laneCleanupAction: "restore_legacy" as const,
@@ -80,6 +82,8 @@ async function closeLane(ctx: MutationCtx, lane: Doc<"publishBranches">, identit
     status: "closed",
     repoOwner: project.repoOwner,
     repoName: project.repoName,
+    repoOwnerKey: project.repoOwner.toLowerCase(),
+    repoNameKey: project.repoName.toLowerCase(),
     laneInvalidationPending: true,
     laneCleanupAction: "restore_legacy",
     closeVerificationState: "pending" as const,
@@ -134,7 +138,14 @@ export const recordVerifiedPullRequestState = mutation({
     if (!(await verifyServerQueryToken(args.serverQueryToken))) throw new Error("Unauthorized")
     const lane = await ctx.db.get(args.laneId as Id<"publishBranches">)
     if (!lane || lane.projectId !== args.projectId) throw new Error("Publish lane does not belong to the project")
-    await assertLaneIdentity(ctx, lane, args)
+    const project = await assertLaneIdentity(ctx, lane, args)
+    await ctx.db.patch(lane._id, {
+      repoOwner: project.repoOwner,
+      repoName: project.repoName,
+      repoOwnerKey: project.repoOwner.toLowerCase(),
+      repoNameKey: project.repoName.toLowerCase(),
+      lastStatusCheckedAt: Date.now(),
+    })
     if (args.state === "open") return { state: "open" as const }
     if (args.merged) {
       if (!args.mergeCommitSha) throw new Error("Merged pull request is missing its commit authority")

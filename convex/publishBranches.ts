@@ -78,14 +78,27 @@ export const getStatusSyncCandidateForProject = query({
       .filter((lane): lane is NonNullable<typeof lane> => Boolean(lane?.prNumber))
       .sort((a, b) => b.updatedAt - a.updatedAt)[0]
     if (pendingLifecycle) return pendingLifecycle
-    for (const status of ["active", "inactive"] as const) {
-      const lane = await ctx.db
-        .query("publishBranches")
-        .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", status))
-        .order("desc")
-        .first()
-      if (lane?.prNumber) return lane
-    }
+    const openCandidates = await Promise.all(
+      (["active", "inactive"] as const).map(async (status) => {
+        return await ctx.db
+          .query("publishBranches")
+          .withIndex("by_projectId_status_lastStatusCheckedAt_createdAt", (q) =>
+            q.eq("projectId", args.projectId).eq("status", status),
+          )
+          .order("asc")
+          .filter((q) => q.neq(q.field("prNumber"), undefined))
+          .first()
+      }),
+    )
+    const openCandidate = openCandidates
+      .filter((lane): lane is NonNullable<typeof lane> => Boolean(lane?.prNumber))
+      .sort(
+        (a, b) =>
+          (a.lastStatusCheckedAt ?? 0) - (b.lastStatusCheckedAt ?? 0) ||
+          a.createdAt - b.createdAt ||
+          String(a._id).localeCompare(String(b._id)),
+      )[0]
+    if (openCandidate) return openCandidate
     const legacyMerged = await ctx.db
       .query("publishBranches")
       .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", "merged"))
@@ -208,6 +221,8 @@ export const create = mutation({
       projectId: args.projectId,
       repoOwner: project.repoOwner,
       repoName: project.repoName,
+      repoOwnerKey: project.repoOwner.toLowerCase(),
+      repoNameKey: project.repoName.toLowerCase(),
       branchName: args.branchName,
       baseBranch: args.baseBranch,
       status: "active",

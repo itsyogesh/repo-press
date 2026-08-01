@@ -33,13 +33,11 @@ function committedRowBelongsToAttempt(
   return true
 }
 
-function pendingRowMatchesUnrecordedAttempt(
+function pendingRowMatchesAttemptSnapshot(
   row: { status: string; updatedAt: number; publishAttemptId?: unknown; publishBranchId?: unknown; commitSha?: string },
-  attempt: Doc<"publishAttempts">,
   expectedUpdatedAt: number | undefined,
 ) {
   return (
-    !attempt.commitSha &&
     row.status === "pending" &&
     expectedUpdatedAt !== undefined &&
     row.updatedAt === expectedUpdatedAt &&
@@ -228,7 +226,7 @@ async function processExplorer(
       !row ||
       row.projectId !== attempt.projectId ||
       (!committedRowBelongsToAttempt(row, attempt) &&
-        !pendingRowMatchesUnrecordedAttempt(row, attempt, association.expectedUpdatedAt))
+        !pendingRowMatchesAttemptSnapshot(row, association.expectedUpdatedAt))
     )
       continue
     const rowRepoPath =
@@ -304,7 +302,7 @@ async function processMedia(
       !row ||
       row.projectId !== attempt.projectId ||
       (!committedRowBelongsToAttempt(row, attempt) &&
-        !pendingRowMatchesUnrecordedAttempt(row, attempt, association.expectedUpdatedAt))
+        !pendingRowMatchesAttemptSnapshot(row, association.expectedUpdatedAt))
     )
       continue
     if (canonicalGitPathFromUrlPath(row.repoPath) !== association.repoPath) {
@@ -349,7 +347,6 @@ async function processDocuments(
     if (!outcome) throw new Error("Publish cleanup document association has no persisted outcome")
     const ownsRecordedProvenance = provenanceBelongsToAttempt(document.publishedProvenance, attempt, association)
     const ownsUnrecordedSnapshot =
-      !attempt.commitSha &&
       !document.publishedProvenance &&
       document.updatedAt === association.expectedUpdatedAt &&
       (association.contentVersion === undefined || (document.contentVersion ?? 0) === association.contentVersion)

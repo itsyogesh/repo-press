@@ -363,7 +363,7 @@ export const cleanupStaleUploads = internalMutation({
     }
 
     // Finish lane synchronization cleanups (closed-lane invalidation or
-    // merged-lane finalization, dispatched on status) that were durably
+    // merged-lane finalization, dispatched by their persisted action) that were durably
     // deferred behind a publish attempt or split across bounded batches
     // (the close/merge event fires only once; the committed rows and
     // document provenance they target are outside the passes above).
@@ -373,9 +373,8 @@ export const cleanupStaleUploads = internalMutation({
       .take(10)
     let lanesCleaned = 0
     for (const branch of flaggedBranches) {
-      // Cleanup semantics exist only for finished lanes; never restore or
-      // spend rows of a lane that is still open.
-      if (branch.status !== "closed" && branch.status !== "merged") continue
+      const action = branch.laneCleanupAction
+      if (action !== "restore_legacy" && action !== "finalize_legacy") continue
       let attemptActive = activeAttemptByProject.get(branch.projectId)
       if (attemptActive === undefined) {
         attemptActive = (await findActivePublishAttempt(ctx.db, branch.projectId)) !== null
@@ -384,11 +383,11 @@ export const cleanupStaleUploads = internalMutation({
       if (attemptActive) continue
 
       const cleanup =
-        branch.status === "merged"
+        action === "finalize_legacy"
           ? await finalizeMergedLaneSync(ctx, branch)
           : await invalidateClosedLaneSync(ctx, branch)
       if (!cleanup.deferred && cleanup.done) {
-        if (branch.status === "merged") await completeMergeVerificationIfIdle(ctx, branch._id)
+        if (action === "finalize_legacy") await completeMergeVerificationIfIdle(ctx, branch._id)
         else await completeCloseVerificationIfIdle(ctx, branch._id)
         lanesCleaned++
       }

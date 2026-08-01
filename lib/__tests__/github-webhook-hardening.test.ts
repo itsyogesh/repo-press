@@ -63,14 +63,21 @@ function createWebhookCtx({
   project?: Record<string, unknown> | null
 }) {
   const lanes: Array<Record<string, unknown>> = (publishBranches ?? (publishBranch ? [publishBranch] : [])).map(
-    (candidate) => ({
-      repoOwner: "acme",
-      repoName: "docs-site",
-      prNumber: 42,
-      baseBranch: "main",
-      branchName: "repopress/start",
-      ...candidate,
-    }),
+    (candidate) => {
+      const lane = {
+        repoOwner: "acme",
+        repoName: "docs-site",
+        prNumber: 42,
+        baseBranch: "main",
+        branchName: "repopress/start",
+        ...candidate,
+      }
+      return {
+        ...lane,
+        repoOwnerKey: String(lane.repoOwner).toLowerCase(),
+        repoNameKey: String(lane.repoName).toLowerCase(),
+      }
+    },
   )
   const lane = lanes[0] ?? null
   return {
@@ -95,7 +102,7 @@ function createWebhookCtx({
           }
           cb?.(recorder)
           const rows = (() => {
-            if (table === "publishBranches" && indexName === "by_repo_pr_head_base") {
+            if (table === "publishBranches" && indexName === "by_repo_key_pr_head_base") {
               return lanes.filter((candidate) =>
                 Object.entries(eq).every(([field, value]) => candidate[field] === value),
               )
@@ -179,6 +186,57 @@ describe("GitHub webhook hardening", () => {
     ).resolves.toBeUndefined()
 
     expect(ctx.db.query).toHaveBeenCalled()
+  })
+
+  it("finds a merged lane when GitHub sends repository casing different from the stored project", async () => {
+    const serverQueryToken = await mintServerQueryToken()
+    const ctx = createWebhookCtx({
+      publishBranch: {
+        _id: "publish_branch_mixed_case",
+        projectId: "project_1",
+        status: "inactive",
+      },
+    })
+
+    await (handlePRMerged as any).handler(ctx, {
+      ...PR_IDENTITY,
+      repoOwner: "ACME",
+      repoName: "Docs-Site",
+      baseRepoFullName: "ACME/Docs-Site",
+      headRepoFullName: "ACME/Docs-Site",
+      mergeCommitSha: MERGE_SHA,
+      serverQueryToken,
+    })
+
+    expect(ctx.db.patch).toHaveBeenCalledWith(
+      "publish_branch_mixed_case",
+      expect.objectContaining({ status: "merged", repoOwnerKey: "acme", repoNameKey: "docs-site" }),
+    )
+  })
+
+  it("finds a closed lane when GitHub sends repository casing different from the stored project", async () => {
+    const serverQueryToken = await mintServerQueryToken()
+    const ctx = createWebhookCtx({
+      publishBranch: {
+        _id: "publish_branch_mixed_case",
+        projectId: "project_1",
+        status: "inactive",
+      },
+    })
+
+    await (handlePRClosed as any).handler(ctx, {
+      ...PR_IDENTITY,
+      repoOwner: "ACME",
+      repoName: "Docs-Site",
+      baseRepoFullName: "ACME/Docs-Site",
+      headRepoFullName: "ACME/Docs-Site",
+      serverQueryToken,
+    })
+
+    expect(ctx.db.patch).toHaveBeenCalledWith(
+      "publish_branch_mixed_case",
+      expect.objectContaining({ status: "closed", repoOwnerKey: "acme", repoNameKey: "docs-site" }),
+    )
   })
 
   it("records immutable merge authority without mutating staged content", async () => {

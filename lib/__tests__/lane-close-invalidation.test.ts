@@ -40,6 +40,8 @@ function laneDoc(overrides: Record<string, unknown> = {}) {
     projectId: "project_1",
     repoOwner: "acme",
     repoName: "docs-site",
+    repoOwnerKey: "acme",
+    repoNameKey: "docs-site",
     branchName: "repopress/start",
     baseBranch: "main",
     status: "closed",
@@ -235,6 +237,41 @@ describe("closed-lane synchronization invalidation", () => {
     })
 
     expect(candidate?._id).toBe("lane_1")
+  })
+
+  it("selects the least-recently-checked open lane instead of starving an older inactive PR", async () => {
+    const active = laneDoc({
+      _id: "lane_active",
+      status: "active",
+      prNumber: 43,
+      createdAt: 30,
+      updatedAt: 30,
+      lastStatusCheckedAt: 30,
+    })
+    const olderInactive = laneDoc({
+      _id: "lane_older_inactive",
+      status: "inactive",
+      prNumber: 41,
+      createdAt: 10,
+      updatedAt: 10,
+    })
+    const newerInactive = laneDoc({
+      _id: "lane_newer_inactive",
+      status: "inactive",
+      prNumber: 42,
+      createdAt: 20,
+      updatedAt: 20,
+      lastStatusCheckedAt: 20,
+    })
+    const ctx = createLaneCtx({ publishBranches: [active, olderInactive, newerInactive] })
+
+    const candidate = await (getStatusSyncCandidateForProject as any).handler(ctx, {
+      projectId: "project_1",
+      userId: "user_owner",
+      projectAccessToken: await patToken(),
+    })
+
+    expect(candidate?._id).toBe("lane_older_inactive")
   })
 
   it("restores the lane's committed ops, media, and document provenance for republishing", async () => {
@@ -485,6 +522,36 @@ describe("closed-lane synchronization invalidation", () => {
     expect(result).toEqual({ state: "closed", verificationPending: false })
   })
 
+  it("an authenticated open-state check backfills normalized repository keys and advances the durable cursor", async () => {
+    const lane = laneDoc({ status: "inactive", repoOwnerKey: undefined, repoNameKey: undefined })
+    const ctx = createLaneCtx({ publishBranches: [lane] })
+
+    const result = await (recordVerifiedPullRequestState as any).handler(ctx, {
+      laneId: "lane_1",
+      projectId: "project_1",
+      prNumber: 42,
+      repoOwner: "ACME",
+      repoName: "Docs-Site",
+      baseRepoFullName: "ACME/Docs-Site",
+      baseBranch: "main",
+      headRepoFullName: "ACME/Docs-Site",
+      headBranch: "repopress/start",
+      state: "open",
+      merged: false,
+      serverQueryToken: await mintServerQueryToken(),
+    })
+
+    expect(result).toEqual({ state: "open" })
+    expect(ctx.db.patch).toHaveBeenCalledWith(
+      "lane_1",
+      expect.objectContaining({
+        repoOwnerKey: "acme",
+        repoNameKey: "docs-site",
+        lastStatusCheckedAt: expect.any(Number),
+      }),
+    )
+  })
+
   it("keeps close verification pending while a reconciled modern attempt still owns lane state", async () => {
     const lane = laneDoc({ status: "active" })
     const ctx = createLaneCtx({
@@ -591,7 +658,7 @@ describe("closed-lane synchronization invalidation", () => {
   })
 
   it("the nightly cron drains deferred invalidations once the attempt resolves", async () => {
-    const lane = laneDoc({ laneInvalidationPending: true })
+    const lane = laneDoc({ laneInvalidationPending: true, laneCleanupAction: "restore_legacy" })
     const ctx = createLaneCtx({
       publishBranches: [lane],
       documents: [
@@ -609,6 +676,54 @@ describe("closed-lane synchronization invalidation", () => {
     expect(result).toEqual({ processed: 0, tombstonesCleared: 0, lanesCleaned: 1 })
     expect(ctx.db.patch).toHaveBeenCalledWith("doc_lane", { publishedProvenance: undefined })
     expect(ctx.db.patch).toHaveBeenCalledWith("lane_1", expect.objectContaining({ laneInvalidationPending: undefined }))
+  })
+
+  it("the nightly cron obeys persisted restore_legacy even when lane status is merged", async () => {
+    const lane = laneDoc({
+      status: "merged",
+      laneInvalidationPending: true,
+      laneCleanupAction: "restore_legacy",
+    })
+    const ctx = createLaneCtx({
+      publishBranches: [lane],
+      explorerOps: [committedLaneOp("op_restore", { filePath: "guides/a.mdx" })],
+    })
+
+    await (cleanupStaleUploads as any).handler(ctx, {})
+
+    expect(ctx.db.patch).toHaveBeenCalledWith("op_restore", expect.objectContaining({ status: "pending" }))
+    expect(ctx.db.delete).not.toHaveBeenCalledWith("op_restore")
+  })
+
+  it("the nightly cron obeys persisted finalize_legacy even when lane status is closed", async () => {
+    const lane = laneDoc({
+      status: "closed",
+      laneInvalidationPending: true,
+      laneCleanupAction: "finalize_legacy",
+    })
+    const ctx = createLaneCtx({
+      publishBranches: [lane],
+      explorerOps: [committedLaneOp("op_finalize", { filePath: "guides/a.mdx" })],
+    })
+
+    await (cleanupStaleUploads as any).handler(ctx, {})
+
+    expect(ctx.db.delete).toHaveBeenCalledWith("op_finalize")
+    expect(ctx.db.patch).not.toHaveBeenCalledWith("op_finalize", expect.objectContaining({ status: "pending" }))
+  })
+
+  it("the nightly cron skips a flagged lane with no persisted cleanup action", async () => {
+    const lane = laneDoc({ status: "closed", laneInvalidationPending: true, laneCleanupAction: undefined })
+    const ctx = createLaneCtx({
+      publishBranches: [lane],
+      explorerOps: [committedLaneOp("op_untouched", { filePath: "guides/a.mdx" })],
+    })
+
+    const result = await (cleanupStaleUploads as any).handler(ctx, {})
+
+    expect(result.lanesCleaned).toBe(0)
+    expect(ctx.db.delete).not.toHaveBeenCalledWith("op_untouched")
+    expect(ctx.db.patch).not.toHaveBeenCalledWith("op_untouched", expect.anything())
   })
 
   it("the nightly cron retries failed-delete tombstones and removes them on success", async () => {
