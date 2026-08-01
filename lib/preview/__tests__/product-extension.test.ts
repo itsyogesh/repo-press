@@ -49,6 +49,8 @@ describe("compatible product extension contract", () => {
       ".repopress\\mdx-preview.tsx",
       ".repopress/preview\nentry.tsx",
       ".repopress/preview\u0000entry.tsx",
+      ".repopress/preview\u0085entry.tsx",
+      ".repopress/preview\u200bentry.tsx",
     ]) {
       expect(compatiblePreviewSourcePathSchema.safeParse(filePath).success).toBe(false)
     }

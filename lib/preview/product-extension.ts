@@ -12,9 +12,10 @@ function isBoundedUtf8(value: string, maximum: number): boolean {
 }
 
 function hasControlCharacters(value: string): boolean {
-  for (let index = 0; index < value.length; index += 1) {
-    const unit = value.charCodeAt(index)
-    if (unit <= 0x1f || unit === 0x7f) return true
+  if (/\p{Cf}/u.test(value)) return true
+  for (const character of value) {
+    const codePoint = character.codePointAt(0)
+    if (codePoint !== undefined && (codePoint <= 0x1f || (codePoint >= 0x7f && codePoint <= 0x9f))) return true
   }
   return false
 }

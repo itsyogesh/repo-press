@@ -4,6 +4,7 @@ import {
   parseCompatibleTransferCommand,
   serializeCompatibleArtifactTransfer,
   serializeSignedCompatiblePreviewResolution,
+  signedCompatiblePreviewResolutionSchema,
   verifySignedCompatiblePreviewResolution,
 } from "../compatible-artifact"
 import { createSignedCompatibleFixture } from "./compatible-test-fixture"
@@ -54,6 +55,27 @@ describe("compatible artifact transport", () => {
     sessionId: "session-1",
     snapshotVersion: 1,
   }
+
+  it("rejects control characters in signed repository paths", async () => {
+    const fixture = await createSignedCompatibleFixture()
+    const withUnsafeDocumentPath = {
+      ...fixture.resolution,
+      authority: { ...fixture.resolution.authority, documentPath: "content/unsafe\u001f.mdx" },
+    }
+    const withUnsafeAdapterPath = {
+      ...fixture.resolution,
+      artifact: {
+        ...fixture.resolution.artifact,
+        adapter: {
+          entryPath: "adapter\u0085.tsx",
+          sources: { "adapter\u0085.tsx": "export const adapter = {}" },
+        },
+      },
+    }
+
+    expect(signedCompatiblePreviewResolutionSchema.safeParse(withUnsafeDocumentPath).success).toBe(false)
+    expect(signedCompatiblePreviewResolutionSchema.safeParse(withUnsafeAdapterPath).success).toBe(false)
+  })
 
   it("uses one canonical source ordering for signed resolution wires", async () => {
     const fixture = await createSignedCompatibleFixture({

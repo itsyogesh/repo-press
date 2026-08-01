@@ -27,6 +27,7 @@ describe("compatible adapter import policy", () => {
 
   it.each([
     'const module = import("react")',
+    "const url = import.meta.url",
     'const module = require("react")',
     "const module = require(name)",
     "const loader = require",

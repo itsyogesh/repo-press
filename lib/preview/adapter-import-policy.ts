@@ -41,6 +41,8 @@ export function assertCompatibleAdapterImports(source: string, filePath = "adapt
       throw new CompatibleAdapterImportError("Compatible adapters cannot use require imports")
     } else if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
       throw new CompatibleAdapterImportError("Compatible adapters cannot use dynamic imports")
+    } else if (ts.isMetaProperty(node) && node.keywordToken === ts.SyntaxKind.ImportKeyword) {
+      throw new CompatibleAdapterImportError("Compatible adapters cannot use import metadata")
     } else if (ts.isIdentifier(node) && node.text === "require") {
       throw new CompatibleAdapterImportError("Compatible adapters cannot use require")
     }

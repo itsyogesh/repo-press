@@ -12,6 +12,16 @@ export const COMPATIBLE_COMMAND_RATE_BURST = COMPATIBLE_ARTIFACT_MAX_CHUNKS + 2
 export const COMPATIBLE_RENDERER_PROFILE = "static-inert-v1" as const
 
 const digestSchema = z.string().regex(/^[a-f0-9]{64}$/)
+const FORMAT_CHARACTER_PATTERN = /\p{Cf}/u
+
+function hasUnsafePathCharacter(value: string): boolean {
+  if (FORMAT_CHARACTER_PATTERN.test(value)) return true
+  return Array.from(value).some((character) => {
+    const codePoint = character.codePointAt(0)
+    return codePoint !== undefined && (codePoint <= 0x1f || (codePoint >= 0x7f && codePoint <= 0x9f))
+  })
+}
+
 const sourcePathSchema = z
   .string()
   .min(1)
@@ -20,6 +30,7 @@ const sourcePathSchema = z
     (value) =>
       !value.startsWith("/") &&
       !value.includes("\\") &&
+      !hasUnsafePathCharacter(value) &&
       value.split("/").every((segment) => segment !== "" && segment !== "." && segment !== ".."),
     "Compatible source paths must be normalized repository-relative paths",
   )
