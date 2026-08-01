@@ -529,11 +529,14 @@ describe("bounded attempt-scoped cleanup continuation", () => {
       expect.objectContaining({
         status: "published",
         githubSha: "b".repeat(40),
-        publishedProvenance: expect.objectContaining({
-          publishAttemptId: "attempt_1",
+        publishedProvenance: {
+          authorityKind: "base",
+          authorityBranch: "main",
           commitSha: "3".repeat(40),
+          contentRevision: "e".repeat(64),
           publishedContentVersion: 3,
-        }),
+          publishedUpdatedAt: 10,
+        },
       }),
     )
     expect(ctx.db.patch).not.toHaveBeenCalledWith(
@@ -541,6 +544,172 @@ describe("bounded attempt-scoped cleanup continuation", () => {
       expect.objectContaining({ commitSha: expect.any(String) }),
     )
     expect(ctx.db.patch).toHaveBeenCalledWith("lane_1", expect.objectContaining({ mergeVerificationState: "complete" }))
+  })
+
+  it("replaces existing lane provenance with the exact verified base merge authority", async () => {
+    const mergeSha = "3".repeat(40)
+    const laneCommitSha = "1".repeat(40)
+    const ctx = createCtx([
+      { ...project },
+      { ...lane, mergeCommitSha: mergeSha, mergeVerificationState: "pending" },
+      {
+        ...attempt,
+        status: "cleanup_pending",
+        cleanupId: "cleanup_1",
+        commitSha: laneCommitSha,
+        explorerAssociations: [],
+        mediaAssociations: [],
+        operationDescriptors: [{ path: "content/a.mdx", action: "update", expectedBlobSha: "b".repeat(40) }],
+        operationPaths: ["content/a.mdx"],
+      },
+      cleanupRow({
+        phase: "documents",
+        authoritySha: mergeSha,
+        pathOutcomes: [{ path: "content/a.mdx", disposition: "finalize", finalBlobSha: "b".repeat(40) }],
+      }),
+      {
+        _id: "doc_1",
+        projectId: "project_1",
+        filePath: "a.mdx",
+        contentVersion: 3,
+        updatedAt: 10,
+        status: "draft",
+        publishedProvenance: {
+          authorityKind: "lane",
+          authorityBranch: "repopress/start",
+          publishBranchId: "lane_1",
+          publishAttemptId: "attempt_1",
+          commitSha: laneCommitSha,
+          contentRevision: "e".repeat(64),
+          publishedContentVersion: 3,
+          publishedUpdatedAt: 10,
+        },
+      },
+    ])
+
+    await (continueCleanup as any).handler(ctx, { cleanupId: "cleanup_1" })
+
+    expect(ctx.db.patch).toHaveBeenCalledWith(
+      "doc_1",
+      expect.objectContaining({
+        githubSha: "b".repeat(40),
+        publishedProvenance: {
+          authorityKind: "base",
+          authorityBranch: "main",
+          commitSha: mergeSha,
+          contentRevision: "e".repeat(64),
+          publishedContentVersion: 3,
+          publishedUpdatedAt: 10,
+        },
+      }),
+    )
+  })
+
+  it("records unobserved squash/rebase finalization only at the verified base authority", async () => {
+    const mergeSha = "4".repeat(40)
+    const ctx = createCtx([
+      { ...project },
+      { ...lane, mergeCommitSha: mergeSha, mergeVerificationState: "pending" },
+      {
+        ...attempt,
+        status: "cleanup_pending",
+        cleanupId: "cleanup_1",
+        commitSha: "1".repeat(40),
+        explorerAssociations: [],
+        mediaAssociations: [],
+        operationDescriptors: [{ path: "content/a.mdx", action: "update", expectedBlobSha: "b".repeat(40) }],
+        operationPaths: ["content/a.mdx"],
+      },
+      cleanupRow({
+        phase: "documents",
+        authoritySha: mergeSha,
+        pathOutcomes: [{ path: "content/a.mdx", disposition: "finalize", finalBlobSha: "b".repeat(40) }],
+      }),
+      {
+        _id: "doc_1",
+        projectId: "project_1",
+        filePath: "a.mdx",
+        contentVersion: 3,
+        updatedAt: 10,
+        status: "draft",
+      },
+    ])
+
+    await (continueCleanup as any).handler(ctx, { cleanupId: "cleanup_1" })
+
+    const documentPatch = ctx.db.patch.mock.calls.find(([id]: [string]) => id === "doc_1")?.[1]
+    expect(documentPatch.publishedProvenance).toEqual({
+      authorityKind: "base",
+      authorityBranch: "main",
+      commitSha: mergeSha,
+      contentRevision: "e".repeat(64),
+      publishedContentVersion: 3,
+      publishedUpdatedAt: 10,
+    })
+    expect(documentPatch.publishedProvenance).not.toHaveProperty("publishBranchId")
+    expect(documentPatch.publishedProvenance).not.toHaveProperty("publishAttemptId")
+  })
+
+  it("replays a merged document cleanup without rewriting its base provenance", async () => {
+    const mergeSha = "3".repeat(40)
+    const cleanup = cleanupRow({
+      phase: "documents",
+      authoritySha: mergeSha,
+      pathOutcomes: [{ path: "content/a.mdx", disposition: "finalize", finalBlobSha: "b".repeat(40) }],
+    })
+    const cleanupAttempt = {
+      ...attempt,
+      status: "cleanup_pending",
+      cleanupId: "cleanup_1",
+      explorerAssociations: [],
+      mediaAssociations: [],
+      operationDescriptors: [{ path: "content/a.mdx", action: "update", expectedBlobSha: "b".repeat(40) }],
+      operationPaths: ["content/a.mdx"],
+    }
+    const ctx = createCtx([
+      { ...project },
+      { ...lane, mergeCommitSha: mergeSha, mergeVerificationState: "pending" },
+      cleanupAttempt,
+      cleanup,
+      {
+        _id: "doc_1",
+        projectId: "project_1",
+        filePath: "a.mdx",
+        contentVersion: 3,
+        updatedAt: 10,
+        status: "draft",
+        publishedProvenance: {
+          authorityKind: "lane",
+          authorityBranch: "repopress/start",
+          publishBranchId: "lane_1",
+          publishAttemptId: "attempt_1",
+          commitSha: "1".repeat(40),
+          contentRevision: "e".repeat(64),
+          publishedContentVersion: 3,
+          publishedUpdatedAt: 10,
+        },
+      },
+    ])
+
+    await (continueCleanup as any).handler(ctx, { cleanupId: "cleanup_1" })
+    const document = ctx._tables.get("documents")[0]
+    const expectedBaseProvenance = {
+      authorityKind: "base",
+      authorityBranch: "main",
+      commitSha: mergeSha,
+      contentRevision: "e".repeat(64),
+      publishedContentVersion: 3,
+      publishedUpdatedAt: 10,
+    }
+    expect(document.publishedProvenance).toEqual(expectedBaseProvenance)
+
+    Object.assign(cleanup, { phase: "documents", cursor: 0, status: "pending" })
+    Object.assign(cleanupAttempt, { status: "cleanup_pending" })
+    ctx.db.patch.mockClear()
+    await (continueCleanup as any).handler(ctx, { cleanupId: "cleanup_1" })
+
+    expect(document.publishedProvenance).toEqual(expectedBaseProvenance)
+    expect(ctx.db.patch).not.toHaveBeenCalledWith("doc_1", expect.anything())
   })
 
   it("re-dispatches persisted legacy residue after the final attempt cleanup releases the guard", async () => {
@@ -636,7 +805,14 @@ describe("bounded attempt-scoped cleanup continuation", () => {
       expect.objectContaining({
         status: "published",
         githubSha: "b".repeat(40),
-        publishedProvenance: expect.objectContaining({ publishAttemptId: "attempt_1" }),
+        publishedProvenance: {
+          authorityKind: "base",
+          authorityBranch: "main",
+          commitSha: "3".repeat(40),
+          contentRevision: "e".repeat(64),
+          publishedContentVersion: 3,
+          publishedUpdatedAt: 10,
+        },
       }),
     )
     expect(ctx.db.patch).toHaveBeenCalledWith("attempt_1", expect.objectContaining({ status: "cleaned" }))
@@ -1133,7 +1309,7 @@ describe("bounded attempt-scoped cleanup continuation", () => {
     }
     const ctx = createCtx([
       { ...project },
-      { ...lane },
+      { ...lane, mergeCommitSha: "3".repeat(40) },
       docAttempt,
       cleanupRow({
         phase: "documents",
@@ -1178,7 +1354,15 @@ describe("bounded attempt-scoped cleanup continuation", () => {
 
     expect(ctx.db.patch).toHaveBeenCalledWith(
       "doc_finalize",
-      expect.objectContaining({ status: "published", githubSha: "6".repeat(40) }),
+      expect.objectContaining({
+        status: "published",
+        githubSha: "6".repeat(40),
+        publishedProvenance: expect.objectContaining({
+          authorityKind: "base",
+          authorityBranch: "main",
+          commitSha: "3".repeat(40),
+        }),
+      }),
     )
     expect(ctx.db.patch).toHaveBeenCalledWith("doc_restore", { publishedProvenance: undefined })
     expect(ctx.db.patch).toHaveBeenCalledWith("doc_newer", { publishedProvenance: undefined })

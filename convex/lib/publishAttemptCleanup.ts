@@ -320,6 +320,7 @@ async function processMedia(
 async function processDocuments(
   ctx: CleanupCtx,
   attempt: Doc<"publishAttempts">,
+  lane: Doc<"publishBranches">,
   cleanup: Doc<"publishAttemptCleanups">,
   associations: Doc<"publishAttempts">["documentAssociations"],
   outcomeByPath: Map<string, PathOutcome>,
@@ -351,23 +352,25 @@ async function processDocuments(
         : document.updatedAt === association.expectedUpdatedAt
     if (!unchanged) continue
     if (!cleanup.authoritySha) throw new Error("Finalized publish document cleanup requires an authority SHA")
-    const publishedProvenance = ownsRecordedProvenance
-      ? {
-          ...document.publishedProvenance!,
-          authorityKind: "lane" as const,
-          authorityBranch: attempt.branchName,
-          publishAttemptId: attempt._id,
-        }
-      : {
-          authorityKind: "lane" as const,
-          authorityBranch: attempt.branchName,
-          publishBranchId: attempt.publishBranchId,
-          publishAttemptId: attempt._id,
-          commitSha: cleanup.authoritySha,
-          contentRevision: association.contentRevision,
-          publishedContentVersion: association.contentVersion,
-          publishedUpdatedAt: association.expectedUpdatedAt,
-        }
+    if (
+      lane.status !== "merged" ||
+      !lane.baseBranch ||
+      lane.mergeCommitSha !== cleanup.authoritySha ||
+      lane._id !== attempt.publishBranchId
+    ) {
+      throw new Error("Finalized publish document cleanup requires the exact merged base authority")
+    }
+    // The immutable merge tree is the authority that proved publication.
+    // Attempt/lane identifiers are lineage, not authority, and the ratified
+    // base provenance shape deliberately carries neither.
+    const publishedProvenance = {
+      authorityKind: "base" as const,
+      authorityBranch: lane.baseBranch,
+      commitSha: cleanup.authoritySha,
+      contentRevision: association.contentRevision,
+      publishedContentVersion: association.contentVersion,
+      publishedUpdatedAt: association.expectedUpdatedAt,
+    }
     await ctx.db.patch(document._id, {
       status: "published",
       ...(outcome.finalBlobSha ? { githubSha: outcome.finalBlobSha } : {}),
@@ -396,6 +399,7 @@ export async function processPublishAttemptCleanupBatch(ctx: CleanupCtx, cleanup
     attempt.projectId !== cleanup.projectId ||
     attempt.publishBranchId !== cleanup.laneId ||
     lane.projectId !== cleanup.projectId ||
+    lane.branchName !== attempt.branchName ||
     attempt.cleanupId !== cleanup._id ||
     attempt.status !== "cleanup_pending"
   ) {
@@ -428,6 +432,7 @@ export async function processPublishAttemptCleanupBatch(ctx: CleanupCtx, cleanup
         : await processDocuments(
             ctx,
             attempt,
+            lane,
             cleanup,
             batch as Doc<"publishAttempts">["documentAssociations"],
             outcomeByPath,

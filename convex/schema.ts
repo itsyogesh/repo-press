@@ -215,7 +215,7 @@ export default defineSchema({
         commitSha: v.string(),
         contentRevision: v.optional(v.string()),
         // Optional only for provenance recorded before the field existed;
-        // those rows fall back to publishedUpdatedAt === updatedAt.
+        // those rows remain dirty until exact Git byte identity is proven.
         publishedContentVersion: v.optional(v.number()),
         publishedUpdatedAt: v.number(),
       }),
