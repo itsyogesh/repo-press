@@ -65,6 +65,20 @@ export default function StudioEditorPage() {
         downgrades to Generic, and shows the reason.
       </p>
 
+      <h3 className="mb-3 mt-8 text-lg font-semibold">Product-specific MDX components</h3>
+      <p className="mb-4 leading-relaxed text-muted-foreground">
+        A repository can declare complete component fields in its RepoPress config and provide a product-owned preview
+        entry. That entry maps names such as an information box, checklist, or product CTA to RepoPress&rsquo;s portable
+        preview primitives. Your production site keeps its own framework bindings; the Studio adapter does not need
+        Next.js, Astro, or another application runtime.
+      </p>
+      <p className="mb-4 leading-relaxed text-muted-foreground">
+        Compatible product previews are structural and intentionally inert. Images appear as labelled placeholders and
+        actions cannot navigate. RepoPress authorizes the project, reads the adapter from the exact Git commit, signs
+        the current snapshot, and verifies it before the isolated preview mounts. Until that succeeds, the Generic
+        preview remains visible.
+      </p>
+
       {/* MDX Editing */}
       <h2 className="mb-4 mt-12 text-2xl font-semibold">MDX Editing with Frontmatter</h2>
       <p className="mb-4 leading-relaxed text-muted-foreground">

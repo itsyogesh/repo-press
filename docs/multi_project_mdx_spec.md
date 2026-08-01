@@ -1,7 +1,7 @@
 # RepoPress Multi-Project MDX Specification
 
-> **Status:** First safe component-ecosystem slice implemented; managed native execution is follow-on work.
-> **Last updated:** 2026-07-17
+> **Status:** Signed framework-neutral product extensions are implemented; managed native execution is follow-on work.
+> **Last updated:** 2026-08-02
 
 RepoPress is a Git-native CMS for repositories that may contain several content projects. A project identifies a content root, branch, framework hint, and content type. RepoPress discovers the repository's existing MDX layout instead of generating a parallel runtime.
 
@@ -48,7 +48,7 @@ The lightweight default contains no preview entry and no generated component cat
 - `framework`: explicit framework hint or `auto`.
 - `contentType`: `blog`, `docs`, `pages`, `changelog`, or `custom`.
 - `branch`: optional content branch override.
-- `preview`: optional compatibility override retained for existing repositories.
+- `preview`: optional product preview entry for the signed Compatible sandbox.
 - `components`: optional bounded declarative authoring hints retained for compatibility. They contain metadata, never functions or runtime bindings.
 
 Project settings override defaults. Sync copies project coordination data into Convex so the Studio can query it reactively. Drafts, history, taxonomy, and workflow state remain in Convex; published content remains in Git.
@@ -81,14 +81,20 @@ Every preview result has an explicit fidelity grade.
 
 The Studio shows downgrade reasons. Generic preview remains available whenever a trusted compatible artifact is missing, stale, invalid, or unsupported.
 
-## Explicit preview overrides
+## Explicit product preview extensions
 
-Existing `defaults.preview` and `projects[].preview` values remain schema-readable so repositories do not break during migration. They are optional, untrusted compatibility inputs:
+`projects[].preview.entry` may name a product-owned single-file adapter. The path and source remain untrusted inputs:
 
-- an entry path is not native authority;
+- an entry path is not native authority and never implies a framework;
 - it is never imported, transpiled, evaluated, or rendered in the Studio realm;
-- compatible use requires the isolated sandbox path and signed authority for the exact repository snapshot;
+- compatible use requires editor authorization, the exact current branch commit, static import validation, bounded
+  source, a short-lived P-256 signature, and the isolated sandbox path;
 - plugins and component metadata do not grant package, network, filesystem, or host credentials.
+
+The first profile accepts only `react`, React&rsquo;s JSX runtimes, and `@repopress/preview`; it rejects relative imports,
+aliases, framework modules, `require`, and dynamic imports. Production runtime bindings are separate: a Next.js site
+may still use `next/link`, an Astro site may use Astro assets, and neither choice leaks into the portable preview
+adapter.
 
 Declarative `components` metadata may help construct an authoring catalog. Installed registry metadata with verified integrity takes precedence. Neither source supplies executable `RenderBindings` to the Studio.
 
@@ -101,7 +107,10 @@ Authoring and rendering have separate contracts:
 - Registry items carry normalized authoring metadata, provenance, immutable integrity, dependencies, install targets, fixtures, and framework support.
 - Source edits are surgical and fail closed when the selected MDX node is stale or ambiguous.
 
-The first official proof is a Callout component: normalized registry metadata feeds the Studio palette and form, insertion produces import-free MDX, prop edits preserve unrelated source, and preview selects compatible rendering only with trusted artifacts.
+The registry proof is a Callout component. The first product-extension proof is Merry Magic Mail: five product-owned
+MDX names retain complete authoring contracts while their adapter composes only frozen RepoPress primitives. In both
+paths, insertion produces import-free MDX, prop edits preserve unrelated source, and Compatible rendering is selected
+only for a current signed artifact.
 
 ## Security invariants
 
@@ -128,7 +137,7 @@ Existing repositories may keep explicit preview entries while migrating. Removin
 ## Current limitations
 
 - There is no managed native framework runner yet.
-- Compatible preview supports a deliberately bounded browser-safe graph, not arbitrary application code, Server Components, framework loaders, or unrestricted provider context.
+- Compatible preview currently supports one product adapter file and a deliberately bounded browser-safe graph, not arbitrary application code, Server Components, framework loaders, product CSS, or unrestricted provider context.
 - Registry installation currently proves the official Callout path and a narrow Next.js/Fumadocs runtime-map integration.
 - Project-facing registry/alias/CSS discovery overrides do not yet have a ratified config shape.
 - Component auto-discovery beyond verified registry metadata and explicit declarative hints remains incremental.

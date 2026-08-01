@@ -866,6 +866,18 @@ describe("review regression guards", () => {
     }
   })
 
+  it("keeps product preview resolution pinned and out of persistent client state", () => {
+    const route = read("app/api/preview/compatible/route.ts")
+    expect(route).toContain('resolveRouteAuth(project, "editor")')
+    expect(route).toContain("getBranchHeadSha(")
+    expect(route).toContain("getFileForPublish(")
+    expect(route).toContain("signCompatiblePreviewResolution(")
+
+    const hook = read("components/studio/hooks/use-compatible-preview.ts")
+    expect(hook).not.toMatch(/localStorage|sessionStorage|useMutation|useQuery/u)
+    expect(hook).toContain('fetch("/api/preview/compatible"')
+  })
+
   it("keeps the required studio modules as explicit client files", () => {
     for (const relativePath of clientFiles) {
       expect(read(relativePath).startsWith('"use client"')).toBe(true)

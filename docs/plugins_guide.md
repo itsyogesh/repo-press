@@ -1,7 +1,7 @@
 # RepoPress Extensions and Compatibility Overrides
 
-> **Status:** Registry-based declarative components are current. Repo-local executable preview plugins are legacy compatibility inputs only.
-> **Last updated:** 2026-07-17
+> **Status:** Registry components and signed product preview extensions are supported. Arbitrary repo-local plugins remain legacy inputs.
+> **Last updated:** 2026-08-02
 
 RepoPress extends MDX through integrity-pinned registry items and repository-native runtime maps. This keeps installed code in the repository, exposes reviewable changes through a GitHub pull request, and separates Studio authoring metadata from sandbox-only executable bindings.
 
@@ -22,7 +22,39 @@ Installed metadata can populate the Studio palette and prop form. It never injec
 
 The first official item is `@repopress/callout`.
 
-## Legacy repo-local preview entries
+## Product preview extensions
+
+A product may opt into structural Compatible preview with a project-local entry:
+
+```json
+{
+  "preview": { "entry": ".repopress/mdx-preview.tsx" },
+  "components": {
+    "InfoBox": {
+      "schemaStatus": "complete",
+      "props": [{ "name": "type", "type": "string", "options": ["info", "tip", "warning"] }],
+      "slots": [{ "name": "children", "accepts": "mdx", "required": true }]
+    }
+  }
+}
+```
+
+The `components` object is declarative authoring metadata. The entry is product-owned rendering code, but the current
+pilot deliberately accepts only one bounded file importing `react`, the React JSX runtimes, and
+`@repopress/preview`. It composes frozen semantic primitives such as `PreviewBox`, `PreviewText`, `PreviewList`, and
+`PreviewAction`; production code remains free to use Next.js, Astro, Remix, or another framework.
+
+RepoPress reads the entry from the authenticated project&rsquo;s exact current commit, validates imports without
+executing it, binds it to the current document snapshot, and signs the artifact for the isolated sandbox. The private
+JWK stays server-only in `PREVIEW_APPROVAL_PRIVATE_KEY_JWK`; the matching public JWK is exposed as
+`NEXT_PUBLIC_PREVIEW_APPROVAL_PUBLIC_KEY_JWK`. Production also requires a separate HTTPS
+`NEXT_PUBLIC_PREVIEW_ORIGIN`.
+
+Compatible fidelity is structural, not pixel-identical. Actions and images are visibly inert; arbitrary CSS, network
+requests, navigation, timers, portals, framework loaders, and relative source imports are outside the first profile.
+Any failure preserves the Generic Typeset preview.
+
+## Legacy plugin entries
 
 Older configs may contain plugin registrations and preview entries:
 
@@ -48,7 +80,7 @@ Older configs may contain plugin registrations and preview entries:
 }
 ```
 
-RepoPress keeps these values readable for migration, but they are untrusted compatibility inputs:
+RepoPress keeps plugin values readable for migration, but they do not expand the signed product-extension boundary:
 
 - they do not become native preview authority;
 - they are never imported or evaluated in the Studio/host realm;
@@ -56,7 +88,8 @@ RepoPress keeps these values readable for migration, but they are untrusted comp
 - compatible rendering requires an exact signed artifact and the isolated opaque-origin sandbox;
 - absent or invalid compatible authority downgrades to generic Typeset preview.
 
-New setup does not generate a preview adapter or plugin scaffold.
+New setup does not generate a preview adapter or plugin scaffold. Product teams add an entry only when they want to
+own the mapping from their MDX vocabulary to RepoPress&rsquo;s portable primitives.
 
 ## Authoring metadata overrides
 
