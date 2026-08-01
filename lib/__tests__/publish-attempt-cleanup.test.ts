@@ -702,6 +702,106 @@ describe("bounded attempt-scoped cleanup continuation", () => {
     expectNoCleanupWrites(ctx, corruptCleanup)
   })
 
+  it.each([
+    {
+      name: "invalid document content revision",
+      phase: "explorer",
+      buildAttempt: () => ({
+        ...attempt,
+        documentAssociations: [{ ...attempt.documentAssociations[0], contentRevision: "not-a-digest" }],
+      }),
+    },
+    {
+      name: "negative document content version",
+      phase: "explorer",
+      buildAttempt: () => ({
+        ...attempt,
+        documentAssociations: [{ ...attempt.documentAssociations[0], contentVersion: -1 }],
+      }),
+    },
+    {
+      name: "fractional document content version",
+      phase: "media",
+      buildAttempt: () => ({
+        ...attempt,
+        documentAssociations: [{ ...attempt.documentAssociations[0], contentVersion: 1.5 }],
+      }),
+    },
+    {
+      name: "nonfinite explorer snapshot timestamp",
+      phase: "explorer",
+      buildAttempt: () => ({
+        ...attempt,
+        explorerAssociations: [{ ...attempt.explorerAssociations[0], expectedUpdatedAt: Number.NaN }],
+      }),
+    },
+    {
+      name: "negative media snapshot timestamp",
+      phase: "media",
+      buildAttempt: () => ({
+        ...attempt,
+        mediaAssociations: [{ ...attempt.mediaAssociations[0], expectedUpdatedAt: -1 }],
+      }),
+    },
+    {
+      name: "nonfinite document snapshot timestamp",
+      phase: "explorer",
+      buildAttempt: () => ({
+        ...attempt,
+        documentAssociations: [{ ...attempt.documentAssociations[0], expectedUpdatedAt: Number.POSITIVE_INFINITY }],
+      }),
+    },
+    {
+      name: "negative delete snapshot timestamp",
+      phase: "explorer",
+      buildAttempt: () => ({
+        ...attempt,
+        operationDescriptors: [{ path: "content/a.mdx", action: "delete" }, attempt.operationDescriptors[1]],
+        documentAssociations: [],
+        deleteAssociations: [{ opId: "op_1", documentId: "doc_1", expectedUpdatedAt: -1 }],
+      }),
+      pathOutcomes: [
+        { path: "content/a.mdx", disposition: "finalize" },
+        { path: "public/pic.png", disposition: "restore" },
+      ],
+    },
+  ])("rejects $name before any $phase cleanup write", async ({ phase, buildAttempt, pathOutcomes }) => {
+    const corruptCleanup = cleanupRow({ phase, pathOutcomes: pathOutcomes ?? outcomes })
+    const cleanupAttempt = { ...buildAttempt(), status: "cleanup_pending", cleanupId: "cleanup_1" }
+    const ctx = createCtx([
+      { ...project },
+      { ...lane },
+      cleanupAttempt,
+      corruptCleanup,
+      {
+        _id: "op_1",
+        projectId: "project_1",
+        repoPath: "content/a.mdx",
+        status: "committed",
+        publishBranchId: "lane_1",
+        publishAttemptId: "attempt_1",
+        commitSha: "1".repeat(40),
+        updatedAt: Number.NaN,
+      },
+      {
+        _id: "media_1",
+        projectId: "project_1",
+        repoPath: "public/pic.png",
+        status: "committed",
+        publishBranchId: "lane_1",
+        publishAttemptId: "attempt_1",
+        commitSha: "1".repeat(40),
+        convexStorageId: "storage_1",
+        updatedAt: -1,
+      },
+    ])
+
+    await expect((continueCleanup as any).handler(ctx, { cleanupId: "cleanup_1" })).rejects.toThrow(
+      /snapshot|revision|version|association/i,
+    )
+    expectNoCleanupWrites(ctx, corruptCleanup)
+  })
+
   it("finalizes exact pending associations for a merged committing attempt without fabricating its commit SHA", async () => {
     const noCommitAttempt = {
       ...attempt,

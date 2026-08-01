@@ -1,6 +1,10 @@
 import { assertCanonicalPublishOperationPath, gitRepositoryPathIdentity } from "../../lib/git-path-policy"
 import type { Doc, Id } from "../_generated/dataModel"
-import { assertPublishAttemptAssociationClosure, assertPublishAttemptOutcomeClosure } from "./publishAttemptClosure"
+import {
+  assertPublishAttemptAssociationClosure,
+  assertPublishAttemptAssociationSnapshotShapes,
+  assertPublishAttemptOutcomeClosure,
+} from "./publishAttemptClosure"
 
 const SHA_PATTERN = /^[0-9a-f]{40}$/
 const DIGEST_PATTERN = /^[0-9a-f]{64}$/
@@ -190,6 +194,7 @@ export function assertValidPublishCleanupPlan({
     "delete associations",
   )
 
+  assertPublishAttemptAssociationSnapshotShapes(attempt)
   assertPublishAttemptAssociationClosure(attempt)
   assertPublishAttemptOutcomeClosure(attempt, new Set(plan.pathOutcomes.map((outcome) => outcome.path)))
   return mode

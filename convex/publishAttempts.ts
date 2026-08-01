@@ -9,6 +9,7 @@ import { verifyServerQueryToken } from "../lib/project-access-token"
 import { internal } from "./_generated/api"
 import { mutation, query } from "./_generated/server"
 import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
+import { assertPublishAttemptAssociationSnapshotShapes } from "./lib/publishAttemptClosure"
 import { findActivePublishAttempt } from "./lib/publishAttemptGuard"
 import { assertValidPublishCleanupPlan } from "./lib/publishCleanupAuthority"
 
@@ -192,15 +193,6 @@ export const begin = mutation({
       }
     }
     for (const association of args.documentAssociations) {
-      if (association.contentRevision !== undefined && !DIGEST_PATTERN.test(association.contentRevision)) {
-        throw new Error("Publish attempt content revision must be a 64-hex digest")
-      }
-      if (
-        association.contentVersion !== undefined &&
-        (!Number.isInteger(association.contentVersion) || association.contentVersion < 0)
-      ) {
-        throw new Error("Publish attempt content version must be a non-negative integer")
-      }
       assertCanonicalPublishOperationPath(association.repoPath)
       const descriptor = descriptorByIdentity.get(gitRepositoryPathIdentity(association.repoPath))
       if (
@@ -233,6 +225,15 @@ export const begin = mutation({
     if (new Set(args.deleteAssociations.map((a) => String(a.opId))).size !== args.deleteAssociations.length) {
       throw new Error("Publish attempt contains duplicate delete associations")
     }
+    // Reject client-provided snapshot shapes before the transactional row
+    // reads. Explorer snapshots and delete links are added and rechecked
+    // below once their authoritative rows have been resolved.
+    assertPublishAttemptAssociationSnapshotShapes({
+      explorerAssociations: undefined,
+      mediaAssociations: args.mediaAssociations,
+      documentAssociations: args.documentAssociations,
+      deleteAssociations: [],
+    })
 
     // ── Transactional snapshot-freshness validation ──
     // The route planned this publish from an earlier read. Everything the
@@ -345,6 +346,12 @@ export const begin = mutation({
     if (coveredDescriptorIdentities.size !== descriptorByIdentity.size) {
       throw new Error("Publish attempt operation descriptor has no owning persisted association")
     }
+    assertPublishAttemptAssociationSnapshotShapes({
+      explorerAssociations,
+      mediaAssociations: args.mediaAssociations,
+      documentAssociations: args.documentAssociations,
+      deleteAssociations: args.deleteAssociations,
+    })
 
     const now = Date.now()
     return await ctx.db.insert("publishAttempts", {
