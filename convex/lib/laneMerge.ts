@@ -43,7 +43,11 @@ export async function finalizeMergedLaneSync(
 ): Promise<LaneMergeResult> {
   const now = Date.now()
   if (await findActivePublishAttempt(ctx.db, branch.projectId)) {
-    await ctx.db.patch(branch._id, { laneInvalidationPending: true, updatedAt: now })
+    await ctx.db.patch(branch._id, {
+      laneInvalidationPending: true,
+      laneCleanupAction: "finalize_legacy",
+      updatedAt: now,
+    })
     return { deferred: true }
   }
 
@@ -54,7 +58,9 @@ export async function finalizeMergedLaneSync(
   // ── Spend the lane's committed explorer ops (bounded batch) ──
   const committedOpsBatch = await ctx.db
     .query("explorerOps")
-    .withIndex("by_publishBranchId_status", (q) => q.eq("publishBranchId", branch._id).eq("status", "committed"))
+    .withIndex("by_publishBranchId_status_publishAttemptId", (q) =>
+      q.eq("publishBranchId", branch._id).eq("status", "committed").eq("publishAttemptId", undefined),
+    )
     .take(LANE_CLEANUP_BATCH)
   for (const op of committedOpsBatch) {
     clearedOpIds.push(op._id)
@@ -64,7 +70,9 @@ export async function finalizeMergedLaneSync(
   // ── Release the lane's committed media rows and their staged bytes ──
   const committedMediaBatch = await ctx.db
     .query("mediaOps")
-    .withIndex("by_publishBranchId_status", (q) => q.eq("publishBranchId", branch._id).eq("status", "committed"))
+    .withIndex("by_publishBranchId_status_publishAttemptId", (q) =>
+      q.eq("publishBranchId", branch._id).eq("status", "committed").eq("publishAttemptId", undefined),
+    )
     .take(LANE_CLEANUP_BATCH)
   for (const op of committedMediaBatch) {
     clearedMediaOpIds.push(op._id)
@@ -88,7 +96,7 @@ export async function finalizeMergedLaneSync(
 
   const done = committedOpsBatch.length < LANE_CLEANUP_BATCH && committedMediaBatch.length < LANE_CLEANUP_BATCH
   if (!done) {
-    await scheduleLaneCleanupContinuation(ctx, branch)
+    await scheduleLaneCleanupContinuation(ctx, branch, "finalize_legacy")
     return { deferred: false, done, clearedOpIds, clearedMediaOpIds, publishedDocumentIds }
   }
 
@@ -116,13 +124,17 @@ export async function finalizeMergedLaneSync(
       ctx.db
         .query("documents")
         .withIndex("by_projectId_status", (q) => q.eq("projectId", branch.projectId).eq("status", status))
-        .collect()
+        .take(LANE_CLEANUP_BATCH)
 
-    const publishableDocs = [...(await collectStatus("draft")), ...(await collectStatus("approved"))].filter(
+    const draftDocs = await collectStatus("draft")
+    const approvedDocs = await collectStatus("approved")
+    const reviewDocs = await collectStatus("in_review")
+    const scheduledDocs = await collectStatus("scheduled")
+    const publishableDocs = [...draftDocs, ...approvedDocs].filter(
       (d) => d.body != null && committedRelativePaths.has(d.filePath),
     )
     // Docs in non-publishable states pass through draft first.
-    const otherDocs = [...(await collectStatus("in_review")), ...(await collectStatus("scheduled"))].filter(
+    const otherDocs = [...reviewDocs, ...scheduledDocs].filter(
       (d) => d.body != null && committedRelativePaths.has(d.filePath),
     )
 
@@ -150,10 +162,19 @@ export async function finalizeMergedLaneSync(
       })
       publishedDocumentIds.push(doc._id)
     }
+
+    if ([draftDocs, approvedDocs, reviewDocs, scheduledDocs].some((rows) => rows.length === LANE_CLEANUP_BATCH)) {
+      await scheduleLaneCleanupContinuation(ctx, branch, "finalize_legacy")
+      return { deferred: false, done: false, clearedOpIds, clearedMediaOpIds, publishedDocumentIds }
+    }
   }
 
   if (branch.laneInvalidationPending) {
-    await ctx.db.patch(branch._id, { laneInvalidationPending: undefined, updatedAt: now })
+    await ctx.db.patch(branch._id, {
+      laneInvalidationPending: undefined,
+      laneCleanupAction: undefined,
+      updatedAt: now,
+    })
   }
 
   return { deferred: false, done, clearedOpIds, clearedMediaOpIds, publishedDocumentIds }

@@ -33,6 +33,22 @@ function committedRowBelongsToAttempt(
   return true
 }
 
+function pendingRowMatchesUnrecordedAttempt(
+  row: { status: string; updatedAt: number; publishAttemptId?: unknown; publishBranchId?: unknown; commitSha?: string },
+  attempt: Doc<"publishAttempts">,
+  expectedUpdatedAt: number | undefined,
+) {
+  return (
+    !attempt.commitSha &&
+    row.status === "pending" &&
+    expectedUpdatedAt !== undefined &&
+    row.updatedAt === expectedUpdatedAt &&
+    row.publishAttemptId === undefined &&
+    row.publishBranchId === undefined &&
+    row.commitSha === undefined
+  )
+}
+
 function provenanceBelongsToAttempt(
   provenance: Doc<"documents">["publishedProvenance"],
   attempt: Doc<"publishAttempts">,
@@ -65,6 +81,39 @@ async function scheduleNext(ctx: CleanupCtx, cleanupId: Id<"publishAttemptCleanu
   await ctx.scheduler.runAfter(0, (internal as any).publishAttemptCleanups.continueCleanup, { cleanupId })
 }
 
+export async function completeMergeVerificationIfIdle(ctx: Pick<CleanupCtx, "db">, laneId: Id<"publishBranches">) {
+  const lane = await ctx.db.get(laneId)
+  if (
+    !lane ||
+    lane.status !== "merged" ||
+    !lane.mergeCommitSha ||
+    lane.mergeVerificationState !== "pending" ||
+    lane.laneInvalidationPending ||
+    lane.laneCleanupAction
+  )
+    return
+  for (const status of ["cleanup_pending", "committing", "committed", "reconciled"] as const) {
+    const unresolved = await ctx.db
+      .query("publishAttempts")
+      .withIndex("by_publishBranchId_status", (q) => q.eq("publishBranchId", lane._id).eq("status", status))
+      .first()
+    if (unresolved) return
+  }
+  const pendingCleanup = await ctx.db
+    .query("publishAttemptCleanups")
+    .withIndex("by_laneId_status", (q) => q.eq("laneId", lane._id).eq("status", "pending"))
+    .first()
+  if (pendingCleanup) return
+  await ctx.db.patch(lane._id, { mergeVerificationState: "complete", updatedAt: Date.now() })
+}
+
+async function maybeCompleteMergeVerification(ctx: CleanupCtx, cleanup: Doc<"publishAttemptCleanups">) {
+  if (!cleanup.authoritySha) return
+  const lane = await ctx.db.get(cleanup.laneId)
+  if (!lane || lane.mergeCommitSha !== cleanup.authoritySha) return
+  await completeMergeVerificationIfIdle(ctx, cleanup.laneId)
+}
+
 async function moveToNextPhase(
   ctx: CleanupCtx,
   cleanup: Doc<"publishAttemptCleanups">,
@@ -77,6 +126,7 @@ async function moveToNextPhase(
     if (attempt.status === "cleanup_pending") {
       await ctx.db.patch(attempt._id, { status: "cleaned", updatedAt: now })
     }
+    await maybeCompleteMergeVerification(ctx, cleanup)
     return { done: true, processed: 0 }
   }
   await ctx.db.patch(cleanup._id, { phase, cursor: 0, updatedAt: now })
@@ -98,6 +148,37 @@ async function hasNewerPendingExplorerIntent(
   return Boolean(newer && newer._id !== row._id)
 }
 
+async function finalizeDeletedDocument(
+  ctx: CleanupCtx,
+  attempt: Doc<"publishAttempts">,
+  row: Doc<"explorerOps">,
+  repoPath: string,
+  contentRoot: string,
+) {
+  if (row.opType !== "delete") return
+  const association = attempt.deleteAssociations.find((candidate) => candidate.opId === row._id)
+  if (!association) return
+  const document = await ctx.db.get(association.documentId)
+  if (
+    !document ||
+    document.projectId !== attempt.projectId ||
+    document.updatedAt !== association.expectedUpdatedAt ||
+    resolveStoredRepoPath(
+      contentRoot,
+      document.filePath,
+      document.pathRepresentation as StoredPathRepresentation | undefined,
+    ) !== repoPath
+  ) {
+    return
+  }
+  await ctx.db.patch(document._id, {
+    body: undefined,
+    frontmatter: undefined,
+    contentVersion: (document.contentVersion ?? 0) + 1,
+    updatedAt: Date.now(),
+  })
+}
+
 async function processExplorer(
   ctx: CleanupCtx,
   attempt: Doc<"publishAttempts">,
@@ -108,7 +189,13 @@ async function processExplorer(
   let processed = 0
   for (const association of associations) {
     const row = await ctx.db.get(association.opId)
-    if (!row || row.projectId !== attempt.projectId || !committedRowBelongsToAttempt(row, attempt)) continue
+    if (
+      !row ||
+      row.projectId !== attempt.projectId ||
+      (!committedRowBelongsToAttempt(row, attempt) &&
+        !pendingRowMatchesUnrecordedAttempt(row, attempt, association.expectedUpdatedAt))
+    )
+      continue
     const rowRepoPath =
       row.repoPath ??
       resolveStoredRepoPath(
@@ -122,7 +209,10 @@ async function processExplorer(
     const repoPath = association.repoPath ?? rowRepoPath
     const outcome = outcomeByPath.get(repoPath)
     if (!outcome) throw new Error("Publish cleanup explorer association has no persisted outcome")
-    if (outcome.disposition === "finalize" || (await hasNewerPendingExplorerIntent(ctx, row, repoPath))) {
+    if (outcome.disposition === "finalize") {
+      await finalizeDeletedDocument(ctx, attempt, row, repoPath, project?.contentRoot ?? "")
+      await ctx.db.delete(row._id)
+    } else if (outcome.disposition === "discard" || (await hasNewerPendingExplorerIntent(ctx, row, repoPath))) {
       await ctx.db.delete(row._id)
     } else {
       await ctx.db.patch(row._id, {
@@ -175,13 +265,23 @@ async function processMedia(
   let processed = 0
   for (const association of associations) {
     const row = await ctx.db.get(association.mediaOpId)
-    if (!row || row.projectId !== attempt.projectId || !committedRowBelongsToAttempt(row, attempt)) continue
+    if (
+      !row ||
+      row.projectId !== attempt.projectId ||
+      (!committedRowBelongsToAttempt(row, attempt) &&
+        !pendingRowMatchesUnrecordedAttempt(row, attempt, association.expectedUpdatedAt))
+    )
+      continue
     if (canonicalGitPathFromUrlPath(row.repoPath) !== association.repoPath) {
       throw new Error("Publish cleanup media row path does not match its persisted association")
     }
     const outcome = outcomeByPath.get(association.repoPath)
     if (!outcome) throw new Error("Publish cleanup media association has no persisted outcome")
-    if (outcome.disposition === "finalize" || (await hasNewerPendingMediaIntent(ctx, row))) {
+    if (
+      outcome.disposition === "finalize" ||
+      outcome.disposition === "discard" ||
+      (await hasNewerPendingMediaIntent(ctx, row))
+    ) {
       await deleteMediaOrKeepTombstone(ctx, row)
     } else {
       await ctx.db.patch(row._id, {
@@ -200,25 +300,29 @@ async function processMedia(
 async function processDocuments(
   ctx: CleanupCtx,
   attempt: Doc<"publishAttempts">,
+  cleanup: Doc<"publishAttemptCleanups">,
   associations: Doc<"publishAttempts">["documentAssociations"],
   outcomeByPath: Map<string, PathOutcome>,
 ) {
   let processed = 0
   for (const association of associations) {
     const document = await ctx.db.get(association.documentId)
-    if (
-      !document ||
-      document.projectId !== attempt.projectId ||
-      !provenanceBelongsToAttempt(document.publishedProvenance, attempt, association)
-    ) {
+    if (!document || document.projectId !== attempt.projectId) {
       continue
     }
     const outcome = outcomeByPath.get(association.repoPath)
     if (!outcome) throw new Error("Publish cleanup document association has no persisted outcome")
-    if (outcome.disposition === "restore") {
+    const ownsRecordedProvenance = provenanceBelongsToAttempt(document.publishedProvenance, attempt, association)
+    const ownsUnrecordedSnapshot =
+      !attempt.commitSha &&
+      !document.publishedProvenance &&
+      document.updatedAt === association.expectedUpdatedAt &&
+      (association.contentVersion === undefined || (document.contentVersion ?? 0) === association.contentVersion)
+    if (!ownsRecordedProvenance && !ownsUnrecordedSnapshot) continue
+    if (outcome.disposition === "restore" || outcome.disposition === "discard") {
       // A newer draft must survive, but provenance for a dead/excluded
       // attempt must always be cleared so the document remains dirty.
-      await ctx.db.patch(document._id, { publishedProvenance: undefined })
+      if (ownsRecordedProvenance) await ctx.db.patch(document._id, { publishedProvenance: undefined })
       processed += 1
       continue
     }
@@ -227,10 +331,17 @@ async function processDocuments(
         ? (document.contentVersion ?? 0) === association.contentVersion
         : document.updatedAt === association.expectedUpdatedAt
     if (!unchanged) continue
-    const publishedProvenance = {
-      ...document.publishedProvenance!,
-      publishAttemptId: attempt._id,
-    }
+    if (!cleanup.authoritySha) throw new Error("Finalized publish document cleanup requires an authority SHA")
+    const publishedProvenance = ownsRecordedProvenance
+      ? { ...document.publishedProvenance!, publishAttemptId: attempt._id }
+      : {
+          publishBranchId: attempt.publishBranchId,
+          publishAttemptId: attempt._id,
+          commitSha: cleanup.authoritySha,
+          contentRevision: association.contentRevision,
+          publishedContentVersion: association.contentVersion,
+          publishedUpdatedAt: association.expectedUpdatedAt,
+        }
     await ctx.db.patch(document._id, {
       status: "published",
       ...(outcome.finalBlobSha ? { githubSha: outcome.finalBlobSha } : {}),
@@ -288,7 +399,13 @@ export async function processPublishAttemptCleanupBatch(ctx: CleanupCtx, cleanup
       ? await processExplorer(ctx, attempt, batch as typeof explorerAssociations, outcomeByPath)
       : cleanup.phase === "media"
         ? await processMedia(ctx, attempt, batch as Doc<"publishAttempts">["mediaAssociations"], outcomeByPath)
-        : await processDocuments(ctx, attempt, batch as Doc<"publishAttempts">["documentAssociations"], outcomeByPath)
+        : await processDocuments(
+            ctx,
+            attempt,
+            cleanup,
+            batch as Doc<"publishAttempts">["documentAssociations"],
+            outcomeByPath,
+          )
 
   const cursor = cleanup.cursor + batch.length
   if (cursor < allAssociations.length) {
@@ -302,6 +419,7 @@ export async function processPublishAttemptCleanupBatch(ctx: CleanupCtx, cleanup
     const now = Date.now()
     await ctx.db.patch(cleanup._id, { phase, cursor: 0, status: "complete", updatedAt: now })
     await ctx.db.patch(attempt._id, { status: "cleaned", updatedAt: now })
+    await maybeCompleteMergeVerification(ctx, cleanup)
     return { done: true, processed }
   }
   await ctx.db.patch(cleanup._id, { phase, cursor: 0, updatedAt: Date.now() })

@@ -16,7 +16,7 @@ import {
   getBranchHeadForPublish,
   getCommitDetailsForPublish,
   getFileForPublish,
-  getPullRequestCommitsForPublish,
+  inspectPublishEffectsAtCommit,
   type PublishFileReadResult,
   updatePullRequest,
   verifyPublishAttemptCommitForPublish,
@@ -986,7 +986,7 @@ type RecoverablePublishAttempt = {
   deleteAssociations: Array<{ opId: Id<"explorerOps">; documentId: Id<"documents">; expectedUpdatedAt: number }>
   // getActiveForProject also keeps durable cleanup active until its bounded
   // continuation reaches a terminal state.
-  status: "committing" | "committed" | "cleanup_pending"
+  status: "committing" | "committed" | "reconciled" | "cleanup_pending" | "cleaned" | "superseded"
   commitSha?: string
 }
 
@@ -1027,6 +1027,8 @@ async function recoverPublishAttempt({
 }): Promise<{ handled: true; response: NextResponse } | { handled: false; stagedStateStale?: boolean }> {
   const auth = { userId: actingUserId, projectAccessToken }
 
+  if (attempt.status === "cleaned" || attempt.status === "superseded") return { handled: false }
+
   if (attempt.status === "cleanup_pending") {
     return {
       handled: true,
@@ -1063,105 +1065,60 @@ async function recoverPublishAttempt({
     }
   }
 
-  // A finished lane (PR closed unmerged or merged) can never accept this
-  // attempt's work again, and GitHub may already have deleted its branch -
-  // the ancestry walk below would fail closed FOREVER. Closed and merged
-  // lanes need DIFFERENT resolutions, because their content ended up in
-  // different places.
-  const laneFinished = lane.status === "closed" || lane.status === "merged"
-
-  // CLOSED lane + committing attempt: recordCommit provably never ran, so
-  // markCommitted and the document refresh never ran either - every staged
-  // operation is still pending and every document still dirty. Superseding
-  // loses nothing: even if the CAS commit landed, it sits on a lane the
-  // user explicitly abandoned unmerged. Finish the deferred close-time
-  // invalidation now so restored operations join the fresh publish.
-  if (lane.status === "closed" && attempt.status === "committing") {
-    await convex.mutation(api.publishAttempts.supersede, { id: attempt._id, ...auth })
-    await convex.mutation(api.publishBranches.finishLaneCleanup, { id: attempt.publishBranchId, ...auth })
-    return { handled: false, stagedStateStale: true }
-  }
-
-  let commitSha = attempt.status === "committed" ? (attempt.commitSha ?? null) : null
-  // For a MERGED lane: whether the attempt's commit is part of the merged
-  // pull request. true → its content reached the base branch (finalize);
-  // false → it never landed, or landed on the branch outside the merge -
-  // either way its content is NOT in base and must be restored, not spent.
-  let mergedCommitDidMerge: boolean | null = null
-
+  // A merged PR's immutable final commit tree is the sole authority. This
+  // works for merge, squash, and rebase without enumerating a capped PR
+  // commit list, and it never fabricates an original attempt commit SHA.
   if (lane.status === "merged") {
-    // The merged PR's own commit list is the proof authority - it survives
-    // head-branch deletion and is exactly the set of lane commits that
-    // merged. Blind superseding here would leave pending creates/media
-    // that conflict with (or duplicate) already-merged content; blind
-    // finalizing would spend work that never merged.
-    if (typeof lane.prNumber !== "number") {
+    const mergeCommitSha = lane.mergeCommitSha
+    if (!mergeCommitSha || !/^[0-9a-f]{40}$/.test(mergeCommitSha) || lane.mergeVerificationState !== "pending") {
       return {
         handled: true,
         response: NextResponse.json(
           {
             ok: false,
-            error: `Publish lane ${attempt.branchName} is marked merged but has no recorded pull request; cannot prove whether the interrupted publish merged. Resolve the lane manually before publishing again.`,
+            error: `Publish lane ${attempt.branchName} is merged but has no pending immutable merge authority. Backfill or repair the lane authority before publishing again.`,
+          },
+          { status: 409 },
+        ),
+      }
+    }
+    if (!attempt.operationDescriptors?.length) {
+      return {
+        handled: true,
+        response: NextResponse.json(
+          {
+            ok: false,
+            error: "This merged publish attempt predates exact Git descriptors and requires manual review.",
           },
           { status: 409 },
         ),
       }
     }
     try {
-      const prCommits = await getPullRequestCommitsForPublish(token, owner, repo, lane.prNumber)
-      if (commitSha) {
-        const recorded = commitSha
-        mergedCommitDidMerge = prCommits.some((candidate) => candidate.sha === recorded)
-      } else {
-        const candidates = prCommits.filter(
-          (candidate) =>
-            commitMessageCarriesAttempt(candidate.message, attempt.planDigest) &&
-            candidate.parents.length === 1 &&
-            candidate.parents[0] === attempt.expectedHeadSha,
-        )
-        if (candidates.length === 0) {
-          // Provably not part of what merged: every staged operation is
-          // still pending (recordCommit never ran), so supersede and let
-          // the fresh publish re-commit it to a new lane.
-          await convex.mutation(api.publishAttempts.supersede, { id: attempt._id, ...auth })
-          return { handled: false }
-        }
-        if (candidates.length !== 1 || !attempt.operationDescriptors?.length) {
-          return {
-            handled: true,
-            response: NextResponse.json(
-              {
-                ok: false,
-                error: `Cannot prove whether the interrupted publish on ${attempt.branchName} landed from durable Git tree evidence. Manual review is required.`,
-              },
-              { status: 409 },
-            ),
-          }
-        }
-        const adopted = candidates[0]
-        const treeMatches = await verifyPublishAttemptCommitForPublish(
-          token,
-          owner,
-          repo,
-          attempt.expectedHeadSha,
-          adopted.sha,
-          attempt.operationDescriptors,
-        )
-        if (!treeMatches) {
-          return {
-            handled: true,
-            response: NextResponse.json(
-              {
-                ok: false,
-                error: `Cannot prove whether the interrupted publish on ${attempt.branchName} landed: its trailer matched but its Git tree did not. Manual review is required.`,
-              },
-              { status: 409 },
-            ),
-          }
-        }
-        commitSha = adopted.sha
-        await convex.mutation(api.publishAttempts.recordCommit, { id: attempt._id, commitSha, ...auth })
-        mergedCommitDidMerge = true
+      const pathOutcomes = await inspectPublishEffectsAtCommit(
+        token,
+        owner,
+        repo,
+        mergeCommitSha,
+        attempt.operationDescriptors,
+      )
+      await convex.mutation(api.publishAttempts.resolveAndEnqueueCleanup, {
+        id: attempt._id,
+        authoritySha: mergeCommitSha,
+        pathOutcomes,
+        arbitrateMergedPaths: true,
+        ...auth,
+      })
+      return {
+        handled: true,
+        response: NextResponse.json({
+          ok: true,
+          recovered: true,
+          cleanupPending: true,
+          mergeCommitSha,
+          summary: "verified merged publish against immutable Git tree",
+          warning: "Merge verification succeeded; bounded attempt cleanup is finishing in the background.",
+        }),
       }
     } catch (error) {
       if (error instanceof GitHubReadError) {
@@ -1177,6 +1134,45 @@ async function recoverPublishAttempt({
       throw error
     }
   }
+
+  if (lane.status === "closed") {
+    if (attempt.status === "committing") {
+      await convex.mutation(api.publishAttempts.supersedeClosedPending, { id: attempt._id, ...auth })
+      return { handled: false, stagedStateStale: true }
+    }
+    if (!attempt.operationDescriptors?.length) {
+      return {
+        handled: true,
+        response: NextResponse.json(
+          {
+            ok: false,
+            error: "This closed publish attempt predates exact Git descriptors and requires manual review.",
+          },
+          { status: 409 },
+        ),
+      }
+    }
+    await convex.mutation(api.publishAttempts.resolveAndEnqueueCleanup, {
+      id: attempt._id,
+      pathOutcomes: attempt.operationDescriptors.map((descriptor) => ({
+        path: descriptor.path,
+        disposition: "restore" as const,
+      })),
+      ...auth,
+    })
+    return {
+      handled: true,
+      response: NextResponse.json({
+        ok: true,
+        recovered: true,
+        cleanupPending: true,
+        summary: "restoring a publish excluded by a closed pull request",
+        warning: "The pull request closed without merging; bounded attempt cleanup is restoring its staged work.",
+      }),
+    }
+  }
+
+  let commitSha = attempt.status === "committed" ? (attempt.commitSha ?? null) : null
 
   try {
     if (!commitSha) {
@@ -1297,7 +1293,7 @@ async function recoverPublishAttempt({
 
   // Never try to open a pull request for a finished lane - its PR life is
   // over and the branch may already be deleted.
-  if (!prNumber && !laneFinished) {
+  if (!prNumber) {
     const ensured = await ensureLanePullRequest({
       token,
       owner,
@@ -1373,57 +1369,22 @@ async function recoverPublishAttempt({
   })
 
   let reconciliationIncomplete = false
-  let laneInvalidated = false
-  let laneFinalized = false
   if (refresh.failedCount > 0) {
     reconciliationIncomplete = true
     const refreshWarning = `${refresh.failedCount} document(s) could not sync their GitHub state after commit ${commitSha}; publish again to finish reconciliation (no new commit will be created).`
     warning = warning ? `${warning} ${refreshWarning}` : refreshWarning
   } else {
     await convex.mutation(api.publishAttempts.markReconciled, { id: attempt._id, ...auth })
-    if (lane.status === "closed") {
-      // The lane's PR was closed unmerged, so everything just reconciled
-      // onto it is stranded; the close-time invalidation was deferred while
-      // this attempt was active. Finish it now that the attempt resolved.
-      await convex.mutation(api.publishBranches.finishLaneCleanup, { id: attempt.publishBranchId, ...auth })
-      laneInvalidated = true
-    } else if (lane.status === "merged") {
-      if (mergedCommitDidMerge === false) {
-        // The recorded commit is NOT in the merged PR: its content never
-        // reached the base branch (it landed outside the merge, on a
-        // branch that is now finished). Restore its work for republishing
-        // instead of letting the merge finalization spend it.
-        await convex.mutation(api.publishBranches.finishLaneCleanup, {
-          id: attempt.publishBranchId,
-          action: "invalidate",
-          ...auth,
-        })
-        laneInvalidated = true
-      } else {
-        // The commit merged: run the shared merge finalization (idempotent
-        // with the webhook and client fallback paths, which deferred while
-        // this attempt was active).
-        await convex.mutation(api.publishBranches.finishLaneCleanup, { id: attempt.publishBranchId, ...auth })
-        laneFinalized = true
-      }
-    }
   }
 
-  const note = laneInvalidated
-    ? lane.status === "merged"
-      ? "Recovered a previous publish attempt whose commit was not part of the merged pull request. Its staged operations and documents were restored; publish again to publish them to a new lane."
-      : "Recovered a previous publish attempt whose pull request was closed without merging. Its staged operations and documents were restored; publish again to publish them to a new lane."
-    : laneFinalized
-      ? "Recovered a previous publish attempt whose pull request already merged, and finalized the lane."
-      : "Recovered a previous publish attempt without committing again. Review remaining staged changes and publish again if needed."
+  const note =
+    "Recovered a previous publish attempt without committing again. Review remaining staged changes and publish again if needed."
   return {
     handled: true,
     response: NextResponse.json({
       ok: true,
       recovered: true,
       reconciliationIncomplete: reconciliationIncomplete || undefined,
-      laneInvalidated: laneInvalidated || undefined,
-      laneFinalized: laneFinalized || undefined,
       commitSha,
       prUrl,
       prNumber,

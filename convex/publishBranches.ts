@@ -5,6 +5,8 @@ import { internalMutation, mutation, query } from "./_generated/server"
 import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
 import { invalidateClosedLaneSync } from "./lib/laneInvalidation"
 import { finalizeMergedLaneSync } from "./lib/laneMerge"
+import { completeMergeVerificationIfIdle } from "./lib/publishAttemptCleanup"
+import { recordMergedLaneAuthority } from "./lib/publishBranchMerge"
 
 async function getCurrentBranchForProject(
   ctx: QueryCtx,
@@ -37,6 +39,37 @@ export const getCurrentForProject = query({
     projectAccessToken: v.optional(v.string()),
   },
   handler: getCurrentBranchForProject,
+})
+
+/**
+ * Lane whose GitHub PR status should be synchronized. Unlike the reusable
+ * current-lane query, this can return a legacy merged lane missing its
+ * immutable merge authority so the authenticated fallback can backfill it.
+ */
+export const getStatusSyncCandidateForProject = query({
+  args: {
+    projectId: v.id("projects"),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const access = await resolveProjectReader(ctx, args)
+    if (!access) return null
+    for (const status of ["active", "inactive"] as const) {
+      const lane = await ctx.db
+        .query("publishBranches")
+        .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", status))
+        .order("desc")
+        .first()
+      if (lane?.prNumber) return lane
+    }
+    const legacyMerged = await ctx.db
+      .query("publishBranches")
+      .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", "merged"))
+      .order("desc")
+      .take(25)
+    return legacyMerged.find((lane) => lane.prNumber && !lane.mergeCommitSha) ?? null
+  },
 })
 
 /**
@@ -77,11 +110,11 @@ export const listOpenForProject = query({
       ctx.db
         .query("publishBranches")
         .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", "active"))
-        .collect(),
+        .take(100),
       ctx.db
         .query("publishBranches")
         .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", "inactive"))
-        .collect(),
+        .take(100),
     ])
 
     return [...activeBranches, ...inactiveBranches]
@@ -103,24 +136,14 @@ export const listBranchNamesForProject = query({
       ctx.db
         .query("publishBranches")
         .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", "active"))
-        .collect(),
+        .take(100),
       ctx.db
         .query("publishBranches")
         .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", "inactive"))
-        .collect(),
+        .take(100),
     ])
 
     return [...activeBranches, ...inactiveBranches].map((branch) => branch.branchName)
-  },
-})
-
-/** Finds a publish branch by its PR number. Used by webhook handlers. */
-export const getByPRNumber = query({
-  args: { prNumber: v.number() },
-  handler: async (ctx, args) => {
-    // No index on prNumber - PR numbers are unique and this is only called by webhooks
-    const all = await ctx.db.query("publishBranches").collect()
-    return all.find((pb) => pb.prNumber === args.prNumber) ?? null
   },
 })
 
@@ -220,6 +243,11 @@ export const markMerged = mutation({
     id: v.id("publishBranches"),
     userId: v.optional(v.string()),
     projectAccessToken: v.optional(v.string()),
+    mergeCommitSha: v.string(),
+    repoOwner: v.string(),
+    repoName: v.string(),
+    headRepoFullName: v.string(),
+    headBranch: v.string(),
   },
   handler: async (ctx, args) => {
     const publishBranch = await ctx.db.get(args.id)
@@ -230,11 +258,7 @@ export const markMerged = mutation({
       "editor",
     )
 
-    await ctx.db.patch(args.id, {
-      status: "merged",
-      updatedAt: Date.now(),
-    })
-    return await finalizeMergedLaneSync(ctx, { ...publishBranch, status: "merged" })
+    return await recordMergedLaneAuthority(ctx, publishBranch, args)
   },
 })
 
@@ -263,9 +287,16 @@ export const markClosed = mutation({
 
     await ctx.db.patch(args.id, {
       status: "closed",
+      laneInvalidationPending: true,
+      laneCleanupAction: "restore_legacy",
       updatedAt: Date.now(),
     })
-    return await invalidateClosedLaneSync(ctx, { ...publishBranch, status: "closed" })
+    return await invalidateClosedLaneSync(ctx, {
+      ...publishBranch,
+      status: "closed",
+      laneInvalidationPending: true,
+      laneCleanupAction: "restore_legacy",
+    })
   },
 })
 
@@ -299,7 +330,8 @@ export const finishLaneCleanup = mutation({
     if (publishBranch.status !== "closed" && publishBranch.status !== "merged") {
       throw new Error("Lane cleanup only applies to closed or merged publish lanes")
     }
-    const action = args.action ?? (publishBranch.status === "closed" ? "invalidate" : "finalize")
+    if (!args.action) throw new Error("Legacy lane cleanup requires an explicit persisted action")
+    const action = args.action
     return action === "invalidate"
       ? await invalidateClosedLaneSync(ctx, publishBranch)
       : await finalizeMergedLaneSync(ctx, publishBranch)
@@ -316,10 +348,11 @@ export const continueLaneCleanup = internalMutation({
   handler: async (ctx, args) => {
     const publishBranch = await ctx.db.get(args.id)
     if (!publishBranch) return
-    if (publishBranch.status === "closed") {
+    if (publishBranch.laneCleanupAction === "restore_legacy") {
       await invalidateClosedLaneSync(ctx, publishBranch)
-    } else if (publishBranch.status === "merged") {
+    } else if (publishBranch.laneCleanupAction === "finalize_legacy") {
       await finalizeMergedLaneSync(ctx, publishBranch)
+      await completeMergeVerificationIfIdle(ctx, publishBranch._id)
     }
   },
 })

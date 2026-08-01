@@ -27,9 +27,16 @@ export type LaneInvalidationResult =
 type LaneCleanupCtx = Pick<MutationCtx, "db" | "storage" | "scheduler">
 
 /** Keep the durable flag set and schedule the next bounded pass. */
-export async function scheduleLaneCleanupContinuation(ctx: LaneCleanupCtx, branch: Doc<"publishBranches">) {
+export async function scheduleLaneCleanupContinuation(
+  ctx: LaneCleanupCtx,
+  branch: Doc<"publishBranches">,
+  action: "restore_legacy" | "finalize_legacy",
+) {
+  if (branch.laneCleanupAction && branch.laneCleanupAction !== action) {
+    throw new Error("Conflicting persisted legacy lane cleanup action")
+  }
   if (!branch.laneInvalidationPending) {
-    await ctx.db.patch(branch._id, { laneInvalidationPending: true, updatedAt: Date.now() })
+    await ctx.db.patch(branch._id, { laneInvalidationPending: true, laneCleanupAction: action, updatedAt: Date.now() })
   }
   await ctx.scheduler.runAfter(0, internal.publishBranches.continueLaneCleanup, { id: branch._id })
 }
@@ -88,7 +95,11 @@ export async function invalidateClosedLaneSync(
 ): Promise<LaneInvalidationResult> {
   const now = Date.now()
   if (await findActivePublishAttempt(ctx.db, branch.projectId)) {
-    await ctx.db.patch(branch._id, { laneInvalidationPending: true, updatedAt: now })
+    await ctx.db.patch(branch._id, {
+      laneInvalidationPending: true,
+      laneCleanupAction: "restore_legacy",
+      updatedAt: now,
+    })
     return { deferred: true }
   }
 
@@ -106,7 +117,9 @@ export async function invalidateClosedLaneSync(
   // ── Explorer ops committed to this lane (bounded batch) ──
   const committedOpsBatch = await ctx.db
     .query("explorerOps")
-    .withIndex("by_publishBranchId_status", (q) => q.eq("publishBranchId", branch._id).eq("status", "committed"))
+    .withIndex("by_publishBranchId_status_publishAttemptId", (q) =>
+      q.eq("publishBranchId", branch._id).eq("status", "committed").eq("publishAttemptId", undefined),
+    )
     .take(LANE_CLEANUP_BATCH)
 
   // All committed lane ops that resolve to one path, fetched through the
@@ -118,7 +131,8 @@ export async function invalidateClosedLaneSync(
       const rows = await ctx.db
         .query("explorerOps")
         .withIndex("by_projectId_filePath", (q) => q.eq("projectId", branch.projectId).eq("filePath", filePath))
-        .collect()
+        .take(LANE_CLEANUP_BATCH + 1)
+      if (rows.length > LANE_CLEANUP_BATCH) throw new Error("Legacy lane path exceeds the bounded cleanup limit")
       for (const row of rows) {
         if (row.status !== "committed" || row.publishBranchId !== branch._id) continue
         if (resolveOpPath(row) !== repoPath) continue
@@ -132,7 +146,8 @@ export async function invalidateClosedLaneSync(
       const rows = await ctx.db
         .query("explorerOps")
         .withIndex("by_projectId_filePath", (q) => q.eq("projectId", branch.projectId).eq("filePath", filePath))
-        .collect()
+        .take(LANE_CLEANUP_BATCH + 1)
+      if (rows.length > LANE_CLEANUP_BATCH) throw new Error("Legacy lane path exceeds the bounded cleanup limit")
       if (rows.some((row) => row.status === "pending" && resolveOpPath(row) === repoPath)) return true
     }
     return false
@@ -170,14 +185,19 @@ export async function invalidateClosedLaneSync(
   // ── Media ops committed to this lane (their bytes are still staged) ──
   const committedMediaBatch = await ctx.db
     .query("mediaOps")
-    .withIndex("by_publishBranchId_status", (q) => q.eq("publishBranchId", branch._id).eq("status", "committed"))
+    .withIndex("by_publishBranchId_status_publishAttemptId", (q) =>
+      q.eq("publishBranchId", branch._id).eq("status", "committed").eq("publishAttemptId", undefined),
+    )
     .take(LANE_CLEANUP_BATCH)
 
-  const mediaRowsAtPath = async (repoPath: string) =>
-    await ctx.db
+  const mediaRowsAtPath = async (repoPath: string) => {
+    const rows = await ctx.db
       .query("mediaOps")
       .withIndex("by_projectId_repoPath", (q) => q.eq("projectId", branch.projectId).eq("repoPath", repoPath))
-      .collect()
+      .take(LANE_CLEANUP_BATCH + 1)
+    if (rows.length > LANE_CLEANUP_BATCH) throw new Error("Legacy lane media path exceeds the bounded cleanup limit")
+    return rows
+  }
 
   const discardMediaOp = async (op: Doc<"mediaOps">) => {
     discardedMediaOpIds.push(op._id)
@@ -225,7 +245,9 @@ export async function invalidateClosedLaneSync(
   // ── Documents whose clean state points at this lane (bounded batch) ──
   const documentsBatch = await ctx.db
     .query("documents")
-    .withIndex("by_publishedProvenance_publishBranchId", (q) => q.eq("publishedProvenance.publishBranchId", branch._id))
+    .withIndex("by_publishedProvenance_lane_attempt", (q) =>
+      q.eq("publishedProvenance.publishBranchId", branch._id).eq("publishedProvenance.publishAttemptId", undefined),
+    )
     .take(LANE_CLEANUP_BATCH)
   for (const doc of documentsBatch) {
     invalidatedDocumentIds.push(doc._id)
@@ -237,9 +259,13 @@ export async function invalidateClosedLaneSync(
     committedMediaBatch.length < LANE_CLEANUP_BATCH &&
     documentsBatch.length < LANE_CLEANUP_BATCH
   if (!done) {
-    await scheduleLaneCleanupContinuation(ctx, branch)
+    await scheduleLaneCleanupContinuation(ctx, branch, "restore_legacy")
   } else if (branch.laneInvalidationPending) {
-    await ctx.db.patch(branch._id, { laneInvalidationPending: undefined, updatedAt: now })
+    await ctx.db.patch(branch._id, {
+      laneInvalidationPending: undefined,
+      laneCleanupAction: undefined,
+      updatedAt: now,
+    })
   }
 
   return {

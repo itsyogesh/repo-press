@@ -233,6 +233,10 @@ export default defineSchema({
     // Bounded closed-lane invalidation: fetch exactly the documents whose
     // clean state points at one lane, in batches.
     .index("by_publishedProvenance_publishBranchId", ["publishedProvenance.publishBranchId"])
+    .index("by_publishedProvenance_lane_attempt", [
+      "publishedProvenance.publishBranchId",
+      "publishedProvenance.publishAttemptId",
+    ])
     .searchIndex("search_title", {
       searchField: "title",
       filterFields: ["projectId"],
@@ -378,7 +382,8 @@ export default defineSchema({
     .index("by_projectId_filePath", ["projectId", "filePath"])
     .index("by_projectId_repoPath_status", ["projectId", "repoPath", "status"])
     // Bounded lane cleanup: fetch exactly one lane's committed ops in batches.
-    .index("by_publishBranchId_status", ["publishBranchId", "status"]),
+    .index("by_publishBranchId_status", ["publishBranchId", "status"])
+    .index("by_publishBranchId_status_publishAttemptId", ["publishBranchId", "status", "publishAttemptId"]),
 
   // ─── Media Ops (staged media writes for PR-based publish) ──────────────
   mediaOps: defineTable({
@@ -410,7 +415,8 @@ export default defineSchema({
     .index("by_projectId_status", ["projectId", "status"])
     .index("by_projectId_repoPath", ["projectId", "repoPath"])
     // Bounded lane cleanup: fetch exactly one lane's committed uploads in batches.
-    .index("by_publishBranchId_status", ["publishBranchId", "status"]),
+    .index("by_publishBranchId_status", ["publishBranchId", "status"])
+    .index("by_publishBranchId_status_publishAttemptId", ["publishBranchId", "status", "publishAttemptId"]),
 
   // ─── Publish Branches (PR-based publish workflow) ─────────────────
   publishBranches: defineTable({
@@ -420,6 +426,11 @@ export default defineSchema({
     prNumber: v.optional(v.number()),
     prUrl: v.optional(v.string()),
     status: v.union(v.literal("active"), v.literal("inactive"), v.literal("merged"), v.literal("closed")),
+    // Immutable Git authority for a merged PR. The event/fallback path only
+    // records this SHA; attempt-scoped reconciliation verifies exact trees
+    // before any staged state is finalized.
+    mergeCommitSha: v.optional(v.string()),
+    mergeVerificationState: v.optional(v.union(v.literal("pending"), v.literal("complete"))),
     lastCommitSha: v.optional(v.string()),
     committedFilePaths: v.optional(v.array(v.string())),
     // Set when lane synchronization cleanup (closed-lane invalidation OR
@@ -428,12 +439,14 @@ export default defineSchema({
     // batches. The nightly cron, the scheduled continuation, and attempt
     // recovery finish it durably.
     laneInvalidationPending: v.optional(v.boolean()),
+    laneCleanupAction: v.optional(v.union(v.literal("restore_legacy"), v.literal("finalize_legacy"))),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_projectId", ["projectId"])
     .index("by_projectId_status", ["projectId", "status"])
     .index("by_prNumber", ["prNumber"])
+    .index("by_projectId_mergeVerificationState", ["projectId", "mergeVerificationState"])
     .index("by_laneInvalidationPending", ["laneInvalidationPending"]),
 
   // ─── Publish Attempts (durable commit/reconcile boundary) ─────────
@@ -530,7 +543,7 @@ export default defineSchema({
     pathOutcomes: v.array(
       v.object({
         path: v.string(),
-        disposition: v.union(v.literal("finalize"), v.literal("restore")),
+        disposition: v.union(v.literal("finalize"), v.literal("restore"), v.literal("discard")),
         finalBlobSha: v.optional(v.string()),
       }),
     ),
@@ -544,4 +557,17 @@ export default defineSchema({
     .index("by_attemptId", ["attemptId"])
     .index("by_laneId_status", ["laneId", "status"])
     .index("by_status", ["status"]),
+
+  // A merged lane may contain several publish attempts that touch the same
+  // path. The first (newest) attempt whose descriptor matches the immutable
+  // merge tree owns that path; older attempts persist a discard outcome.
+  publishLanePathResolutions: defineTable({
+    projectId: v.id("projects"),
+    laneId: v.id("publishBranches"),
+    authoritySha: v.string(),
+    repoPath: v.string(),
+    claimedAttemptId: v.id("publishAttempts"),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_lane_authority_path", ["laneId", "authoritySha", "repoPath"]),
 })

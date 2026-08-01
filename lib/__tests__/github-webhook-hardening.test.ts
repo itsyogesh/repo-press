@@ -15,6 +15,8 @@ vi.mock("@/convex/_generated/api", () => ({
 import { handlePRClosed, handlePRMerged } from "@/convex/githubWebhook"
 import { mintServerQueryToken } from "@/lib/project-access-token"
 
+const MERGE_SHA = "a".repeat(40)
+
 function createCtx() {
   return {
     db: {
@@ -24,6 +26,7 @@ function createCtx() {
       query: vi.fn(() => ({
         withIndex: () => ({
           first: vi.fn().mockResolvedValue(null),
+          take: vi.fn().mockResolvedValue([]),
           collect: vi.fn().mockResolvedValue([]),
         }),
       })),
@@ -38,7 +41,7 @@ function createWebhookCtx({
   publishBranch,
   explorerOps = [],
   mediaOps = [],
-  project = null,
+  project = { _id: "project_1", repoOwner: "acme", repoName: "docs-site" },
 }: {
   publishBranch: Record<string, unknown> | null
   explorerOps?: Array<Record<string, unknown>>
@@ -105,7 +108,11 @@ describe("GitHub webhook hardening", () => {
     await expect(
       (handlePRMerged as any).handler(ctx, {
         prNumber: 42,
-        mergeCommitSha: "abc123",
+        mergeCommitSha: MERGE_SHA,
+        repoOwner: "acme",
+        repoName: "docs-site",
+        headRepoFullName: "acme/docs-site",
+        headBranch: "repopress/start",
       }),
     ).rejects.toThrow("Unauthorized")
 
@@ -131,7 +138,11 @@ describe("GitHub webhook hardening", () => {
     await expect(
       (handlePRMerged as any).handler(ctx, {
         prNumber: 42,
-        mergeCommitSha: "abc123",
+        mergeCommitSha: MERGE_SHA,
+        repoOwner: "acme",
+        repoName: "docs-site",
+        headRepoFullName: "acme/docs-site",
+        headBranch: "repopress/start",
         serverQueryToken,
       }),
     ).resolves.toBeUndefined()
@@ -139,13 +150,14 @@ describe("GitHub webhook hardening", () => {
     expect(ctx.db.query).toHaveBeenCalled()
   })
 
-  it("merging an inactive PR only clears committed ops for that publish branch", async () => {
+  it("records immutable merge authority without mutating staged content", async () => {
     const serverQueryToken = await mintServerQueryToken()
     const ctx = createWebhookCtx({
       publishBranch: {
         _id: "publish_branch_inactive",
         projectId: "project_1",
         status: "inactive",
+        branchName: "repopress/start",
         committedFilePaths: [],
       },
       explorerOps: [
@@ -186,16 +198,120 @@ describe("GitHub webhook hardening", () => {
 
     await (handlePRMerged as any).handler(ctx, {
       prNumber: 42,
-      mergeCommitSha: "merge-sha-1",
+      mergeCommitSha: MERGE_SHA,
+      repoOwner: "acme",
+      repoName: "docs-site",
+      headRepoFullName: "acme/docs-site",
+      headBranch: "repopress/start",
       serverQueryToken,
     })
 
-    expect(ctx.db.patch).toHaveBeenCalledWith("publish_branch_inactive", expect.objectContaining({ status: "merged" }))
-    expect(ctx.db.delete).toHaveBeenCalledWith("explorer_op_for_branch_42")
-    expect(ctx.db.delete).toHaveBeenCalledWith("media_op_for_branch_42")
-    expect(ctx.db.delete).not.toHaveBeenCalledWith("explorer_op_for_branch_84")
-    expect(ctx.db.delete).not.toHaveBeenCalledWith("media_op_for_branch_84")
-    expect(ctx.db.delete).not.toHaveBeenCalledWith("explorer_op_pending_for_branch_42")
+    expect(ctx.db.patch).toHaveBeenCalledWith(
+      "publish_branch_inactive",
+      expect.objectContaining({
+        status: "merged",
+        mergeCommitSha: MERGE_SHA,
+        mergeVerificationState: "pending",
+      }),
+    )
+    expect(ctx.db.delete).not.toHaveBeenCalled()
+    expect(ctx.storage.delete).not.toHaveBeenCalled()
+  })
+
+  it("keeps completed verification complete on same-authority replay and rejects a different SHA", async () => {
+    const serverQueryToken = await mintServerQueryToken()
+    const publishBranch = {
+      _id: "publish_branch_inactive",
+      projectId: "project_1",
+      status: "merged",
+      branchName: "repopress/start",
+      mergeCommitSha: MERGE_SHA,
+      mergeVerificationState: "complete",
+    }
+    const ctx = createWebhookCtx({ publishBranch })
+
+    await (handlePRMerged as any).handler(ctx, {
+      prNumber: 42,
+      mergeCommitSha: MERGE_SHA,
+      repoOwner: "acme",
+      repoName: "docs-site",
+      headRepoFullName: "acme/docs-site",
+      headBranch: "repopress/start",
+      serverQueryToken,
+    })
+    expect(ctx.db.patch).not.toHaveBeenCalled()
+
+    await expect(
+      (handlePRMerged as any).handler(ctx, {
+        prNumber: 42,
+        mergeCommitSha: "b".repeat(40),
+        repoOwner: "acme",
+        repoName: "docs-site",
+        headRepoFullName: "acme/docs-site",
+        headBranch: "repopress/start",
+        serverQueryToken,
+      }),
+    ).rejects.toThrow("authority")
+  })
+
+  it("rejects a same-number PR from another repository or head branch", async () => {
+    const serverQueryToken = await mintServerQueryToken()
+    const ctx = createWebhookCtx({
+      publishBranch: {
+        _id: "publish_branch_inactive",
+        projectId: "project_1",
+        status: "inactive",
+        branchName: "repopress/start",
+      },
+    })
+
+    await (handlePRMerged as any).handler(ctx, {
+      prNumber: 42,
+      mergeCommitSha: MERGE_SHA,
+      repoOwner: "other",
+      repoName: "docs-site",
+      headRepoFullName: "other/docs-site",
+      headBranch: "repopress/start",
+      serverQueryToken,
+    })
+    expect(ctx.db.patch).not.toHaveBeenCalled()
+
+    await (handlePRMerged as any).handler(ctx, {
+      prNumber: 42,
+      mergeCommitSha: MERGE_SHA,
+      repoOwner: "acme",
+      repoName: "docs-site",
+      headRepoFullName: "acme/docs-site",
+      headBranch: "repopress/other",
+      serverQueryToken,
+    })
+    expect(ctx.db.patch).not.toHaveBeenCalled()
+  })
+
+  it("rejects a fork head even when the base repository and branch name collide", async () => {
+    const serverQueryToken = await mintServerQueryToken()
+    const ctx = createWebhookCtx({
+      publishBranch: {
+        _id: "publish_branch_inactive",
+        projectId: "project_1",
+        status: "inactive",
+        branchName: "repopress/start",
+      },
+    })
+
+    await expect(
+      (handlePRMerged as any).handler(ctx, {
+        prNumber: 42,
+        mergeCommitSha: MERGE_SHA,
+        repoOwner: "acme",
+        repoName: "docs-site",
+        headRepoFullName: "attacker/docs-site",
+        headBranch: "repopress/start",
+        serverQueryToken,
+      }),
+    ).rejects.toThrow(/repository or head branch/i)
+
+    expect(ctx.db.patch).not.toHaveBeenCalled()
   })
 
   it("closing an inactive PR only updates that publish branch", async () => {
@@ -213,19 +329,19 @@ describe("GitHub webhook hardening", () => {
       serverQueryToken,
     })
 
-    expect(ctx.db.patch).toHaveBeenCalledTimes(1)
     expect(ctx.db.patch).toHaveBeenCalledWith("publish_branch_inactive", expect.objectContaining({ status: "closed" }))
     expect(ctx.db.delete).not.toHaveBeenCalled()
     expect(ctx.scheduler.runAfter).not.toHaveBeenCalled()
   })
 
-  it("merging the current active PR does not delete committed ops from unrelated open PRs", async () => {
+  it("merging the current active PR does not delete any committed ops before verification", async () => {
     const serverQueryToken = await mintServerQueryToken()
     const ctx = createWebhookCtx({
       publishBranch: {
         _id: "publish_branch_current",
         projectId: "project_1",
         status: "active",
+        branchName: "repopress/start",
         committedFilePaths: [],
       },
       explorerOps: [
@@ -260,24 +376,26 @@ describe("GitHub webhook hardening", () => {
 
     await (handlePRMerged as any).handler(ctx, {
       prNumber: 42,
-      mergeCommitSha: "merge-sha-2",
+      mergeCommitSha: MERGE_SHA,
+      repoOwner: "acme",
+      repoName: "docs-site",
+      headRepoFullName: "acme/docs-site",
+      headBranch: "repopress/start",
       serverQueryToken,
     })
 
     expect(ctx.db.patch).toHaveBeenCalledWith("publish_branch_current", expect.objectContaining({ status: "merged" }))
-    expect(ctx.db.delete).toHaveBeenCalledWith("explorer_op_for_current_branch")
-    expect(ctx.db.delete).toHaveBeenCalledWith("media_op_for_current_branch")
-    expect(ctx.db.delete).not.toHaveBeenCalledWith("explorer_op_for_other_open_pr")
-    expect(ctx.db.delete).not.toHaveBeenCalledWith("media_op_for_other_open_pr")
+    expect(ctx.db.delete).not.toHaveBeenCalled()
   })
 
-  it("deletes Convex storage objects before removing committed media ops on merge", async () => {
+  it("does not release committed media storage until merge verification", async () => {
     const serverQueryToken = await mintServerQueryToken()
     const ctx = createWebhookCtx({
       publishBranch: {
         _id: "publish_branch_current",
         projectId: "project_1",
         status: "active",
+        branchName: "repopress/start",
         committedFilePaths: [],
       },
       mediaOps: [
@@ -293,12 +411,16 @@ describe("GitHub webhook hardening", () => {
 
     await (handlePRMerged as any).handler(ctx, {
       prNumber: 42,
-      mergeCommitSha: "merge-sha-3",
+      mergeCommitSha: MERGE_SHA,
+      repoOwner: "acme",
+      repoName: "docs-site",
+      headRepoFullName: "acme/docs-site",
+      headBranch: "repopress/start",
       serverQueryToken,
     })
 
-    expect(ctx.storage.delete).toHaveBeenCalledWith("storage_1")
-    expect(ctx.db.delete).toHaveBeenCalledWith("media_op_for_current_branch")
+    expect(ctx.storage.delete).not.toHaveBeenCalled()
+    expect(ctx.db.delete).not.toHaveBeenCalled()
   })
 
   it("closing a PR does not discard staged media for a later republish", async () => {

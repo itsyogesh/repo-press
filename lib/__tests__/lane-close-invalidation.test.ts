@@ -22,10 +22,16 @@ import { handlePRClosed, handlePRMerged } from "@/convex/githubWebhook"
 import { invalidateClosedLaneSync, LANE_CLEANUP_BATCH } from "@/convex/lib/laneInvalidation"
 import { finalizeMergedLaneSync } from "@/convex/lib/laneMerge"
 import { cleanupStaleUploads } from "@/convex/mediaOps"
-import { finishLaneCleanup, markClosed, markMerged } from "@/convex/publishBranches"
+import { finishLaneCleanup, getStatusSyncCandidateForProject, markClosed, markMerged } from "@/convex/publishBranches"
 import { mintProjectAccessToken, mintServerQueryToken } from "@/lib/project-access-token"
 
-const project = { _id: "project_1", userId: "user_owner", contentRoot: "content" }
+const project = {
+  _id: "project_1",
+  userId: "user_owner",
+  repoOwner: "acme",
+  repoName: "docs-site",
+  contentRoot: "content",
+}
 
 function laneDoc(overrides: Record<string, unknown> = {}) {
   return {
@@ -116,6 +122,7 @@ function createLaneCtx({
 
   const chain = (rows: Array<Record<string, unknown>>): any => ({
     first: vi.fn().mockImplementation(async () => rows[0] ?? null),
+    order: vi.fn().mockImplementation(() => chain(rows)),
     collect: vi.fn().mockImplementation(async () => rows),
     take: vi.fn().mockImplementation(async (count: number) => rows.slice(0, count)),
     filter: () => chain(rows),
@@ -176,6 +183,19 @@ describe("closed-lane synchronization invalidation", () => {
     vi.clearAllMocks()
     process.env.BETTER_AUTH_SECRET = "test-secret"
     safeGetAuthUserMock.mockResolvedValue(null)
+  })
+
+  it("exposes a separate legacy merged sync candidate without making it reusable", async () => {
+    const legacyMerged = laneDoc({ status: "merged", mergeCommitSha: undefined })
+    const ctx = createLaneCtx({ publishBranches: [legacyMerged] })
+
+    const candidate = await (getStatusSyncCandidateForProject as any).handler(ctx, {
+      projectId: "project_1",
+      userId: "user_owner",
+      projectAccessToken: await patToken(),
+    })
+
+    expect(candidate?._id).toBe("lane_1")
   })
 
   it("restores the lane's committed ops, media, and document provenance for republishing", async () => {
@@ -451,7 +471,7 @@ describe("closed-lane synchronization invalidation", () => {
   })
 
   it("finishLaneCleanup completes a deferred invalidation and clears the flag", async () => {
-    const lane = laneDoc({ laneInvalidationPending: true })
+    const lane = laneDoc({ laneInvalidationPending: true, laneCleanupAction: "restore_legacy" })
     const ctx = createLaneCtx({
       publishBranches: [lane],
       explorerOps: [committedLaneOp("op_lane", { filePath: "guides/a.mdx" })],
@@ -459,6 +479,7 @@ describe("closed-lane synchronization invalidation", () => {
 
     const result = await (finishLaneCleanup as any).handler(ctx, {
       id: "lane_1",
+      action: "invalidate",
       userId: "user_owner",
       projectAccessToken: await patToken(),
     })
@@ -690,7 +711,7 @@ describe("merged-lane finalization", () => {
     expect(second).toEqual(expect.objectContaining({ done: true, publishedDocumentIds: ["doc_merged"] }))
   })
 
-  it("markMerged (client fallback path) runs the same finalization as the webhook", async () => {
+  it("markMerged records authority without finalizing content", async () => {
     const lane = mergedLane({ status: "active" })
     const ctx = createLaneCtx({
       publishBranches: [lane],
@@ -711,15 +732,28 @@ describe("merged-lane finalization", () => {
       id: "lane_1",
       userId: "user_owner",
       projectAccessToken: await patToken(),
+      mergeCommitSha: "a".repeat(40),
+      repoOwner: "acme",
+      repoName: "docs-site",
+      headRepoFullName: "acme/docs-site",
+      headBranch: "repopress/start",
     })
 
     expect(ctx.db.patch).toHaveBeenCalledWith("lane_1", expect.objectContaining({ status: "merged" }))
-    expect(ctx.db.delete).toHaveBeenCalledWith("op_lane")
-    expect(ctx.db.patch).toHaveBeenCalledWith("doc_merged", expect.objectContaining({ status: "published" }))
-    expect(result).toEqual(expect.objectContaining({ done: true, publishedDocumentIds: ["doc_merged"] }))
+    expect(ctx.db.patch).toHaveBeenCalledWith(
+      "lane_1",
+      expect.objectContaining({
+        status: "merged",
+        mergeCommitSha: "a".repeat(40),
+        mergeVerificationState: "pending",
+      }),
+    )
+    expect(ctx.db.delete).not.toHaveBeenCalled()
+    expect(ctx.db.patch).not.toHaveBeenCalledWith("doc_merged", expect.objectContaining({ status: "published" }))
+    expect(result).toEqual(expect.objectContaining({ verificationState: "pending" }))
   })
 
-  it("handlePRMerged (webhook path) runs the shared finalization", async () => {
+  it("handlePRMerged records authority without running shared lane finalization", async () => {
     const lane = mergedLane({ status: "active" })
     const ctx = createLaneCtx({
       publishBranches: [lane],
@@ -728,11 +762,19 @@ describe("merged-lane finalization", () => {
 
     await (handlePRMerged as any).handler(ctx, {
       prNumber: 42,
-      mergeCommitSha: "merge-sha-1",
+      mergeCommitSha: "a".repeat(40),
+      repoOwner: "acme",
+      repoName: "docs-site",
+      headRepoFullName: "acme/docs-site",
+      headBranch: "repopress/start",
       serverQueryToken: await mintServerQueryToken(),
     })
 
     expect(ctx.db.patch).toHaveBeenCalledWith("lane_1", expect.objectContaining({ status: "merged" }))
-    expect(ctx.db.delete).toHaveBeenCalledWith("op_lane")
+    expect(ctx.db.patch).toHaveBeenCalledWith(
+      "lane_1",
+      expect.objectContaining({ mergeCommitSha: "a".repeat(40), mergeVerificationState: "pending" }),
+    )
+    expect(ctx.db.delete).not.toHaveBeenCalled()
   })
 })

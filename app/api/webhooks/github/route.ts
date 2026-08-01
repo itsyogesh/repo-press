@@ -37,7 +37,7 @@ export async function POST(request: Request) {
 
   try {
     const data = JSON.parse(payload)
-    const { action, pull_request } = data
+    const { action, pull_request, repository } = data
     const serverQueryToken = await mintServerQueryToken()
 
     if (!pull_request) {
@@ -48,11 +48,25 @@ export async function POST(request: Request) {
     const merged = pull_request.merged as boolean
     const mergeCommitSha = pull_request.merge_commit_sha as string | null
 
-    if (action === "closed" && merged && mergeCommitSha) {
+    if (action === "closed" && merged) {
+      if (!mergeCommitSha || !/^[0-9a-f]{40}$/.test(mergeCommitSha)) {
+        throw new Error("Merged pull request webhook is missing a valid merge commit authority")
+      }
+      const repoOwner = repository?.owner?.login
+      const repoName = repository?.name
+      const headRepoFullName = pull_request.head?.repo?.full_name
+      const headBranch = pull_request.head?.ref
+      if (!repoOwner || !repoName || !headRepoFullName || !headBranch) {
+        throw new Error("Merged pull request webhook is missing repository identity")
+      }
       // PR was merged -- trigger publish
       await convex.mutation(api.githubWebhook.handlePRMerged, {
         prNumber,
         mergeCommitSha,
+        repoOwner,
+        repoName,
+        headRepoFullName,
+        headBranch,
         serverQueryToken,
       })
       return NextResponse.json({ ok: true, action: "merged" })

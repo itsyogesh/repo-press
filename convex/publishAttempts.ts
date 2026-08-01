@@ -32,7 +32,7 @@ const deleteAssociationValidator = v.object({
 
 const pathOutcomeValidator = v.object({
   path: v.string(),
-  disposition: v.union(v.literal("finalize"), v.literal("restore")),
+  disposition: v.union(v.literal("finalize"), v.literal("restore"), v.literal("discard")),
   finalBlobSha: v.optional(v.string()),
 })
 
@@ -50,6 +50,30 @@ export const getActiveForProject = query({
   handler: async (ctx, args) => {
     const access = await resolveProjectReader(ctx, args)
     if (!access) return null
+    const pendingMergeLane = await ctx.db
+      .query("publishBranches")
+      .withIndex("by_projectId_mergeVerificationState", (q) =>
+        q.eq("projectId", args.projectId).eq("mergeVerificationState", "pending"),
+      )
+      .order("desc")
+      .first()
+    if (pendingMergeLane?.status === "merged") {
+      const candidates = await Promise.all(
+        (["cleanup_pending", "committing", "committed", "reconciled"] as const).map((status) =>
+          ctx.db
+            .query("publishAttempts")
+            .withIndex("by_publishBranchId_status", (q) =>
+              q.eq("publishBranchId", pendingMergeLane._id).eq("status", status),
+            )
+            .order("desc")
+            .first(),
+        ),
+      )
+      const newest = candidates
+        .filter((candidate): candidate is NonNullable<typeof candidate> => Boolean(candidate))
+        .sort((a, b) => b.createdAt - a.createdAt)[0]
+      if (newest) return newest
+    }
     return await findActivePublishAttempt(ctx.db, args.projectId)
   },
 })
@@ -310,7 +334,7 @@ export const begin = mutation({
 
 function canonicalCleanupPlan(
   authoritySha: string | undefined,
-  pathOutcomes: Array<{ path: string; disposition: "finalize" | "restore"; finalBlobSha?: string }>,
+  pathOutcomes: Array<{ path: string; disposition: "finalize" | "restore" | "discard"; finalBlobSha?: string }>,
 ) {
   return JSON.stringify({
     authoritySha,
@@ -327,6 +351,7 @@ export const resolveAndEnqueueCleanup = mutation({
     id: v.id("publishAttempts"),
     authoritySha: v.optional(v.string()),
     pathOutcomes: v.array(pathOutcomeValidator),
+    arbitrateMergedPaths: v.optional(v.boolean()),
     userId: v.optional(v.string()),
     projectAccessToken: v.optional(v.string()),
   },
@@ -345,7 +370,14 @@ export const resolveAndEnqueueCleanup = mutation({
     if (lane.status !== "closed" && lane.status !== "merged") {
       throw new Error("Publish cleanup requires a closed or merged lane")
     }
+    const mergedWithoutRecordedCommit =
+      args.arbitrateMergedPaths === true &&
+      lane.status === "merged" &&
+      attempt.status === "committing" &&
+      !attempt.commitSha &&
+      lane.mergeCommitSha === args.authoritySha
     if (
+      !mergedWithoutRecordedCommit &&
       attempt.status !== "committed" &&
       attempt.status !== "reconciled" &&
       attempt.status !== "cleanup_pending" &&
@@ -353,7 +385,7 @@ export const resolveAndEnqueueCleanup = mutation({
     ) {
       throw new Error(`Cannot resolve cleanup for a ${attempt.status} publish attempt`)
     }
-    if (!attempt.commitSha || !SHA_PATTERN.test(attempt.commitSha)) {
+    if (!mergedWithoutRecordedCommit && (!attempt.commitSha || !SHA_PATTERN.test(attempt.commitSha))) {
       throw new Error("Publish cleanup requires the attempt's committed SHA")
     }
     if (args.authoritySha !== undefined && !SHA_PATTERN.test(args.authoritySha)) {
@@ -377,8 +409,8 @@ export const resolveAndEnqueueCleanup = mutation({
       if (outcome.finalBlobSha !== undefined && !SHA_PATTERN.test(outcome.finalBlobSha)) {
         throw new Error("Publish cleanup final blob must be a 40-hex SHA")
       }
-      if (outcome.disposition === "restore" && outcome.finalBlobSha !== undefined) {
-        throw new Error("A restored publish path cannot carry a final blob SHA")
+      if (outcome.disposition !== "finalize" && outcome.finalBlobSha !== undefined) {
+        throw new Error("A non-finalized publish path cannot carry a final blob SHA")
       }
       const descriptor = descriptorByPath.get(outcome.path)
       if (outcome.disposition === "finalize" && descriptor?.action !== "delete") {
@@ -396,7 +428,59 @@ export const resolveAndEnqueueCleanup = mutation({
     }
     assertPublishAttemptAssociationClosure(attempt)
 
-    const normalizedOutcomes = [...args.pathOutcomes].sort((a, b) => a.path.localeCompare(b.path))
+    let normalizedOutcomes = [...args.pathOutcomes].sort((a, b) => a.path.localeCompare(b.path))
+    if (args.arbitrateMergedPaths) {
+      if (
+        lane.status !== "merged" ||
+        lane.mergeVerificationState !== "pending" ||
+        !args.authoritySha ||
+        lane.mergeCommitSha !== args.authoritySha
+      ) {
+        throw new Error("Merged path arbitration requires the lane's pending immutable merge authority")
+      }
+      const unresolved = await Promise.all(
+        (["cleanup_pending", "committing", "committed", "reconciled"] as const).map((status) =>
+          ctx.db
+            .query("publishAttempts")
+            .withIndex("by_publishBranchId_status", (q) => q.eq("publishBranchId", lane._id).eq("status", status))
+            .order("desc")
+            .first(),
+        ),
+      )
+      const newest = unresolved
+        .filter((candidate): candidate is NonNullable<typeof candidate> => Boolean(candidate))
+        .sort((a, b) => b.createdAt - a.createdAt)[0]
+      if (newest && newest._id !== attempt._id) {
+        throw new Error("Merged publish attempts must be reconciled newest-first")
+      }
+      const arbitrated: typeof normalizedOutcomes = []
+      for (const outcome of normalizedOutcomes) {
+        const existingClaim = await ctx.db
+          .query("publishLanePathResolutions")
+          .withIndex("by_lane_authority_path", (q) =>
+            q.eq("laneId", lane._id).eq("authoritySha", args.authoritySha!).eq("repoPath", outcome.path),
+          )
+          .first()
+        if (existingClaim && existingClaim.claimedAttemptId !== attempt._id) {
+          arbitrated.push({ path: outcome.path, disposition: "discard" })
+          continue
+        }
+        if (!existingClaim && outcome.disposition === "finalize") {
+          const now = Date.now()
+          await ctx.db.insert("publishLanePathResolutions", {
+            projectId: attempt.projectId,
+            laneId: lane._id,
+            authoritySha: args.authoritySha,
+            repoPath: outcome.path,
+            claimedAttemptId: attempt._id,
+            createdAt: now,
+            updatedAt: now,
+          })
+        }
+        arbitrated.push(outcome)
+      }
+      normalizedOutcomes = arbitrated
+    }
     const requestedPlan = canonicalCleanupPlan(args.authoritySha, normalizedOutcomes)
     const existing = await ctx.db
       .query("publishAttemptCleanups")
@@ -516,6 +600,87 @@ export const supersede = mutation({
     if (attempt.status === "superseded") return
     if (attempt.status !== "committing") {
       throw new Error(`Cannot supersede a ${attempt.status} publish attempt`)
+    }
+    await ctx.db.patch(args.id, { status: "superseded", updatedAt: Date.now() })
+  },
+})
+
+/**
+ * A closed lane can retire a pre-recordCommit attempt only when every exact
+ * association is still the pending snapshot captured by begin. Any raced
+ * undo/replacement fails closed instead of silently releasing the guard.
+ */
+export const supersedeClosedPending = mutation({
+  args: {
+    id: v.id("publishAttempts"),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const attempt = await ctx.db.get(args.id)
+    if (!attempt) throw new Error("Publish attempt not found")
+    const access = await resolveProjectAccess(
+      ctx,
+      { projectId: attempt.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken },
+      "editor",
+    )
+    if (attempt.status === "superseded") return
+    if (attempt.status !== "committing" || attempt.commitSha) {
+      throw new Error(`Cannot safely supersede a ${attempt.status} publish attempt`)
+    }
+    const lane = await ctx.db.get(attempt.publishBranchId)
+    if (!lane || lane.projectId !== attempt.projectId || lane.status !== "closed") {
+      throw new Error("Safe pending supersede requires the attempt's closed lane")
+    }
+    for (const association of attempt.explorerAssociations ?? []) {
+      const row = await ctx.db.get(association.opId)
+      const repoPath =
+        row &&
+        resolveStoredRepoPath(
+          access.project.contentRoot,
+          row.filePath,
+          row.pathRepresentation as StoredPathRepresentation | undefined,
+        )
+      if (
+        !row ||
+        row.projectId !== attempt.projectId ||
+        row.status !== "pending" ||
+        row.updatedAt !== association.expectedUpdatedAt ||
+        repoPath !== association.repoPath
+      ) {
+        throw new Error("A publish association is no longer pending at its planned snapshot")
+      }
+    }
+    for (const association of attempt.mediaAssociations) {
+      const row = await ctx.db.get(association.mediaOpId)
+      if (
+        !row ||
+        row.projectId !== attempt.projectId ||
+        row.status !== "pending" ||
+        row.updatedAt !== association.expectedUpdatedAt ||
+        canonicalGitPathFromUrlPath(row.repoPath) !== association.repoPath
+      ) {
+        throw new Error("A publish media association is no longer pending at its planned snapshot")
+      }
+    }
+    for (const association of attempt.documentAssociations) {
+      const document = await ctx.db.get(association.documentId)
+      const repoPath =
+        document &&
+        resolveStoredRepoPath(
+          access.project.contentRoot,
+          document.filePath,
+          document.pathRepresentation as StoredPathRepresentation | undefined,
+        )
+      if (
+        !document ||
+        document.projectId !== attempt.projectId ||
+        document.updatedAt !== association.expectedUpdatedAt ||
+        repoPath !== association.repoPath ||
+        (association.contentVersion !== undefined && (document.contentVersion ?? 0) !== association.contentVersion)
+      ) {
+        throw new Error("A publish document association is no longer pending at its planned snapshot")
+      }
     }
     await ctx.db.patch(args.id, { status: "superseded", updatedAt: Date.now() })
   },

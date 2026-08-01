@@ -2,7 +2,7 @@ import { v } from "convex/values"
 import { verifyServerQueryToken } from "../lib/project-access-token"
 import { mutation } from "./_generated/server"
 import { invalidateClosedLaneSync } from "./lib/laneInvalidation"
-import { finalizeMergedLaneSync } from "./lib/laneMerge"
+import { recordMergedLaneAuthority } from "./lib/publishBranchMerge"
 
 /**
  * Handle a GitHub PR merge event.
@@ -20,6 +20,10 @@ export const handlePRMerged = mutation({
     // stored: it is a git commit SHA, not a blob SHA, and storing it would
     // break conflict detection (which compares blob SHAs).
     mergeCommitSha: v.string(),
+    repoOwner: v.string(),
+    repoName: v.string(),
+    headRepoFullName: v.string(),
+    headBranch: v.string(),
     serverQueryToken: v.string(),
   },
   handler: async (ctx, args) => {
@@ -27,21 +31,32 @@ export const handlePRMerged = mutation({
       throw new Error("Unauthorized")
     }
 
-    const publishBranch = await ctx.db
+    const candidates = await ctx.db
       .query("publishBranches")
       .withIndex("by_prNumber", (q) => q.eq("prNumber", args.prNumber))
-      .first()
+      .take(20)
+
+    let publishBranch = null
+    for (const candidate of candidates) {
+      const project = await ctx.db.get(candidate.projectId)
+      if (
+        project &&
+        typeof project.repoOwner === "string" &&
+        typeof project.repoName === "string" &&
+        project.repoOwner.toLowerCase() === args.repoOwner.toLowerCase() &&
+        project.repoName.toLowerCase() === args.repoName.toLowerCase() &&
+        candidate.branchName === args.headBranch
+      ) {
+        if (publishBranch) throw new Error("Ambiguous RepoPress publish lane for merged pull request")
+        publishBranch = candidate
+      }
+    }
 
     if (!publishBranch) {
       // Not a RepoPress PR -- ignore silently
       return
     }
-
-    await ctx.db.patch(publishBranch._id, {
-      status: "merged",
-      updatedAt: Date.now(),
-    })
-    await finalizeMergedLaneSync(ctx, { ...publishBranch, status: "merged" })
+    await recordMergedLaneAuthority(ctx, publishBranch, args)
   },
 })
 
@@ -74,8 +89,15 @@ export const handlePRClosed = mutation({
 
     await ctx.db.patch(publishBranch._id, {
       status: "closed",
+      laneInvalidationPending: true,
+      laneCleanupAction: "restore_legacy",
       updatedAt: Date.now(),
     })
-    await invalidateClosedLaneSync(ctx, { ...publishBranch, status: "closed" })
+    await invalidateClosedLaneSync(ctx, {
+      ...publishBranch,
+      status: "closed",
+      laneInvalidationPending: true,
+      laneCleanupAction: "restore_legacy",
+    })
   },
 })

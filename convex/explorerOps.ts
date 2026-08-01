@@ -393,12 +393,14 @@ export const markCommitted = mutation({
     const deletedDocumentByOpId = new Map(
       (args.deleteAssociations ?? []).map((association) => [association.opId, association]),
     )
-    // This mutation runs AFTER the GitHub commit has landed, so it must never
+    // This mutation runs AFTER the lane commit has landed, so it must never
     // throw for a single bad association: throwing would roll back the whole
     // batch, leave every op "pending" against an already-published commit, and
-    // make a retry re-commit committed work. Association-level problems skip
-    // the destructive document clear (fail closed) while the op status still
-    // records reality.
+    // make a retry re-commit committed work. Association-level problems are
+    // reported while the op status still records reality. A valid delete does
+    // NOT clear its document here: the lane can still close without merging,
+    // so its recoverable draft bytes remain intact until immutable merge-tree
+    // verification finalizes that exact attempt.
     const skippedDeleteAssociations: Array<{
       opId: (typeof args.ids)[number]
       documentId: Id<"documents">
@@ -471,13 +473,6 @@ export const markCommitted = mutation({
               skip("association-path-mismatch")
             } else if (associatedDocument.updatedAt !== deleteAssociation.expectedUpdatedAt) {
               skip("document-changed-after-snapshot")
-            } else {
-              await ctx.db.patch(associatedDocument._id, {
-                body: undefined,
-                frontmatter: undefined,
-                contentVersion: (associatedDocument.contentVersion ?? 0) + 1,
-                updatedAt: now,
-              })
             }
           }
         }

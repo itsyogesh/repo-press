@@ -16,7 +16,7 @@ vi.mock("@/convex/auth", () => ({
 
 import { CLEANUP_BATCH_SIZE } from "@/convex/lib/publishAttemptCleanup"
 import { continueCleanup } from "@/convex/publishAttemptCleanups"
-import { resolveAndEnqueueCleanup } from "@/convex/publishAttempts"
+import { getActiveForProject, resolveAndEnqueueCleanup, supersedeClosedPending } from "@/convex/publishAttempts"
 
 type Row = Record<string, any> & { _id: string }
 
@@ -76,6 +76,7 @@ function createCtx(initialRows: Row[]) {
     ["publishBranches", initialRows.filter((row) => row._id.startsWith("lane_"))],
     ["publishAttempts", initialRows.filter((row) => row._id.startsWith("attempt_"))],
     ["publishAttemptCleanups", initialRows.filter((row) => row._id.startsWith("cleanup_"))],
+    ["publishLanePathResolutions", initialRows.filter((row) => row._id.startsWith("claim_"))],
     ["explorerOps", initialRows.filter((row) => row._id.startsWith("op_"))],
     ["mediaOps", initialRows.filter((row) => row._id.startsWith("media_"))],
     ["documents", initialRows.filter((row) => row._id.startsWith("doc_"))],
@@ -99,6 +100,7 @@ function createCtx(initialRows: Row[]) {
     )
   const chain = (rows: Row[]) => ({
     first: vi.fn(async () => rows[0] ?? null),
+    order: vi.fn((_direction: string) => chain([...rows].sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0)))),
     take: vi.fn(async (count: number) => rows.slice(0, count)),
     collect: vi.fn(async () => {
       throw new Error("cleanup must not call collect")
@@ -111,7 +113,12 @@ function createCtx(initialRows: Row[]) {
     Object.assign(row, values)
   })
   const insert = vi.fn(async (table: string, values: Record<string, unknown>) => {
-    const id = table === "publishAttemptCleanups" ? "cleanup_1" : `${table}_${(tables.get(table) ?? []).length + 1}`
+    const id =
+      table === "publishAttemptCleanups"
+        ? "cleanup_1"
+        : table === "publishLanePathResolutions"
+          ? `claim_${(tables.get(table) ?? []).length + 1}`
+          : `${table}_${(tables.get(table) ?? []).length + 1}`
     const row = { _id: id, ...values } as Row
     tables.set(table, [...(tables.get(table) ?? []), row])
     return id
@@ -160,6 +167,30 @@ describe("publish attempt cleanup enqueue", () => {
     safeGetAuthUserMock.mockResolvedValue({ _id: "user_owner" })
   })
 
+  it("selects unresolved merged-lane attempts newest-first across statuses", async () => {
+    const olderCommitting = { ...attempt, status: "committing", createdAt: 1, updatedAt: 1 }
+    const newerReconciled = {
+      ...attempt,
+      _id: "attempt_2",
+      status: "reconciled",
+      createdAt: 2,
+      updatedAt: 2,
+    }
+    const ctx = createCtx([
+      { ...project },
+      { ...lane, mergeCommitSha: "3".repeat(40), mergeVerificationState: "pending" },
+      olderCommitting,
+      newerReconciled,
+    ])
+
+    const selected = await (getActiveForProject as any).handler(ctx, {
+      projectId: "project_1",
+      userId: "user_owner",
+    })
+
+    expect(selected?._id).toBe("attempt_2")
+  })
+
   it("atomically installs an immutable cleanup plan, keeps the guard active, and schedules it", async () => {
     const ctx = createCtx([{ ...project }, { ...lane }, { ...attempt }])
 
@@ -187,6 +218,128 @@ describe("publish attempt cleanup enqueue", () => {
       expect.objectContaining({ status: "cleanup_pending", cleanupId: "cleanup_1" }),
     )
     expect(ctx.scheduler.runAfter).toHaveBeenCalledWith(0, expect.anything(), { cleanupId: "cleanup_1" })
+  })
+
+  it("persists a discard outcome when a newer merged attempt already claimed the final path", async () => {
+    const singlePathAttempt = {
+      ...attempt,
+      operationDescriptors: [{ path: "content/a.mdx", action: "update", expectedBlobSha: "b".repeat(40) }],
+      operationPaths: ["content/a.mdx"],
+      mediaAssociations: [],
+    }
+    const ctx = createCtx([
+      { ...project },
+      { ...lane, mergeCommitSha: "3".repeat(40), mergeVerificationState: "pending" },
+      singlePathAttempt,
+      {
+        _id: "claim_newer",
+        projectId: "project_1",
+        laneId: "lane_1",
+        authoritySha: "3".repeat(40),
+        repoPath: "content/a.mdx",
+        claimedAttemptId: "attempt_2",
+        createdAt: 20,
+        updatedAt: 20,
+      },
+    ])
+
+    await (resolveAndEnqueueCleanup as any).handler(ctx, {
+      id: "attempt_1",
+      authoritySha: "3".repeat(40),
+      pathOutcomes: [{ path: "content/a.mdx", disposition: "finalize", finalBlobSha: "b".repeat(40) }],
+      arbitrateMergedPaths: true,
+      userId: "user_owner",
+    })
+
+    expect(ctx.db.insert).toHaveBeenCalledWith(
+      "publishAttemptCleanups",
+      expect.objectContaining({
+        pathOutcomes: [{ path: "content/a.mdx", disposition: "discard" }],
+      }),
+    )
+  })
+
+  it("allows a merged committing attempt without an original commit SHA to install exact cleanup", async () => {
+    const committing = {
+      ...attempt,
+      status: "committing",
+      commitSha: undefined,
+      operationDescriptors: [{ path: "content/a.mdx", action: "update", expectedBlobSha: "b".repeat(40) }],
+      operationPaths: ["content/a.mdx"],
+      mediaAssociations: [],
+    }
+    const ctx = createCtx([
+      { ...project },
+      { ...lane, mergeCommitSha: "3".repeat(40), mergeVerificationState: "pending" },
+      committing,
+    ])
+
+    await expect(
+      (resolveAndEnqueueCleanup as any).handler(ctx, {
+        id: "attempt_1",
+        authoritySha: "3".repeat(40),
+        pathOutcomes: [{ path: "content/a.mdx", disposition: "finalize", finalBlobSha: "b".repeat(40) }],
+        arbitrateMergedPaths: true,
+        userId: "user_owner",
+      }),
+    ).resolves.toEqual({ cleanupId: "cleanup_1", reused: false })
+
+    expect(ctx.db.patch).not.toHaveBeenCalledWith(
+      "attempt_1",
+      expect.objectContaining({ commitSha: expect.any(String) }),
+    )
+  })
+
+  it("supersedes a closed committing attempt only while every exact association remains pending", async () => {
+    const committing = {
+      ...attempt,
+      status: "committing",
+      commitSha: undefined,
+      mediaAssociations: [],
+    }
+    const pendingOp = {
+      _id: "op_1",
+      projectId: "project_1",
+      repoPath: "content/a.mdx",
+      filePath: "a.mdx",
+      pathRepresentation: "content_relative_v1",
+      opType: "update",
+      status: "pending",
+      updatedAt: 10,
+    }
+    const doc = {
+      _id: "doc_1",
+      projectId: "project_1",
+      filePath: "a.mdx",
+      pathRepresentation: "content_relative_v1",
+      status: "draft",
+      updatedAt: 10,
+      contentVersion: 3,
+    }
+    const ctx = createCtx([
+      { ...project, contentRoot: "content" },
+      { ...lane, status: "closed" },
+      committing,
+      pendingOp,
+      doc,
+    ])
+
+    await expect(
+      (supersedeClosedPending as any).handler(ctx, { id: "attempt_1", userId: "user_owner" }),
+    ).resolves.toBeUndefined()
+    expect(ctx.db.patch).toHaveBeenCalledWith("attempt_1", expect.objectContaining({ status: "superseded" }))
+
+    const raced = createCtx([
+      { ...project, contentRoot: "content" },
+      { ...lane, status: "closed" },
+      { ...committing, status: "committing", commitSha: undefined },
+      { ...pendingOp, status: "undone" },
+      { ...doc },
+    ])
+    await expect(
+      (supersedeClosedPending as any).handler(raced, { id: "attempt_1", userId: "user_owner" }),
+    ).rejects.toThrow(/no longer pending/i)
+    expect(raced.db.patch).not.toHaveBeenCalledWith("attempt_1", expect.objectContaining({ status: "superseded" }))
   })
 
   it("reuses an identical plan without duplicating it and fails closed on a conflicting replay", async () => {
@@ -288,6 +441,202 @@ describe("bounded attempt-scoped cleanup continuation", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     safeGetAuthUserMock.mockResolvedValue({ _id: "user_owner" })
+  })
+
+  it("finalizes exact pending associations for a merged committing attempt without fabricating its commit SHA", async () => {
+    const noCommitAttempt = {
+      ...attempt,
+      status: "cleanup_pending",
+      commitSha: undefined,
+      operationDescriptors: [{ path: "content/a.mdx", action: "update", expectedBlobSha: "b".repeat(40) }],
+      operationPaths: ["content/a.mdx"],
+      mediaAssociations: [],
+      cleanupId: "cleanup_1",
+    }
+    const ctx = createCtx([
+      { ...project },
+      { ...lane, mergeCommitSha: "3".repeat(40), mergeVerificationState: "pending" },
+      noCommitAttempt,
+      cleanupRow({
+        pathOutcomes: [{ path: "content/a.mdx", disposition: "finalize", finalBlobSha: "b".repeat(40) }],
+        authoritySha: "3".repeat(40),
+      }),
+      {
+        _id: "op_1",
+        projectId: "project_1",
+        filePath: "a.mdx",
+        repoPath: "content/a.mdx",
+        opType: "update",
+        status: "pending",
+        updatedAt: 10,
+      },
+      {
+        _id: "doc_1",
+        projectId: "project_1",
+        filePath: "a.mdx",
+        contentVersion: 3,
+        updatedAt: 10,
+        status: "draft",
+      },
+    ])
+
+    for (let pass = 0; pass < 4; pass += 1) {
+      await (continueCleanup as any).handler(ctx, { cleanupId: "cleanup_1" })
+    }
+
+    expect(ctx.db.delete).toHaveBeenCalledWith("op_1")
+    expect(ctx.db.patch).toHaveBeenCalledWith(
+      "doc_1",
+      expect.objectContaining({
+        status: "published",
+        githubSha: "b".repeat(40),
+        publishedProvenance: expect.objectContaining({
+          publishAttemptId: "attempt_1",
+          commitSha: "3".repeat(40),
+          publishedContentVersion: 3,
+        }),
+      }),
+    )
+    expect(ctx.db.patch).not.toHaveBeenCalledWith(
+      "attempt_1",
+      expect.objectContaining({ commitSha: expect.any(String) }),
+    )
+    expect(ctx.db.patch).toHaveBeenCalledWith("lane_1", expect.objectContaining({ mergeVerificationState: "complete" }))
+  })
+
+  it("clears an unchanged deleted document only after the merge tree verifies the deletion", async () => {
+    const deleteAttempt = {
+      ...attempt,
+      status: "cleanup_pending",
+      cleanupId: "cleanup_1",
+      operationDescriptors: [{ path: "content/a.mdx", action: "delete" }],
+      operationPaths: ["content/a.mdx"],
+      mediaAssociations: [],
+      documentAssociations: [],
+      deleteAssociations: [{ opId: "op_1", documentId: "doc_1", expectedUpdatedAt: 10 }],
+    }
+    const ctx = createCtx([
+      { ...project },
+      { ...lane, mergeCommitSha: "3".repeat(40), mergeVerificationState: "pending" },
+      deleteAttempt,
+      cleanupRow({ pathOutcomes: [{ path: "content/a.mdx", disposition: "finalize" }] }),
+      {
+        _id: "op_1",
+        projectId: "project_1",
+        filePath: "a.mdx",
+        pathRepresentation: "content_relative_v1",
+        repoPath: "content/a.mdx",
+        opType: "delete",
+        status: "committed",
+        publishBranchId: "lane_1",
+        publishAttemptId: "attempt_1",
+        commitSha: "1".repeat(40),
+        updatedAt: 20,
+      },
+      {
+        _id: "doc_1",
+        projectId: "project_1",
+        filePath: "a.mdx",
+        pathRepresentation: "content_relative_v1",
+        status: "draft",
+        body: "recoverable until merge",
+        frontmatter: { title: "A" },
+        contentVersion: 3,
+        updatedAt: 10,
+      },
+    ])
+
+    await (continueCleanup as any).handler(ctx, { cleanupId: "cleanup_1" })
+
+    expect(ctx.db.patch).toHaveBeenCalledWith(
+      "doc_1",
+      expect.objectContaining({ body: undefined, frontmatter: undefined, contentVersion: 4 }),
+    )
+    expect(ctx.db.delete).toHaveBeenCalledWith("op_1")
+  })
+
+  it("restores a closed-lane delete without clearing its recoverable document", async () => {
+    const deleteAttempt = {
+      ...attempt,
+      status: "cleanup_pending",
+      cleanupId: "cleanup_1",
+      operationDescriptors: [{ path: "content/a.mdx", action: "delete" }],
+      operationPaths: ["content/a.mdx"],
+      mediaAssociations: [],
+      documentAssociations: [],
+      deleteAssociations: [{ opId: "op_1", documentId: "doc_1", expectedUpdatedAt: 10 }],
+    }
+    const ctx = createCtx([
+      { ...project },
+      { ...lane, status: "closed" },
+      deleteAttempt,
+      cleanupRow({ authoritySha: undefined, pathOutcomes: [{ path: "content/a.mdx", disposition: "restore" }] }),
+      {
+        _id: "op_1",
+        projectId: "project_1",
+        filePath: "a.mdx",
+        pathRepresentation: "content_relative_v1",
+        repoPath: "content/a.mdx",
+        opType: "delete",
+        status: "committed",
+        publishBranchId: "lane_1",
+        publishAttemptId: "attempt_1",
+        commitSha: "1".repeat(40),
+        updatedAt: 20,
+      },
+      {
+        _id: "doc_1",
+        projectId: "project_1",
+        filePath: "a.mdx",
+        pathRepresentation: "content_relative_v1",
+        status: "draft",
+        body: "must survive",
+        frontmatter: { title: "A" },
+        contentVersion: 3,
+        updatedAt: 10,
+      },
+    ])
+
+    await (continueCleanup as any).handler(ctx, { cleanupId: "cleanup_1" })
+
+    expect(ctx.db.patch).toHaveBeenCalledWith("op_1", expect.objectContaining({ status: "pending" }))
+    expect(ctx.db.patch).not.toHaveBeenCalledWith(
+      "doc_1",
+      expect.objectContaining({ body: undefined, frontmatter: undefined }),
+    )
+  })
+
+  it("persists and executes discard without restoring stale intent", async () => {
+    const ctx = createCtx([
+      { ...project },
+      { ...lane, mergeCommitSha: "3".repeat(40), mergeVerificationState: "pending" },
+      {
+        ...attempt,
+        status: "cleanup_pending",
+        cleanupId: "cleanup_1",
+        operationDescriptors: [{ path: "content/a.mdx", action: "update", expectedBlobSha: "b".repeat(40) }],
+        operationPaths: ["content/a.mdx"],
+        mediaAssociations: [],
+      },
+      cleanupRow({ pathOutcomes: [{ path: "content/a.mdx", disposition: "discard" }] }),
+      {
+        _id: "op_1",
+        projectId: "project_1",
+        filePath: "a.mdx",
+        repoPath: "content/a.mdx",
+        opType: "update",
+        status: "committed",
+        publishBranchId: "lane_1",
+        publishAttemptId: "attempt_1",
+        commitSha: "1".repeat(40),
+        updatedAt: 10,
+      },
+    ])
+
+    await (continueCleanup as any).handler(ctx, { cleanupId: "cleanup_1" })
+
+    expect(ctx.db.delete).toHaveBeenCalledWith("op_1")
+    expect(ctx.db.patch).not.toHaveBeenCalledWith("op_1", expect.objectContaining({ status: "pending" }))
   })
 
   it("processes mixed explorer outcomes by exact attempt ownership and isolates a reused lane", async () => {

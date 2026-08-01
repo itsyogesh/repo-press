@@ -219,6 +219,11 @@ export function useStudioQueries(
     projectId ? { projectId: projectId as Id<"projects">, ...queryAuth } : "skip",
   )
 
+  const statusSyncLane = useQuery(
+    api.publishBranches.getStatusSyncCandidateForProject,
+    projectId ? { projectId: projectId as Id<"projects">, ...queryAuth } : "skip",
+  )
+
   const openPublishLanes = useQuery(
     api.publishBranches.listOpenForProject,
     projectId ? { projectId: projectId as Id<"projects">, ...queryAuth } : "skip",
@@ -363,6 +368,7 @@ export function useStudioQueries(
     overlayTree,
     opCounts,
     currentPublishLane,
+    statusSyncLane,
     openPublishLanes,
     activeBranch: currentPublishLane,
     dirtyDocs,

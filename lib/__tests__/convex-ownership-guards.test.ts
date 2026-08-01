@@ -326,7 +326,7 @@ describe("Convex ownership guards", () => {
       "content/docs/guides/cafe\u0301.mdx",
       undefined,
     ],
-  ])("atomically clears the associated %s dirty document when a delete is committed", async (_label, opFilePath, opPathRepresentation, docFilePath, docPathRepresentation) => {
+  ])("preserves the associated %s dirty document until merge verification", async (_label, opFilePath, opPathRepresentation, docFilePath, docPathRepresentation) => {
     const patch = vi.fn()
     const ctx = createCtx({
       get: vi
@@ -361,10 +361,7 @@ describe("Convex ownership guards", () => {
       userId: "user_owner",
     })
 
-    expect(patch).toHaveBeenCalledWith(
-      "doc_dirty",
-      expect.objectContaining({ body: undefined, frontmatter: undefined }),
-    )
+    expect(patch).not.toHaveBeenCalledWith("doc_dirty", expect.anything())
     expect(patch).toHaveBeenCalledWith("op_delete", expect.objectContaining({ status: "committed" }))
   })
 

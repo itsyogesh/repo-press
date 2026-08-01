@@ -137,7 +137,7 @@ describe("markCommitted post-commit reconciliation", () => {
     })
   })
 
-  it("clears the associated document when the snapshot still matches", async () => {
+  it("preserves the associated document until the lane merge is verified", async () => {
     const patch = vi.fn()
     const get = vi.fn().mockResolvedValueOnce(pendingDeleteOp).mockResolvedValueOnce(project).mockResolvedValueOnce({
       _id: "doc_1",
@@ -155,7 +155,7 @@ describe("markCommitted post-commit reconciliation", () => {
       projectAccessToken: await patToken(),
     })
 
-    expect(patch).toHaveBeenCalledWith("doc_1", expect.objectContaining({ body: undefined, frontmatter: undefined }))
+    expect(patch).not.toHaveBeenCalledWith("doc_1", expect.anything())
     expect(patch).toHaveBeenCalledWith("op_delete", expect.objectContaining({ status: "committed" }))
     expect(result).toEqual({ skippedDeleteAssociations: [], unreconciledOpIds: [] })
   })

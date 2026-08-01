@@ -48,6 +48,7 @@ describe("useStudioQueries path ingress", () => {
       .mockReturnValueOnce([])
       .mockReturnValueOnce([])
       .mockReturnValueOnce(null)
+      .mockReturnValueOnce(null)
       .mockReturnValueOnce([])
       .mockReturnValueOnce([])
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: vi.fn().mockResolvedValue({ ok: true }) }))
@@ -85,6 +86,7 @@ describe("useStudioQueries path ingress", () => {
       ])
       .mockReturnValueOnce([])
       .mockReturnValueOnce(null)
+      .mockReturnValueOnce(null)
       .mockReturnValueOnce([])
       .mockReturnValueOnce([{ _id: "doc_dirty", filePath: "content/docs/guides/edit.mdx" }])
 
@@ -120,6 +122,7 @@ describe("useStudioQueries path ingress", () => {
       .mockReturnValueOnce([])
       .mockReturnValueOnce([])
       .mockReturnValueOnce([])
+      .mockReturnValueOnce(null)
       .mockReturnValueOnce(null)
       .mockReturnValueOnce([])
       .mockReturnValueOnce([])

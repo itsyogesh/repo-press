@@ -715,48 +715,6 @@ export async function getCommitDetailsForPublish(
   }
 }
 
-/** Upper bound on PR commits scanned during merged-lane recovery. GitHub's
- * list endpoint itself stops at 250. */
-const MAX_PR_COMMITS_FOR_PUBLISH = 250
-
-/**
- * List a pull request's commits (message + parents) for publish-attempt
- * recovery on a MERGED lane: the head branch may already be deleted, but the
- * merged PR's commit list survives and is exactly the set of lane commits
- * that reached the base branch. Throws GitHubReadError on any failure -
- * recovery decisions must not run on ambiguous evidence.
- */
-export async function getPullRequestCommitsForPublish(
-  accessToken: string,
-  owner: string,
-  repo: string,
-  prNumber: number,
-): Promise<Array<{ sha: string; message: string; parents: string[] }>> {
-  assertRepository(owner, repo)
-  if (!Number.isInteger(prNumber) || prNumber <= 0) throw new TypeError("PR number must be a positive integer")
-  const octokit = createGitHubClient(accessToken)
-  try {
-    const commits: Array<{ sha: string; message: string; parents: string[] }> = []
-    for (let page = 1; commits.length < MAX_PR_COMMITS_FOR_PUBLISH; page += 1) {
-      const { data } = await octokit.pulls.listCommits({ owner, repo, pull_number: prNumber, per_page: 100, page })
-      for (const entry of data) {
-        commits.push({
-          sha: entry.sha,
-          message: entry.commit.message,
-          parents: entry.parents.map((parent) => parent.sha),
-        })
-      }
-      if (data.length < 100) break
-    }
-    return commits.slice(0, MAX_PR_COMMITS_FOR_PUBLISH)
-  } catch (error: any) {
-    throw new GitHubReadError(
-      `GitHub PR commit list failed for #${prNumber} (status: ${error?.status ?? "unknown"})`,
-      error,
-    )
-  }
-}
-
 export async function deleteBranchRef(accessToken: string, owner: string, repo: string, branch: string): Promise<void> {
   assertRepository(owner, repo)
   assertBranch(branch)

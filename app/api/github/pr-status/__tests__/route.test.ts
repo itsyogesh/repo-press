@@ -34,7 +34,13 @@ function makeRequest(params: Record<string, string> = {}): Request {
   return new Request(url.toString())
 }
 
-function mockOctokit(prData: { state: string; merged: boolean }) {
+function mockOctokit(prData: {
+  state: string
+  merged: boolean
+  merge_commit_sha?: string | null
+  head?: { ref: string; repo: { full_name: string } | null }
+  base?: { ref: string }
+}) {
   createGitHubClientMock.mockReturnValue({
     rest: {
       pulls: {
@@ -60,7 +66,13 @@ describe("GET /api/github/pr-status", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     getGitHubTokenMock.mockResolvedValue(TOKEN)
-    mockOctokit({ state: "open", merged: false })
+    mockOctokit({
+      state: "open",
+      merged: false,
+      merge_commit_sha: null,
+      head: { ref: "repopress/start", repo: { full_name: "acme/docs" } },
+      base: { ref: "main" },
+    })
   })
 
   // ── Auth ──
@@ -113,23 +125,70 @@ describe("GET /api/github/pr-status", () => {
   // ── Happy path ──
 
   it("returns state and merged for an open PR", async () => {
-    mockOctokit({ state: "open", merged: false })
+    mockOctokit({
+      state: "open",
+      merged: false,
+      merge_commit_sha: null,
+      head: { ref: "repopress/start", repo: { full_name: "acme/docs" } },
+      base: { ref: "main" },
+    })
 
     const res = await GET(makeRequest({ owner: "acme", repo: "docs", prNumber: "42" }))
     const body = await res.json()
 
     expect(res.status).toBe(200)
-    expect(body).toEqual({ state: "open", merged: false })
+    expect(body).toEqual({
+      state: "open",
+      merged: false,
+      mergeCommitSha: null,
+      headRef: "repopress/start",
+      headRepoFullName: "acme/docs",
+      baseRef: "main",
+    })
   })
 
   it("returns state and merged for a merged PR", async () => {
-    mockOctokit({ state: "closed", merged: true })
+    mockOctokit({
+      state: "closed",
+      merged: true,
+      merge_commit_sha: "a".repeat(40),
+      head: { ref: "repopress/start", repo: { full_name: "acme/docs" } },
+      base: { ref: "main" },
+    })
 
     const res = await GET(makeRequest({ owner: "acme", repo: "docs", prNumber: "99" }))
     const body = await res.json()
 
     expect(res.status).toBe(200)
-    expect(body).toEqual({ state: "closed", merged: true })
+    expect(body).toEqual({
+      state: "closed",
+      merged: true,
+      mergeCommitSha: "a".repeat(40),
+      headRef: "repopress/start",
+      headRepoFullName: "acme/docs",
+      baseRef: "main",
+    })
+  })
+
+  it.each([
+    null,
+    "not-a-sha",
+    "A".repeat(40),
+  ])("fails closed when a merged PR has malformed merge authority: %s", async (mergeCommitSha) => {
+    mockOctokit({
+      state: "closed",
+      merged: true,
+      merge_commit_sha: mergeCommitSha,
+      head: { ref: "repopress/start", repo: { full_name: "acme/docs" } },
+      base: { ref: "main" },
+    })
+
+    const res = await GET(makeRequest({ owner: "acme", repo: "docs", prNumber: "99" }))
+
+    expect(res.status).toBe(502)
+    await expect(res.json()).resolves.toEqual(
+      expect.objectContaining({ error: expect.stringContaining("merge commit") }),
+    )
   })
 
   // ── Error handling ──
