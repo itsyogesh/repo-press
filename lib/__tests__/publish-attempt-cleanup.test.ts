@@ -308,6 +308,8 @@ describe("publish attempt cleanup enqueue", () => {
         authoritySha: "3".repeat(40),
         repoPath: "content/a.mdx",
         claimedAttemptId: "attempt_2",
+        finalPathState: "blob",
+        finalBlobSha: "c".repeat(40),
         createdAt: 20,
         updatedAt: 20,
       },
@@ -317,6 +319,46 @@ describe("publish attempt cleanup enqueue", () => {
       id: "attempt_1",
       authoritySha: "3".repeat(40),
       pathOutcomes: [{ path: "content/a.mdx", disposition: "finalize", finalBlobSha: "b".repeat(40) }],
+      serverQueryToken,
+      userId: "user_owner",
+    })
+
+    expect(ctx.db.insert).toHaveBeenCalledWith(
+      "publishAttemptCleanups",
+      expect.objectContaining({
+        pathOutcomes: [{ path: "content/a.mdx", disposition: "discard", finalBlobSha: "c".repeat(40) }],
+      }),
+    )
+  })
+
+  it("persists verified absence when a newer merged attempt claimed a deleted final path", async () => {
+    const singlePathAttempt = {
+      ...attempt,
+      operationDescriptors: [{ path: "content/a.mdx", action: "update", expectedBlobSha: "b".repeat(40) }],
+      operationPaths: ["content/a.mdx"],
+      mediaAssociations: [],
+    }
+    const ctx = createCtx([
+      { ...project },
+      { ...lane },
+      singlePathAttempt,
+      {
+        _id: "claim_newer",
+        projectId: "project_1",
+        laneId: "lane_1",
+        authoritySha: "3".repeat(40),
+        repoPath: "content/a.mdx",
+        claimedAttemptId: "attempt_2",
+        finalPathState: "absent",
+        createdAt: 20,
+        updatedAt: 20,
+      },
+    ])
+
+    await (resolveAndEnqueueCleanup as any).handler(ctx, {
+      id: "attempt_1",
+      authoritySha: "3".repeat(40),
+      pathOutcomes: [{ path: "content/a.mdx", disposition: "restore" }],
       serverQueryToken,
       userId: "user_owner",
     })
@@ -1473,6 +1515,56 @@ describe("bounded attempt-scoped cleanup continuation", () => {
 
     expect(ctx.db.delete).toHaveBeenCalledWith("op_1")
     expect(ctx.db.patch).not.toHaveBeenCalledWith("op_1", expect.objectContaining({ status: "pending" }))
+  })
+
+  it.each([
+    ["blob", "c".repeat(40)],
+    ["absent", undefined],
+  ] as const)("applies the newer merged attempt's %s baseline while discarding older provenance", async (state, finalBlobSha) => {
+    const ctx = createCtx([
+      { ...project },
+      { ...lane },
+      {
+        ...attempt,
+        status: "cleanup_pending",
+        cleanupId: "cleanup_1",
+        opIds: [],
+        explorerAssociations: [],
+        mediaAssociations: [],
+        operationDescriptors: [{ path: "content/a.mdx", action: "update", expectedBlobSha: "b".repeat(40) }],
+        operationPaths: ["content/a.mdx"],
+      },
+      cleanupRow({
+        phase: "documents",
+        pathOutcomes: [{ path: "content/a.mdx", disposition: "discard", ...(finalBlobSha ? { finalBlobSha } : {}) }],
+      }),
+      {
+        _id: "doc_1",
+        projectId: "project_1",
+        updatedAt: 10,
+        contentVersion: 3,
+        githubSha: "b".repeat(40),
+        gitBaselineState: "blob",
+        publishedProvenance: {
+          authorityKind: "lane",
+          authorityBranch: "repopress/start",
+          publishBranchId: "lane_1",
+          publishAttemptId: "attempt_1",
+          commitSha: "1".repeat(40),
+          contentRevision: "e".repeat(64),
+          publishedContentVersion: 3,
+          publishedUpdatedAt: 10,
+        },
+      },
+    ])
+
+    await (continueCleanup as any).handler(ctx, { cleanupId: "cleanup_1" })
+
+    expect(ctx.db.patch).toHaveBeenCalledWith("doc_1", {
+      githubSha: finalBlobSha,
+      gitBaselineState: state,
+      publishedProvenance: undefined,
+    })
   })
 
   it("processes mixed explorer outcomes by exact attempt ownership and isolates a reused lane", async () => {

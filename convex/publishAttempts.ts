@@ -450,7 +450,17 @@ export const resolveAndEnqueueCleanup = mutation({
           )
           .first()
         if (existingClaim && existingClaim.claimedAttemptId !== attempt._id) {
-          arbitrated.push({ path: outcome.path, disposition: "discard" })
+          if (
+            !existingClaim.finalPathState ||
+            (existingClaim.finalPathState === "blob" && !existingClaim.finalBlobSha)
+          ) {
+            throw new Error("Merged path claim is missing its persisted final-tree baseline")
+          }
+          arbitrated.push({
+            path: outcome.path,
+            disposition: "discard",
+            ...(existingClaim.finalPathState === "blob" ? { finalBlobSha: existingClaim.finalBlobSha } : {}),
+          })
           continue
         }
         if (!existing && !existingClaim && outcome.disposition === "finalize") {
@@ -461,6 +471,8 @@ export const resolveAndEnqueueCleanup = mutation({
             authoritySha: mergeAuthoritySha,
             repoPath: outcome.path,
             claimedAttemptId: attempt._id,
+            finalPathState: outcome.finalBlobSha ? "blob" : "absent",
+            ...(outcome.finalBlobSha ? { finalBlobSha: outcome.finalBlobSha } : {}),
             createdAt: now,
             updatedAt: now,
           })

@@ -622,6 +622,10 @@ export default defineSchema({
     authoritySha: v.string(),
     repoPath: v.string(),
     claimedAttemptId: v.id("publishAttempts"),
+    // Optional only for pre-migration claims; recovery fails closed until
+    // such a claim can be reviewed rather than guessing its final baseline.
+    finalPathState: v.optional(v.union(v.literal("absent"), v.literal("blob"))),
+    finalBlobSha: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index("by_lane_authority_path", ["laneId", "authoritySha", "repoPath"]),

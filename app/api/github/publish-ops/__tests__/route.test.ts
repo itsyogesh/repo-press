@@ -1332,6 +1332,36 @@ describe("POST /api/github/publish-ops", () => {
     )
   })
 
+  it("republishes from the newer merged blob baseline after an older attempt is discarded", async () => {
+    const finalSha = "c".repeat(40)
+    mockPublishQueries({
+      dirtyDocs: [
+        {
+          _id: "doc_reused_lane",
+          filePath: "guides/reused.mdx",
+          body: "# Next edit",
+          frontmatter: {},
+          updatedAt: 10,
+          githubSha: finalSha,
+          gitBaselineState: "blob",
+        },
+      ],
+    })
+    vi.mocked(getFileForPublish).mockImplementation(async (...callArgs: unknown[]) => {
+      const path = String(callArgs[3])
+      const ref = String(callArgs[4])
+      if (ref === "authority-sha-1") {
+        return { status: "found", file: { content: "# Merged C\n", sha: finalSha, name: "", path } }
+      }
+      return { status: "found", file: { content: "", sha: "synced-sha", name: "", path } }
+    })
+
+    const response = await POST(buildRequest({ projectId: "project_123" }))
+
+    expect(response.status).toBe(200)
+    expect(batchCommitPublishLaneAtExpectedHead).toHaveBeenCalled()
+  })
+
   it("rejects duplicate pending operations for the same normalized repository path", async () => {
     mockPublishQueries({
       pendingOps: [

@@ -163,7 +163,9 @@ export function assertValidPublishCleanupPlan({
       continue
     }
     if (outcome.disposition === "discard") {
-      if (outcome.finalBlobSha !== undefined) throw new Error("A discarded publish path cannot carry blob evidence")
+      if (outcome.finalBlobSha !== undefined && (mode.kind !== "merged" || !SHA_PATTERN.test(outcome.finalBlobSha))) {
+        throw new Error("A discarded publish path can carry only valid merged final-tree blob evidence")
+      }
       continue
     }
     if (descriptor.action === "delete") {
