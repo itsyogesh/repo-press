@@ -173,6 +173,21 @@ function boundedUtf8Length(value: string, limit: number): boolean {
   return utf8LengthWithin(value, limit) !== null
 }
 
+export function assertCompatibleSourceArtifactWithinBounds(input: CompatibleSourceArtifact): void {
+  const documentBytes = utf8LengthWithin(input.documentSource, COMPATIBLE_DOCUMENT_MAX_BYTES)
+  if (documentBytes === null) throw new RangeError("Compatible source artifact exceeds its executable budget")
+  let totalSourceBytes = documentBytes
+  if (!input.adapter) return
+  for (const source of Object.values(input.adapter.sources)) {
+    const sourceBytes = utf8LengthWithin(source, COMPATIBLE_ADAPTER_SOURCE_MAX_BYTES)
+    if (sourceBytes === null) throw new RangeError("Compatible source artifact exceeds its executable budget")
+    totalSourceBytes += sourceBytes
+    if (totalSourceBytes > COMPATIBLE_SOURCE_TOTAL_MAX_BYTES) {
+      throw new RangeError("Compatible source artifact exceeds its executable budget")
+    }
+  }
+}
+
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false
   const prototype = Object.getPrototypeOf(value)

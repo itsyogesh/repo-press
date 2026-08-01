@@ -3,6 +3,7 @@ import {
   COMPATIBLE_ARTIFACT_MAX_BYTES,
   parseCompatibleTransferCommand,
   serializeCompatibleArtifactTransfer,
+  serializeSignedCompatiblePreviewResolution,
   verifySignedCompatiblePreviewResolution,
 } from "../compatible-artifact"
 import { createSignedCompatibleFixture } from "./compatible-test-fixture"
@@ -52,6 +53,22 @@ describe("compatible artifact transport", () => {
     sessionId: "session-1",
     snapshotVersion: 1,
   }
+
+  it("uses one canonical source ordering for signed resolution wires", async () => {
+    const fixture = await createSignedCompatibleFixture({
+      adapter: {
+        entryPath: "z-entry.tsx",
+        sources: {
+          "z-entry.tsx": "export default {}",
+          "a-helper.ts": "export const helper = true",
+        },
+      },
+    })
+
+    const wire = serializeSignedCompatiblePreviewResolution(fixture.resolution)
+    const decoded = JSON.parse(wire)
+    expect(Object.keys(decoded.artifact.adapter.sources)).toEqual(["a-helper.ts", "z-entry.tsx"])
+  })
 
   it("requires an independently supplied exact authority context", async () => {
     const { wire, publicKey } = await createSignedCompatibleFixture()

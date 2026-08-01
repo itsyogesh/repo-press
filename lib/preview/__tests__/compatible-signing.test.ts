@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { verifySignedCompatiblePreviewResolution } from "../compatible-artifact"
+import { COMPATIBLE_ADAPTER_SOURCE_MAX_BYTES, verifySignedCompatiblePreviewResolution } from "../compatible-artifact"
 import { signCompatiblePreviewResolution } from "../compatible-signing.server"
 
 vi.mock("server-only", () => ({}))
@@ -159,5 +159,26 @@ describe("compatible preview signer", () => {
         keyId: "preview-key-1",
       }),
     ).rejects.toThrow()
+  })
+
+  it("refuses to sign source outside the verifier's executable budgets", async () => {
+    vi.stubEnv("PREVIEW_APPROVAL_PRIVATE_KEY_JWK", JSON.stringify(await privateJwk()))
+
+    await expect(
+      signCompatiblePreviewResolution({
+        artifact: {
+          ...artifact,
+          adapter: {
+            entryPath: ".repopress/mdx-preview.tsx",
+            sources: {
+              ".repopress/mdx-preview.tsx": "x".repeat(COMPATIBLE_ADAPTER_SOURCE_MAX_BYTES + 1),
+            },
+          },
+        },
+        authority,
+        approvalId: "approval-1",
+        keyId: "preview-key-1",
+      }),
+    ).rejects.toThrow("Compatible source artifact exceeds its executable budget")
   })
 })

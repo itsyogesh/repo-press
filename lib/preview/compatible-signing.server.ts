@@ -2,6 +2,7 @@ import "server-only"
 
 import { z } from "zod"
 import {
+  assertCompatibleSourceArtifactWithinBounds,
   COMPATIBLE_RENDERER_PROFILE,
   type CompatiblePreviewAuthorityContext,
   type CompatibleSourceArtifact,
@@ -108,6 +109,7 @@ export async function signCompatiblePreviewResolution(input: {
   now?: number
 }): Promise<SignedCompatiblePreviewResolution> {
   const artifact = compatibleSourceArtifactSchema.parse(input.artifact)
+  assertCompatibleSourceArtifactWithinBounds(artifact)
   const authorityContext = compatiblePreviewAuthorityContextSchema.parse(input.authority)
   const identifiers = z
     .object({ approvalId: z.string().min(1).max(256), keyId: z.string().min(1).max(256) })

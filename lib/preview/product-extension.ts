@@ -11,6 +11,14 @@ function isBoundedUtf8(value: string, maximum: number): boolean {
   return value.length <= maximum && new TextEncoder().encode(value).byteLength <= maximum
 }
 
+function hasControlCharacters(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const unit = value.charCodeAt(index)
+    if (unit <= 0x1f || unit === 0x7f) return true
+  }
+  return false
+}
+
 export const compatiblePreviewSourcePathSchema = z
   .string()
   .min(1)
@@ -19,6 +27,7 @@ export const compatiblePreviewSourcePathSchema = z
     (value) =>
       !value.startsWith("/") &&
       !value.includes("\\") &&
+      !hasControlCharacters(value) &&
       value.split("/").every((segment) => segment !== "" && segment !== "." && segment !== ".."),
     "Preview paths must be normalized repository-relative paths",
   )
