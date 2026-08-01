@@ -61,6 +61,12 @@ export const remarkTransformImports: Plugin<
                 imported: "default",
                 local: localName,
               })
+            } else if (specifier.type === "ImportNamespaceSpecifier") {
+              extracted.push({
+                source,
+                imported: "*",
+                local: specifier.local.name,
+              })
             } else {
               file.fail(`Unsupported import specifier type: ${specifier.type}`)
               return

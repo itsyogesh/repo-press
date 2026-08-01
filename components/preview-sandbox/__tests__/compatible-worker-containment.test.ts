@@ -10,6 +10,67 @@ import {
 } from "../compatible-worker"
 
 describe("compatible worker containment", () => {
+  it("binds namespace imports as frozen null-prototype copies of the approved export map", async () => {
+    const job = await prepareCompatibleWorkerJob({
+      artifactId: "artifact-namespace",
+      documentSource:
+        'import * as UI from "@acme/ui"\n\n<UI.Callout>Namespace callout</UI.Callout>\n\n<Probe value={UI} />',
+      adapter: {
+        entryPath: "mdx-preview.tsx",
+        sources: {
+          "mdx-preview.tsx": `
+            import React from "react"
+            function Callout(props) { return <aside>{props.children}</aside> }
+            const inheritedExports = { Secret: () => <p>EXPOSED_SECRET</p> }
+            const approvedExports = Object.assign(Object.create(inheritedExports), { Callout })
+            function Probe({ value }) {
+              try { value.extra = "mutated" } catch {}
+              const contained = Object.getPrototypeOf(value) === null
+                && Object.isFrozen(value)
+                && value.Callout === Callout
+                && !("extra" in value)
+                && !("Secret" in value)
+              return <p>{contained ? "SEALED_NAMESPACE" : "MUTABLE_NAMESPACE"}</p>
+            }
+            export default {
+              components: { Probe },
+              allowImports: { "@acme/ui": approvedExports },
+            }
+          `,
+        },
+      },
+    })
+    expect(job.imports).toEqual([{ source: "@acme/ui", imported: "*", local: "UI" }])
+    const sent: unknown[] = []
+    const listeners: Array<(event: { data?: unknown; ports?: unknown[] }) => void | Promise<void>> = []
+    const port = {
+      onmessage: null as ((event: { data: unknown }) => void) | null,
+      close() {},
+      postMessage(message: unknown) {
+        sent.push(message)
+      },
+      start() {},
+    }
+    const context = vm.createContext({
+      addEventListener: (_type: string, listener: (event: { data?: unknown; ports?: unknown[] }) => void) =>
+        listeners.push(listener),
+      removeEventListener() {},
+    })
+    vm.runInContext(createCompatibleWorkerSource(), context, { timeout: 1_000 })
+    await listeners[0]({ ports: [port] })
+    port.onmessage?.({
+      data: { type: "repopress:render-compatible", requestId: "N".repeat(43), job },
+    })
+
+    expect(sent).toHaveLength(1)
+    expect(sent[0], JSON.stringify(sent[0])).toMatchObject({ type: "repopress:rendered-compatible" })
+    const serialized = JSON.stringify(sent[0])
+    expect(serialized).toContain("Namespace callout")
+    expect(serialized).toContain("SEALED_NAMESPACE")
+    expect(serialized).not.toContain("MUTABLE_NAMESPACE")
+    expect(serialized).not.toContain("EXPOSED_SECRET")
+  })
+
   it("runs repository components without a DOM/navigation realm and returns only inert output", async () => {
     const job = await prepareCompatibleWorkerJob({
       artifactId: "artifact-hostile",

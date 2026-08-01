@@ -416,7 +416,10 @@ function compatibleWorkerMain() {
   }
 
   function evaluateDocument(job: any, adapter: any) {
-    const components = adapter.components && typeof adapter.components === "object" ? adapter.components : {}
+    const components =
+      adapter.components && typeof adapter.components === "object"
+        ? objectAssign(objectCreate(null), adapter.components)
+        : objectCreate(null)
     const scope =
       adapter.scope && typeof adapter.scope === "object"
         ? objectAssign(objectCreate(null), adapter.scope)
@@ -434,11 +437,16 @@ function compatibleWorkerMain() {
       ) {
         throw new SafeError("Invalid compatible import binding")
       }
-      const moduleValue = allowed[imported.source]
-      if (!moduleValue || !objectHasOwn(moduleValue, imported.imported)) {
+      const moduleValue = objectHasOwn(allowed, imported.source) ? allowed[imported.source] : undefined
+      if (!moduleValue || (imported.imported !== "*" && !objectHasOwn(moduleValue, imported.imported))) {
         throw new SafeError(`Import ${imported.imported} from ${imported.source} is unavailable`)
       }
-      scope[imported.local] = moduleValue[imported.imported]
+      const binding =
+        imported.imported === "*"
+          ? objectFreeze(objectAssign(objectCreate(null), moduleValue))
+          : moduleValue[imported.imported]
+      scope[imported.local] = binding
+      components[imported.local] = binding
     }
     const componentEntries = objectEntries(components)
     for (let index = 0; index < componentEntries.length; index += 1) {

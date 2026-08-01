@@ -67,6 +67,7 @@ interface RepoProjectHubProps {
   configJson: string | null
   configSha: string | null
   actingUserId?: string | null
+  projectAccessTokens?: Record<string, string>
 }
 
 function HubProjectCard({
@@ -74,6 +75,7 @@ function HubProjectCard({
   repo,
   defaultBranch,
   project,
+  projectAccessToken,
   isWriter,
   canRemove,
   onEdit,
@@ -84,6 +86,7 @@ function HubProjectCard({
   repo: string
   defaultBranch: string
   project: HubProject
+  projectAccessToken?: string
   isWriter: boolean
   canRemove: boolean
   onEdit: (project: EditableProject) => void
@@ -125,6 +128,7 @@ function HubProjectCard({
                           contentType: project.contentType,
                           branch: project.branch,
                           configProjectId: project.configProjectId,
+                          projectAccessToken,
                         }),
                       0,
                     )
@@ -220,6 +224,7 @@ export function RepoProjectHub({
   configJson,
   configSha,
   actingUserId,
+  projectAccessTokens,
 }: RepoProjectHubProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -500,6 +505,7 @@ export function RepoProjectHub({
                   repo={repo}
                   defaultBranch={defaultBranch}
                   project={project}
+                  projectAccessToken={projectAccessTokens?.[project._id]}
                   isWriter={isWriter}
                   canRemove={canRemove}
                   onEdit={setEditProject}

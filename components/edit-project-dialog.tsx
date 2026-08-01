@@ -43,6 +43,7 @@ export interface EditableProject {
   contentType: string
   branch: string
   configProjectId?: string
+  projectAccessToken?: string
 }
 
 interface EditProjectDialogProps {
@@ -99,7 +100,12 @@ export function EditProjectDialog({
 
   const hasContent = useQuery(
     api.documents.hasContentForProject,
-    project ? { projectId: project._id as Id<"projects"> } : "skip",
+    project
+      ? {
+          projectId: project._id as Id<"projects">,
+          projectAccessToken: project.projectAccessToken || undefined,
+        }
+      : "skip",
   )
 
   if (!project) return null
