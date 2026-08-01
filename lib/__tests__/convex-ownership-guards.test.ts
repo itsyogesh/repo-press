@@ -61,7 +61,7 @@ function createCtx(overrides?: {
 describe("Convex ownership guards", () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    process.env.BETTER_AUTH_SECRET = "test-secret"
+    process.env.REPOPRESS_CAPABILITY_SECRET = "test-capability-secret-at-least-32"
     safeGetAuthUserMock.mockResolvedValue({ _id: "user_owner" })
   })
 

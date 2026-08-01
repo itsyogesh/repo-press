@@ -98,7 +98,7 @@ function imageResponse() {
 describe("POST /api/media/download-external", () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    process.env.BETTER_AUTH_SECRET = "test-secret"
+    process.env.REPOPRESS_CAPABILITY_SECRET = "test-capability-secret-at-least-32"
     dnsLookupMock.mockResolvedValue([{ address: "93.184.216.34", family: 4 }])
     vi.mocked(getGitHubToken).mockResolvedValue("gh-token")
     vi.mocked(fetchAuthQuery!).mockResolvedValue({ _id: "user_1" })

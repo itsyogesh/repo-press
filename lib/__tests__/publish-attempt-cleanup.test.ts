@@ -86,7 +86,7 @@ const outcomes = [
 let serverQueryToken: string
 
 beforeEach(async () => {
-  process.env.BETTER_AUTH_SECRET = "publish-cleanup-test-secret"
+  process.env.REPOPRESS_CAPABILITY_SECRET = "publish-cleanup-test-secret-at-least-32"
   serverQueryToken = await mintServerQueryToken()
 })
 

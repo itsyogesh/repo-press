@@ -34,10 +34,12 @@ Step-by-step instructions for deploying RepoPress to production. This guide cove
    | `GITHUB_CLIENT_ID` | Your GitHub OAuth App client ID | Must be a **separate** OAuth App from dev |
    | `GITHUB_CLIENT_SECRET` | Your GitHub OAuth App client secret | - |
    | `BETTER_AUTH_SECRET` | A new random 32+ character string | **Do NOT reuse the dev secret** |
+   | `REPOPRESS_CAPABILITY_SECRET` | A new random 32+ character string | Also configure this exact value in Vercel; do not reuse `BETTER_AUTH_SECRET` |
    | `SITE_URL` | `https://<your-project>.convex.site` | Your Convex production site URL |
 
-   To generate a secure `BETTER_AUTH_SECRET`:
+   Generate independent secrets for Better Auth and RepoPress capabilities:
    ```bash
+   openssl rand -base64 32
    openssl rand -base64 32
    ```
 
@@ -74,6 +76,7 @@ Step-by-step instructions for deploying RepoPress to production. This guide cove
    | `NEXT_PUBLIC_CONVEX_SITE_URL` | `https://<your-project>.convex.site` | Production |
    | `CONVEX_DEPLOYMENT` | `prod:<your-project>` | Production |
    | `NEXT_PUBLIC_APP_URL` | `https://your-domain.com` | Production |
+   | `REPOPRESS_CAPABILITY_SECRET` | Same value configured in the production Convex deployment | Production |
    | `NEXT_PUBLIC_SENTRY_DSN` | Your Sentry DSN (optional) | Production |
    | `SENTRY_ORG` | Your Sentry org slug (optional) | Production |
    | `SENTRY_PROJECT` | Your Sentry project slug (optional) | Production |

@@ -304,6 +304,7 @@ Example: "I need `NEXT_PUBLIC_CONVEX_URL` to complete this task. Please provide 
 - `GITHUB_CLIENT_ID` – GitHub OAuth App client ID
 - `GITHUB_CLIENT_SECRET` – GitHub OAuth App client secret
 - `BETTER_AUTH_SECRET` – Random secret for session encryption
+- `REPOPRESS_CAPABILITY_SECRET` – Separate 32+ character signing secret; set the same value in Convex and the Next.js runtime
 - `SITE_URL` – Your Convex site URL
 
 ### Optional
@@ -314,11 +315,9 @@ Example: "I need `NEXT_PUBLIC_CONVEX_URL` to complete this task. Please provide 
 # 1. Initialize Convex (creates .env.local with CONVEX_* vars)
 npx convex dev
 
-# 2. Manually add GitHub OAuth vars to .env.local:
-# GITHUB_CLIENT_ID=<your-id>
-# GITHUB_CLIENT_SECRET=<your-secret>
-# BETTER_AUTH_SECRET=<random-string>
-# SITE_URL=https://your-project.convex.site
+# 2. Configure GitHub OAuth and BETTER_AUTH_SECRET in Convex.
+# Add only the shared RepoPress capability secret to .env.local:
+# REPOPRESS_CAPABILITY_SECRET=<same-value-configured-in-convex>
 
 # 3. Start dev servers
 npx next dev --port 3001

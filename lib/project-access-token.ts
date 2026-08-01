@@ -18,9 +18,12 @@ type GitHubAccountLookupTokenPayload = {
 }
 
 function getSecret() {
-  const secret = process.env.BETTER_AUTH_SECRET
+  const secret = process.env.REPOPRESS_CAPABILITY_SECRET
   if (!secret) {
-    throw new Error("BETTER_AUTH_SECRET is required for project access tokens")
+    throw new Error("REPOPRESS_CAPABILITY_SECRET is required for RepoPress capability tokens")
+  }
+  if (secret.length < 32 || /\s/.test(secret)) {
+    throw new Error("REPOPRESS_CAPABILITY_SECRET must contain at least 32 non-whitespace characters")
   }
   return secret
 }
@@ -103,7 +106,7 @@ export async function verifyProjectAccessToken(token: string | undefined | null)
 
 /**
  * Lightweight server-to-Convex query token. Proves the caller is the Next.js
- * server (has access to BETTER_AUTH_SECRET) without requiring a project or user.
+ * server (has access to REPOPRESS_CAPABILITY_SECRET) without requiring a project or user.
  * Used by route handlers and server components that need to read project data
  * before minting a full projectAccessToken.
  */

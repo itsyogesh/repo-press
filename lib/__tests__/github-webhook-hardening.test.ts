@@ -133,7 +133,7 @@ function createWebhookCtx({
 
 describe("GitHub webhook hardening", () => {
   beforeEach(() => {
-    process.env.BETTER_AUTH_SECRET = "test-secret"
+    process.env.REPOPRESS_CAPABILITY_SECRET = "test-capability-secret-at-least-32"
   })
 
   it("rejects merged webhook mutations without a server token", async () => {

@@ -96,7 +96,7 @@ const project = { _id: "project_1", userId: "user_owner", contentRoot: "content"
 describe("markCommitted post-commit reconciliation", () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    process.env.BETTER_AUTH_SECRET = "test-secret"
+    process.env.REPOPRESS_CAPABILITY_SECRET = "test-capability-secret-at-least-32"
     safeGetAuthUserMock.mockResolvedValue(null)
   })
 
@@ -259,7 +259,7 @@ describe("markCommitted post-commit reconciliation", () => {
 describe("publish attempt guard on undo/discard", () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    process.env.BETTER_AUTH_SECRET = "test-secret"
+    process.env.REPOPRESS_CAPABILITY_SECRET = "test-capability-secret-at-least-32"
     safeGetAuthUserMock.mockResolvedValue(null)
   })
 

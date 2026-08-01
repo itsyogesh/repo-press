@@ -234,7 +234,7 @@ function committedLaneOp(id: string, overrides: Record<string, unknown> = {}) {
 describe("closed-lane synchronization invalidation", () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    process.env.BETTER_AUTH_SECRET = "test-secret"
+    process.env.REPOPRESS_CAPABILITY_SECRET = "test-capability-secret-at-least-32"
     safeGetAuthUserMock.mockResolvedValue(null)
   })
 
@@ -1118,7 +1118,7 @@ describe("closed-lane synchronization invalidation", () => {
 describe("merged-lane finalization", () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    process.env.BETTER_AUTH_SECRET = "test-secret"
+    process.env.REPOPRESS_CAPABILITY_SECRET = "test-capability-secret-at-least-32"
     safeGetAuthUserMock.mockResolvedValue(null)
   })
 

@@ -158,7 +158,14 @@ New repository setup uses native discovery: RepoPress inspects the repository's 
 | `GITHUB_CLIENT_ID` | From your [GitHub OAuth App](https://github.com/settings/developers) |
 | `GITHUB_CLIENT_SECRET` | From your GitHub OAuth App |
 | `BETTER_AUTH_SECRET` | Random secret string for session encryption |
+| `REPOPRESS_CAPABILITY_SECRET` | Random 32+ character capability-signing secret; use the same value in the Next.js runtime |
 | `SITE_URL` | Your Convex site URL (same as `NEXT_PUBLIC_CONVEX_SITE_URL`) |
+
+### Next.js runtime
+
+| Variable | Description |
+|---|---|
+| `REPOPRESS_CAPABILITY_SECRET` | Same capability-signing value configured in Convex; never reuse `BETTER_AUTH_SECRET` |
 
 ### Optional
 
@@ -201,13 +208,15 @@ This will prompt you to create a Convex project and populate your `.env.local` w
 
 ### 4. Set up environment variables
 
-Add the GitHub OAuth variables to your `.env.local`:
+Configure the GitHub OAuth variables and `BETTER_AUTH_SECRET` in the Convex dashboard. Generate a separate capability secret, set it in Convex, and add only that shared capability value to `.env.local` for the Next.js server:
 
 ```bash
-GITHUB_CLIENT_ID=<your-id>
-GITHUB_CLIENT_SECRET=<your-secret>
-BETTER_AUTH_SECRET=<random-string>
-SITE_URL=https://your-project.convex.site
+openssl rand -base64 32
+npx convex env set REPOPRESS_CAPABILITY_SECRET <generated-value>
+```
+
+```dotenv
+REPOPRESS_CAPABILITY_SECRET=<same-generated-value>
 ```
 
 ### 5. Run the dev servers

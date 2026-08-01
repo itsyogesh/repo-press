@@ -318,6 +318,7 @@ Never read `.env.local`, `.env`, or other secrets files directly. If a task need
 - `GITHUB_CLIENT_ID` -- GitHub OAuth App client ID
 - `GITHUB_CLIENT_SECRET` -- GitHub OAuth App client secret
 - `BETTER_AUTH_SECRET` -- Random secret for session encryption
+- `REPOPRESS_CAPABILITY_SECRET` -- Separate 32+ character signing secret; set the same value in Convex and the Next.js runtime
 - `SITE_URL` -- Your Convex site URL (same as NEXT_PUBLIC_CONVEX_SITE_URL)
 
 ### Optional:
@@ -329,13 +330,10 @@ npx convex dev
 npx next dev --port 3001
 ```
 
-Add the GitHub OAuth variables to the `.env.local` file created by Convex after initialization:
+Keep the GitHub OAuth variables and `BETTER_AUTH_SECRET` in Convex. Add only the shared RepoPress capability secret to the Next.js `.env.local` file:
 
 ```bash
-GITHUB_CLIENT_ID=<your-id>
-GITHUB_CLIENT_SECRET=<your-secret>
-BETTER_AUTH_SECRET=<random-string>
-SITE_URL=https://your-project.convex.site
+REPOPRESS_CAPABILITY_SECRET=<same-value-configured-in-convex>
 ```
 
 ## Styling Conventions

@@ -111,7 +111,7 @@ function createCtx({
 describe("lane-synchronization provenance", () => {
   beforeEach(async () => {
     vi.clearAllMocks()
-    process.env.BETTER_AUTH_SECRET = "test-secret"
+    process.env.REPOPRESS_CAPABILITY_SECRET = "test-capability-secret-at-least-32"
     serverQueryToken = await mintServerQueryToken()
     safeGetAuthUserMock.mockResolvedValue(null)
   })
