@@ -40,6 +40,7 @@ import { CommandPalette } from "./command-palette"
 import { getDiscardPlan } from "./discard-pending-changes"
 import { Editor } from "./editor"
 import { FileTree } from "./file-tree"
+import { useCompatiblePreview } from "./hooks/use-compatible-preview"
 import { usePrStatusSync } from "./hooks/use-pr-status-sync"
 import { useStudioFile } from "./hooks/use-studio-file"
 import { useStudioPublish } from "./hooks/use-studio-publish"
@@ -517,6 +518,7 @@ function StudioLayoutInner({
     dirtyDocs,
     frontmatterSchema,
     fieldVariants,
+    previewEntry,
   } = studioQueries
 
   const deferredPreviewContent = React.useDeferredValue(content)
@@ -533,6 +535,14 @@ function StudioLayoutInner({
       cache: { hit: false },
     })
   }, [content, deferredPreviewContent, selectedFile?.path])
+  const compatiblePreview = useCompatiblePreview({
+    projectId,
+    filePath: selectedFile?.path,
+    baseCommitSha,
+    previewEntry,
+    documentSource: content,
+    genericPreviewResult,
+  })
 
   // The tree is repository-relative; document state is content-root-relative.
   const dirtyPaths = React.useMemo(() => {
@@ -1767,7 +1777,8 @@ function StudioLayoutInner({
                       <StudioNoSelectionPreviewState />
                     ) : selectedFile ? (
                       <Preview
-                        previewResult={genericPreviewResult}
+                        {...compatiblePreview}
+                        fallbackResult={genericPreviewResult}
                         frontmatter={frontmatter}
                         fieldVariants={fieldVariants}
                         projectId={projectId}
