@@ -39,7 +39,7 @@ function mockOctokit(prData: {
   merged: boolean
   merge_commit_sha?: string | null
   head?: { ref: string; repo: { full_name: string } | null }
-  base?: { ref: string }
+  base?: { ref: string; repo: { full_name: string } | null }
 }) {
   createGitHubClientMock.mockReturnValue({
     rest: {
@@ -71,7 +71,7 @@ describe("GET /api/github/pr-status", () => {
       merged: false,
       merge_commit_sha: null,
       head: { ref: "repopress/start", repo: { full_name: "acme/docs" } },
-      base: { ref: "main" },
+      base: { ref: "main", repo: { full_name: "acme/docs" } },
     })
   })
 
@@ -130,7 +130,7 @@ describe("GET /api/github/pr-status", () => {
       merged: false,
       merge_commit_sha: null,
       head: { ref: "repopress/start", repo: { full_name: "acme/docs" } },
-      base: { ref: "main" },
+      base: { ref: "main", repo: { full_name: "acme/docs" } },
     })
 
     const res = await GET(makeRequest({ owner: "acme", repo: "docs", prNumber: "42" }))
@@ -144,6 +144,7 @@ describe("GET /api/github/pr-status", () => {
       headRef: "repopress/start",
       headRepoFullName: "acme/docs",
       baseRef: "main",
+      baseRepoFullName: "acme/docs",
     })
   })
 
@@ -153,7 +154,7 @@ describe("GET /api/github/pr-status", () => {
       merged: true,
       merge_commit_sha: "a".repeat(40),
       head: { ref: "repopress/start", repo: { full_name: "acme/docs" } },
-      base: { ref: "main" },
+      base: { ref: "main", repo: { full_name: "acme/docs" } },
     })
 
     const res = await GET(makeRequest({ owner: "acme", repo: "docs", prNumber: "99" }))
@@ -167,6 +168,7 @@ describe("GET /api/github/pr-status", () => {
       headRef: "repopress/start",
       headRepoFullName: "acme/docs",
       baseRef: "main",
+      baseRepoFullName: "acme/docs",
     })
   })
 
@@ -180,7 +182,7 @@ describe("GET /api/github/pr-status", () => {
       merged: true,
       merge_commit_sha: mergeCommitSha,
       head: { ref: "repopress/start", repo: { full_name: "acme/docs" } },
-      base: { ref: "main" },
+      base: { ref: "main", repo: { full_name: "acme/docs" } },
     })
 
     const res = await GET(makeRequest({ owner: "acme", repo: "docs", prNumber: "99" }))

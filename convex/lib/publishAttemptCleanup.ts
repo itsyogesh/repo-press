@@ -111,6 +111,10 @@ async function maybeCompleteMergeVerification(ctx: CleanupCtx, cleanup: Doc<"pub
   if (!cleanup.authoritySha) return
   const lane = await ctx.db.get(cleanup.laneId)
   if (!lane || lane.mergeCommitSha !== cleanup.authoritySha) return
+  if (lane.laneCleanupAction) {
+    await ctx.scheduler.runAfter(0, (internal as any).publishBranches.continueLaneCleanup, { id: lane._id })
+    return
+  }
   await completeMergeVerificationIfIdle(ctx, cleanup.laneId)
 }
 

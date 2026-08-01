@@ -2478,7 +2478,7 @@ describe("POST /api/github/publish-ops", () => {
         },
       })
       vi.mocked(inspectPublishEffectsAtCommit).mockResolvedValue([
-        { path: "content/posts/old.mdx", disposition: "restore" },
+        { path: "content/posts/old.mdx", disposition: "restore", finalBlobSha: "f".repeat(40) },
       ])
 
       const response = await POST(buildRequest({ projectId: "project_123" }))
@@ -2540,7 +2540,7 @@ describe("POST /api/github/publish-ops", () => {
         },
       })
       vi.mocked(inspectPublishEffectsAtCommit).mockResolvedValue([
-        { path: "content/posts/old.mdx", disposition: "restore" },
+        { path: "content/posts/old.mdx", disposition: "restore", finalBlobSha: "f".repeat(40) },
       ])
 
       const response = await POST(buildRequest({ projectId: "project_123" }))
@@ -2549,6 +2549,36 @@ describe("POST /api/github/publish-ops", () => {
       expect(response.status).toBe(200)
       expect(payload.recovered).toBe(true)
       expect(payload.cleanupPending).toBe(true)
+      expect(convexMutationMock).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          id: "attempt_1",
+          pathOutcomes: [{ path: "content/posts/old.mdx", disposition: "restore" }],
+        }),
+      )
+    })
+
+    it("normalizes diagnostic final blobs when a later merge commit overwrote an attempted update", async () => {
+      mockPublishQueries({
+        pendingOps: [],
+        dirtyDocs: [],
+        activePublishAttempt: committedAttempt({
+          operationDescriptors: [{ path: "content/posts/old.mdx", action: "update", expectedBlobSha: "b".repeat(40) }],
+        }),
+        attemptLane: {
+          ...recoveryLane,
+          status: "merged",
+          mergeCommitSha: "a".repeat(40),
+          mergeVerificationState: "pending",
+        },
+      })
+      vi.mocked(inspectPublishEffectsAtCommit).mockResolvedValue([
+        { path: "content/posts/old.mdx", disposition: "restore", finalBlobSha: "c".repeat(40) },
+      ])
+
+      const response = await POST(buildRequest({ projectId: "project_123" }))
+
+      expect(response.status).toBe(200)
       expect(convexMutationMock).toHaveBeenCalledWith(
         expect.anything(),
         expect.objectContaining({

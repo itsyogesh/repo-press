@@ -46,6 +46,7 @@ export async function GET(request: Request) {
       headRef: pr.head?.ref,
       headRepoFullName: pr.head?.repo?.full_name ?? null,
       baseRef: pr.base?.ref,
+      baseRepoFullName: pr.base?.repo?.full_name ?? null,
     })
   } catch (error: unknown) {
     const status = (error as any)?.status

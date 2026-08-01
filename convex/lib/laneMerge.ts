@@ -21,12 +21,11 @@ type LaneCleanupCtx = Pick<MutationCtx, "db" | "storage" | "scheduler">
  * media bytes released) and the documents whose committed paths merged are
  * published.
  *
- * This is the ONE merge-finalization implementation, shared by the GitHub
- * webhook (githubWebhook.handlePRMerged), the client fallback
- * (publishBranches.markMerged), and publish-attempt recovery - so whichever
- * runs first does the work and the others converge as no-ops. It is
- * idempotent: committed rows exist only until one pass deletes them, and
- * already-published documents are skipped.
+ * This is the ONE merge-finalization implementation, reached only after
+ * server-verified GitHub authority has been persisted. Webhook delivery,
+ * authenticated status synchronization, and publish-attempt recovery all
+ * converge on this idempotent cleanup: committed rows exist only until one
+ * pass deletes them, and already-published documents are skipped.
  *
  * BOUNDED AND RESUMABLE like closed-lane invalidation: at most
  * LANE_CLEANUP_BATCH rows per table per pass, continuation scheduled while

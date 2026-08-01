@@ -25,10 +25,11 @@ export type LaneInvalidationResult =
     }
 
 type LaneCleanupCtx = Pick<MutationCtx, "db" | "storage" | "scheduler">
+type LaneCleanupSchedulerCtx = Pick<MutationCtx, "db" | "scheduler">
 
 /** Keep the durable flag set and schedule the next bounded pass. */
 export async function scheduleLaneCleanupContinuation(
-  ctx: LaneCleanupCtx,
+  ctx: LaneCleanupSchedulerCtx,
   branch: Doc<"publishBranches">,
   action: "restore_legacy" | "finalize_legacy",
 ) {
@@ -75,8 +76,8 @@ function candidateStoredFilePaths(contentRoot: string, repoPath: string): string
  * base branch is nothing; any surviving content republishes through its
  * dirty document).
  *
- * Runs from BOTH close paths (GitHub webhook and the client fallback that
- * detects an externally closed PR) and is idempotent: a second pass finds no
+ * Runs after either the GitHub webhook or authenticated status synchronization
+ * persists a server-verified close. It is idempotent: a second pass finds no
  * committed rows or provenance for the lane and changes nothing.
  *
  * BOUNDED AND RESUMABLE: each invocation processes at most

@@ -1002,7 +1002,7 @@ type RecoverablePublishAttempt = {
  * deleted branch, or an exhausted depth bound make landing unprovable and
  * fail CLOSED - no supersede, no new commit.
  */
-async function recoverPublishAttempt({
+export async function recoverPublishAttempt({
   convex,
   attempt,
   projectId,
@@ -1095,12 +1095,19 @@ async function recoverPublishAttempt({
       }
     }
     try {
-      const pathOutcomes = await inspectPublishEffectsAtCommit(
+      const inspectedOutcomes = await inspectPublishEffectsAtCommit(
         token,
         owner,
         repo,
         mergeCommitSha,
         attempt.operationDescriptors,
+      )
+      // The inspector reports the blob currently occupying a restored path
+      // as diagnostic evidence (for example, a later overwrite or a
+      // delete-then-recreate). Cleanup persists only the disposition: a
+      // non-finalized blob must never become evidence for this attempt.
+      const pathOutcomes = inspectedOutcomes.map((outcome) =>
+        outcome.disposition === "finalize" ? outcome : { path: outcome.path, disposition: outcome.disposition },
       )
       await convex.mutation(api.publishAttempts.resolveAndEnqueueCleanup, {
         id: attempt._id,

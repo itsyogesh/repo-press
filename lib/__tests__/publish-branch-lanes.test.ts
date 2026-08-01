@@ -160,6 +160,8 @@ describe("Publish branch lanes", () => {
       "publishBranches",
       expect.objectContaining({
         projectId: "project_1",
+        repoOwner: "acme",
+        repoName: "docs",
         branchName: "repopress/main/5678",
         status: "active",
       }),

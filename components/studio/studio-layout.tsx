@@ -1923,13 +1923,14 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
   // Verify the active publish lane's PR is still open on GitHub.
   // Corrects state drift when the closed/merged webhook was never delivered.
   usePrStatusSync({
+    projectId,
     laneId: statusSyncLane?._id as any,
     prNumber: statusSyncLane?.prNumber,
     laneStatus: statusSyncLane?.status,
     owner,
     repo,
-    userId: userId ?? undefined,
-    projectAccessToken: projectAccessToken ?? undefined,
+    headBranch: statusSyncLane?.branchName,
+    baseBranch: statusSyncLane?.baseBranch,
   })
 
   // 3. Auto-sync config logic

@@ -25,8 +25,6 @@ import { stage as stageMediaOp } from "@/convex/mediaOps"
 import { removeFull, remove as removeProject, update as updateProject } from "@/convex/projects"
 import {
   create as createPublishBranch,
-  markClosed as markPublishBranchClosed,
-  markMerged as markPublishBranchMerged,
   updateAfterCommit as updatePublishBranchAfterCommit,
 } from "@/convex/publishBranches"
 import { mintProjectAccessToken } from "@/lib/project-access-token"
@@ -155,42 +153,6 @@ describe("Convex ownership guards", () => {
         userId: "user_owner",
         lastCommitSha: "abc123",
         newFilePaths: ["docs/b.mdx"],
-      }),
-    ).rejects.toThrow("Unauthorized")
-
-    expect(ctx.db.patch).not.toHaveBeenCalled()
-  })
-
-  it("rejects publish branch merge state changes when the caller does not own the backing project", async () => {
-    const get = vi
-      .fn()
-      .mockResolvedValueOnce({ _id: "branch_1", projectId: "project_1" })
-      .mockResolvedValueOnce({ _id: "project_1", userId: "user_other", repoOwner: "acme", repoName: "docs" })
-    const patch = vi.fn()
-    const ctx = createCtx({ get, patch })
-
-    await expect(
-      (markPublishBranchMerged as any).handler(ctx, {
-        id: "branch_1",
-        userId: "user_owner",
-      }),
-    ).rejects.toThrow("Unauthorized")
-
-    expect(ctx.db.patch).not.toHaveBeenCalled()
-  })
-
-  it("rejects publish branch close state changes when the caller does not own the backing project", async () => {
-    const get = vi
-      .fn()
-      .mockResolvedValueOnce({ _id: "branch_1", projectId: "project_1" })
-      .mockResolvedValueOnce({ _id: "project_1", userId: "user_other", repoOwner: "acme", repoName: "docs" })
-    const patch = vi.fn()
-    const ctx = createCtx({ get, patch })
-
-    await expect(
-      (markPublishBranchClosed as any).handler(ctx, {
-        id: "branch_1",
-        userId: "user_owner",
       }),
     ).rejects.toThrow("Unauthorized")
 

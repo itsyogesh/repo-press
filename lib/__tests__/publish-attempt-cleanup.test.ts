@@ -504,6 +504,39 @@ describe("bounded attempt-scoped cleanup continuation", () => {
     expect(ctx.db.patch).toHaveBeenCalledWith("lane_1", expect.objectContaining({ mergeVerificationState: "complete" }))
   })
 
+  it("re-dispatches persisted legacy residue after the final attempt cleanup releases the guard", async () => {
+    const ctx = createCtx([
+      { ...project },
+      {
+        ...lane,
+        mergeCommitSha: "3".repeat(40),
+        mergeVerificationState: "pending",
+        laneInvalidationPending: true,
+        laneCleanupAction: "finalize_legacy",
+      },
+      {
+        ...attempt,
+        status: "cleanup_pending",
+        cleanupId: "cleanup_1",
+        explorerAssociations: [],
+        mediaAssociations: [],
+        documentAssociations: [],
+        operationDescriptors: [],
+        operationPaths: [],
+      },
+      cleanupRow({ phase: "documents", cursor: 0, pathOutcomes: [] }),
+    ])
+
+    await (continueCleanup as any).handler(ctx, { cleanupId: "cleanup_1" })
+
+    expect(ctx.db.patch).toHaveBeenCalledWith("attempt_1", expect.objectContaining({ status: "cleaned" }))
+    expect(ctx.scheduler.runAfter).toHaveBeenCalledWith(0, expect.anything(), { id: "lane_1" })
+    expect(ctx.db.patch).not.toHaveBeenCalledWith(
+      "lane_1",
+      expect.objectContaining({ mergeVerificationState: "complete" }),
+    )
+  })
+
   it("clears an unchanged deleted document only after the merge tree verifies the deletion", async () => {
     const deleteAttempt = {
       ...attempt,

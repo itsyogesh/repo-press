@@ -6,6 +6,9 @@ vi.mock("@/convex/_generated/server", () => ({
 
 vi.mock("@/convex/_generated/api", () => ({
   internal: {
+    publishBranches: {
+      continueLaneCleanup: "internal:publishBranches.continueLaneCleanup",
+    },
     mediaOps: {
       cleanupMediaForBranch: "internal:mediaOps.cleanupMediaForBranch",
     },
@@ -16,6 +19,15 @@ import { handlePRClosed, handlePRMerged } from "@/convex/githubWebhook"
 import { mintServerQueryToken } from "@/lib/project-access-token"
 
 const MERGE_SHA = "a".repeat(40)
+const PR_IDENTITY = {
+  prNumber: 42,
+  repoOwner: "acme",
+  repoName: "docs-site",
+  baseRepoFullName: "acme/docs-site",
+  baseBranch: "main",
+  headRepoFullName: "acme/docs-site",
+  headBranch: "repopress/start",
+}
 
 function createCtx() {
   return {
@@ -39,20 +51,33 @@ function createCtx() {
 
 function createWebhookCtx({
   publishBranch,
+  publishBranches,
   explorerOps = [],
   mediaOps = [],
   project = { _id: "project_1", repoOwner: "acme", repoName: "docs-site" },
 }: {
   publishBranch: Record<string, unknown> | null
+  publishBranches?: Array<Record<string, unknown>>
   explorerOps?: Array<Record<string, unknown>>
   mediaOps?: Array<Record<string, unknown>>
   project?: Record<string, unknown> | null
 }) {
+  const lanes: Array<Record<string, unknown>> = (publishBranches ?? (publishBranch ? [publishBranch] : [])).map(
+    (candidate) => ({
+      repoOwner: "acme",
+      repoName: "docs-site",
+      prNumber: 42,
+      baseBranch: "main",
+      branchName: "repopress/start",
+      ...candidate,
+    }),
+  )
+  const lane = lanes[0] ?? null
   return {
     db: {
       get: vi.fn().mockImplementation(async (id: string) => {
-        if (publishBranch && id === publishBranch._id) return publishBranch
-        if (project && id === publishBranch?.projectId) return project
+        if (lane && id === lane._id) return lane
+        if (project && id === lane?.projectId) return project
         return null
       }),
       patch: vi.fn(),
@@ -70,8 +95,10 @@ function createWebhookCtx({
           }
           cb?.(recorder)
           const rows = (() => {
-            if (table === "publishBranches" && indexName === "by_prNumber") {
-              return publishBranch ? [publishBranch] : []
+            if (table === "publishBranches" && indexName === "by_repo_pr_head_base") {
+              return lanes.filter((candidate) =>
+                Object.entries(eq).every(([field, value]) => candidate[field] === value),
+              )
             }
             const source = table === "explorerOps" ? explorerOps : table === "mediaOps" ? mediaOps : []
             return source.filter((row) =>
@@ -111,6 +138,8 @@ describe("GitHub webhook hardening", () => {
         mergeCommitSha: MERGE_SHA,
         repoOwner: "acme",
         repoName: "docs-site",
+        baseRepoFullName: "acme/docs-site",
+        baseBranch: "main",
         headRepoFullName: "acme/docs-site",
         headBranch: "repopress/start",
       }),
@@ -124,7 +153,7 @@ describe("GitHub webhook hardening", () => {
 
     await expect(
       (handlePRClosed as any).handler(ctx, {
-        prNumber: 42,
+        ...PR_IDENTITY,
       }),
     ).rejects.toThrow("Unauthorized")
 
@@ -141,6 +170,8 @@ describe("GitHub webhook hardening", () => {
         mergeCommitSha: MERGE_SHA,
         repoOwner: "acme",
         repoName: "docs-site",
+        baseRepoFullName: "acme/docs-site",
+        baseBranch: "main",
         headRepoFullName: "acme/docs-site",
         headBranch: "repopress/start",
         serverQueryToken,
@@ -201,6 +232,8 @@ describe("GitHub webhook hardening", () => {
       mergeCommitSha: MERGE_SHA,
       repoOwner: "acme",
       repoName: "docs-site",
+      baseRepoFullName: "acme/docs-site",
+      baseBranch: "main",
       headRepoFullName: "acme/docs-site",
       headBranch: "repopress/start",
       serverQueryToken,
@@ -216,6 +249,9 @@ describe("GitHub webhook hardening", () => {
     )
     expect(ctx.db.delete).not.toHaveBeenCalled()
     expect(ctx.storage.delete).not.toHaveBeenCalled()
+    expect(ctx.scheduler.runAfter).toHaveBeenCalledWith(0, "internal:publishBranches.continueLaneCleanup", {
+      id: "publish_branch_inactive",
+    })
   })
 
   it("keeps completed verification complete on same-authority replay and rejects a different SHA", async () => {
@@ -235,6 +271,8 @@ describe("GitHub webhook hardening", () => {
       mergeCommitSha: MERGE_SHA,
       repoOwner: "acme",
       repoName: "docs-site",
+      baseRepoFullName: "acme/docs-site",
+      baseBranch: "main",
       headRepoFullName: "acme/docs-site",
       headBranch: "repopress/start",
       serverQueryToken,
@@ -247,6 +285,8 @@ describe("GitHub webhook hardening", () => {
         mergeCommitSha: "b".repeat(40),
         repoOwner: "acme",
         repoName: "docs-site",
+        baseRepoFullName: "acme/docs-site",
+        baseBranch: "main",
         headRepoFullName: "acme/docs-site",
         headBranch: "repopress/start",
         serverQueryToken,
@@ -270,6 +310,8 @@ describe("GitHub webhook hardening", () => {
       mergeCommitSha: MERGE_SHA,
       repoOwner: "other",
       repoName: "docs-site",
+      baseRepoFullName: "other/docs-site",
+      baseBranch: "main",
       headRepoFullName: "other/docs-site",
       headBranch: "repopress/start",
       serverQueryToken,
@@ -281,6 +323,8 @@ describe("GitHub webhook hardening", () => {
       mergeCommitSha: MERGE_SHA,
       repoOwner: "acme",
       repoName: "docs-site",
+      baseRepoFullName: "acme/docs-site",
+      baseBranch: "main",
       headRepoFullName: "acme/docs-site",
       headBranch: "repopress/other",
       serverQueryToken,
@@ -305,11 +349,13 @@ describe("GitHub webhook hardening", () => {
         mergeCommitSha: MERGE_SHA,
         repoOwner: "acme",
         repoName: "docs-site",
+        baseRepoFullName: "acme/docs-site",
+        baseBranch: "main",
         headRepoFullName: "attacker/docs-site",
         headBranch: "repopress/start",
         serverQueryToken,
       }),
-    ).rejects.toThrow(/repository or head branch/i)
+    ).rejects.toThrow(/identity/i)
 
     expect(ctx.db.patch).not.toHaveBeenCalled()
   })
@@ -325,13 +371,72 @@ describe("GitHub webhook hardening", () => {
     })
 
     await (handlePRClosed as any).handler(ctx, {
-      prNumber: 42,
+      ...PR_IDENTITY,
       serverQueryToken,
     })
 
     expect(ctx.db.patch).toHaveBeenCalledWith("publish_branch_inactive", expect.objectContaining({ status: "closed" }))
     expect(ctx.db.delete).not.toHaveBeenCalled()
     expect(ctx.scheduler.runAfter).not.toHaveBeenCalled()
+  })
+
+  it("scopes an unmerged close to the exact repository identity", async () => {
+    const serverQueryToken = await mintServerQueryToken()
+    const ctx = createWebhookCtx({
+      publishBranch: {
+        _id: "publish_branch_acme",
+        projectId: "project_1",
+        status: "inactive",
+      },
+    })
+
+    await (handlePRClosed as any).handler(ctx, {
+      ...PR_IDENTITY,
+      repoOwner: "other",
+      baseRepoFullName: "other/docs-site",
+      headRepoFullName: "other/docs-site",
+      serverQueryToken,
+    })
+
+    expect(ctx.db.patch).not.toHaveBeenCalled()
+  })
+
+  it("finds the exact merged lane even after more than twenty colliding PR numbers", async () => {
+    const serverQueryToken = await mintServerQueryToken()
+    const collisions = Array.from({ length: 21 }, (_, index) => ({
+      _id: `collision_${index}`,
+      projectId: "project_1",
+      repoOwner: `other-${index}`,
+      repoName: "docs-site",
+      prNumber: 42,
+      branchName: "repopress/start",
+      baseBranch: "main",
+      status: "inactive",
+    }))
+    const ctx = createWebhookCtx({
+      publishBranch: null,
+      publishBranches: [
+        ...collisions,
+        {
+          _id: "publish_branch_exact",
+          projectId: "project_1",
+          repoOwner: "acme",
+          repoName: "docs-site",
+          prNumber: 42,
+          branchName: "repopress/start",
+          baseBranch: "main",
+          status: "inactive",
+        },
+      ],
+    })
+
+    await (handlePRMerged as any).handler(ctx, {
+      ...PR_IDENTITY,
+      mergeCommitSha: MERGE_SHA,
+      serverQueryToken,
+    })
+
+    expect(ctx.db.patch).toHaveBeenCalledWith("publish_branch_exact", expect.objectContaining({ status: "merged" }))
   })
 
   it("merging the current active PR does not delete any committed ops before verification", async () => {
@@ -379,6 +484,8 @@ describe("GitHub webhook hardening", () => {
       mergeCommitSha: MERGE_SHA,
       repoOwner: "acme",
       repoName: "docs-site",
+      baseRepoFullName: "acme/docs-site",
+      baseBranch: "main",
       headRepoFullName: "acme/docs-site",
       headBranch: "repopress/start",
       serverQueryToken,
@@ -414,6 +521,8 @@ describe("GitHub webhook hardening", () => {
       mergeCommitSha: MERGE_SHA,
       repoOwner: "acme",
       repoName: "docs-site",
+      baseRepoFullName: "acme/docs-site",
+      baseBranch: "main",
       headRepoFullName: "acme/docs-site",
       headBranch: "repopress/start",
       serverQueryToken,
@@ -434,7 +543,7 @@ describe("GitHub webhook hardening", () => {
     })
 
     await (handlePRClosed as any).handler(ctx, {
-      prNumber: 42,
+      ...PR_IDENTITY,
       serverQueryToken,
     })
 

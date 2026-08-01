@@ -6,7 +6,6 @@ import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
 import { invalidateClosedLaneSync } from "./lib/laneInvalidation"
 import { finalizeMergedLaneSync } from "./lib/laneMerge"
 import { completeMergeVerificationIfIdle } from "./lib/publishAttemptCleanup"
-import { recordMergedLaneAuthority } from "./lib/publishBranchMerge"
 
 async function getCurrentBranchForProject(
   ctx: QueryCtx,
@@ -158,7 +157,7 @@ export const create = mutation({
     deactivateBranchId: v.optional(v.id("publishBranches")),
   },
   handler: async (ctx, args) => {
-    await resolveProjectAccess(ctx, args, "editor")
+    const { project } = await resolveProjectAccess(ctx, args, "editor")
 
     const existingActiveBranch = await ctx.db
       .query("publishBranches")
@@ -183,6 +182,8 @@ export const create = mutation({
     const now = Date.now()
     return await ctx.db.insert("publishBranches", {
       projectId: args.projectId,
+      repoOwner: project.repoOwner,
+      repoName: project.repoName,
       branchName: args.branchName,
       baseBranch: args.baseBranch,
       status: "active",
@@ -231,108 +232,19 @@ export const updateAfterCommit = mutation({
 })
 
 /**
- * Mark a publish branch as merged (PR was merged). This is the CLIENT
- * FALLBACK merge path (usePrStatusSync detects an externally merged PR);
- * the webhook path is githubWebhook.handlePRMerged. Both run the SAME
- * shared, idempotent merge finalization so the lane's spent rows are
- * cleared and its merged documents published no matter which path fires
- * first.
+ * Internal legacy-residue dispatcher. The action is always read from the
+ * lane's persisted state; no editor or caller can select finalization.
  */
-export const markMerged = mutation({
-  args: {
-    id: v.id("publishBranches"),
-    userId: v.optional(v.string()),
-    projectAccessToken: v.optional(v.string()),
-    mergeCommitSha: v.string(),
-    repoOwner: v.string(),
-    repoName: v.string(),
-    headRepoFullName: v.string(),
-    headBranch: v.string(),
-  },
+export const finishLaneCleanup = internalMutation({
+  args: { id: v.id("publishBranches") },
   handler: async (ctx, args) => {
     const publishBranch = await ctx.db.get(args.id)
     if (!publishBranch) throw new Error("Publish branch not found")
-    await resolveProjectAccess(
-      ctx,
-      { projectId: publishBranch.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken },
-      "editor",
-    )
-
-    return await recordMergedLaneAuthority(ctx, publishBranch, args)
-  },
-})
-
-/**
- * Mark a publish branch as closed (PR was closed without merging). This is
- * the CLIENT FALLBACK close path (usePrStatusSync detects an externally
- * closed PR); the webhook path is githubWebhook.handlePRClosed. Both must
- * invalidate the lane's synchronization state, or content published to the
- * dead lane stays excluded from listDirtyForProject/listPending with no way
- * to republish.
- */
-export const markClosed = mutation({
-  args: {
-    id: v.id("publishBranches"),
-    userId: v.optional(v.string()),
-    projectAccessToken: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const publishBranch = await ctx.db.get(args.id)
-    if (!publishBranch) throw new Error("Publish branch not found")
-    await resolveProjectAccess(
-      ctx,
-      { projectId: publishBranch.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken },
-      "editor",
-    )
-
-    await ctx.db.patch(args.id, {
-      status: "closed",
-      laneInvalidationPending: true,
-      laneCleanupAction: "restore_legacy",
-      updatedAt: Date.now(),
-    })
-    return await invalidateClosedLaneSync(ctx, {
-      ...publishBranch,
-      status: "closed",
-      laneInvalidationPending: true,
-      laneCleanupAction: "restore_legacy",
-    })
-  },
-})
-
-/**
- * Finish (or run) the synchronization cleanup for a finished lane. Used by
- * publish-attempt recovery after it resolves an attempt whose lane closed
- * or merged while the attempt was active (the event-time cleanup deferred
- * behind the attempt).
- *
- * The action defaults from the lane's status - closed lanes invalidate
- * (restore stranded work), merged lanes finalize (spend merged work).
- * Recovery passes action:"invalidate" explicitly for a merged lane whose
- * attempt commit provably did NOT merge: that commit's work never reached
- * the base branch, so it must be restored, not spent.
- */
-export const finishLaneCleanup = mutation({
-  args: {
-    id: v.id("publishBranches"),
-    action: v.optional(v.union(v.literal("invalidate"), v.literal("finalize"))),
-    userId: v.optional(v.string()),
-    projectAccessToken: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const publishBranch = await ctx.db.get(args.id)
-    if (!publishBranch) throw new Error("Publish branch not found")
-    await resolveProjectAccess(
-      ctx,
-      { projectId: publishBranch.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken },
-      "editor",
-    )
     if (publishBranch.status !== "closed" && publishBranch.status !== "merged") {
       throw new Error("Lane cleanup only applies to closed or merged publish lanes")
     }
-    if (!args.action) throw new Error("Legacy lane cleanup requires an explicit persisted action")
-    const action = args.action
-    return action === "invalidate"
+    if (!publishBranch.laneCleanupAction) throw new Error("Legacy lane cleanup requires a persisted action")
+    return publishBranch.laneCleanupAction === "restore_legacy"
       ? await invalidateClosedLaneSync(ctx, publishBranch)
       : await finalizeMergedLaneSync(ctx, publishBranch)
   },
@@ -341,7 +253,8 @@ export const finishLaneCleanup = mutation({
 /**
  * Scheduled continuation for bounded lane cleanup: re-runs the pass for a
  * lane whose previous pass hit the batch limit, until the lane drains and
- * the durable flag clears. Dispatches on the lane's status.
+ * the durable flag clears. Dispatches only the action already persisted on
+ * the lane by a server-verified state transition.
  */
 export const continueLaneCleanup = internalMutation({
   args: { id: v.id("publishBranches") },

@@ -1,103 +1,142 @@
 import { v } from "convex/values"
 import { verifyServerQueryToken } from "../lib/project-access-token"
+import type { Doc, Id } from "./_generated/dataModel"
+import type { MutationCtx } from "./_generated/server"
 import { mutation } from "./_generated/server"
 import { invalidateClosedLaneSync } from "./lib/laneInvalidation"
 import { recordMergedLaneAuthority } from "./lib/publishBranchMerge"
 
-/**
- * Handle a GitHub PR merge event.
- * Looks up the publishBranch by PR number, marks it as merged, and runs the
- * SHARED merge finalization (convex/lib/laneMerge.ts): the lane's committed
- * explorer/media ops are spent and the merged documents published. The
- * client fallback (publishBranches.markMerged) and publish-attempt recovery
- * run the same idempotent finalization, so whichever fires first does the
- * work and the others converge as no-ops.
- */
+const identityValidators = {
+  prNumber: v.number(),
+  repoOwner: v.string(),
+  repoName: v.string(),
+  baseRepoFullName: v.string(),
+  baseBranch: v.string(),
+  headRepoFullName: v.string(),
+  headBranch: v.string(),
+}
+
+type PullRequestIdentity = {
+  prNumber: number
+  repoOwner: string
+  repoName: string
+  baseRepoFullName: string
+  baseBranch: string
+  headRepoFullName: string
+  headBranch: string
+}
+
+async function assertLaneIdentity(
+  ctx: Pick<MutationCtx, "db">,
+  lane: Doc<"publishBranches">,
+  identity: PullRequestIdentity,
+) {
+  const project = await ctx.db.get(lane.projectId)
+  const projectFullName = project && `${project.repoOwner}/${project.repoName}`.toLowerCase()
+  if (
+    !project ||
+    project.repoOwner.toLowerCase() !== identity.repoOwner.toLowerCase() ||
+    project.repoName.toLowerCase() !== identity.repoName.toLowerCase() ||
+    identity.baseRepoFullName.toLowerCase() !== projectFullName ||
+    identity.headRepoFullName.toLowerCase() !== projectFullName ||
+    lane.prNumber !== identity.prNumber ||
+    lane.baseBranch !== identity.baseBranch ||
+    lane.branchName !== identity.headBranch
+  ) {
+    throw new Error("Pull request identity does not match the RepoPress publish lane")
+  }
+  return project
+}
+
+async function findWebhookLane(ctx: Pick<MutationCtx, "db">, identity: PullRequestIdentity) {
+  const lane = await ctx.db
+    .query("publishBranches")
+    .withIndex("by_repo_pr_head_base", (q) =>
+      q
+        .eq("repoOwner", identity.repoOwner)
+        .eq("repoName", identity.repoName)
+        .eq("prNumber", identity.prNumber)
+        .eq("branchName", identity.headBranch)
+        .eq("baseBranch", identity.baseBranch),
+    )
+    .first()
+  if (!lane) return null
+  await assertLaneIdentity(ctx, lane, identity)
+  return lane
+}
+
+async function closeLane(ctx: MutationCtx, lane: Doc<"publishBranches">, identity: PullRequestIdentity) {
+  const project = await assertLaneIdentity(ctx, lane, identity)
+  const closedLane = {
+    ...lane,
+    repoOwner: project.repoOwner,
+    repoName: project.repoName,
+    status: "closed" as const,
+    laneInvalidationPending: true as const,
+    laneCleanupAction: "restore_legacy" as const,
+  }
+  await ctx.db.patch(lane._id, {
+    status: "closed",
+    repoOwner: project.repoOwner,
+    repoName: project.repoName,
+    laneInvalidationPending: true,
+    laneCleanupAction: "restore_legacy",
+    updatedAt: Date.now(),
+  })
+  return await invalidateClosedLaneSync(ctx, closedLane)
+}
+
+/** Signed GitHub webhook merge path, scoped by complete PR identity. */
 export const handlePRMerged = mutation({
   args: {
-    prNumber: v.number(),
-    // The merge commit SHA is accepted for API compatibility but never
-    // stored: it is a git commit SHA, not a blob SHA, and storing it would
-    // break conflict detection (which compares blob SHAs).
+    ...identityValidators,
     mergeCommitSha: v.string(),
-    repoOwner: v.string(),
-    repoName: v.string(),
-    headRepoFullName: v.string(),
-    headBranch: v.string(),
     serverQueryToken: v.string(),
   },
   handler: async (ctx, args) => {
-    if (!(await verifyServerQueryToken(args.serverQueryToken))) {
-      throw new Error("Unauthorized")
-    }
+    if (!(await verifyServerQueryToken(args.serverQueryToken))) throw new Error("Unauthorized")
+    const lane = await findWebhookLane(ctx, args)
+    if (!lane) return
+    await recordMergedLaneAuthority(ctx, lane, args)
+  },
+})
 
-    const candidates = await ctx.db
-      .query("publishBranches")
-      .withIndex("by_prNumber", (q) => q.eq("prNumber", args.prNumber))
-      .take(20)
-
-    let publishBranch = null
-    for (const candidate of candidates) {
-      const project = await ctx.db.get(candidate.projectId)
-      if (
-        project &&
-        typeof project.repoOwner === "string" &&
-        typeof project.repoName === "string" &&
-        project.repoOwner.toLowerCase() === args.repoOwner.toLowerCase() &&
-        project.repoName.toLowerCase() === args.repoName.toLowerCase() &&
-        candidate.branchName === args.headBranch
-      ) {
-        if (publishBranch) throw new Error("Ambiguous RepoPress publish lane for merged pull request")
-        publishBranch = candidate
-      }
-    }
-
-    if (!publishBranch) {
-      // Not a RepoPress PR -- ignore silently
-      return
-    }
-    await recordMergedLaneAuthority(ctx, publishBranch, args)
+/** Signed GitHub webhook unmerged-close path, scoped by complete PR identity. */
+export const handlePRClosed = mutation({
+  args: { ...identityValidators, serverQueryToken: v.string() },
+  handler: async (ctx, args) => {
+    if (!(await verifyServerQueryToken(args.serverQueryToken))) throw new Error("Unauthorized")
+    const lane = await findWebhookLane(ctx, args)
+    if (!lane) return
+    await closeLane(ctx, lane, args)
   },
 })
 
 /**
- * Handle a GitHub PR close event (without merge).
- * Marks the publish branch as closed and invalidates the lane's
- * synchronization state: ops committed to the lane are restored to pending
- * (or explicitly discarded when newer pending intent supersedes them) and
- * documents whose publishedProvenance points at the lane become dirty
- * again, so nothing the dead lane held is stranded. Pending staged work is
- * untouched. The client fallback path (publishBranches.markClosed) performs
- * the same invalidation.
+ * Authenticated status-sync command. The Next.js route reads GitHub first;
+ * this server-token mutation binds that proof to one exact project lane.
  */
-export const handlePRClosed = mutation({
+export const recordVerifiedPullRequestState = mutation({
   args: {
-    prNumber: v.number(),
+    laneId: v.id("publishBranches"),
+    projectId: v.id("projects"),
+    ...identityValidators,
+    state: v.union(v.literal("open"), v.literal("closed")),
+    merged: v.boolean(),
+    mergeCommitSha: v.optional(v.string()),
     serverQueryToken: v.string(),
   },
   handler: async (ctx, args) => {
-    if (!(await verifyServerQueryToken(args.serverQueryToken))) {
-      throw new Error("Unauthorized")
+    if (!(await verifyServerQueryToken(args.serverQueryToken))) throw new Error("Unauthorized")
+    const lane = await ctx.db.get(args.laneId as Id<"publishBranches">)
+    if (!lane || lane.projectId !== args.projectId) throw new Error("Publish lane does not belong to the project")
+    await assertLaneIdentity(ctx, lane, args)
+    if (args.state === "open") return { state: "open" as const }
+    if (args.merged) {
+      if (!args.mergeCommitSha) throw new Error("Merged pull request is missing its commit authority")
+      return await recordMergedLaneAuthority(ctx, lane, { ...args, mergeCommitSha: args.mergeCommitSha })
     }
-
-    const publishBranch = await ctx.db
-      .query("publishBranches")
-      .withIndex("by_prNumber", (q) => q.eq("prNumber", args.prNumber))
-      .first()
-
-    if (!publishBranch) return
-
-    await ctx.db.patch(publishBranch._id, {
-      status: "closed",
-      laneInvalidationPending: true,
-      laneCleanupAction: "restore_legacy",
-      updatedAt: Date.now(),
-    })
-    await invalidateClosedLaneSync(ctx, {
-      ...publishBranch,
-      status: "closed",
-      laneInvalidationPending: true,
-      laneCleanupAction: "restore_legacy",
-    })
+    await closeLane(ctx, lane, args)
+    return { state: "closed" as const }
   },
 })

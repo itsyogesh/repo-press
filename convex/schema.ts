@@ -421,6 +421,11 @@ export default defineSchema({
   // ─── Publish Branches (PR-based publish workflow) ─────────────────
   publishBranches: defineTable({
     projectId: v.id("projects"),
+    // Denormalized repository identity makes webhook lookup repository- and
+    // PR-scoped. Optional only for lanes created before this field existed;
+    // the authenticated status-sync route backfills those rows by ID.
+    repoOwner: v.optional(v.string()),
+    repoName: v.optional(v.string()),
     branchName: v.string(),
     baseBranch: v.string(),
     prNumber: v.optional(v.number()),
@@ -446,6 +451,7 @@ export default defineSchema({
     .index("by_projectId", ["projectId"])
     .index("by_projectId_status", ["projectId", "status"])
     .index("by_prNumber", ["prNumber"])
+    .index("by_repo_pr_head_base", ["repoOwner", "repoName", "prNumber", "branchName", "baseBranch"])
     .index("by_projectId_mergeVerificationState", ["projectId", "mergeVerificationState"])
     .index("by_laneInvalidationPending", ["laneInvalidationPending"]),
 
