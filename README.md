@@ -166,6 +166,16 @@ New repository setup uses native discovery: RepoPress inspects the repository's 
 | Variable | Description |
 |---|---|
 | `REPOPRESS_CAPABILITY_SECRET` | Same capability-signing value configured in Convex; never reuse `BETTER_AUTH_SECRET` |
+| `PREVIEW_APPROVAL_PRIVATE_KEY_JWK` | Server-only EC P-256 private JWK used to sign Compatible preview artifacts; never expose or log it |
+
+### Compatible preview browser configuration
+
+| Variable | Description |
+|---|---|
+| `NEXT_PUBLIC_PREVIEW_ORIGIN` | Separately hosted preview sandbox origin; production must not reuse the Studio origin |
+| `NEXT_PUBLIC_PREVIEW_APPROVAL_PUBLIC_KEY_JWK` | Public EC P-256 verification JWK matching the server-only preview signing key |
+
+The private and public preview JWKs must be generated as one P-256 key pair. Keep the private JWK only in the Next.js server environment. The public JWK is intentionally browser-readable and cannot sign artifacts.
 
 ### Optional
 

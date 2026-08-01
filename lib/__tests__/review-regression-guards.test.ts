@@ -851,6 +851,21 @@ describe("review regression guards", () => {
     }
   })
 
+  it("keeps the compatible approval private key inside a server-only module", () => {
+    const signerPath = "lib/preview/compatible-signing.server.ts"
+    const signer = read(signerPath)
+    expect(signer.startsWith('import "server-only"')).toBe(true)
+    expect(signer).toContain("PREVIEW_APPROVAL_PRIVATE_KEY_JWK")
+
+    for (const relativePath of listHostProductionFiles(ROOT)) {
+      if (relativePath === signerPath) continue
+      const source = read(relativePath)
+      if (!source.startsWith('"use client"')) continue
+      expect(source, relativePath).not.toContain("compatible-signing.server")
+      expect(source, relativePath).not.toContain("PREVIEW_APPROVAL_PRIVATE_KEY_JWK")
+    }
+  })
+
   it("keeps the required studio modules as explicit client files", () => {
     for (const relativePath of clientFiles) {
       expect(read(relativePath).startsWith('"use client"')).toBe(true)
