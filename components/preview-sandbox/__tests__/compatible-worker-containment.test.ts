@@ -10,6 +10,95 @@ import {
 } from "../compatible-worker"
 
 describe("compatible worker containment", () => {
+  it("renders frozen framework-neutral named and namespace preview capabilities", async () => {
+    const job = await prepareCompatibleWorkerJob({
+      artifactId: "artifact-portable-capabilities",
+      documentSource: "<CapabilityProbe />",
+      adapter: {
+        entryPath: "mdx-preview.tsx",
+        sources: {
+          "mdx-preview.tsx": `
+            import {
+              PREVIEW_OPTIONS,
+              PreviewAction,
+              PreviewBox,
+              PreviewIcon,
+              PreviewImage,
+              PreviewInline,
+              PreviewList,
+              PreviewStack,
+              PreviewText,
+            } from "@repopress/preview"
+            import * as Preview from "@repopress/preview"
+
+            function CapabilityProbe() {
+              try { PREVIEW_OPTIONS.tones.info = "mutated" } catch {}
+              try { Preview.PreviewBox.extra = "mutated" } catch {}
+              const sealed = Object.getPrototypeOf(PREVIEW_OPTIONS) === null
+                && Object.getPrototypeOf(PREVIEW_OPTIONS.tones) === null
+                && Object.isFrozen(PREVIEW_OPTIONS)
+                && Object.isFrozen(PREVIEW_OPTIONS.tones)
+                && PREVIEW_OPTIONS.tones.info === true
+                && !("extra" in Preview.PreviewBox)
+              return <PreviewBox tone="unsupported" arbitrary="ignored">
+                <PreviewStack gap="spacious">
+                  <PreviewInline gap="compact">
+                    <PreviewIcon name="mail" />
+                    <PreviewText as="h2" size="title" weight="medium">Portable title</PreviewText>
+                  </PreviewInline>
+                  <PreviewList style="check" items={["First item", "Second item"]} />
+                  <PreviewImage src="https://evil.test/pixel" alt="Merry cover" aspect="wide" />
+                  <PreviewAction
+                    label="Open letter"
+                    href="https://evil.test/leave"
+                    onClick={() => { throw new Error("must never cross") }}
+                  />
+                  <PreviewText tone="muted">{sealed ? "SEALED_CAPABILITIES" : "MUTABLE_CAPABILITIES"}</PreviewText>
+                </PreviewStack>
+              </PreviewBox>
+            }
+            export default { components: { CapabilityProbe } }
+          `,
+        },
+      },
+    })
+    const sent: unknown[] = []
+    const listeners: Array<(event: { data?: unknown; ports?: unknown[] }) => void | Promise<void>> = []
+    const port = {
+      onmessage: null as ((event: { data: unknown }) => void) | null,
+      close() {},
+      postMessage(message: unknown) {
+        sent.push(message)
+      },
+      start() {},
+    }
+    const context = vm.createContext({
+      addEventListener: (_type: string, listener: (event: { data?: unknown; ports?: unknown[] }) => void) =>
+        listeners.push(listener),
+      removeEventListener() {},
+    })
+    vm.runInContext(createCompatibleWorkerSource(), context, { timeout: 1_000 })
+    await listeners[0]({ ports: [port] })
+    port.onmessage?.({
+      data: { type: "repopress:render-compatible", requestId: "C".repeat(43), job },
+    })
+
+    expect(sent).toHaveLength(1)
+    expect(sent[0]).toMatchObject({
+      type: "repopress:rendered-compatible",
+      fidelityLosses: [],
+    })
+    const serialized = JSON.stringify(sent[0])
+    expect(serialized).toContain("SEALED_CAPABILITIES")
+    expect(serialized).not.toContain("MUTABLE_CAPABILITIES")
+    expect(serialized).toContain("Portable title")
+    expect(serialized).toContain("First item")
+    expect(serialized).toContain("Merry cover")
+    expect(serialized).toContain("Open letter")
+    expect(serialized).toContain("repopress-preview-box--neutral")
+    expect(serialized).not.toMatch(/evil\.test|href|src|onClick|style/)
+  })
+
   it("binds namespace imports as frozen null-prototype copies of the approved export map", async () => {
     const job = await prepareCompatibleWorkerJob({
       artifactId: "artifact-namespace",

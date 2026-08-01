@@ -360,6 +360,148 @@ function compatibleWorkerMain() {
   }
   const jsxRuntime = { Fragment, jsx, jsxs: jsx, jsxDEV: jsx }
 
+  function frozenOptionSet(values: readonly string[]) {
+    const options = objectCreate(null)
+    for (let index = 0; index < values.length; index += 1) options[values[index]] = true
+    return objectFreeze(options)
+  }
+  const PREVIEW_OPTIONS = objectCreate(null)
+  PREVIEW_OPTIONS.tones = frozenOptionSet(["neutral", "info", "tip", "warning", "accent"])
+  PREVIEW_OPTIONS.gaps = frozenOptionSet(["compact", "default", "spacious"])
+  PREVIEW_OPTIONS.alignments = frozenOptionSet(["start", "center", "end"])
+  PREVIEW_OPTIONS.textSizes = frozenOptionSet(["caption", "body", "lead", "title"])
+  PREVIEW_OPTIONS.textWeights = frozenOptionSet(["regular", "medium", "semibold"])
+  PREVIEW_OPTIONS.textTones = frozenOptionSet(["default", "muted", "accent"])
+  PREVIEW_OPTIONS.listStyles = frozenOptionSet(["bullet", "check", "ordered", "plain"])
+  PREVIEW_OPTIONS.actionTones = frozenOptionSet(["primary", "secondary"])
+  PREVIEW_OPTIONS.imageAspects = frozenOptionSet(["wide", "square", "portrait"])
+  PREVIEW_OPTIONS.iconNames = frozenOptionSet(["info", "tip", "warning", "check", "mail", "stamp", "image", "arrow"])
+
+  function option(options: any, value: any, fallback: string) {
+    return typeof value === "string" && objectHasOwn(options, value) ? value : fallback
+  }
+  function boundedLabel(value: any, fallback: string) {
+    return typeof value === "string" && value.length > 0 && value.length <= 512 ? value : fallback
+  }
+  function PreviewBox(props: any) {
+    const tone = option(PREVIEW_OPTIONS.tones, props?.tone, "neutral")
+    return jsx("div", {
+      className: `repopress-preview-box repopress-preview-box--${tone}`,
+      children: props?.children,
+    })
+  }
+  function PreviewStack(props: any) {
+    const gap = option(PREVIEW_OPTIONS.gaps, props?.gap, "default")
+    return jsx("div", {
+      className: `repopress-preview-stack repopress-preview-stack--${gap}`,
+      children: props?.children,
+    })
+  }
+  function PreviewInline(props: any) {
+    const gap = option(PREVIEW_OPTIONS.gaps, props?.gap, "default")
+    const align = option(PREVIEW_OPTIONS.alignments, props?.align, "center")
+    const wrap = props?.wrap === false ? "nowrap" : "wrap"
+    return jsx("div", {
+      className: `repopress-preview-inline repopress-preview-inline--${gap} repopress-preview-inline--${align} repopress-preview-inline--${wrap}`,
+      children: props?.children,
+    })
+  }
+  function PreviewText(props: any) {
+    const allowedTags = frozenOptionSet(["span", "p", "strong", "small", "h2", "h3"])
+    const tag = option(allowedTags, props?.as, "span")
+    const size = option(PREVIEW_OPTIONS.textSizes, props?.size, "body")
+    const weight = option(PREVIEW_OPTIONS.textWeights, props?.weight, "regular")
+    const tone = option(PREVIEW_OPTIONS.textTones, props?.tone, "default")
+    return jsx(tag, {
+      className: `repopress-preview-text repopress-preview-text--${size} repopress-preview-text--${weight} repopress-preview-text--${tone}`,
+      children: props?.children,
+    })
+  }
+  function PreviewIcon(props: any) {
+    const name = option(PREVIEW_OPTIONS.iconNames, props?.name, "info")
+    const symbols = objectCreate(null)
+    symbols.info = "i"
+    symbols.tip = "✦"
+    symbols.warning = "!"
+    symbols.check = "✓"
+    symbols.mail = "✉"
+    symbols.stamp = "◈"
+    symbols.image = "▧"
+    symbols.arrow = "→"
+    const label = typeof props?.label === "string" && props.label.length <= 256 ? props.label : null
+    return jsx("span", {
+      className: `repopress-preview-icon repopress-preview-icon--${name}`,
+      ...(label ? { role: "img", "aria-label": label } : { "aria-hidden": true }),
+      children: symbols[name],
+    })
+  }
+  function PreviewList(props: any) {
+    const style = option(PREVIEW_OPTIONS.listStyles, props?.style, "bullet")
+    const source = arrayIsArray(props?.items) ? props.items : null
+    const children: any[] = []
+    if (source) {
+      const limit = source.length < 64 ? source.length : 64
+      for (let index = 0; index < limit; index += 1) {
+        const item = source[index]
+        if (typeof item !== "string" && typeof item !== "number") continue
+        arrayPush(
+          children,
+          jsx("li", {
+            className: "repopress-preview-list-item",
+            children:
+              style === "check"
+                ? [jsx(PreviewIcon, { name: "check" }), jsx("span", { children: stringFrom(item) })]
+                : stringFrom(item),
+          }),
+        )
+      }
+    }
+    const tag = style === "ordered" ? "ol" : "ul"
+    return jsx(tag, {
+      className: `repopress-preview-list repopress-preview-list--${style}`,
+      children: source ? children : props?.children,
+    })
+  }
+  function PreviewAction(props: any) {
+    const tone = option(PREVIEW_OPTIONS.actionTones, props?.tone, "primary")
+    const label = boundedLabel(props?.label, "Preview action")
+    return jsx("span", {
+      className: `repopress-preview-action repopress-preview-action--${tone}`,
+      role: "note",
+      "aria-label": `Inert preview action: ${label}`,
+      children: [label, jsx("small", { children: "Preview only" })],
+    })
+  }
+  function PreviewImage(props: any) {
+    const aspect = option(PREVIEW_OPTIONS.imageAspects, props?.aspect, "wide")
+    const alt = boundedLabel(props?.alt, "Image preview")
+    const label = boundedLabel(props?.label, alt)
+    return jsx("figure", {
+      className: `repopress-preview-image repopress-preview-image--${aspect}`,
+      role: "img",
+      "aria-label": alt,
+      children: [
+        jsx("div", {
+          className: "repopress-preview-image-surface",
+          children: jsx(PreviewIcon, { name: "image" }),
+        }),
+        jsx("figcaption", { children: label }),
+      ],
+    })
+  }
+  const previewModule: any = objectCreate(null)
+  objectAssign(previewModule, {
+    PREVIEW_OPTIONS,
+    PreviewAction,
+    PreviewBox,
+    PreviewIcon,
+    PreviewImage,
+    PreviewInline,
+    PreviewList,
+    PreviewStack,
+    PreviewText,
+  })
+
   function Callout(props: any) {
     return jsx("aside", { className: "repopress-callout", role: "note", children: props.children })
   }
@@ -378,6 +520,7 @@ function compatibleWorkerMain() {
     })
   }
   const shimModules: any = {
+    "@repopress/preview": previewModule,
     "@/components/docs/doc-media": { Callout, DocsImage, DocsVideo },
     "@components/docs/doc-media": { Callout, DocsImage, DocsVideo },
     "@/lib/constants/docs": { DOCS_SETUP_MEDIA: {} },

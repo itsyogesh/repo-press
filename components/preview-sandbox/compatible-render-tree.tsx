@@ -282,5 +282,5 @@ function renderNode(node: CompatibleRenderNode, key: string): React.ReactNode {
 }
 
 export function CompatibleRenderTreeView({ tree }: { tree: CompatibleRenderTree }) {
-  return <>{tree.map((node, index) => renderNode(node, String(index)))}</>
+  return <div data-compatible-preview>{tree.map((node, index) => renderNode(node, String(index)))}</div>
 }

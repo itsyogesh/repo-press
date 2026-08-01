@@ -88,4 +88,29 @@ describe("compatible inert render tree", () => {
     ).toBeNull()
     expect(sanitizeCompatibleRenderTree([{ kind: "text", value: "x".repeat(300_000) }])).toBeNull()
   })
+
+  it("scopes portable primitive styles without restoring navigation or media behavior", () => {
+    const tree = sanitizeCompatibleRenderTree([
+      {
+        kind: "element",
+        tag: "figure",
+        props: { className: "repopress-preview-image", role: "img", "aria-label": "Merry cover" },
+        children: [
+          { kind: "element", tag: "figcaption", props: {}, children: [{ kind: "text", value: "Merry cover" }] },
+        ],
+      },
+      {
+        kind: "element",
+        tag: "span",
+        props: { className: "repopress-preview-action", role: "note" },
+        children: [{ kind: "text", value: "Open letter" }],
+      },
+    ])
+    const { container } = render(<CompatibleRenderTreeView tree={tree ?? []} />)
+
+    expect(container.querySelector("[data-compatible-preview]")).not.toBeNull()
+    expect(screen.getByRole("img", { name: "Merry cover" })).toBeInTheDocument()
+    expect(screen.getByRole("note")).toHaveTextContent("Open letter")
+    expect(container.querySelector("a, button, img")).toBeNull()
+  })
 })
