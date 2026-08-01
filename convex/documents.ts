@@ -957,6 +957,8 @@ export const markPublishedSnapshot = mutation({
       publishBranchId?: typeof args.publishBranchId
       publishAttemptId?: typeof args.publishAttemptId
       commitSha: string
+      previousGitBaselineState?: "unknown" | "absent" | "blob"
+      previousGithubSha?: string
       publishedUpdatedAt: number
       contentRevision?: string
       publishedContentVersion?: number
@@ -967,6 +969,30 @@ export const markPublishedSnapshot = mutation({
       publishedUpdatedAt: args.expectedUpdatedAt,
     }
     if (args.publishBranchId !== undefined) publishedProvenance.publishBranchId = args.publishBranchId
+    if (args.authorityKind === "lane") {
+      const existingProvenance = doc.publishedProvenance
+      const replayingSameLaneAuthority =
+        existingProvenance?.authorityKind === "lane" &&
+        existingProvenance.authorityBranch === args.authorityBranch &&
+        existingProvenance.publishBranchId === args.publishBranchId &&
+        existingProvenance.publishAttemptId === args.publishAttemptId &&
+        existingProvenance.commitSha === args.commitSha &&
+        existingProvenance.contentRevision === args.contentRevision
+      if (replayingSameLaneAuthority) {
+        if (existingProvenance.previousGitBaselineState !== undefined) {
+          publishedProvenance.previousGitBaselineState = existingProvenance.previousGitBaselineState
+        }
+        if (existingProvenance.previousGithubSha !== undefined) {
+          publishedProvenance.previousGithubSha = existingProvenance.previousGithubSha
+        }
+      } else {
+        const previousGitBaselineState = doc.gitBaselineState ?? (doc.githubSha ? "blob" : "unknown")
+        publishedProvenance.previousGitBaselineState = previousGitBaselineState
+        if (previousGitBaselineState === "blob" && doc.githubSha) {
+          publishedProvenance.previousGithubSha = doc.githubSha
+        }
+      }
+    }
     if (args.publishAttemptId !== undefined) {
       publishedProvenance.publishAttemptId = args.publishAttemptId
     }
@@ -978,6 +1004,7 @@ export const markPublishedSnapshot = mutation({
     }
     await ctx.db.patch(args.id, {
       githubSha: args.githubSha,
+      gitBaselineState: "blob",
       publishedProvenance,
       // Lazy migration: the legacy cleanliness marker is superseded the
       // first time real provenance lands.

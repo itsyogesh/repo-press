@@ -23,7 +23,7 @@ import { invalidateClosedLaneSync, LANE_CLEANUP_BATCH } from "@/convex/lib/laneI
 import { finalizeMergedLaneSync } from "@/convex/lib/laneMerge"
 import { cleanupStaleUploads } from "@/convex/mediaOps"
 import * as publishBranchesModule from "@/convex/publishBranches"
-import { finishLaneCleanup, getStatusSyncCandidateForProject } from "@/convex/publishBranches"
+import { finishLaneCleanup, getStatusSyncCandidateForProject, markStatusCheckAttempt } from "@/convex/publishBranches"
 import { mintProjectAccessToken, mintServerQueryToken } from "@/lib/project-access-token"
 
 const project = {
@@ -347,6 +347,42 @@ describe("closed-lane synchronization invalidation", () => {
     expect(candidate?._id).toBe("lane_closed")
   })
 
+  it("rotates to the next pending lane after a trusted check attempt, even before verification", async () => {
+    const first = laneDoc({
+      _id: "lane_first",
+      closeVerificationState: "pending",
+      lastStatusCheckedAt: 10,
+      createdAt: 10,
+    })
+    const second = laneDoc({
+      _id: "lane_second",
+      prNumber: 43,
+      branchName: "repopress/second",
+      closeVerificationState: "pending",
+      lastStatusCheckedAt: 20,
+      createdAt: 20,
+    })
+    const ctx = createLaneCtx({ publishBranches: [first, second] })
+
+    await (markStatusCheckAttempt as any).handler(ctx, {
+      id: "lane_first",
+      projectId: "project_1",
+      prNumber: 42,
+      headBranch: "repopress/start",
+      baseBranch: "main",
+      serverQueryToken: await mintServerQueryToken(),
+      userId: "user_owner",
+      projectAccessToken: await patToken(),
+    })
+    const candidate = await (getStatusSyncCandidateForProject as any).handler(ctx, {
+      projectId: "project_1",
+      userId: "user_owner",
+      projectAccessToken: await patToken(),
+    })
+
+    expect(candidate?._id).toBe("lane_second")
+  })
+
   it("selects the least-recently-checked open lane instead of starving an older inactive PR", async () => {
     const active = laneDoc({
       _id: "lane_active",
@@ -404,7 +440,15 @@ describe("closed-lane synchronization invalidation", () => {
           _id: "doc_lane",
           projectId: "project_1",
           updatedAt: 10,
-          publishedProvenance: { publishBranchId: "lane_1", commitSha: "commit-1", publishedUpdatedAt: 10 },
+          githubSha: "b".repeat(40),
+          gitBaselineState: "blob",
+          publishedProvenance: {
+            publishBranchId: "lane_1",
+            commitSha: "commit-1",
+            publishedUpdatedAt: 10,
+            previousGitBaselineState: "blob",
+            previousGithubSha: "a".repeat(40),
+          },
         },
         {
           _id: "doc_other_lane",
@@ -434,7 +478,11 @@ describe("closed-lane synchronization invalidation", () => {
       "media_lane",
       expect.objectContaining({ status: "pending", commitSha: undefined, publishBranchId: undefined }),
     )
-    expect(ctx.db.patch).toHaveBeenCalledWith("doc_lane", { publishedProvenance: undefined })
+    expect(ctx.db.patch).toHaveBeenCalledWith("doc_lane", {
+      githubSha: "a".repeat(40),
+      gitBaselineState: "blob",
+      publishedProvenance: undefined,
+    })
     // Restoring keeps the staged bytes - nothing is deleted, nothing scheduled.
     expect(ctx.storage.delete).not.toHaveBeenCalled()
     expect(ctx.db.delete).not.toHaveBeenCalled()
@@ -626,7 +674,11 @@ describe("closed-lane synchronization invalidation", () => {
     })
 
     expect(ctx.db.patch).toHaveBeenCalledWith("lane_1", expect.objectContaining({ status: "closed" }))
-    expect(ctx.db.patch).toHaveBeenCalledWith("doc_lane", { publishedProvenance: undefined })
+    expect(ctx.db.patch).toHaveBeenCalledWith("doc_lane", {
+      githubSha: undefined,
+      gitBaselineState: "unknown",
+      publishedProvenance: undefined,
+    })
     expect(result).toEqual({ state: "closed", verificationPending: false })
   })
 
@@ -782,7 +834,11 @@ describe("closed-lane synchronization invalidation", () => {
     const result = await (cleanupStaleUploads as any).handler(ctx, {})
 
     expect(result).toEqual({ processed: 0, tombstonesCleared: 0, lanesCleaned: 1 })
-    expect(ctx.db.patch).toHaveBeenCalledWith("doc_lane", { publishedProvenance: undefined })
+    expect(ctx.db.patch).toHaveBeenCalledWith("doc_lane", {
+      githubSha: undefined,
+      gitBaselineState: "unknown",
+      publishedProvenance: undefined,
+    })
     expect(ctx.db.patch).toHaveBeenCalledWith("lane_1", expect.objectContaining({ laneInvalidationPending: undefined }))
   })
 

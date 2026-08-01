@@ -240,6 +240,7 @@ describe("lane-synchronization provenance", () => {
     const [, patched] = patch.mock.calls[0]
     expect(patched).toEqual({
       githubSha: BLOB_SHA,
+      gitBaselineState: "blob",
       lastPublishedUpdatedAt: undefined,
       publishedProvenance: {
         authorityKind: "lane",
@@ -247,6 +248,7 @@ describe("lane-synchronization provenance", () => {
         publishBranchId: "lane_1",
         commitSha: COMMIT_SHA,
         contentRevision: CONTENT_REVISION,
+        previousGitBaselineState: "unknown",
         publishedUpdatedAt: 5,
       },
     })
@@ -292,6 +294,37 @@ describe("lane-synchronization provenance", () => {
           publishBranchId: "lane_1",
           publishAttemptId: "attempt_1",
           publishedContentVersion: 3,
+        }),
+      }),
+    )
+  })
+
+  it("persists the prior blob baseline when lane provenance replaces it", async () => {
+    const patch = vi.fn()
+    const previousSha = "d".repeat(40)
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({
+        _id: "doc_1",
+        projectId: "project_1",
+        updatedAt: 5,
+        githubSha: previousSha,
+        gitBaselineState: "blob",
+      })
+      .mockResolvedValueOnce(project)
+
+    await (markPublishedSnapshot as any).handler(createCtx({ get, patch }), {
+      ...snapshotArgs(),
+      projectAccessToken: await patToken(),
+    })
+
+    expect(patch).toHaveBeenCalledWith(
+      "doc_1",
+      expect.objectContaining({
+        gitBaselineState: "blob",
+        publishedProvenance: expect.objectContaining({
+          previousGitBaselineState: "blob",
+          previousGithubSha: previousSha,
         }),
       }),
     )

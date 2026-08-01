@@ -1,4 +1,5 @@
 import { v } from "convex/values"
+import { verifyServerQueryToken } from "../lib/project-access-token"
 import type { Id } from "./_generated/dataModel"
 import type { QueryCtx } from "./_generated/server"
 import { internalMutation, mutation, query } from "./_generated/server"
@@ -133,6 +134,45 @@ export const getById = query({
     })
     if (!access) return null
     return branch
+  },
+})
+
+/**
+ * Record that the trusted lifecycle route is about to check this exact lane.
+ * This fairness cursor is not evidence of any GitHub state.
+ */
+export const markStatusCheckAttempt = mutation({
+  args: {
+    id: v.id("publishBranches"),
+    projectId: v.id("projects"),
+    prNumber: v.number(),
+    headBranch: v.string(),
+    baseBranch: v.string(),
+    serverQueryToken: v.string(),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await resolveProjectAccess(
+      ctx,
+      { projectId: args.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken },
+      "editor",
+    )
+    if (!(await verifyServerQueryToken(args.serverQueryToken))) {
+      throw new Error("Unauthorized: valid server proof is required to claim a lifecycle check")
+    }
+    const lane = await ctx.db.get(args.id)
+    if (
+      !lane ||
+      lane.projectId !== args.projectId ||
+      lane.prNumber !== args.prNumber ||
+      lane.branchName !== args.headBranch ||
+      lane.baseBranch !== args.baseBranch
+    ) {
+      throw new Error("Lifecycle check identity does not match the persisted publish lane")
+    }
+    await ctx.db.patch(lane._id, { lastStatusCheckedAt: Date.now() })
+    return { claimed: true as const }
   },
 })
 

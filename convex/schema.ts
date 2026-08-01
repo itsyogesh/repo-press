@@ -191,6 +191,9 @@ export default defineSchema({
     order: v.optional(v.number()),
     // GitHub sync state
     githubSha: v.optional(v.string()),
+    // Explicit optimistic-lock state. Missing means a pre-migration row;
+    // new reconciliation distinguishes a known blob from known absence.
+    gitBaselineState: v.optional(v.union(v.literal("unknown"), v.literal("absent"), v.literal("blob"))),
     lastSyncedAt: v.optional(v.number()),
     // LEGACY (lazily migrated): retained for reads, but never considered
     // clean until byte equality is proven against a final Git authority.
@@ -213,6 +216,10 @@ export default defineSchema({
         publishBranchId: v.optional(v.id("publishBranches")),
         publishAttemptId: v.optional(v.id("publishAttempts")),
         commitSha: v.string(),
+        // Lane provenance remembers the Git baseline it replaced so a
+        // no-attempt lane synchronization can be restored safely on close.
+        previousGitBaselineState: v.optional(v.union(v.literal("unknown"), v.literal("absent"), v.literal("blob"))),
+        previousGithubSha: v.optional(v.string()),
         contentRevision: v.optional(v.string()),
         // Optional only for provenance recorded before the field existed;
         // those rows remain dirty until exact Git byte identity is proven.

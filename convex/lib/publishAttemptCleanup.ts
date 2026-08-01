@@ -344,11 +344,14 @@ async function processDocuments(
       // attempt must always be cleared so the document remains dirty. A
       // verified restore also resets the optimistic-lock baseline to the
       // immutable final/base tree (undefined means the path is absent).
-      if (ownsRecordedProvenance) {
+      if (outcome.disposition === "restore") {
         await ctx.db.patch(document._id, {
-          ...(outcome.disposition === "restore" ? { githubSha: outcome.finalBlobSha } : {}),
-          publishedProvenance: undefined,
+          githubSha: outcome.finalBlobSha,
+          gitBaselineState: outcome.finalBlobSha ? ("blob" as const) : ("absent" as const),
+          ...(ownsRecordedProvenance ? { publishedProvenance: undefined } : {}),
         })
+      } else if (ownsRecordedProvenance) {
+        await ctx.db.patch(document._id, { publishedProvenance: undefined })
       }
       processed += 1
       continue
@@ -381,6 +384,7 @@ async function processDocuments(
     await ctx.db.patch(document._id, {
       status: "published",
       ...(outcome.finalBlobSha ? { githubSha: outcome.finalBlobSha } : {}),
+      ...(outcome.finalBlobSha ? { gitBaselineState: "blob" as const } : {}),
       publishedProvenance,
       lastSyncedAt: Date.now(),
       publishedAt: Date.now(),

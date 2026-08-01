@@ -238,7 +238,16 @@ export async function invalidateClosedLaneSync(
     .take(LANE_CLEANUP_BATCH)
   for (const doc of documentsBatch) {
     invalidatedDocumentIds.push(doc._id)
-    await ctx.db.patch(doc._id, { publishedProvenance: undefined })
+    const previousState = doc.publishedProvenance?.previousGitBaselineState ?? "unknown"
+    const previousGithubSha = doc.publishedProvenance?.previousGithubSha
+    if (previousState === "blob" && !previousGithubSha) {
+      throw new Error("Legacy lane document is missing its persisted prior blob baseline")
+    }
+    await ctx.db.patch(doc._id, {
+      githubSha: previousState === "blob" ? previousGithubSha : undefined,
+      gitBaselineState: previousState,
+      publishedProvenance: undefined,
+    })
   }
 
   const done =

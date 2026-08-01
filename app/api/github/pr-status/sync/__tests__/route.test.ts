@@ -191,8 +191,28 @@ describe("POST /api/github/pr-status/sync", () => {
     const response = await POST(request(command))
 
     expect(response.status).toBe(409)
-    expect(convexMutationMock).not.toHaveBeenCalled()
+    expect(convexMutationMock).toHaveBeenCalledTimes(1)
+    expect(convexMutationMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ id: "lane_1", serverQueryToken: "server-token" }),
+    )
     expect(recoverMock).not.toHaveBeenCalled()
+  })
+
+  it("advances the lifecycle fairness cursor before a GitHub read failure", async () => {
+    convexQueryMock.mockReset().mockResolvedValueOnce(project)
+    createGitHubClientMock.mockReturnValue({
+      rest: { pulls: { get: vi.fn().mockRejectedValue(Object.assign(new Error("rate limited"), { status: 500 })) } },
+    })
+
+    const response = await POST(request(command))
+
+    expect(response.status).toBe(500)
+    expect(convexMutationMock).toHaveBeenCalledTimes(1)
+    expect(convexMutationMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ id: "lane_1", serverQueryToken: "server-token" }),
+    )
   })
 
   it("rejects a cross-origin state-changing request before GitHub or Convex writes", async () => {

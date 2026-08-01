@@ -40,6 +40,16 @@ export async function POST(request: Request) {
     const owner = project.repoOwner
     const repo = project.repoName
     const expectedRepoFullName = `${owner}/${repo}`.toLowerCase()
+    await convex.mutation(api.publishBranches.markStatusCheckAttempt, {
+      id: laneId as Id<"publishBranches">,
+      projectId: project._id,
+      prNumber: prNumber!,
+      headBranch,
+      baseBranch,
+      serverQueryToken,
+      userId: actingUserId,
+      projectAccessToken,
+    })
     const octokit = createGitHubClient(token)
     const { data: pr } = await octokit.rest.pulls.get({ owner, repo, pull_number: prNumber! })
     const mergeCommitSha = pr.merge_commit_sha ?? undefined

@@ -1751,13 +1751,14 @@ describe("bounded attempt-scoped cleanup continuation", () => {
         { documentId: "doc_restore", repoPath: "content/b.mdx", expectedUpdatedAt: 10, contentVersion: 3 },
         { documentId: "doc_newer", repoPath: "content/c.mdx", expectedUpdatedAt: 10, contentVersion: 3 },
         { documentId: "doc_other", repoPath: "content/d.mdx", expectedUpdatedAt: 10, contentVersion: 3 },
+        { documentId: "doc_unrecorded", repoPath: "content/e.mdx", expectedUpdatedAt: 10, contentVersion: 3 },
       ],
-      operationDescriptors: ["a", "b", "c", "d"].map((name) => ({
+      operationDescriptors: ["a", "b", "c", "d", "e"].map((name) => ({
         path: `content/${name}.mdx`,
         action: "update",
         expectedBlobSha: "6".repeat(40),
       })),
-      operationPaths: ["content/a.mdx", "content/b.mdx", "content/c.mdx", "content/d.mdx"],
+      operationPaths: ["content/a.mdx", "content/b.mdx", "content/c.mdx", "content/d.mdx", "content/e.mdx"],
     }
     const provenance = {
       publishBranchId: "lane_1",
@@ -1777,6 +1778,7 @@ describe("bounded attempt-scoped cleanup continuation", () => {
           { path: "content/b.mdx", disposition: "restore", finalBlobSha: "7".repeat(40) },
           { path: "content/c.mdx", disposition: "restore" },
           { path: "content/d.mdx", disposition: "restore" },
+          { path: "content/e.mdx", disposition: "restore" },
         ],
       }),
       {
@@ -1809,6 +1811,13 @@ describe("bounded attempt-scoped cleanup continuation", () => {
         contentVersion: 3,
         publishedProvenance: { ...provenance, publishAttemptId: "attempt_2" },
       },
+      {
+        _id: "doc_unrecorded",
+        projectId: "project_1",
+        status: "draft",
+        updatedAt: 10,
+        contentVersion: 3,
+      },
     ])
 
     await (continueCleanup as any).handler(ctx, { cleanupId: "cleanup_1" })
@@ -1827,13 +1836,19 @@ describe("bounded attempt-scoped cleanup continuation", () => {
     )
     expect(ctx.db.patch).toHaveBeenCalledWith("doc_restore", {
       githubSha: "7".repeat(40),
+      gitBaselineState: "blob",
       publishedProvenance: undefined,
     })
     expect(ctx.db.patch).toHaveBeenCalledWith("doc_newer", {
       githubSha: undefined,
+      gitBaselineState: "absent",
       publishedProvenance: undefined,
     })
     expect(ctx.db.patch).not.toHaveBeenCalledWith("doc_other", expect.anything())
+    expect(ctx.db.patch).toHaveBeenCalledWith("doc_unrecorded", {
+      githubSha: undefined,
+      gitBaselineState: "absent",
+    })
   })
 
   it.each([

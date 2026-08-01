@@ -1270,6 +1270,68 @@ describe("POST /api/github/publish-ops", () => {
     expect(batchCommitPublishLaneAtExpectedHead).not.toHaveBeenCalled()
   })
 
+  it("rejects an external create when the synchronized Git baseline was explicitly absent", async () => {
+    mockPublishQueries({
+      dirtyDocs: [
+        {
+          _id: "doc_absent",
+          filePath: "guides/restored.mdx",
+          body: "# Restored draft",
+          frontmatter: {},
+          updatedAt: 10,
+          gitBaselineState: "absent",
+        },
+      ],
+    })
+    vi.mocked(getFileForPublish).mockImplementation(async (...callArgs: unknown[]) => {
+      const path = String(callArgs[3])
+      const ref = String(callArgs[4])
+      if (ref === "authority-sha-1") {
+        return { status: "found", file: { content: "# External\n", sha: "e".repeat(40), name: "", path } }
+      }
+      return { status: "found", file: { content: "", sha: "synced-sha", name: "", path } }
+    })
+
+    const response = await POST(buildRequest({ projectId: "project_123" }))
+    const payload = await response.json()
+
+    expect(response.status).toBe(409)
+    expect(payload.conflicts).toEqual([
+      expect.objectContaining({
+        path: "content/guides/restored.mdx",
+        reason: expect.stringMatching(/expected.*absent/i),
+      }),
+    ])
+    expect(batchCommitPublishLaneAtExpectedHead).not.toHaveBeenCalled()
+  })
+
+  it("allows a restored absent baseline to remain absent and republish", async () => {
+    mockPublishQueries({
+      dirtyDocs: [
+        {
+          _id: "doc_absent",
+          filePath: "guides/restored.mdx",
+          body: "# Restored draft",
+          frontmatter: {},
+          updatedAt: 10,
+          gitBaselineState: "absent",
+        },
+      ],
+    })
+
+    const response = await POST(buildRequest({ projectId: "project_123" }))
+
+    expect(response.status).toBe(200)
+    expect(batchCommitPublishLaneAtExpectedHead).toHaveBeenCalledWith(
+      "gh-token",
+      "acme",
+      "docs-site",
+      expect.any(Object),
+      expect.arrayContaining([expect.objectContaining({ path: "content/guides/restored.mdx" })]),
+      expect.any(String),
+    )
+  })
+
   it("rejects duplicate pending operations for the same normalized repository path", async () => {
     mockPublishQueries({
       pendingOps: [

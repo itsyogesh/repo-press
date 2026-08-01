@@ -360,7 +360,29 @@ export async function POST(request: Request) {
     for (const { source: doc, repoPath } of resolvedDirtyDocs) {
       if (contentOpPaths.has(repoPath)) continue
       const existing = prefetchResults.get(`content:${repoPath}`)
-      if (doc.githubSha && existing?.status === "found" && existing.file.sha !== doc.githubSha) {
+      const gitBaselineState = doc.gitBaselineState ?? (doc.githubSha ? "blob" : undefined)
+      if (gitBaselineState === "unknown") {
+        conflicts.push({
+          path: repoPath,
+          reason: "Git baseline is unknown after lane recovery; refresh this document from GitHub before publishing.",
+        })
+        continue
+      }
+      if (gitBaselineState === "absent" && existing?.status === "found") {
+        conflicts.push({
+          path: repoPath,
+          reason: `File was expected to remain absent on GitHub but now exists (current sha: ${existing.file.sha})`,
+        })
+        continue
+      }
+      if (gitBaselineState === "blob" && existing?.status === "absent") {
+        conflicts.push({
+          path: repoPath,
+          reason: `File was deleted on GitHub since last sync (expected sha: ${doc.githubSha ?? "unknown"})`,
+        })
+        continue
+      }
+      if (gitBaselineState === "blob" && existing?.status === "found" && existing.file.sha !== doc.githubSha) {
         conflicts.push({
           path: repoPath,
           reason: `File has been modified on GitHub since last sync (expected sha: ${doc.githubSha}, current: ${existing.file.sha})`,
