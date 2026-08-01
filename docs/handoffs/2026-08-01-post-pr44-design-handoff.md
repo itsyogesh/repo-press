@@ -9,7 +9,7 @@ This handoff starts only after PR #44 is merged. PR #44 establishes the content,
 ## PR #44 authority
 
 - Pull request: [#44 — safe MDX component ecosystem and preview contracts](https://github.com/itsyogesh/repo-press/pull/44)
-- Architecture implementation head verified in this pass: `d28b381ab73568fd15e613e1c414b7c4f9e6d212`
+- Architecture implementation head verified in this pass: `ea43737f90cf811d2191500afd00e1ca531cbdcd`
 - Merge-readiness design: `docs/plans/2026-08-01-pr44-merge-readiness-design.md`
 - Merge-readiness implementation plan: `docs/plans/2026-08-01-pr44-merge-readiness.md`
 
@@ -72,17 +72,17 @@ None of these stale PRs should be merged into post-#44 `main`.
 
 ## Verification evidence from the merge-readiness pass
 
-At implementation head `d28b381`:
+At implementation head `ea43737`:
 
 - `npm run lint`: exit 0, zero errors, eight pre-existing warnings.
 - `npx tsc --noEmit`: exit 0.
 - `npm test -- --run`: 139 files, 1,636 tests passed.
 - production `npm run build`: exit 0; compile, TypeScript, page collection, and 36 static pages completed. Known dependency-version and deprecation warnings remain non-blocking.
 - `git diff --check origin/main...HEAD`: exit 0.
-- final independent differential review: approved with no actionable P0-P2 findings at `d28b381`.
-- local browser smoke: landing, login, unauthenticated dashboard redirect, Studio documentation, and interactive repository scanner passed with no browser console errors.
+- final independent differential review: approved with no actionable P0-P2 findings on the preceding architecture head; the only subsequent implementation delta is the deployment-backed Convex generation and compatibility correction recorded at `ea43737`.
+- `CONVEX_DEPLOYMENT=dev:trustworthy-aardvark-695 npx convex codegen`: exit 0 after schema validation, function upload, generated bindings, and Convex TypeScript validation. Generated declarations are committed rather than hand-maintained.
+- local browser smoke against that development deployment: landing, login, unauthenticated dashboard redirect, Studio documentation, and the interactive repository scanner passed with no browser console errors.
 - authenticated repository hub, Studio save/discard, media staging, and publish-dialog mutation smoke require a configured Convex deployment and signed-in GitHub session. Do not claim those paths manually verified until the final operator smoke is recorded.
-- Convex codegen must be run at the final branch head using the deployment-connected environment. Generated output must be committed; hand-edited generated declarations are not an acceptable merge artifact.
 - GitHub CI and Vercel must be green at the final pushed head, not merely at the older remote head.
 
 ## Tarun starter prompt
