@@ -74,13 +74,16 @@ export const signedCompatiblePreviewResolutionSchema = z
   })
   .strict()
 export type SignedCompatiblePreviewResolution = z.infer<typeof signedCompatiblePreviewResolutionSchema>
-export type CompatiblePreviewAuthorityContext = Readonly<{
-  tenantId: string
-  projectId: string
-  baseCommit: string
-  sessionId: string
-  snapshotVersion: number
-}>
+export const compatiblePreviewAuthorityContextSchema = z
+  .object({
+    tenantId: z.string().min(1).max(256),
+    projectId: z.string().min(1).max(256),
+    baseCommit: z.string().min(1).max(256),
+    sessionId: z.string().min(1).max(256),
+    snapshotVersion: z.number().int().positive().safe(),
+  })
+  .strict()
+export type CompatiblePreviewAuthorityContext = Readonly<z.infer<typeof compatiblePreviewAuthorityContextSchema>>
 
 declare const verifiedCompatibleResolutionBrand: unique symbol
 export type VerifiedCompatiblePreviewResolution = SignedCompatiblePreviewResolution & {
@@ -310,6 +313,20 @@ function canonicalizeResolution(input: SignedCompatiblePreviewResolution): strin
       adapter: input.artifact.adapter ? { entryPath: input.artifact.adapter.entryPath, sources: sortedSources } : null,
     },
   })
+}
+
+/**
+ * The only wire representation used for signed compatible resolutions. Source
+ * keys are ordered identically to executable-digest calculation so producers,
+ * verifiers, and the transfer protocol cannot drift into separate formats.
+ */
+export function serializeSignedCompatiblePreviewResolution(input: SignedCompatiblePreviewResolution): string {
+  const parsed = signedCompatiblePreviewResolutionSchema.parse(input)
+  const wire = canonicalizeResolution(parsed)
+  if (!boundedUtf8Length(wire, COMPATIBLE_ARTIFACT_MAX_BYTES)) {
+    throw new RangeError("Compatible artifact exceeds the wire limit")
+  }
+  return wire
 }
 
 function executableSource(input: CompatibleSourceArtifact): string {
