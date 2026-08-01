@@ -20,7 +20,7 @@ vi.mock("@/convex/auth", () => ({
 
 import { listDirtyForProject, markPublishedSnapshot, saveDraft } from "@/convex/documents"
 import { isDocumentContentClean } from "@/convex/lib/documentCleanliness"
-import { mintProjectAccessToken } from "@/lib/project-access-token"
+import { mintProjectAccessToken, mintServerQueryToken } from "@/lib/project-access-token"
 
 async function patToken() {
   return mintProjectAccessToken({
@@ -32,22 +32,46 @@ async function patToken() {
   })
 }
 
-const project = { _id: "project_1", userId: "user_owner", contentRoot: "content" }
+const project = { _id: "project_1", userId: "user_owner", contentRoot: "content", branch: "main" }
 const CONTENT_REVISION = "c".repeat(64)
+const COMMIT_SHA = "a".repeat(40)
+const BLOB_SHA = "b".repeat(40)
+const defaultLane = {
+  _id: "lane_1",
+  projectId: "project_1",
+  branchName: "repopress/main/1234",
+  status: "active",
+}
+let serverQueryToken: string
 
 function snapshotArgs(overrides: Record<string, unknown> = {}) {
   return {
     id: "doc_1",
-    githubSha: "blob-1",
+    githubSha: BLOB_SHA,
     publishBranchId: "lane_1",
     authorityKind: "lane",
     authorityBranch: "repopress/main/1234",
-    commitSha: "commit-1",
+    commitSha: COMMIT_SHA,
     contentRevision: CONTENT_REVISION,
     expectedUpdatedAt: 5,
+    serverQueryToken,
     userId: "user_owner",
     ...overrides,
   }
+}
+
+function createAuthorityCtx(rows: Array<Record<string, unknown>>) {
+  const byId = new Map(rows.map((row) => [String(row._id), row]))
+  return {
+    db: {
+      get: vi.fn(async (id: string) => byId.get(String(id)) ?? null),
+      patch: vi.fn(),
+      insert: vi.fn(),
+      delete: vi.fn(),
+      query: vi.fn(),
+    },
+    scheduler: { runAfter: vi.fn() },
+  } as any
 }
 
 function createCtx({
@@ -64,7 +88,7 @@ function createCtx({
   let documentsCollectCount = 0
   return {
     db: {
-      get,
+      get: vi.fn(async (id: string) => (id === "lane_1" ? defaultLane : (get as any)(id))),
       patch,
       insert: vi.fn(),
       delete: vi.fn(),
@@ -85,10 +109,118 @@ function createCtx({
 }
 
 describe("lane-synchronization provenance", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks()
     process.env.BETTER_AUTH_SECRET = "test-secret"
+    serverQueryToken = await mintServerQueryToken()
     safeGetAuthUserMock.mockResolvedValue(null)
+  })
+
+  describe("authority integrity", () => {
+    const document = {
+      _id: "doc_1",
+      projectId: "project_1",
+      updatedAt: 5,
+      contentVersion: 2,
+    }
+    const lane = defaultLane
+
+    async function validServerArgs(overrides: Record<string, unknown> = {}) {
+      return {
+        ...snapshotArgs({ publishedContentVersion: 2 }),
+        serverQueryToken: await mintServerQueryToken(),
+        projectAccessToken: await patToken(),
+        ...overrides,
+      }
+    }
+
+    it("rejects an editor forging a no-attempt provenance stamp without server proof", async () => {
+      const ctx = createAuthorityCtx([document, project, lane])
+
+      await expect(
+        (markPublishedSnapshot as any).handler(ctx, {
+          ...snapshotArgs({ publishedContentVersion: 2 }),
+          serverQueryToken: undefined,
+          projectAccessToken: await patToken(),
+        }),
+      ).rejects.toThrow(/server/i)
+      expect(ctx.db.patch).not.toHaveBeenCalled()
+    })
+
+    it("accepts server-proven base authority only for the project's configured branch", async () => {
+      const ctx = createAuthorityCtx([document, project])
+
+      const result = await (markPublishedSnapshot as any).handler(
+        ctx,
+        await validServerArgs({
+          authorityKind: "base",
+          authorityBranch: "main",
+          publishBranchId: undefined,
+        }),
+      )
+
+      expect(result).toEqual({ synchronized: true })
+      expect(ctx.db.patch).toHaveBeenCalledWith(
+        "doc_1",
+        expect.objectContaining({
+          publishedProvenance: expect.objectContaining({ authorityKind: "base", authorityBranch: "main" }),
+        }),
+      )
+    })
+
+    it("rejects a base authority branch that differs from the project", async () => {
+      const ctx = createAuthorityCtx([document, project])
+
+      await expect(
+        (markPublishedSnapshot as any).handler(
+          ctx,
+          await validServerArgs({
+            authorityKind: "base",
+            authorityBranch: "develop",
+            publishBranchId: undefined,
+          }),
+        ),
+      ).rejects.toThrow(/base.*branch|authority/i)
+      expect(ctx.db.patch).not.toHaveBeenCalled()
+    })
+
+    it.each([
+      ["nonexistent", [], "lane_1"],
+      ["cross-project", [{ ...lane, projectId: "project_other" }], "lane_1"],
+      ["branch mismatch", [{ ...lane, branchName: "repopress/other" }], "lane_1"],
+      ["finished lane", [{ ...lane, status: "closed" }], "lane_1"],
+    ])("rejects %s lane authority", async (_label, lanes, publishBranchId) => {
+      const ctx = createAuthorityCtx([document, project, ...lanes])
+
+      await expect(
+        (markPublishedSnapshot as any).handler(ctx, await validServerArgs({ publishBranchId })),
+      ).rejects.toThrow(/lane|authority|branch/i)
+      expect(ctx.db.patch).not.toHaveBeenCalled()
+    })
+
+    it("accepts a server-proven active lane belonging to the document project", async () => {
+      const ctx = createAuthorityCtx([document, project, lane])
+
+      const result = await (markPublishedSnapshot as any).handler(ctx, await validServerArgs())
+
+      expect(result).toEqual({ synchronized: true })
+      expect(ctx.db.patch).toHaveBeenCalledTimes(1)
+    })
+
+    it.each([
+      ["blob SHA", { githubSha: "not-a-sha" }],
+      ["commit SHA", { commitSha: "not-a-sha" }],
+      ["content revision", { contentRevision: "not-a-revision" }],
+      ["negative content version", { publishedContentVersion: -1 }],
+      ["fractional content version", { publishedContentVersion: 1.5 }],
+    ])("rejects malformed %s", async (_label, override) => {
+      const ctx = createAuthorityCtx([document, project, lane])
+
+      await expect((markPublishedSnapshot as any).handler(ctx, await validServerArgs(override))).rejects.toThrow(
+        /invalid|sha|revision|version/i,
+      )
+      expect(ctx.db.patch).not.toHaveBeenCalled()
+    })
   })
 
   it("records lane/commit/revision provenance without touching updatedAt when the snapshot is current", async () => {
@@ -107,12 +239,13 @@ describe("lane-synchronization provenance", () => {
     expect(patch).toHaveBeenCalledTimes(1)
     const [, patched] = patch.mock.calls[0]
     expect(patched).toEqual({
-      githubSha: "blob-1",
+      githubSha: BLOB_SHA,
+      lastPublishedUpdatedAt: undefined,
       publishedProvenance: {
         authorityKind: "lane",
         authorityBranch: "repopress/main/1234",
         publishBranchId: "lane_1",
-        commitSha: "commit-1",
+        commitSha: COMMIT_SHA,
         contentRevision: CONTENT_REVISION,
         publishedUpdatedAt: 5,
       },
@@ -133,7 +266,8 @@ describe("lane-synchronization provenance", () => {
         _id: "attempt_1",
         projectId: "project_1",
         publishBranchId: "lane_1",
-        commitSha: "commit-1",
+        branchName: "repopress/main/1234",
+        commitSha: COMMIT_SHA,
         status: "committed",
         documentAssociations: [
           {
@@ -173,7 +307,7 @@ describe("lane-synchronization provenance", () => {
         authorityKind: "lane",
         authorityBranch: "repopress/main/1234",
         publishBranchId: "lane_1",
-        commitSha: "commit-1",
+        commitSha: COMMIT_SHA,
         contentRevision: CONTENT_REVISION,
         publishedUpdatedAt: 5,
       },
@@ -210,7 +344,7 @@ describe("lane-synchronization provenance", () => {
     // What landed on the lane is recorded (publishedUpdatedAt: 5), but the
     // document's own updatedAt (9) is untouched - 5 !== 9 keeps it dirty.
     expect(patched.publishedProvenance).toEqual(
-      expect.objectContaining({ publishBranchId: "lane_1", commitSha: "commit-1", publishedUpdatedAt: 5 }),
+      expect.objectContaining({ publishBranchId: "lane_1", commitSha: COMMIT_SHA, publishedUpdatedAt: 5 }),
     )
     expect(patched.updatedAt).toBeUndefined()
   })
@@ -383,7 +517,7 @@ describe("lane-synchronization provenance", () => {
         publishedProvenance: expect.objectContaining({
           authorityKind: "base",
           authorityBranch: "main",
-          commitSha: "commit-1",
+          commitSha: COMMIT_SHA,
         }),
       }),
     )

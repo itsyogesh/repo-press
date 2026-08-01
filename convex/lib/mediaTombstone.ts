@@ -4,6 +4,19 @@ import type { MutationCtx } from "../_generated/server"
 type StorageOwner = {
   _id: Id<"mediaOps">
   convexStorageId?: string
+  storageDeleteAttempts?: number
+}
+
+const STORAGE_DELETE_RETRY_BASE_MS = 60_000
+const STORAGE_DELETE_RETRY_MAX_MS = 24 * 60 * 60 * 1000
+
+function nextStorageDeleteRetry(now: number, previousAttempts: number | undefined) {
+  const storageDeleteAttempts = (previousAttempts ?? 0) + 1
+  const backoff = Math.min(
+    STORAGE_DELETE_RETRY_MAX_MS,
+    STORAGE_DELETE_RETRY_BASE_MS * 2 ** Math.min(storageDeleteAttempts - 1, 10),
+  )
+  return { storageDeleteAttempts, storageCleanupAt: now + backoff }
 }
 
 /**
@@ -19,12 +32,14 @@ export async function deleteOwnedMediaStorageOrKeepTombstone(
     try {
       await ctx.storage.delete(row.convexStorageId)
     } catch {
+      const now = Date.now()
       await ctx.db.patch(row._id, {
         status: "failed",
         commitSha: undefined,
         publishBranchId: undefined,
         publishAttemptId: undefined,
-        updatedAt: Date.now(),
+        ...nextStorageDeleteRetry(now, row.storageDeleteAttempts),
+        updatedAt: now,
       })
       return { deleted: false }
     }
@@ -66,6 +81,7 @@ export async function deleteUnownedStorageOrTombstone(
       convexStorageId: row.convexStorageId,
       status: "failed",
       commitSha: undefined,
+      ...nextStorageDeleteRetry(now, undefined),
       createdAt: now,
       updatedAt: now,
     })

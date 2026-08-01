@@ -9,6 +9,9 @@ import { completeCloseVerificationIfIdle, completeMergeVerificationIfIdle } from
 import { assertNoActivePublishAttempt, findActivePublishAttempt } from "./lib/publishAttemptGuard"
 import { requireCommittedAttempt, requireMediaAssociation } from "./lib/publishAttemptOwnership"
 
+const STALE_UPLOAD_AFTER_MS = 7 * 24 * 60 * 60 * 1000
+const ACTIVE_ATTEMPT_STORAGE_DEFER_MS = 60 * 60 * 1000
+
 /** Generate a one-time upload URL for Convex file storage. The caller POSTs raw bytes to this URL and receives a storageId in response. */
 export const generateConvexUploadUrl = mutation({
   args: {
@@ -123,6 +126,8 @@ export const stage = mutation({
         convexStorageId: args.convexStorageId,
         status: "pending",
         commitSha: undefined,
+        storageCleanupAt: args.sourceType === "convex" ? now + STALE_UPLOAD_AFTER_MS : undefined,
+        storageDeleteAttempts: undefined,
         updatedAt: now,
       })
       return { staged: true as const, mediaOpId: existingPending._id }
@@ -134,6 +139,7 @@ export const stage = mutation({
       userId,
       status: "pending",
       commitSha: undefined,
+      storageCleanupAt: args.sourceType === "convex" ? now + STALE_UPLOAD_AFTER_MS : undefined,
       createdAt: now,
       updatedAt: now,
     })
@@ -278,7 +284,7 @@ export const undoByRepoPath = mutation({
 export const cleanupStaleUploads = internalMutation({
   args: {},
   handler: async (ctx) => {
-    const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000 // 7 days ago
+    const now = Date.now()
 
     // Bounded indexed read of stale pending uploads.
     const staleBatchSize = 100
@@ -286,14 +292,28 @@ export const cleanupStaleUploads = internalMutation({
 
     const allPending = await ctx.db
       .query("mediaOps")
-      .withIndex("by_status_createdAt", (q) => q.eq("status", "pending").lt("createdAt", cutoff))
-      .filter((q) => q.and(q.eq(q.field("sourceType"), "convex"), q.eq(q.field("publishBranchId"), undefined)))
+      .withIndex("by_storage_cleanup_eligibility", (q) =>
+        q
+          .eq("status", "pending")
+          .eq("sourceType", "convex")
+          .eq("publishBranchId", undefined)
+          .lte("storageCleanupAt", now),
+      )
       .take(staleBatchSize)
 
-    const now = Date.now()
     // Cache active-attempt lookups per project within this run.
     const activeAttemptByProject = new Map<string, boolean>()
     for (const op of allPending) {
+      // Rows staged before storageCleanupAt existed sort into the bounded
+      // undefined prefix. Give fresh legacy uploads their real stale
+      // deadline and move them out of that prefix without deleting early.
+      if (op.storageCleanupAt === undefined) {
+        const legacyCleanupAt = op.createdAt + STALE_UPLOAD_AFTER_MS
+        if (legacyCleanupAt > now) {
+          await ctx.db.patch(op._id, { storageCleanupAt: legacyCleanupAt })
+          continue
+        }
+      }
       // Skip rows whose project has a publish attempt at the commit
       // boundary; the next nightly run collects them once it resolves.
       let attemptActive = activeAttemptByProject.get(op.projectId)
@@ -301,10 +321,16 @@ export const cleanupStaleUploads = internalMutation({
         attemptActive = (await findActivePublishAttempt(ctx.db, op.projectId)) !== null
         activeAttemptByProject.set(op.projectId, attemptActive)
       }
-      if (attemptActive) continue
+      if (attemptActive) {
+        await ctx.db.patch(op._id, {
+          storageCleanupAt: now + ACTIVE_ATTEMPT_STORAGE_DEFER_MS,
+          updatedAt: now,
+        })
+        continue
+      }
 
       if (op.convexStorageId) await deleteOwnedMediaStorageOrKeepTombstone(ctx, op)
-      else await ctx.db.patch(op._id, { status: "undone", updatedAt: now })
+      else await ctx.db.patch(op._id, { status: "undone", storageCleanupAt: undefined, updatedAt: now })
       processed++
     }
 
@@ -313,7 +339,13 @@ export const cleanupStaleUploads = internalMutation({
     // success the tombstone has served its purpose and is removed.
     const failedTombstones = await ctx.db
       .query("mediaOps")
-      .withIndex("by_status_createdAt", (q) => q.eq("status", "failed"))
+      .withIndex("by_storage_cleanup_eligibility", (q) =>
+        q
+          .eq("status", "failed")
+          .eq("sourceType", "convex")
+          .eq("publishBranchId", undefined)
+          .lte("storageCleanupAt", now),
+      )
       .take(50)
     let tombstonesCleared = 0
     for (const tombstone of failedTombstones) {

@@ -415,12 +415,18 @@ export default defineSchema({
     commitSha: v.optional(v.string()),
     publishBranchId: v.optional(v.id("publishBranches")),
     publishAttemptId: v.optional(v.id("publishAttempts")),
+    // Indexed cleanup eligibility. Pending Convex uploads start at their
+    // stale deadline; failed deletes advance it with backoff so a permanent
+    // failure prefix cannot starve later storage owners.
+    storageCleanupAt: v.optional(v.number()),
+    storageDeleteAttempts: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_projectId", ["projectId"])
     .index("by_projectId_status", ["projectId", "status"])
     .index("by_status_createdAt", ["status", "createdAt"])
+    .index("by_storage_cleanup_eligibility", ["status", "sourceType", "publishBranchId", "storageCleanupAt"])
     .index("by_projectId_repoPath", ["projectId", "repoPath"])
     // Bounded lane cleanup: fetch exactly one lane's committed uploads in batches.
     .index("by_publishBranchId_status", ["publishBranchId", "status"])

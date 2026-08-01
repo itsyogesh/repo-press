@@ -6,6 +6,7 @@ import {
   type StoredPathRepresentation,
   toRepoPath,
 } from "../lib/preview/path-policy"
+import { verifyServerQueryToken } from "../lib/project-access-token"
 import { internal } from "./_generated/api"
 import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server"
 import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
@@ -878,17 +879,29 @@ export const markPublishedSnapshot = mutation({
     contentRevision: v.optional(v.string()),
     publishedContentVersion: v.optional(v.number()),
     expectedUpdatedAt: v.number(),
+    serverQueryToken: v.optional(v.string()),
     userId: v.optional(v.string()),
     projectAccessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const doc = await ctx.db.get(args.id)
     if (!doc) throw new Error("Document not found")
-    await resolveProjectAccess(
+    const { project } = await resolveProjectAccess(
       ctx,
       { projectId: doc.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken },
       "editor",
     )
+    assertGitHubCommitSha(args.githubSha, "GitHub blob SHA")
+    assertGitHubCommitSha(args.commitSha, "GitHub commit SHA")
+    if (args.contentRevision !== undefined && !/^[0-9a-f]{64}$/i.test(args.contentRevision)) {
+      throw new Error("Invalid publish content revision")
+    }
+    if (
+      args.publishedContentVersion !== undefined &&
+      (!Number.isInteger(args.publishedContentVersion) || args.publishedContentVersion < 0)
+    ) {
+      throw new Error("Invalid published content version")
+    }
     if (!args.authorityBranch) throw new Error("Publish provenance requires an authority branch")
     if (args.authorityKind === "base" && (args.publishBranchId !== undefined || args.publishAttemptId !== undefined)) {
       throw new Error("Base provenance cannot reference a publish lane or attempt")
@@ -899,6 +912,27 @@ export const markPublishedSnapshot = mutation({
     if (args.publishAttemptId !== undefined && args.authorityKind !== "lane") {
       throw new Error("Publish attempt provenance requires lane authority")
     }
+    if (args.publishAttemptId === undefined && !(await verifyServerQueryToken(args.serverQueryToken))) {
+      throw new Error("Unauthorized: no-attempt provenance requires server proof")
+    }
+    let publishLane: { branchName: string } | null = null
+    if (args.authorityKind === "base") {
+      if (args.authorityBranch !== project.branch) {
+        throw new Error("Publish base authority must match the project's configured branch")
+      }
+    } else {
+      const lane = await ctx.db.get(args.publishBranchId!)
+      if (
+        !lane ||
+        !("branchName" in lane) ||
+        lane.projectId !== doc.projectId ||
+        lane.branchName !== args.authorityBranch ||
+        lane.status !== "active"
+      ) {
+        throw new Error("Publish lane authority does not match an active lane for this project")
+      }
+      publishLane = lane
+    }
     if (args.publishAttemptId !== undefined) {
       const publishAttempt = await requireCommittedAttempt(ctx.db, {
         attemptId: args.publishAttemptId,
@@ -906,6 +940,9 @@ export const markPublishedSnapshot = mutation({
         publishBranchId: args.publishBranchId,
         commitSha: args.commitSha,
       })
+      if (publishAttempt.branchName !== publishLane?.branchName) {
+        throw new Error("Publish attempt ownership mismatch: attempt branch differs from lane authority")
+      }
       requireDocumentAssociation(publishAttempt, {
         documentId: args.id,
         repoPath: args.repoPath,

@@ -18,7 +18,13 @@ import { markPublishedSnapshot } from "@/convex/documents"
 import { markCommitted as markExplorerCommitted } from "@/convex/explorerOps"
 import { markCommitted as markMediaCommitted } from "@/convex/mediaOps"
 
-const project = { _id: "project_1", userId: "user_owner", contentRoot: "content" }
+const project = { _id: "project_1", userId: "user_owner", contentRoot: "content", branch: "main" }
+const lane = {
+  _id: "lane_1",
+  projectId: "project_1",
+  branchName: "repopress/start",
+  status: "active",
+}
 const explorerOp = {
   _id: "op_1",
   projectId: "project_1",
@@ -41,6 +47,7 @@ const attempt = {
   _id: "attempt_1",
   projectId: "project_1",
   publishBranchId: "lane_1",
+  branchName: "repopress/start",
   commitSha: "1".repeat(40),
   status: "committed",
   explorerAssociations: [{ opId: "op_1", repoPath: "content/a.mdx", expectedUpdatedAt: 10 }],
@@ -120,12 +127,12 @@ describe("publish attempt stamp ownership", () => {
   })
 
   it("rejects document stamping when the persisted snapshot identity does not match", async () => {
-    const ctx = createCtx([project, document, attempt])
+    const ctx = createCtx([project, lane, document, attempt])
 
     await expect(
       (markPublishedSnapshot as any).handler(ctx, {
         id: "doc_1",
-        githubSha: "blob_1",
+        githubSha: "b".repeat(40),
         authorityKind: "lane",
         authorityBranch: "repopress/start",
         publishAttemptId: "attempt_1",

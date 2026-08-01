@@ -88,26 +88,46 @@ function createLaneCtx({
     rowsById.set(String(row._id), row)
   }
   const deletedIds = new Set<string>()
+  const cleanupTrace = { indexes: [] as Array<{ table: string; name: string }>, chainedFilters: 0 }
 
-  const captureEq = (cb?: (q: unknown) => unknown) => {
-    const values: Record<string, unknown> = {}
+  const captureIndexCriteria = (cb?: (q: unknown) => unknown) => {
+    const equalities: Record<string, unknown> = {}
+    const ranges: Array<{ operator: "lt" | "lte"; field: string; value: number }> = []
     const recorder: Record<string, unknown> = {
       eq: (field: string, value: unknown) => {
-        values[field] = value
+        equalities[field] = value
         return recorder
       },
-      lt: () => recorder,
+      lt: (field: string, value: number) => {
+        ranges.push({ operator: "lt", field, value })
+        return recorder
+      },
+      lte: (field: string, value: number) => {
+        ranges.push({ operator: "lte", field, value })
+        return recorder
+      },
     }
     cb?.(recorder)
-    return values
+    return { equalities, ranges }
   }
 
   const valueAtPath = (row: Record<string, unknown>, field: string) =>
     field.split(".").reduce<unknown>((value, key) => (value as Record<string, unknown> | undefined)?.[key], row)
 
-  const rowsFor = (table: string, eq: Record<string, unknown>) => {
+  const rowsFor = (
+    table: string,
+    criteria: {
+      equalities: Record<string, unknown>
+      ranges: Array<{ operator: "lt" | "lte"; field: string; value: number }>
+    },
+  ) => {
     if (table === "publishAttempts") {
-      return activePublishAttempt && activePublishAttempt.status === eq.status ? [activePublishAttempt] : []
+      return activePublishAttempt &&
+        Object.entries(criteria.equalities).every(
+          ([field, value]) => valueAtPath(activePublishAttempt, field) === value,
+        )
+        ? [activePublishAttempt]
+        : []
     }
     const source =
       table === "explorerOps"
@@ -122,7 +142,16 @@ function createLaneCtx({
     return source.filter(
       (row) =>
         !deletedIds.has(String(row._id)) &&
-        Object.entries(eq).every(([field, value]) => field === "projectId" || valueAtPath(row, field) === value),
+        Object.entries(criteria.equalities).every(([field, value]) => valueAtPath(row, field) === value) &&
+        criteria.ranges.every(({ operator, field, value }) => {
+          const actual = valueAtPath(row, field)
+          // Convex indexes optional fields as undefined before numbers, so
+          // legacy rows without the new eligibility timestamp enter the
+          // bounded migration batch.
+          if (actual === undefined) return true
+          if (typeof actual !== "number") return false
+          return operator === "lt" ? actual < value : actual <= value
+        }),
     )
   }
 
@@ -131,7 +160,10 @@ function createLaneCtx({
     order: vi.fn().mockImplementation(() => chain(rows)),
     collect: vi.fn().mockImplementation(async () => rows),
     take: vi.fn().mockImplementation(async (count: number) => rows.slice(0, count)),
-    filter: () => chain(rows),
+    filter: () => {
+      cleanupTrace.chainedFilters += 1
+      return chain(rows)
+    },
   })
 
   const patch = vi.fn().mockImplementation(async (id: string, values: Record<string, unknown>) => {
@@ -157,16 +189,22 @@ function createLaneCtx({
       delete: del,
       insert: vi.fn().mockResolvedValue("tombstone_1"),
       query: vi.fn((table: string) => ({
-        withIndex: (_indexName: string, cb?: (q: unknown) => unknown) => chain(rowsFor(table, captureEq(cb))),
+        withIndex: (indexName: string, cb?: (q: unknown) => unknown) => {
+          cleanupTrace.indexes.push({ table, name: indexName })
+          return chain(rowsFor(table, captureIndexCriteria(cb)))
+        },
         filter: () => {
           if (table !== "mediaOps") return chain([])
           bareMediaFilterCalls += 1
-          return chain(bareMediaFilterCalls === 1 ? [] : rowsFor("mediaOps", { status: "failed" }))
+          return chain(
+            bareMediaFilterCalls === 1 ? [] : rowsFor("mediaOps", { equalities: { status: "failed" }, ranges: [] }),
+          )
         },
       })),
     },
     scheduler: { runAfter: vi.fn() },
     storage: { delete: storageDelete },
+    cleanupTrace,
   } as any
 }
 
@@ -734,7 +772,9 @@ describe("closed-lane synchronization invalidation", () => {
           _id: "tombstone_ok",
           projectId: "project_1",
           repoPath: "/public/a.png",
+          sourceType: "convex",
           status: "failed",
+          storageCleanupAt: 0,
           convexStorageId: "storage_recoverable",
           updatedAt: 10,
         },
@@ -742,7 +782,9 @@ describe("closed-lane synchronization invalidation", () => {
           _id: "tombstone_stuck",
           projectId: "project_1",
           repoPath: "/public/b.png",
+          sourceType: "convex",
           status: "failed",
+          storageCleanupAt: 0,
           convexStorageId: "storage_stuck",
           updatedAt: 10,
         },
@@ -759,6 +801,36 @@ describe("closed-lane synchronization invalidation", () => {
     expect(ctx.db.delete).not.toHaveBeenCalledWith("tombstone_stuck")
   })
 
+  it("rotates failed tombstone retries so a recoverable 51st owner is eventually reached", async () => {
+    const mediaOps = Array.from({ length: 51 }, (_, index) => ({
+      _id: `tombstone_${index}`,
+      projectId: "project_1",
+      userId: "user_owner",
+      repoPath: `/public/tombstone-${index}.png`,
+      fileName: `tombstone-${index}.png`,
+      mimeType: "image/png",
+      sourceType: "convex",
+      convexStorageId: `storage_${index}`,
+      status: "failed",
+      storageCleanupAt: 0,
+      storageDeleteAttempts: 1,
+      createdAt: index,
+      updatedAt: index,
+    }))
+    const ctx = createLaneCtx({
+      mediaOps,
+      failingStorageIds: Array.from({ length: 50 }, (_, index) => `storage_${index}`),
+    })
+
+    const first = await (cleanupStaleUploads as any).handler(ctx, {})
+    const second = await (cleanupStaleUploads as any).handler(ctx, {})
+
+    expect(first.tombstonesCleared).toBe(0)
+    expect(second.tombstonesCleared).toBe(1)
+    expect(ctx.db.delete).toHaveBeenCalledWith("tombstone_50")
+    expect(ctx.storage.delete).toHaveBeenCalledTimes(51)
+  })
+
   it("keeps a stale upload as a failed tombstone when storage deletion fails", async () => {
     const ctx = createLaneCtx({
       mediaOps: [
@@ -772,6 +844,7 @@ describe("closed-lane synchronization invalidation", () => {
           sourceType: "convex",
           convexStorageId: "storage_stale",
           status: "pending",
+          storageCleanupAt: 0,
           createdAt: 1,
           updatedAt: 1,
         },
@@ -786,6 +859,50 @@ describe("closed-lane synchronization invalidation", () => {
     expect(ctx.db.delete).not.toHaveBeenCalledWith("stale_1")
   })
 
+  it("migrates a fresh legacy pending upload to indexed eligibility without deleting it early", async () => {
+    const createdAt = Date.now()
+    const ctx = createLaneCtx({
+      mediaOps: [
+        {
+          _id: "legacy_fresh",
+          projectId: "project_1",
+          userId: "user_owner",
+          repoPath: "/public/fresh.png",
+          fileName: "fresh.png",
+          mimeType: "image/png",
+          sourceType: "convex",
+          convexStorageId: "storage_fresh",
+          status: "pending",
+          createdAt,
+          updatedAt: createdAt,
+        },
+      ],
+    })
+
+    const result = await (cleanupStaleUploads as any).handler(ctx, {})
+
+    expect(result.processed).toBe(0)
+    expect(ctx.storage.delete).not.toHaveBeenCalled()
+    expect(ctx.db.patch).toHaveBeenCalledWith(
+      "legacy_fresh",
+      expect.objectContaining({ storageCleanupAt: expect.any(Number) }),
+    )
+    const cleanupAt = ctx.db.patch.mock.calls.find(([id]: [string]) => id === "legacy_fresh")?.[1].storageCleanupAt
+    expect(cleanupAt).toBeGreaterThan(createdAt)
+  })
+
+  it("uses only the fully keyed eligibility index for bounded media cleanup reads", async () => {
+    const ctx = createLaneCtx()
+
+    await (cleanupStaleUploads as any).handler(ctx, {})
+
+    const mediaIndexes = ctx.cleanupTrace.indexes
+      .filter(({ table }: { table: string }) => table === "mediaOps")
+      .map(({ name }: { name: string }) => name)
+    expect(mediaIndexes).toEqual(["by_storage_cleanup_eligibility", "by_storage_cleanup_eligibility"])
+    expect(ctx.cleanupTrace.chainedFilters).toBe(0)
+  })
+
   it("bounds each stale upload pass to 100 indexed owners", async () => {
     const mediaOps = Array.from({ length: 101 }, (_, index) => ({
       _id: `stale_${index}`,
@@ -797,6 +914,7 @@ describe("closed-lane synchronization invalidation", () => {
       sourceType: "convex",
       convexStorageId: `storage_${index}`,
       status: "pending",
+      storageCleanupAt: 0,
       createdAt: index,
       updatedAt: index,
     }))
@@ -807,6 +925,41 @@ describe("closed-lane synchronization invalidation", () => {
     expect(result.processed).toBe(100)
     expect(ctx.storage.delete).toHaveBeenCalledTimes(100)
     expect(ctx.db.delete).not.toHaveBeenCalledWith("stale_100")
+  })
+
+  it("durably defers an active-attempt prefix so the 101st stale owner is eventually reached", async () => {
+    const mediaOps = Array.from({ length: 101 }, (_, index) => ({
+      _id: `stale_${index}`,
+      projectId: index < 100 ? "project_1" : "project_2",
+      userId: "user_owner",
+      repoPath: `/public/${index}.png`,
+      fileName: `${index}.png`,
+      mimeType: "image/png",
+      sourceType: "convex",
+      convexStorageId: `storage_${index}`,
+      status: "pending",
+      storageCleanupAt: 0,
+      createdAt: index,
+      updatedAt: index,
+    }))
+    const ctx = createLaneCtx({
+      activePublishAttempt: {
+        _id: "attempt_1",
+        projectId: "project_1",
+        branchName: "repopress/start",
+        planDigest: "d".repeat(64),
+        status: "committed",
+      },
+      mediaOps,
+    })
+
+    const first = await (cleanupStaleUploads as any).handler(ctx, {})
+    const second = await (cleanupStaleUploads as any).handler(ctx, {})
+
+    expect(first.processed).toBe(0)
+    expect(second.processed).toBe(1)
+    expect(ctx.storage.delete).toHaveBeenCalledWith("storage_100")
+    expect(ctx.db.delete).toHaveBeenCalledWith("stale_100")
   })
 
   it("the nightly cron keeps deferring while the project's attempt is still active", async () => {

@@ -461,6 +461,7 @@ export async function POST(request: Request) {
           )
         }
 
+        const provenanceServerQueryToken = await mintServerQueryToken()
         let failedCount = 0
         for (const redundant of redundantSynchronizations) {
           try {
@@ -474,6 +475,7 @@ export async function POST(request: Request) {
               contentRevision: redundant.contentRevision,
               publishedContentVersion: redundant.contentVersion,
               expectedUpdatedAt: redundant.expectedUpdatedAt,
+              serverQueryToken: provenanceServerQueryToken,
               userId: actingUserId,
               projectAccessToken,
             })

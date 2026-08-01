@@ -2076,6 +2076,7 @@ describe("POST /api/github/publish-ops", () => {
           publishBranchId: "publish_branch_1",
           commitSha: "authority-sha-1",
           githubSha: "blob-1",
+          serverQueryToken: expect.any(String),
           publishedContentVersion: 3,
           expectedUpdatedAt: 5,
         }),
@@ -2121,6 +2122,7 @@ describe("POST /api/github/publish-ops", () => {
           authorityKind: "base",
           authorityBranch: "main",
           commitSha: "authority-sha-1",
+          serverQueryToken: expect.any(String),
         }),
       ])
       expect(baseStamps[0]).not.toHaveProperty("publishBranchId")
