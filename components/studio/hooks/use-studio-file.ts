@@ -4,6 +4,7 @@ import matter from "gray-matter"
 import * as React from "react"
 import { normalizeFrontmatterDates } from "@/lib/framework-adapters"
 import { type FileTreeNode, findTreeNode } from "@/lib/github"
+import { toRepoPath } from "@/lib/preview/path-policy"
 import { useStudio } from "../studio-context"
 
 interface InitialFile {
@@ -55,7 +56,7 @@ function parseFileSnapshot(rawContent: string, sha: string | null): CachedFileSn
 }
 
 export function useStudioFile(initialFile: InitialFile | null | undefined, currentPath: string) {
-  const { owner, repo, branch, baseCommitSha, projectId, tree } = useStudio()
+  const { owner, repo, branch, baseCommitSha, projectId, contentRoot, tree } = useStudio()
   const openFilesStorageKey = React.useMemo(
     () => `studio:openFiles:${owner}:${repo}:${branch}:${projectId || "none"}`,
     [owner, repo, branch, projectId],
@@ -302,11 +303,11 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
     const prefix = `/dashboard/${owner}/${repo}/studio/`
     if (url.pathname.startsWith(prefix)) {
       const rawPath = url.pathname.slice(prefix.length)
-      if (rawPath) return decodeURIComponent(rawPath)
+      if (rawPath) return toRepoPath(contentRoot, decodeURIComponent(rawPath))
     }
 
     return ""
-  }, [owner, repo])
+  }, [owner, repo, contentRoot])
 
   React.useEffect(() => {
     try {
@@ -520,10 +521,10 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
         const draftFrontmatter = doc.frontmatter && typeof doc.frontmatter === "object" ? doc.frontmatter : null
         // Title synchronization creates index rows without draft content. Those
         // rows must not become empty local snapshots that outrank the Git read.
-        if (draftBody === null && draftFrontmatter === null) return
+        if (draftBody === null && draftFrontmatter === null) return false
 
         const activePath = selectedFile?.path
-        if (!activePath) return
+        if (!activePath) return false
 
         const cached = fileCacheRef.current.get(activePath)
         let nextContent = cached?.content ?? ""
@@ -550,8 +551,10 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
         })
 
         setIsDirty(false)
+        return true
       } catch (error) {
         console.error("Error hydrating from Convex document draft:", error)
+        return false
       }
     },
     [selectedFile?.path, writeCachedSnapshot],
