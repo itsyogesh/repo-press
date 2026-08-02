@@ -527,6 +527,10 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
         if (!activePath) return false
 
         const cached = fileCacheRef.current.get(activePath)
+        // The editor is interactive before the Convex query necessarily
+        // settles. Never let a late saved draft overwrite newer local input.
+        if (cached?.isDirty) return true
+
         let nextContent = cached?.content ?? ""
         let nextFrontmatter = cached?.frontmatter ?? {}
         const currentSha = cached?.sha ?? null

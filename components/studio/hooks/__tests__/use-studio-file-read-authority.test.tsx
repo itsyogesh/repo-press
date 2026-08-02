@@ -244,6 +244,30 @@ describe("useStudioFile immutable read authority", () => {
     expect(result.current.sha).toBeNull()
   })
 
+  it("preserves unsaved edits when a Convex draft arrives after the GitHub snapshot", async () => {
+    const { result } = renderHook(() => useStudioFile(null, ""))
+
+    act(() => result.current.navigateToFile("content/guide.mdx"))
+    await waitFor(() => expect(result.current.content).toBe("# Base snapshot"))
+
+    act(() => result.current.setContent("# Unsaved local edit"))
+    act(() => result.current.setFrontmatterKey("description", "Unsaved description"))
+    expect(result.current.isDirty).toBe(true)
+
+    let draftHandled: unknown
+    act(() => {
+      draftHandled = result.current.hydrateFromDocument({
+        body: "# Older saved draft",
+        frontmatter: { description: "Older description" },
+      })
+    })
+
+    expect(draftHandled).toBe(true)
+    expect(result.current.content).toBe("# Unsaved local edit")
+    expect(result.current.frontmatter).toEqual({ description: "Unsaved description" })
+    expect(result.current.isDirty).toBe(true)
+  })
+
   it("resolves pathname popstate links relative to contentRoot while leaving query paths repository-relative", async () => {
     studioContext.tree = []
     const { result } = renderHook(() => useStudioFile(null, ""))
