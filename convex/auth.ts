@@ -9,15 +9,27 @@ import type { DataModel } from "./_generated/dataModel"
 import { mutation, query } from "./_generated/server"
 import authConfig from "./auth.config"
 
-// SITE_URL must be the app URL (not Convex site URL) so that OAuth
-// callbacks route through the Next.js proxy at /api/auth/[...all].
-// This ensures cookies are set on the app domain.
-const { githubCallbackURL, siteUrl, trustedOrigins } = resolveAuthOrigin(process.env.SITE_URL)
+const STATIC_REGISTRATION_ORIGIN = "https://static-auth.repopress.invalid"
+
+function resolveAuthOriginForContext(ctx: GenericCtx<DataModel>) {
+  // @convex-dev/better-auth calls createAuth({}) once while registering route
+  // metadata. Convex does the same during deploy analysis without exposing
+  // deployment environment variables. That static instance only contributes
+  // basePath; every request creates auth again with a real Convex context.
+  const isStaticRouteRegistration = Reflect.ownKeys(ctx as object).length === 0
+  const configuredOrigin =
+    isStaticRouteRegistration && !process.env.SITE_URL ? STATIC_REGISTRATION_ORIGIN : process.env.SITE_URL
+  return resolveAuthOrigin(configuredOrigin)
+}
 
 // The component client has methods needed for integrating Convex with Better Auth
 export const authComponent = createClient<DataModel>(components.betterAuth)
 
 export const createAuth = (ctx: GenericCtx<DataModel>) => {
+  // SITE_URL must be the app URL (not the Convex site URL) so callbacks
+  // traverse the Next.js proxy and cookies remain on the application origin.
+  const { githubCallbackURL, siteUrl, trustedOrigins } = resolveAuthOriginForContext(ctx)
+
   return betterAuth({
     baseURL: siteUrl,
     trustedOrigins,
