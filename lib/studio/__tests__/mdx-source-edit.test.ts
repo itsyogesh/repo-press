@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest"
 import { buildAuthoringCatalog } from "../authoring-catalog"
-import { editComponentProp, findEditableMdxComponents, prepareComponentPropEdit } from "../mdx-source-edit"
+import {
+  buildComponentEditIdentityIndex,
+  editComponentProp,
+  findEditableMdxComponents,
+  prepareComponentPropEdit,
+} from "../mdx-source-edit"
 
 function targetFor(source: string, name: string, occurrence = 0) {
   const discovered = findEditableMdxComponents(source)
@@ -12,6 +17,79 @@ function targetFor(source: string, name: string, occurrence = 0) {
 }
 
 describe("source-preserving MDX component prop edits", () => {
+  it("captures a positionless rendered node by unique literal attributes", () => {
+    const source = '<Callout title="First" variant="accent" />\n\n<Callout title="Second" variant="accent" />'
+    const index = buildComponentEditIdentityIndex(source)
+    expect(index.ok).toBe(true)
+    if (!index.ok) throw new Error("expected identity index")
+
+    expect(
+      index.capture({
+        name: "Callout",
+        kind: "flow",
+        attributes: [
+          { type: "mdxJsxAttribute", name: "variant", value: "accent" },
+          { type: "mdxJsxAttribute", name: "title", value: "Second" },
+        ],
+      }),
+    ).toMatchObject({ ok: true, identity: { name: "Callout", openingTag: expect.stringContaining("Second") } })
+  })
+
+  it("fails closed when a positionless structural identity is still ambiguous", () => {
+    const source = '<Callout variant="accent" />\n\n<Callout variant="accent" />'
+    const index = buildComponentEditIdentityIndex(source)
+    expect(index.ok).toBe(true)
+    if (!index.ok) throw new Error("expected identity index")
+
+    expect(
+      index.capture({
+        name: "Callout",
+        kind: "flow",
+        attributes: [{ type: "mdxJsxAttribute", name: "variant", value: "accent" }],
+      }),
+    ).toEqual({ ok: false, source, code: "UNSAFE_TO_PRESERVE" })
+  })
+
+  it("rejects wrong-kind and non-canonical positionless anchors", () => {
+    const source = '<Callout title="Safe" />'
+    const index = buildComponentEditIdentityIndex(source)
+    expect(index.ok).toBe(true)
+    if (!index.ok) throw new Error("expected identity index")
+    const attributes = [{ type: "mdxJsxAttribute", name: "title", value: "Safe" }]
+
+    expect(index.capture({ name: "Callout", kind: "text", attributes })).toEqual({
+      ok: false,
+      source,
+      code: "UNSAFE_TO_PRESERVE",
+    })
+    expect(
+      index.capture({
+        name: "Callout",
+        kind: "flow",
+        attributes: [
+          {
+            type: "mdxJsxAttribute",
+            name: "title",
+            value: { type: "mdxJsxAttributeValueExpression", value: "computeTitle()" },
+          },
+        ],
+      }),
+    ).toEqual({ ok: false, source, code: "UNSAFE_TO_PRESERVE" })
+
+    const accessorAttribute = Object.create(null)
+    Object.defineProperty(accessorAttribute, "type", {
+      enumerable: true,
+      get: () => {
+        throw new Error("must not execute")
+      },
+    })
+    expect(index.capture({ name: "Callout", kind: "flow", attributes: [accessorAttribute] })).toEqual({
+      ok: false,
+      source,
+      code: "UNSAFE_TO_PRESERVE",
+    })
+  })
+
   it("prepares one exact position-bound literal component without confusing duplicates", () => {
     const source = '<Callout title="First" />\n<Callout title="Second" variant="accent">Body</Callout>'
     const def = buildAuthoringCatalog({

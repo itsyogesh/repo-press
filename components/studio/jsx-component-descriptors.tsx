@@ -10,9 +10,15 @@ export function GenericJsxEditor({ descriptor, mdastNode }: JsxEditorProps) {
   const editBridge = useComponentEditRequest()
   const name = typeof mdastNode.name === "string" ? mdastNode.name : descriptor.name
   const start = mdastNode.position?.start.offset
+  const kind = mdastNode.type === "mdxJsxTextElement" ? "text" : "flow"
   const identityRef = React.useRef<MdxComponentEditIdentity | null | undefined>(undefined)
-  if (identityRef.current == null && editBridge && typeof name === "string" && Number.isSafeInteger(start)) {
-    identityRef.current = editBridge.captureIdentity({ name, start: start as number })
+  if (identityRef.current == null && editBridge && typeof name === "string") {
+    identityRef.current = editBridge.captureIdentity({
+      name,
+      kind,
+      ...(Number.isSafeInteger(start) ? { start: start as number } : {}),
+      attributes: mdastNode.attributes,
+    })
   }
   const canRequestEdit = editBridge !== null && identityRef.current != null
   return (

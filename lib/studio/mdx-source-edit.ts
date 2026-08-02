@@ -67,6 +67,47 @@ type MdxAttribute = {
   value?: string | null | { type?: string; value?: string }
 }
 type MdxElement = RepoPressMdxSyntaxNode & { position?: OffsetPosition; attributes?: MdxAttribute[] }
+const ATTRIBUTE_IDENTITY = Symbol("attributeIdentity")
+type IndexedMdxComponentEditTarget = MdxComponentEditTarget & {
+  readonly [ATTRIBUTE_IDENTITY]: string | null
+}
+
+function literalAttributeIdentity(attributes: unknown): string | null {
+  try {
+    if (
+      !Array.isArray(attributes) ||
+      Object.getPrototypeOf(attributes) !== Array.prototype ||
+      attributes.length > 128
+    ) {
+      return null
+    }
+    const normalized: Array<readonly [string, string, string]> = []
+    const names = new Set<string>()
+    for (let index = 0; index < attributes.length; index += 1) {
+      const attribute = dataValue(attributes, String(index))
+      if (!isPlainDataRecord(attribute) || dataValue(attribute, "type") !== "mdxJsxAttribute") return null
+      const name = dataValue(attribute, "name")
+      const value = dataValue(attribute, "value")
+      if (typeof name !== "string" || names.has(name)) return null
+      assertSafeAuthoringPropName(name)
+      names.add(name)
+      if (value === null) normalized.push([name, "boolean", "true"])
+      else if (typeof value === "string") normalized.push([name, "string", value])
+      else if (isPlainDataRecord(value) && dataValue(value, "type") === "mdxJsxAttributeValueExpression") {
+        const expression = dataValue(value, "value")
+        if (typeof expression !== "string") return null
+        const literal = expression.trim()
+        if (/^(?:true|false)$/.test(literal)) normalized.push([name, "boolean", literal])
+        else if (/^-?(?:0|[1-9]\d*)(?:\.\d+)?$/.test(literal)) normalized.push([name, "number", literal])
+        else return null
+      } else return null
+    }
+    normalized.sort(([left], [right]) => left.localeCompare(right))
+    return JSON.stringify(normalized)
+  } catch {
+    return null
+  }
+}
 
 const refuse = (source: string): MdxSourceEditRefusal => ({ ok: false, source, code: "UNSAFE_TO_PRESERVE" })
 
@@ -106,8 +147,8 @@ function openingTagFor(source: string, node: MdxElement): { start: number; end: 
   return { start: safeStart, end, source: source.slice(safeStart, end) }
 }
 
-function collectTargets(source: string, root: RepoPressMdxSyntaxNode): readonly MdxComponentEditTarget[] | null {
-  const targets: MdxComponentEditTarget[] = []
+function collectTargets(source: string, root: RepoPressMdxSyntaxNode): readonly IndexedMdxComponentEditTarget[] | null {
+  const targets: IndexedMdxComponentEditTarget[] = []
   const stack: Array<{ node: RepoPressMdxSyntaxNode; path: number[] }> = [{ node: root, path: [] }]
   while (stack.length > 0) {
     const entry = stack.pop()
@@ -145,6 +186,7 @@ function collectTargets(source: string, root: RepoPressMdxSyntaxNode): readonly 
             nodeSource: source.slice(opening.start, nodeEnd as number),
             nodeEnd: nodeEnd as number,
             sourceSnapshot: source,
+            [ATTRIBUTE_IDENTITY]: literalAttributeIdentity(node.attributes ?? []),
           }),
         )
       }
@@ -163,7 +205,15 @@ export function findEditableMdxComponents(source: string): FindEditableMdxCompon
   const parsed = parseRepoPressMdxSyntax(source)
   if (!parsed.ok) return refuse(source)
   const targets = collectTargets(source, parsed.root)
-  return targets ? { ok: true, targets } : refuse(source)
+  return targets
+    ? {
+        ok: true,
+        targets: targets.map((target) => {
+          const { [ATTRIBUTE_IDENTITY]: _attributeIdentity, ...publicTarget } = target
+          return Object.freeze(publicTarget)
+        }),
+      }
+    : refuse(source)
 }
 
 function normalizeTarget(target: unknown): MdxComponentEditTarget | null {
@@ -277,6 +327,22 @@ function normalizePositionAnchor(anchor: unknown): { name: string; start: number
   }
 }
 
+function normalizeStructuralAnchor(
+  anchor: unknown,
+): { name: string; kind: "flow" | "text"; attributeIdentity: string | null } | null {
+  try {
+    if (!isPlainDataRecord(anchor)) return null
+    const name = dataValue(anchor, "name")
+    const kind = dataValue(anchor, "kind")
+    const attributes = dataValue(anchor, "attributes")
+    if (typeof name !== "string" || (kind !== "flow" && kind !== "text")) return null
+    assertSafeMdxName(name)
+    return { name, kind, attributeIdentity: literalAttributeIdentity(attributes) }
+  } catch {
+    return null
+  }
+}
+
 function normalizeEditIdentity(identity: unknown): MdxComponentEditIdentity | null {
   try {
     if (!isPlainDataRecord(identity)) return null
@@ -333,16 +399,28 @@ function resolveEditAnchorStart(source: string, anchor: Readonly<{ name: string;
 /** Capture a bounded source identity for one exact rendered MDAST component. */
 function captureIdentityFromTargets(
   source: string,
-  targets: readonly MdxComponentEditTarget[],
+  targets: readonly IndexedMdxComponentEditTarget[],
   anchor: unknown,
 ): CaptureComponentEditIdentityResult {
   const normalizedAnchor = normalizePositionAnchor(anchor)
-  if (!normalizedAnchor) return refuse(source)
-  const coordinateCandidates = new Set<number>([normalizedAnchor.start])
-  coordinateCandidates.add(normalizedAnchor.start + (source.length - source.trimStart().length))
-  const matches = targets.filter(
-    (target) => target.name === normalizedAnchor.name && coordinateCandidates.has(target.start),
-  )
+  let matches: readonly IndexedMdxComponentEditTarget[] = []
+  if (normalizedAnchor) {
+    const coordinateCandidates = new Set<number>([normalizedAnchor.start])
+    coordinateCandidates.add(normalizedAnchor.start + (source.length - source.trimStart().length))
+    matches = targets.filter(
+      (target) => target.name === normalizedAnchor.name && coordinateCandidates.has(target.start),
+    )
+  }
+  if (matches.length !== 1) {
+    const structuralAnchor = normalizeStructuralAnchor(anchor)
+    if (!structuralAnchor || structuralAnchor.attributeIdentity === null) return refuse(source)
+    matches = targets.filter(
+      (target) =>
+        target.name === structuralAnchor.name &&
+        target.kind === structuralAnchor.kind &&
+        target[ATTRIBUTE_IDENTITY] === structuralAnchor.attributeIdentity,
+    )
+  }
   if (matches.length !== 1 || !isWithinIdentityBudget(matches[0].openingTag, matches[0].nodeSource)) {
     return refuse(source)
   }

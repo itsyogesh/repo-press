@@ -11,7 +11,12 @@ import {
 } from "@/lib/studio/mdx-source-edit"
 import { ComponentEditModal } from "./component-edit-modal"
 
-type ComponentEditPosition = Readonly<{ name: string; start: number }>
+type ComponentEditPosition = Readonly<{
+  name: string
+  kind: "flow" | "text"
+  start?: number
+  attributes: unknown
+}>
 type ComponentEditRequest = (identity: MdxComponentEditIdentity) => void
 type ComponentEditBridge = Readonly<{
   captureIdentity: (position: ComponentEditPosition) => MdxComponentEditIdentity | null
@@ -67,7 +72,9 @@ export function ComponentEditProvider({
 
   const captureIdentity = React.useCallback(
     (position: ComponentEditPosition): MdxComponentEditIdentity | null => {
-      const source = identitySource ?? getSource()
+      // Source offsets belong to the loaded snapshot, while a positionless
+      // MDXEditor node must be resolved only against its latest serialized source.
+      const source = position.start === undefined ? getSource() : (identitySource ?? getSource())
       if (identityIndexCache.current?.source !== source) {
         identityIndexCache.current = { source, index: buildComponentEditIdentityIndex(source) }
       }
