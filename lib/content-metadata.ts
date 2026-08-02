@@ -392,6 +392,7 @@ export function extractMetadataExportRecovery(content: string) {
       bodyBeforeDeclaration,
       declarationPrefix: declaration.startsWith("\uFEFF") ? "\uFEFF" : "",
       separator: content.slice(start + codeEnd, start + removalEnd) + strippedBodyLineBreaks,
+      sourceAfterDeclarationPreamble: content.slice(start + codeEnd, preambleEnd),
       sourceBeforeDeclaration,
     }),
   })

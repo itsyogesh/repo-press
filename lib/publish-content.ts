@@ -91,6 +91,12 @@ export function serializePublishContent({
         content: `${recovery.replacement.sourceBeforeDeclaration}${recovery.replacement.declarationPrefix}${formatMetadataExport(frontmatter)}${recovery.replacement.separator}${bodyAfterDeclaration}`,
       }
     }
+    if (recovery) {
+      return {
+        ok: true,
+        content: `${recovery.replacement.sourceBeforeDeclaration}${recovery.replacement.declarationPrefix}${formatMetadataExport(frontmatter)}${recovery.replacement.sourceAfterDeclarationPreamble}${body}`,
+      }
+    }
     return { ok: true, content: `${formatMetadataExport(frontmatter)}\n\n${body}` }
   }
 

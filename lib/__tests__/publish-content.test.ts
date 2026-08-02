@@ -122,6 +122,32 @@ describe("serializePublishContent", () => {
     }
   })
 
+  it("recovers the full pinned ESM preamble when edited non-empty metadata accompanies a stripped Markdown body", () => {
+    const source =
+      '\uFEFF// module preamble\r\nimport type { Metadata } from "next"\r\nexport const runtime = "edge"\r\n\r\nexport const metadata = { title: "Original" } /* keep metadata trivia */\r\nexport const revalidate = 3600\r\n\r\n# Old\r\n'
+
+    const result = serializePublishContent({
+      filePath: "docs/a.mdx",
+      body: "# Edited\n",
+      frontmatter: { title: "Edited" },
+      metadataSource: "metadata-export",
+      existingContent: source,
+    })
+
+    expect(result).toEqual({
+      ok: true,
+      content:
+        '\uFEFF// module preamble\r\nimport type { Metadata } from "next"\r\nexport const runtime = "edge"\r\n\r\nexport const metadata = {\n  "title": "Edited"\n} /* keep metadata trivia */\r\nexport const revalidate = 3600\r\n\r\n# Edited\n',
+    })
+    if (result.ok) {
+      expect(result.content.match(/import type \{ Metadata \}/g)).toHaveLength(1)
+      expect(result.content.match(/export const runtime/g)).toHaveLength(1)
+      expect(result.content.match(/export const revalidate/g)).toHaveLength(1)
+      expect(result.content.match(/keep metadata trivia/g)).toHaveLength(1)
+      expect(result.content.match(/# Edited/g)).toHaveLength(1)
+    }
+  })
+
   it("does not duplicate preserved ESM when parsed export metadata is empty", () => {
     const source =
       'import { site } from "./config"\n\nexport const metadata = {}\nexport const revalidate = 3600\n\n# Body\n'
