@@ -16,18 +16,25 @@ import { loginWithPAT } from "./actions"
 export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [showToken, setShowToken] = useState(false)
+  const [authError, setAuthError] = useState<string | null>(null)
   const searchParams = useSearchParams()
   const error = searchParams.get("error")
 
   const handleLogin = async () => {
+    setAuthError(null)
     setIsLoading(true)
     try {
-      await signIn.social({
+      const result = await signIn.social({
         provider: "github",
         callbackURL: "/dashboard",
       })
+
+      if (result?.error) {
+        setAuthError(result.error.message || "GitHub sign-in could not start. Please try again.")
+      }
     } catch (err) {
       console.error("Error logging in:", err)
+      setAuthError("GitHub sign-in could not start. Please try again.")
     } finally {
       setIsLoading(false)
     }
@@ -43,12 +50,12 @@ export default function LoginPage() {
             <CardDescription>Sign in to manage your content</CardDescription>
           </CardHeader>
           <CardContent>
-            {error === "invalid_token" && (
+            {(error === "invalid_token" || authError) && (
               <Alert variant="destructive" className="mb-4 text-left">
                 <AlertCircle className="h-4 w-4" />
                 <AlertTitle>Authentication Failed</AlertTitle>
                 <AlertDescription>
-                  Your session has expired or your token is invalid. Please sign in again.
+                  {authError ?? "Your session has expired or your token is invalid. Please sign in again."}
                 </AlertDescription>
               </Alert>
             )}

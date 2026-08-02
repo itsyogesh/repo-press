@@ -159,7 +159,7 @@ New repository setup uses native discovery: RepoPress inspects the repository's 
 | `GITHUB_CLIENT_SECRET` | From your GitHub OAuth App |
 | `BETTER_AUTH_SECRET` | Random secret string for session encryption |
 | `REPOPRESS_CAPABILITY_SECRET` | Random 32+ character capability-signing secret; use the same value in the Next.js runtime |
-| `SITE_URL` | Your Convex site URL (same as `NEXT_PUBLIC_CONVEX_SITE_URL`) |
+| `SITE_URL` | Public RepoPress application origin used by Better Auth (for example, `https://repopress.example`) |
 
 ### Next.js runtime
 
@@ -167,6 +167,7 @@ New repository setup uses native discovery: RepoPress inspects the repository's 
 |---|---|
 | `REPOPRESS_CAPABILITY_SECRET` | Same capability-signing value configured in Convex; never reuse `BETTER_AUTH_SECRET` |
 | `PREVIEW_APPROVAL_PRIVATE_KEY_JWK` | Server-only EC P-256 private JWK used to sign Compatible preview artifacts; never expose or log it |
+| `REPOPRESS_DEPLOYMENT_ROLE` | Set to `sandbox` only on the separately hosted Compatible preview project; omit on Studio |
 
 ### Compatible preview browser configuration
 
@@ -188,7 +189,7 @@ The private and public preview JWKs must be generated as one P-256 key pair. Kee
 1. Go to [GitHub Developer Settings](https://github.com/settings/developers)
 2. Click **New OAuth App**
 3. Set **Homepage URL** to your app URL
-4. Set **Authorization callback URL** to `https://your-convex-project.convex.site/api/auth/callback/github`
+4. Set **Authorization callback URL** to `https://your-app.example/api/auth/callback/github`
 5. Copy the Client ID and generate a Client Secret
 
 ---

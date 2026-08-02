@@ -35,7 +35,7 @@ Step-by-step instructions for deploying RepoPress to production. This guide cove
    | `GITHUB_CLIENT_SECRET` | Your GitHub OAuth App client secret | - |
    | `BETTER_AUTH_SECRET` | A new random 32+ character string | **Do NOT reuse the dev secret** |
    | `REPOPRESS_CAPABILITY_SECRET` | A new random 32+ character string | Also configure this exact value in Vercel; do not reuse `BETTER_AUTH_SECRET` |
-   | `SITE_URL` | `https://<your-project>.convex.site` | Your Convex production site URL |
+   | `SITE_URL` | `https://your-domain.com` | Public RepoPress application origin; Better Auth callbacks return through this origin |
 
    Generate independent secrets for Better Auth and RepoPress capabilities:
    ```bash
@@ -56,9 +56,11 @@ Step-by-step instructions for deploying RepoPress to production. This guide cove
 2. **Create a new OAuth App** (separate from dev):
    - **Application name**: `RepoPress` (or `RepoPress Production`)
    - **Homepage URL**: `https://your-domain.com`
-   - **Authorization callback URL**: `https://<your-project>.convex.site/api/auth/callback/github`
+   - **Authorization callback URL**: `https://your-domain.com/api/auth/callback/github`
 
-   > ⚠️ The callback URL MUST point to your **Convex site URL**, not your Vercel domain. Better Auth runs inside Convex.
+   > The callback URL must use the public RepoPress application origin. The
+   > Next.js auth route proxies the callback to Better Auth in Convex and lets
+   > the application origin receive the session cookies.
 
 3. **Copy the Client ID and Client Secret** - you already set these in Step 1.
 
@@ -77,6 +79,9 @@ Step-by-step instructions for deploying RepoPress to production. This guide cove
    | `CONVEX_DEPLOYMENT` | `prod:<your-project>` | Production |
    | `NEXT_PUBLIC_APP_URL` | `https://your-domain.com` | Production |
    | `REPOPRESS_CAPABILITY_SECRET` | Same value configured in the production Convex deployment | Production |
+   | `PREVIEW_APPROVAL_PRIVATE_KEY_JWK` | Server-only private JWK from a generated EC P-256 key pair | Production |
+   | `NEXT_PUBLIC_PREVIEW_APPROVAL_PUBLIC_KEY_JWK` | Public JWK matching the private signing key | Production |
+   | `NEXT_PUBLIC_PREVIEW_ORIGIN` | HTTPS origin of the dedicated public sandbox project | Production |
    | `NEXT_PUBLIC_SENTRY_DSN` | Your Sentry DSN (optional) | Production |
    | `SENTRY_ORG` | Your Sentry org slug (optional) | Production |
    | `SENTRY_PROJECT` | Your Sentry project slug (optional) | Production |
@@ -85,6 +90,27 @@ Step-by-step instructions for deploying RepoPress to production. This guide cove
 3. **Trigger a deploy** (push to main or manual deploy from Vercel dashboard).
 
 4. **Verify**: Visit `https://your-domain.com` - the landing page should load.
+
+### Dedicated Compatible preview project
+
+Deploy the same reviewed commit as a separate Vercel project with deployment
+protection disabled and these production variables:
+
+| Variable | Value |
+|----------|-------|
+| `REPOPRESS_DEPLOYMENT_ROLE` | `sandbox` |
+| `NEXT_PUBLIC_APP_URL` | Public Studio origin, used by the sandbox CSP `frame-ancestors` rule |
+| `NEXT_PUBLIC_CONVEX_URL` | Same public Convex deployment URL used by Studio; required at build time |
+| `NEXT_PUBLIC_CONVEX_SITE_URL` | Same public Convex site URL used by Studio; required at build time |
+| `NEXT_PUBLIC_PREVIEW_APPROVAL_PUBLIC_KEY_JWK` | Public half of the Studio signing key pair |
+
+The Convex URLs are public build configuration, not credentials. The sandbox
+role still rejects runtime application and API access: it serves only `GET` and
+`HEAD` requests for `/preview/sandbox`, immutable Next.js bundles, and the exact
+public assets needed by that page. It must not receive the private signing JWK,
+GitHub credentials, auth secrets, `CONVEX_DEPLOYMENT`, or the RepoPress
+capability secret. The origin is public at the network edge because the signed
+approval protocol and opaque iframe are the execution boundary.
 
 ---
 
@@ -181,7 +207,7 @@ Run Lighthouse on `/` targeting:
 | Symptom | Cause | Fix |
 |---------|-------|-----|
 | "ConvexReactClient not initialized" | Missing `NEXT_PUBLIC_CONVEX_URL` | Set it in Vercel env vars and redeploy |
-| OAuth callback fails | Wrong callback URL in GitHub OAuth App | Must be `https://<project>.convex.site/api/auth/callback/github` |
+| OAuth callback fails | Wrong callback URL in GitHub OAuth App | Must be `https://<app-origin>/api/auth/callback/github` |
 | "ctx is not a mutation context" | Auth.ts modified incorrectly | Reset `convex/auth.ts` from git |
 | 401 on API routes | Missing/expired GitHub token | Re-login via OAuth |
 | OG image not showing | `NEXT_PUBLIC_APP_URL` not set | Set it and redeploy for correct `metadataBase` |

@@ -559,8 +559,8 @@ Add footer links from `components/landing/footer.tsx`.
   - `GITHUB_CLIENT_ID` - production GitHub OAuth App
   - `GITHUB_CLIENT_SECRET` - production secret
   - `BETTER_AUTH_SECRET` - generate NEW random secret for prod (do NOT reuse dev)
-  - `SITE_URL` - production Convex site URL (e.g., `https://repopress.convex.site`)
-- Update GitHub OAuth App: add production callback URL `https://<prod>.convex.site/api/auth/callback/github`
+  - `SITE_URL` - public production application origin (e.g., `https://repopress.example`)
+- Update GitHub OAuth App: add production callback URL `https://<app-origin>/api/auth/callback/github`
 - Run `npx convex deploy --prod` to push schema and functions
 
 **Acceptance**: OAuth login works on production domain without affecting dev environment.

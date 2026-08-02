@@ -310,7 +310,7 @@ Example: "I need `NEXT_PUBLIC_CONVEX_URL` to complete this task. Please provide 
 - `GITHUB_CLIENT_SECRET` – GitHub OAuth App client secret
 - `BETTER_AUTH_SECRET` – Random secret for session encryption
 - `REPOPRESS_CAPABILITY_SECRET` – Separate 32+ character signing secret; set the same value in Convex and the Next.js runtime
-- `SITE_URL` – Your Convex site URL
+- `SITE_URL` – Public RepoPress application origin used by Better Auth callbacks
 
 ### Optional
 - `NEXT_PUBLIC_APP_URL` – Public app URL
@@ -331,7 +331,7 @@ npx convex dev  # in another terminal
 
 ### Troubleshooting
 - **"ConvexReactClient not initialized"** → `NEXT_PUBLIC_CONVEX_URL` is missing
-- **"OAuth callback failed"** → GitHub OAuth App callback URL must be `https://your-convex-project.convex.site/api/auth/callback/github`
+- **"OAuth callback failed"** → GitHub OAuth App callback URL must be `https://your-app.example/api/auth/callback/github`
 - **"ctx is not a mutation context"** → Auth.ts was edited incorrectly; reset from git
 
 ## Common Pitfalls
