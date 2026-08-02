@@ -14,6 +14,7 @@ export type ParsedContentFile = Readonly<{
 const YAML_FRONTMATTER_PATTERN = /^\uFEFF?---\r?\n/
 const METADATA_EXPORT_PATTERN = /^\uFEFF?export\s+const\s+metadata(?:\s*:[^=\r\n]+)?\s*=/
 const FENCE_LINE_PATTERN = /^\s{0,3}(`{3,}|~{3,})[ \t]*(\S?)/
+const ECMASCRIPT_SAME_LINE_WHITESPACE_PATTERN = /[^\S\r\n\u2028\u2029]/
 const DANGEROUS_KEYS = new Set(["__proto__", "constructor", "prototype"])
 
 const MAX_METADATA_DEPTH = 32
@@ -226,7 +227,7 @@ function startsUnsupportedContinuation(content: string) {
   if (firstLineEnd === 0) return false
 
   let index = firstLineEnd
-  while (content[index] === " " || content[index] === "\t") index += 1
+  while (ECMASCRIPT_SAME_LINE_WHITESPACE_PATTERN.test(content[index] ?? "")) index += 1
   if (content.startsWith("\r\n", index) || content[index] === "\n" || index >= content.length) return false
   return /^(?:[.([?:`,+\-*/%<>=!&|^]|in\b|instanceof\b|as\b|satisfies\b)/.test(content.slice(index))
 }

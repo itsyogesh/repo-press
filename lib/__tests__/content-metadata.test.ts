@@ -110,6 +110,22 @@ describe("parseContentFile", () => {
     })
   })
 
+  it.each([
+    ["non-breaking space", "\u00A0", ".withDefaults()"],
+    ["form feed", "\u000C", ".withDefaults()"],
+    ["vertical tab", "\u000B", "+ fallback"],
+  ])("rejects a continuation preceded by %s", (_name, whitespace, continuation) => {
+    const source = `export const metadata = { title: "A" }\n${whitespace}${continuation}\n# Body\n`
+
+    expect(parseContentFile(source, "docs/a.mdx")).toEqual({
+      body: source,
+      metadata: {},
+      metadataSource: "metadata-export",
+      editable: false,
+      diagnostic: "UNSUPPORTED_METADATA_EXPORT",
+    })
+  })
+
   it("rejects metadata that exceeds structural and literal budgets", () => {
     const tooDeep = `${"{ value: ".repeat(40)}"end"${" }".repeat(40)}`
     const tooManyKeys = `{ ${Array.from({ length: 300 }, (_, index) => `key${index}: ${index}`).join(", ")} }`
