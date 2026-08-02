@@ -231,6 +231,12 @@ function startsUnsupportedContinuation(content: string) {
   return /^(?:[.([?:`,+\-*/%<>=!&|^]|in\b|instanceof\b|as\b|satisfies\b)/.test(content.slice(index))
 }
 
+function declarationHasUnsupportedContinuation(content: string, declarationEnd: number) {
+  if (content[declarationEnd - 1] !== "\n") return false
+  const lineBreakStart = content[declarationEnd - 2] === "\r" ? declarationEnd - 2 : declarationEnd - 1
+  return startsUnsupportedContinuation(content.slice(lineBreakStart))
+}
+
 /** Recover the complete leading ESM preamble containing the metadata export. */
 export function extractMetadataExport(content: string) {
   const start = findTopLevelMetadataExportOffset(content)
@@ -474,6 +480,7 @@ export function parseContentFile(source: string, filePath: string): ParsedConten
     return unsupportedMetadataExport(source)
   }
   const declaration = preamble.metadataDeclarations[0]
+  if (declarationHasUnsupportedContinuation(source, declaration.end)) return unsupportedMetadataExport(source)
 
   try {
     const metadata = parseStaticMetadataDeclaration(source.slice(declaration.start, declaration.end))

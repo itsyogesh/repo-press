@@ -92,6 +92,24 @@ describe("parseContentFile", () => {
     })
   })
 
+  it.each([
+    ".withDefaults()",
+    "[key]",
+    "+ fallback",
+    "| fallback",
+    "instanceof Metadata",
+  ])("preserves the exact source and disables editing for a balanced-object continuation: %s", (continuation) => {
+    const source = `export const metadata = { title: "A" }\n${continuation}\n# Body\n`
+
+    expect(parseContentFile(source, "docs/a.mdx")).toEqual({
+      body: source,
+      metadata: {},
+      metadataSource: "metadata-export",
+      editable: false,
+      diagnostic: "UNSUPPORTED_METADATA_EXPORT",
+    })
+  })
+
   it("rejects metadata that exceeds structural and literal budgets", () => {
     const tooDeep = `${"{ value: ".repeat(40)}"end"${" }".repeat(40)}`
     const tooManyKeys = `{ ${Array.from({ length: 300 }, (_, index) => `key${index}: ${index}`).join(", ")} }`
