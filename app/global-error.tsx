@@ -2,6 +2,7 @@
 
 import * as Sentry from "@sentry/nextjs"
 import { useEffect } from "react"
+import { ErrorRecovery } from "@/components/error-recovery"
 
 export default function GlobalError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   useEffect(() => {
@@ -9,14 +10,16 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
   }, [error])
 
   return (
-    <html lang="en">
-      <body>
-        <div style={{ padding: "2rem", textAlign: "center" }}>
-          <h2>Something went wrong</h2>
-          <button type="button" onClick={() => reset()}>
-            Try again
-          </button>
-        </div>
+    <html lang="en" className="bg-background">
+      <body className="min-h-svh bg-background font-sans text-foreground antialiased">
+        <ErrorRecovery
+          onRetry={reset}
+          title="We couldn't open RepoPress"
+          description="The application hit an unexpected problem. Your saved content and files in GitHub are safe."
+          digest={error.digest}
+          ariaLabel="Application recovery"
+          className="min-h-svh"
+        />
       </body>
     </html>
   )
