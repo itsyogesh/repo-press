@@ -370,6 +370,10 @@ export function extractMetadataExportRecovery(content: string) {
 
   const codeEnd = objectEnd + codeSuffix.length
   const removalEnd = suffixMatch[2] ? codeEnd : lineEnd + (lineEndMatch?.[0].length ?? 0)
+  const sourceBeforeDeclaration = content.slice(0, start)
+  const bodyBeforeDeclaration = sourceBeforeDeclaration.replace(/^\uFEFF/, "")
+  const afterRemoval = content.slice(start + removalEnd)
+  const strippedBodyLineBreaks = bodyBeforeDeclaration === "" ? (/^(?:\r?\n)+/.exec(afterRemoval)?.[0] ?? "") : ""
   const preambleWithoutMetadata = removeMetadataDeclaration(content.slice(0, preambleEnd), {
     start,
     end: start + removalEnd,
@@ -384,6 +388,12 @@ export function extractMetadataExportRecovery(content: string) {
           : "\n\n",
     fullPreamble: content.slice(0, preambleEnd).trimEnd(),
     preambleWithoutMetadata,
+    replacement: Object.freeze({
+      bodyBeforeDeclaration,
+      declarationPrefix: declaration.startsWith("\uFEFF") ? "\uFEFF" : "",
+      separator: content.slice(start + codeEnd, start + removalEnd) + strippedBodyLineBreaks,
+      sourceBeforeDeclaration,
+    }),
   })
 }
 
@@ -602,14 +612,16 @@ function metadataRemovalEnd(source: string, codeEnd: number, lexicalEnd: number)
 }
 
 function frontmatterPayloadLength(source: string) {
-  const start = source.startsWith("\uFEFF") ? 4 : 3
-  const closingDelimiter = source.indexOf("\n---", start)
-  return (closingDelimiter === -1 ? source.length : closingDelimiter) - start
+  const openingDelimiter = YAML_FRONTMATTER_PATTERN.exec(source)
+  if (!openingDelimiter) return null
+  const closingDelimiter = /^---(?=\r?\n|$)/m.exec(source.slice(openingDelimiter[0].length))
+  return closingDelimiter?.index ?? null
 }
 
 export function parseContentFile(source: string, filePath: string): ParsedContentFile {
   if (YAML_FRONTMATTER_PATTERN.test(source)) {
-    if (frontmatterPayloadLength(source) > MAX_FRONTMATTER_LENGTH) return unsupportedFrontmatter(source)
+    const payloadLength = frontmatterPayloadLength(source)
+    if (payloadLength === null || payloadLength > MAX_FRONTMATTER_LENGTH) return unsupportedFrontmatter(source)
     try {
       // Supplying options bypasses gray-matter's content-keyed, shallow cache.
       const parsed = matter(source.startsWith("\uFEFF") ? source.slice(1) : source, {})

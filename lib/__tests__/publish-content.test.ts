@@ -113,7 +113,7 @@ describe("serializePublishContent", () => {
     expect(result).toEqual({
       ok: true,
       content:
-        'export const metadata = {\n  "title": "Hello"\n}\n\nimport { site } from "./config"\n\nexport const revalidate = 3600\n\n# Body\n',
+        'import { site } from "./config"\n\nexport const metadata = {\n  "title": "Hello"\n}\nexport const revalidate = 3600\n\n# Body\n',
     })
     if (result.ok) {
       expect(result.content.match(/export const metadata/g)).toHaveLength(1)
@@ -158,6 +158,28 @@ describe("serializePublishContent", () => {
         existingContent: source,
       }),
     ).toEqual({ ok: true, content: source })
+  })
+
+  it.each([
+    ["line", "// keep"],
+    ["block", "/* keep */"],
+  ])("keeps an inline %s comment as JS trivia when non-empty metadata is unchanged or edited", (_name, comment) => {
+    const source = `export const metadata = {\n  "title": "Hello"\n} ${comment}\n\n# Body\n`
+    const parsed = parseContentFile(source, "docs/a.mdx")
+
+    for (const title of ["Hello", "Edited"]) {
+      const expected = source.replace('"Hello"', JSON.stringify(title))
+      const result = serializePublishContent({
+        filePath: "docs/a.mdx",
+        body: parsed.body,
+        frontmatter: { title },
+        metadataSource: parsed.metadataSource,
+        existingContent: source,
+      })
+
+      expect(result).toEqual({ ok: true, content: expected })
+      if (result.ok) expect(result.content.match(new RegExp(comment.replace(/[/*]/g, "\\$&"), "g"))).toHaveLength(1)
+    }
   })
 
   it("round-trips a next-line comment with its original CRLF separator", () => {

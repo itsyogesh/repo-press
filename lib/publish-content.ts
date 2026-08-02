@@ -83,6 +83,14 @@ export function serializePublishContent({
       const separator = bodyPreservesOtherPreamble ? recovery.declarationBodySeparator : "\n\n"
       return { ok: true, content: `${preservedMetadata}${separator}${body.replace(/^\r?\n+/, "")}` }
     }
+    const recovery = existingContent ? extractMetadataExportRecovery(existingContent) : null
+    if (recovery && body.startsWith(recovery.replacement.bodyBeforeDeclaration)) {
+      const bodyAfterDeclaration = body.slice(recovery.replacement.bodyBeforeDeclaration.length)
+      return {
+        ok: true,
+        content: `${recovery.replacement.sourceBeforeDeclaration}${recovery.replacement.declarationPrefix}${formatMetadataExport(frontmatter)}${recovery.replacement.separator}${bodyAfterDeclaration}`,
+      }
+    }
     return { ok: true, content: `${formatMetadataExport(frontmatter)}\n\n${body}` }
   }
 

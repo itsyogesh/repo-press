@@ -53,6 +53,14 @@ describe("parseContentFile", () => {
     expect(Object.isFrozen(result.metadata)).toBe(true)
   })
 
+  it.each([
+    ["LF", "---\ntitle: Hi\n# Body\n"],
+    ["CRLF", "---\r\ntitle: Hi\r\n# Body\r\n"],
+    ["a delimiter-like line", "---\ntitle: Hi\n----\n# Body\n"],
+  ])("fails closed when %s frontmatter has no standalone closing delimiter", (_name, source) => {
+    expectUnsupportedFrontmatter(source)
+  })
+
   it("handles BOMs, CRLF, leading comments and imports, quoted keys, and negative numbers", () => {
     const source =
       '\uFEFF// Page metadata\r\nimport type { Metadata } from "next"\r\n\r\nexport const metadata = {\r\n  "title": "Hello",\r\n  count: -2.5,\r\n  enabled: true,\r\n  optional: null,\r\n}\r\n\r\n# Body\r\n'
