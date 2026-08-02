@@ -138,6 +138,7 @@ export const restoreVersion = mutation({
       editedBy: userId,
       historyCreatedAt: historyEntry.createdAt,
       now,
+      currentContentVersion: document.contentVersion,
     })
 
     // Insert a new history entry representing the restored content

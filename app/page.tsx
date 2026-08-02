@@ -17,9 +17,9 @@ export default function LandingPage() {
       <main className="flex-1">
         <Hero />
         <VideoPreview />
+        <RepoScanner />
         <FeatureGrid />
         <HowItWorks />
-        <RepoScanner />
         <Comparison />
         <Pricing />
         <FAQ />

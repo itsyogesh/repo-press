@@ -52,6 +52,7 @@ The Convex CLI sets up most variables automatically. You only need to add a few 
 | `GITHUB_CLIENT_ID` | Set in the Convex dashboard - needed for GitHub OAuth login |
 | `GITHUB_CLIENT_SECRET` | Set in the Convex dashboard - needed for GitHub OAuth login |
 | `BETTER_AUTH_SECRET` | A random string for session encryption - set in the Convex dashboard |
+| `REPOPRESS_CAPABILITY_SECRET` | A separate 32+ character secret; set the same value in Convex and the Next.js runtime |
 
 > **Never commit `.env.local` to Git.** It is already in `.gitignore`.
 

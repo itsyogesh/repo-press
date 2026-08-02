@@ -2,27 +2,37 @@ import { ConvexHttpClient } from "convex/browser"
 import { NextResponse } from "next/server"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
-import { getGitHubToken } from "@/lib/auth-server"
-import { getRepoRole } from "@/lib/github-permissions"
+import { fetchAuthAction } from "@/lib/auth-server"
 import { mintServerQueryToken } from "@/lib/project-access-token"
+import { RouteAuthError, resolveRouteGitHubCredential } from "@/lib/route-auth"
+import { prepareTitleSyncFiles } from "@/lib/studio/path-adapters"
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
 
 export async function POST(request: Request) {
-  const token = await getGitHubToken()
-  if (!token) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  let githubToken: string
+  try {
+    const credential = await resolveRouteGitHubCredential()
+    githubToken = credential.githubToken
+  } catch (error) {
+    if (error instanceof RouteAuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
+    throw error
   }
 
   try {
     const body = await request.json()
-    const { projectId, owner, repo, branch, files } = body
+    const { projectId, owner, repo, branch, readRef, files } = body
 
-    if (!projectId || !owner || !repo || !branch || !files) {
+    if (!projectId || !owner || !repo || !branch || !readRef || !files) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
     }
+    if (typeof readRef !== "string" || !/^[0-9a-f]{40}$/i.test(readRef)) {
+      return NextResponse.json({ error: "Invalid read ref" }, { status: 400 })
+    }
 
-    // P1 fix: Verify the caller has at least viewer access to the repo
+    // Resolve the canonical project; the Convex action authorizes the real actor.
     const serverQueryToken = await mintServerQueryToken()
     const project = await convex.query(api.projects.get, {
       id: projectId as Id<"projects">,
@@ -37,19 +47,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Project does not match repo/branch" }, { status: 400 })
     }
 
-    const { role } = await getRepoRole(token, owner, repo)
-    if (!role) {
-      return NextResponse.json({ error: "Forbidden: no access to this repository" }, { status: 403 })
-    }
-
-    // Call the Convex action with the server-side token
-    await convex.action(api.documents.syncTreeTitles, {
+    if (!fetchAuthAction) throw new Error("Authenticated Convex actions are unavailable")
+    const preparedFiles = prepareTitleSyncFiles(project.contentRoot, files).map(({ path, sha }) => ({ path, sha }))
+    await fetchAuthAction(api.documents.syncTreeTitles, {
       projectId: projectId as Id<"projects">,
-      owner,
-      repo,
-      branch,
-      files,
-      githubToken: token,
+      readRef,
+      files: preparedFiles,
+      githubToken,
     })
 
     return NextResponse.json({ ok: true })

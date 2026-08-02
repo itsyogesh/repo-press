@@ -6,7 +6,7 @@ import { getRepoContents } from "@/lib/github"
 import { resolveActingUserId } from "@/lib/server-context"
 import { syncProjectsServerSide } from "@/lib/sync-projects"
 
-export async function syncProjectsFromConfigAction(owner: string, repo: string, branch: string) {
+export async function syncProjectsFromConfigAction(owner: string, repo: string, branch: string, configRef?: string) {
   const token = await getGitHubToken()
   if (!token) return { success: false, error: "Not authenticated with GitHub" }
 
@@ -20,6 +20,7 @@ export async function syncProjectsFromConfigAction(owner: string, repo: string, 
     // avoid falsely flagging projects absent from a non-canonical branch's config.
     const result = await syncProjectsServerSide(token, owner, repo, branch, actingUserId, {
       runOrphanDetection: false,
+      ...(configRef ? { configRef } : {}),
     })
     if (!result) {
       return { success: false, error: "Config not found or sync failed" }

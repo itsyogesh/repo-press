@@ -7,6 +7,7 @@ type BuildRestoreVersionMutationInput<TDocumentId> = {
   editedBy: string
   historyCreatedAt: number
   now: number
+  currentContentVersion?: number
 }
 
 type BuildRestoreVersionMutationResult<TDocumentId> = {
@@ -23,6 +24,7 @@ type BuildRestoreVersionMutationResult<TDocumentId> = {
     body: string
     frontmatter?: unknown
     updatedAt: number
+    contentVersion: number
   }
 }
 
@@ -43,6 +45,7 @@ export function buildRestoreVersionMutation<TDocumentId>(
       body: input.targetBody,
       frontmatter: input.targetFrontmatter,
       updatedAt: input.now,
+      contentVersion: (input.currentContentVersion ?? 0) + 1,
     },
   }
 }

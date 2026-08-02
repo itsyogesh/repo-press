@@ -50,8 +50,10 @@ interface SmartCreateFileDialogProps {
   owner: string
   /** GitHub repo (for sibling file fetch) */
   repo: string
-  /** GitHub branch (for sibling file fetch) */
+  /** GitHub branch retained as the eventual write target. */
   branch: string
+  /** Immutable commit used for sibling inference reads. */
+  baseCommitSha: string
   onConfirm: (result: SmartCreateFileResult) => void
 }
 
@@ -69,11 +71,11 @@ function toMergedField(f: FrontmatterFieldDef): MergedFieldDef {
 async function fetchSiblingFrontmatter(
   owner: string,
   repo: string,
-  branch: string,
+  baseCommitSha: string,
   path: string,
 ): Promise<Record<string, unknown> | null> {
   try {
-    const params = new URLSearchParams({ owner, repo, path, branch })
+    const params = new URLSearchParams({ owner, repo, path, ref: baseCommitSha })
     const res = await fetch(`/api/github/file?${params.toString()}`)
     if (!res.ok) return null
     const payload = (await res.json()) as { content: string; sha: string }
@@ -127,7 +129,7 @@ function emitSiblingInference(entry: SiblingInferenceEntry) {
 
 async function loadSiblingInference(
   key: string,
-  payload: { owner: string; repo: string; branch: string; path: string },
+  payload: { owner: string; repo: string; baseCommitSha: string; path: string },
 ) {
   const entry = getSiblingInferenceEntry(key)
   if (entry.promise || entry.snapshot.status === "ready") return
@@ -135,7 +137,7 @@ async function loadSiblingInference(
   entry.snapshot = { status: "loading", fields: [] }
   emitSiblingInference(entry)
 
-  entry.promise = fetchSiblingFrontmatter(payload.owner, payload.repo, payload.branch, payload.path)
+  entry.promise = fetchSiblingFrontmatter(payload.owner, payload.repo, payload.baseCommitSha, payload.path)
     .then((frontmatter) => {
       entry.snapshot = {
         status: "ready",
@@ -153,7 +155,7 @@ async function loadSiblingInference(
 
 function subscribeSiblingInference(
   key: string | null,
-  payload: { owner: string; repo: string; branch: string; path: string } | null,
+  payload: { owner: string; repo: string; baseCommitSha: string; path: string } | null,
   listener: () => void,
 ) {
   if (!key || !payload) return () => {}
@@ -183,6 +185,7 @@ export function SmartCreateFileDialog({
   owner,
   repo,
   branch,
+  baseCommitSha,
   onConfirm,
 }: SmartCreateFileDialogProps) {
   const [title, setTitle] = React.useState("")
@@ -201,8 +204,8 @@ export function SmartCreateFileDialog({
 
   const sibling = React.useMemo(() => findSiblingContentFile(folderChildNodes), [folderChildNodes])
   const dialogContextKey = React.useMemo(
-    () => JSON.stringify({ parentPath, owner, repo, branch }),
-    [parentPath, owner, repo, branch],
+    () => JSON.stringify({ parentPath, owner, repo, branch, baseCommitSha }),
+    [parentPath, owner, repo, branch, baseCommitSha],
   )
 
   const siblingInferenceKey = React.useMemo(() => {
@@ -210,10 +213,10 @@ export function SmartCreateFileDialog({
     return JSON.stringify({
       owner,
       repo,
-      branch,
+      baseCommitSha,
       path: sibling.path,
     })
-  }, [open, owner, repo, branch, sibling])
+  }, [open, owner, repo, baseCommitSha, sibling])
 
   const siblingSnapshot = React.useSyncExternalStore(
     (listener) =>
@@ -223,7 +226,7 @@ export function SmartCreateFileDialog({
           ? {
               owner,
               repo,
-              branch,
+              baseCommitSha,
               path: sibling.path,
             }
           : null,
@@ -352,7 +355,7 @@ export function SmartCreateFileDialog({
               <div className="py-4 space-y-6">
                 {/* Title - always first */}
                 <div className="grid gap-2">
-                  <Label htmlFor="smart-create-title" className="font-semibold text-sm">
+                  <Label htmlFor="smart-create-title" className="font-medium text-sm">
                     {primaryFieldLabel}
                     <span className="text-muted-foreground font-normal ml-1 text-xs">(required)</span>
                   </Label>
@@ -370,7 +373,7 @@ export function SmartCreateFileDialog({
                 {groupFields(siblingFields).map((grouped) => (
                   <div key={grouped.group}>
                     {/* Section header */}
-                    <div className="text-xs font-semibold text-studio-fg-muted uppercase tracking-wider mb-3 pb-2 border-b border-studio-border">
+                    <div className="text-xs font-medium text-studio-fg-muted uppercase tracking-wider mb-3 pb-2 border-b border-studio-border">
                       {grouped.groupLabel}
                     </div>
                     {/* Fields in this group */}

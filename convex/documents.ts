@@ -1,8 +1,217 @@
 import { v } from "convex/values"
 import { DOCUMENT_ALLOWED_TRANSITIONS, isPublishableDocumentStatus } from "../lib/document-status"
+import {
+  assertContentPath,
+  resolveStoredContentPath,
+  type StoredPathRepresentation,
+  toRepoPath,
+} from "../lib/preview/path-policy"
+import { verifyServerQueryToken } from "../lib/project-access-token"
 import { internal } from "./_generated/api"
 import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server"
 import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
+import { isDocumentContentClean } from "./lib/documentCleanliness"
+import {
+  assertGitHubCommitSha,
+  authorizeGitHubProjectActor,
+  verifyGitHubProjectReadAccess,
+} from "./lib/githubActionAccess"
+import { requireCommittedAttempt, requireDocumentAssociation } from "./lib/publishAttemptOwnership"
+
+const TITLE_SYNC_MAX_PATH_BYTES = 1_024
+const TITLE_SYNC_MAX_TOTAL_PATH_BYTES = 128 * 1_024
+const TITLE_SYNC_MAX_CONTENT_BYTES = 256 * 1_024
+const TITLE_SYNC_MAX_FILES = 256
+const TITLE_SYNC_MAX_TITLE_BYTES = 512
+const TITLE_SYNC_MAX_TITLE_CODE_POINTS = 512
+const utf8Encoder = new TextEncoder()
+const utf8Decoder = new TextDecoder("utf-8", { fatal: true })
+
+type NormalizedTitleSyncDocument = Readonly<{
+  filePath: string
+  title: string
+  githubSha: string
+}>
+
+function normalizeBoundedTitle(value: string): string | null {
+  const nfcValue = value.normalize("NFC")
+  for (const character of nfcValue) {
+    const codePoint = character.codePointAt(0)!
+    const isUnsafe =
+      codePoint <= 0x1f ||
+      (codePoint >= 0x7f && codePoint <= 0x9f) ||
+      codePoint === 0x061c ||
+      codePoint === 0x200e ||
+      codePoint === 0x200f ||
+      (codePoint >= 0x2028 && codePoint <= 0x202e) ||
+      (codePoint >= 0x2066 && codePoint <= 0x206f) ||
+      codePoint === 0xfeff
+    if (isUnsafe) return null
+  }
+
+  const title = nfcValue.trim()
+  if (
+    title.length === 0 ||
+    Array.from(title).length > TITLE_SYNC_MAX_TITLE_CODE_POINTS ||
+    utf8Encoder.encode(title).byteLength > TITLE_SYNC_MAX_TITLE_BYTES
+  ) {
+    return null
+  }
+  return title
+}
+
+function titleFromContent(filePath: string, content: string): string {
+  const fileName = filePath.split("/").pop() ?? filePath
+  const fileNameStem = fileName.replace(/\.(mdx?|markdown)$/i, "")
+  const fallbackTitle = normalizeBoundedTitle(fileNameStem) ?? "Untitled"
+  const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/)
+  if (!fmMatch) return fallbackTitle
+
+  const titleMatch = fmMatch[1].match(/^title:\s*["']?(.+?)["']?\s*$/m)
+  if (!titleMatch) return fallbackTitle
+  return normalizeBoundedTitle(titleMatch[1]) ?? fallbackTitle
+}
+
+function validateTitleSyncBatch(
+  documents: readonly NormalizedTitleSyncDocument[],
+): readonly NormalizedTitleSyncDocument[] {
+  if (!Array.isArray(documents) || Object.getPrototypeOf(documents) !== Array.prototype) {
+    throw new Error("Invalid title document batch")
+  }
+
+  const lengthDescriptor = Object.getOwnPropertyDescriptor(documents, "length")
+  if (
+    !lengthDescriptor ||
+    !("value" in lengthDescriptor) ||
+    !Number.isSafeInteger(lengthDescriptor.value) ||
+    lengthDescriptor.value < 0 ||
+    lengthDescriptor.value > TITLE_SYNC_MAX_FILES ||
+    lengthDescriptor.enumerable !== false ||
+    lengthDescriptor.configurable !== false
+  ) {
+    throw new Error(`title document batch exceeds ${TITLE_SYNC_MAX_FILES} entries`)
+  }
+
+  const length = lengthDescriptor.value
+  const expectedArrayKeys = new Set<PropertyKey>(["length"])
+  for (let index = 0; index < length; index++) expectedArrayKeys.add(String(index))
+  const arrayKeys = Reflect.ownKeys(documents)
+  if (arrayKeys.length !== expectedArrayKeys.size || arrayKeys.some((key) => !expectedArrayKeys.has(key))) {
+    throw new Error("Invalid title document batch")
+  }
+
+  const seenPaths = new Set<string>()
+  const snapshots: NormalizedTitleSyncDocument[] = []
+  let totalPathBytes = 0
+  for (let index = 0; index < length; index++) {
+    const indexDescriptor = Object.getOwnPropertyDescriptor(documents, String(index))
+    if (!indexDescriptor || !("value" in indexDescriptor) || indexDescriptor.enumerable !== true) {
+      throw new Error("Invalid title document batch")
+    }
+
+    const document = indexDescriptor.value
+    if (document === null || typeof document !== "object" || Array.isArray(document)) {
+      throw new Error("Invalid title document batch")
+    }
+    const prototype = Object.getPrototypeOf(document)
+    if (prototype !== Object.prototype && prototype !== null) throw new Error("Invalid title document batch")
+
+    const expectedDocumentKeys = new Set<PropertyKey>(["filePath", "title", "githubSha"])
+    const documentKeys = Reflect.ownKeys(document)
+    if (
+      documentKeys.length !== expectedDocumentKeys.size ||
+      documentKeys.some((key) => !expectedDocumentKeys.has(key))
+    ) {
+      throw new Error("Invalid title document batch")
+    }
+
+    const filePathDescriptor = Object.getOwnPropertyDescriptor(document, "filePath")
+    const titleDescriptor = Object.getOwnPropertyDescriptor(document, "title")
+    const githubShaDescriptor = Object.getOwnPropertyDescriptor(document, "githubSha")
+    if (
+      !filePathDescriptor ||
+      !("value" in filePathDescriptor) ||
+      filePathDescriptor.enumerable !== true ||
+      typeof filePathDescriptor.value !== "string" ||
+      !titleDescriptor ||
+      !("value" in titleDescriptor) ||
+      titleDescriptor.enumerable !== true ||
+      typeof titleDescriptor.value !== "string" ||
+      !githubShaDescriptor ||
+      !("value" in githubShaDescriptor) ||
+      githubShaDescriptor.enumerable !== true ||
+      typeof githubShaDescriptor.value !== "string"
+    ) {
+      throw new Error("Invalid title document batch")
+    }
+
+    const filePathValue = filePathDescriptor.value
+    const titleValue = titleDescriptor.value
+    const githubShaValue = githubShaDescriptor.value
+    const pathBytes = utf8Encoder.encode(filePathValue).byteLength
+    if (pathBytes > TITLE_SYNC_MAX_PATH_BYTES) {
+      throw new Error(`content path exceeds ${TITLE_SYNC_MAX_PATH_BYTES} bytes`)
+    }
+    totalPathBytes += pathBytes
+    if (totalPathBytes > TITLE_SYNC_MAX_TOTAL_PATH_BYTES) {
+      throw new Error(`total path bytes exceed ${TITLE_SYNC_MAX_TOTAL_PATH_BYTES}`)
+    }
+
+    const filePath = assertContentPath(filePathValue)
+    if (filePath !== filePathValue || !/\.(?:md|mdx|markdown)$/i.test(filePath)) {
+      throw new Error("Invalid title document path")
+    }
+    if (seenPaths.has(filePath)) throw new Error("Duplicate title document path")
+    seenPaths.add(filePath)
+    assertGitHubCommitSha(githubShaValue, "file sha")
+
+    const normalizedTitle = normalizeBoundedTitle(titleValue)
+    if (normalizedTitle === null || normalizedTitle !== titleValue) {
+      throw new Error("Invalid title document title")
+    }
+
+    snapshots.push(
+      Object.freeze({
+        filePath,
+        title: normalizedTitle,
+        githubSha: githubShaValue,
+      }),
+    )
+  }
+
+  return Object.freeze(snapshots)
+}
+
+function decodeTitleSyncContent(payload: {
+  type?: string
+  size?: number
+  encoding?: string
+  content?: string
+}): string | null {
+  if (
+    payload.type !== "file" ||
+    payload.encoding !== "base64" ||
+    typeof payload.content !== "string" ||
+    typeof payload.size !== "number" ||
+    !Number.isInteger(payload.size) ||
+    payload.size < 0 ||
+    payload.size > TITLE_SYNC_MAX_CONTENT_BYTES
+  ) {
+    return null
+  }
+
+  const compactBase64 = payload.content.replace(/\s/g, "")
+  if (compactBase64.length > Math.ceil((TITLE_SYNC_MAX_CONTENT_BYTES * 4) / 3) + 4) return null
+
+  try {
+    const binary = atob(compactBase64)
+    if (binary.length > TITLE_SYNC_MAX_CONTENT_BYTES || binary.length !== payload.size) return null
+    const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0))
+    return utf8Decoder.decode(bytes)
+  } catch {
+    return null
+  }
+}
 
 export const listByProject = query({
   args: {
@@ -55,6 +264,7 @@ export const getByFilePath = query({
   args: {
     projectId: v.id("projects"),
     filePath: v.string(),
+    pathRepresentation: v.union(v.literal("legacy_repo_v0"), v.literal("content_relative_v1")),
     userId: v.optional(v.string()),
     projectAccessToken: v.optional(v.string()),
   },
@@ -62,9 +272,15 @@ export const getByFilePath = query({
     const access = await resolveProjectReader(ctx, args)
     if (!access) return null
 
-    return await ctx.db
+    const indexed = ctx.db
       .query("documents")
       .withIndex("by_projectId_filePath", (q) => q.eq("projectId", args.projectId).eq("filePath", args.filePath))
+    return await indexed
+      .filter((q) =>
+        args.pathRepresentation === "content_relative_v1"
+          ? q.eq(q.field("pathRepresentation"), "content_relative_v1")
+          : q.or(q.eq(q.field("pathRepresentation"), "legacy_repo_v0"), q.eq(q.field("pathRepresentation"), undefined)),
+      )
       .first()
   },
 })
@@ -122,6 +338,7 @@ export const create = internalMutation({
     const now = Date.now()
     return await ctx.db.insert("documents", {
       ...args,
+      pathRepresentation: "content_relative_v1",
       createdAt: now,
       updatedAt: now,
     })
@@ -134,6 +351,7 @@ export const getOrCreate = mutation({
   args: {
     projectId: v.id("projects"),
     filePath: v.string(),
+    pathRepresentation: v.literal("content_relative_v1"),
     title: v.string(),
     body: v.optional(v.string()),
     frontmatter: v.optional(v.any()),
@@ -147,6 +365,7 @@ export const getOrCreate = mutation({
     const existing = await ctx.db
       .query("documents")
       .withIndex("by_projectId_filePath", (q) => q.eq("projectId", args.projectId).eq("filePath", args.filePath))
+      .filter((q) => q.eq(q.field("pathRepresentation"), args.pathRepresentation))
       .first()
 
     if (existing) return existing._id
@@ -155,6 +374,7 @@ export const getOrCreate = mutation({
     return await ctx.db.insert("documents", {
       projectId: args.projectId,
       filePath: args.filePath,
+      pathRepresentation: args.pathRepresentation,
       title: args.title,
       status: "draft",
       body: args.body,
@@ -170,6 +390,7 @@ export const getOrCreateInternal = internalMutation({
   args: {
     projectId: v.id("projects"),
     filePath: v.string(),
+    pathRepresentation: v.literal("content_relative_v1"),
     title: v.string(),
     body: v.optional(v.string()),
     frontmatter: v.optional(v.any()),
@@ -179,6 +400,7 @@ export const getOrCreateInternal = internalMutation({
     const existing = await ctx.db
       .query("documents")
       .withIndex("by_projectId_filePath", (q) => q.eq("projectId", args.projectId).eq("filePath", args.filePath))
+      .filter((q) => q.eq(q.field("pathRepresentation"), args.pathRepresentation))
       .first()
 
     if (existing) return existing._id
@@ -187,6 +409,7 @@ export const getOrCreateInternal = internalMutation({
     return await ctx.db.insert("documents", {
       projectId: args.projectId,
       filePath: args.filePath,
+      pathRepresentation: args.pathRepresentation,
       title: args.title,
       status: "draft",
       body: args.body,
@@ -195,6 +418,52 @@ export const getOrCreateInternal = internalMutation({
       createdAt: now,
       updatedAt: now,
     })
+  },
+})
+
+/** Persists a fully validated title sync as one atomic Convex transaction. */
+export const getOrCreateTitleSyncBatchInternal = internalMutation({
+  args: {
+    projectId: v.id("projects"),
+    documents: v.array(
+      v.object({
+        filePath: v.string(),
+        title: v.string(),
+        githubSha: v.string(),
+      }),
+    ),
+  },
+  handler: async (ctx, args): Promise<{ inserted: number; existing: number }> => {
+    const documents = validateTitleSyncBatch(args.documents)
+    let inserted = 0
+    let existing = 0
+
+    for (const document of documents) {
+      const found = await ctx.db
+        .query("documents")
+        .withIndex("by_projectId_filePath", (q) => q.eq("projectId", args.projectId).eq("filePath", document.filePath))
+        .filter((q) => q.eq(q.field("pathRepresentation"), "content_relative_v1"))
+        .first()
+      if (found) {
+        existing += 1
+        continue
+      }
+
+      const now = Date.now()
+      await ctx.db.insert("documents", {
+        projectId: args.projectId,
+        filePath: document.filePath,
+        pathRepresentation: "content_relative_v1",
+        title: document.title,
+        status: "draft",
+        githubSha: document.githubSha,
+        createdAt: now,
+        updatedAt: now,
+      })
+      inserted += 1
+    }
+
+    return { inserted, existing }
   },
 })
 
@@ -228,8 +497,12 @@ export const update = mutation({
     if (!doc) throw new Error("Document not found")
     await resolveProjectAccess(ctx, { projectId: doc.projectId, userId, projectAccessToken }, "editor")
 
+    // Only content writes advance the content version; metadata-only
+    // updates keep publish cleanliness intact.
+    const writesContent = "body" in updates || "frontmatter" in updates
     await ctx.db.patch(id, {
       ...updates,
+      ...(writesContent ? { contentVersion: (doc.contentVersion ?? 0) + 1 } : {}),
       updatedAt: Date.now(),
     })
   },
@@ -359,10 +632,13 @@ export const saveDraft = mutation({
       })
     }
 
-    // Update the document with the new content
+    // Update the document with the new content. The contentVersion bump is
+    // what makes the document dirty for publishing - workflow transitions
+    // bump only updatedAt and leave cleanliness intact.
     await ctx.db.patch(args.id, {
       body: args.body,
       frontmatter: args.frontmatter,
+      contentVersion: (doc.contentVersion ?? 0) + 1,
       updatedAt: now,
     })
   },
@@ -529,7 +805,11 @@ export const listTitlesForProject = query({
       .query("documents")
       .withIndex("by_projectId", (q) => q.eq("projectId", args.projectId))
       .collect()
-    return docs.map((d) => ({ filePath: d.filePath, title: d.title }))
+    return docs.map((d) => ({
+      filePath: d.filePath,
+      pathRepresentation: d.pathRepresentation,
+      title: d.title,
+    }))
   },
 })
 
@@ -553,7 +833,191 @@ export const listDirtyForProject = query({
       .query("documents")
       .withIndex("by_projectId_status", (q) => q.eq("projectId", args.projectId).eq("status", "approved"))
       .collect()
-    return [...drafts, ...approved].filter((d) => d.body != null || d.frontmatter != null)
+    return [...drafts, ...approved].filter(
+      (d) => (d.body != null || d.frontmatter != null) && !isDocumentContentClean(d),
+    )
+  },
+})
+
+/**
+ * Git-synchronization cleanliness. A document is clean while the CONTENT
+ * recorded by its last reconciled publish is still current:
+ * - Current provenance compares content versions, so workflow-only
+ *   transitions (which bump updatedAt but not contentVersion) cannot make
+ *   unchanged content dirty.
+ * - Provenance recorded before contentVersion existed is a migration
+ *   candidate and remains dirty until byte identity is proven against Git.
+ * - Legacy timestamp-only rows are also migration candidates, never clean.
+ * Recording provenance never bumps updatedAt or contentVersion, so every
+ * comparison is stable across reconciliation replays; closing the lane
+ * unmerged clears the provenance and the document becomes dirty again.
+ */
+/**
+ * Record Git-synchronization provenance after a publish reconciled this
+ * document: which base/lane branch and commit hold the published snapshot, the
+ * content-specific revision that landed, and the snapshot's updatedAt.
+ *
+ * Deliberately IDEMPOTENT: it records what landed without ever touching
+ * updatedAt, and cleanliness is derived from the content-version match.
+ * Replaying the same authority/commit/revision association - recovery after a
+ * partial reconcile, or a retry between the SHA refresh and markReconciled -
+ * patches identical values, so it can neither flip a synchronized document
+ * dirty nor mask a concurrent edit as clean.
+ */
+export const markPublishedSnapshot = mutation({
+  args: {
+    id: v.id("documents"),
+    githubSha: v.string(),
+    authorityKind: v.union(v.literal("base"), v.literal("lane")),
+    authorityBranch: v.string(),
+    publishBranchId: v.optional(v.id("publishBranches")),
+    publishAttemptId: v.optional(v.id("publishAttempts")),
+    commitSha: v.string(),
+    repoPath: v.optional(v.string()),
+    // Optional only for replays of attempts recorded before the fields
+    // existed; every new publish provides both.
+    contentRevision: v.optional(v.string()),
+    publishedContentVersion: v.optional(v.number()),
+    expectedUpdatedAt: v.number(),
+    serverQueryToken: v.optional(v.string()),
+    userId: v.optional(v.string()),
+    projectAccessToken: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const doc = await ctx.db.get(args.id)
+    if (!doc) throw new Error("Document not found")
+    const { project } = await resolveProjectAccess(
+      ctx,
+      { projectId: doc.projectId, userId: args.userId, projectAccessToken: args.projectAccessToken },
+      "editor",
+    )
+    assertGitHubCommitSha(args.githubSha, "GitHub blob SHA")
+    assertGitHubCommitSha(args.commitSha, "GitHub commit SHA")
+    if (args.contentRevision !== undefined && !/^[0-9a-f]{64}$/i.test(args.contentRevision)) {
+      throw new Error("Invalid publish content revision")
+    }
+    if (
+      args.publishedContentVersion !== undefined &&
+      (!Number.isInteger(args.publishedContentVersion) || args.publishedContentVersion < 0)
+    ) {
+      throw new Error("Invalid published content version")
+    }
+    if (!args.authorityBranch) throw new Error("Publish provenance requires an authority branch")
+    if (args.authorityKind === "base" && (args.publishBranchId !== undefined || args.publishAttemptId !== undefined)) {
+      throw new Error("Base provenance cannot reference a publish lane or attempt")
+    }
+    if (args.authorityKind === "lane" && args.publishBranchId === undefined) {
+      throw new Error("Lane provenance requires a publish branch")
+    }
+    if (args.publishAttemptId !== undefined && args.authorityKind !== "lane") {
+      throw new Error("Publish attempt provenance requires lane authority")
+    }
+    if (args.publishAttemptId === undefined && !(await verifyServerQueryToken(args.serverQueryToken))) {
+      throw new Error("Unauthorized: no-attempt provenance requires server proof")
+    }
+    let publishLane: { branchName: string } | null = null
+    if (args.authorityKind === "base") {
+      if (args.authorityBranch !== project.branch) {
+        throw new Error("Publish base authority must match the project's configured branch")
+      }
+    } else {
+      const lane = await ctx.db.get(args.publishBranchId!)
+      if (
+        !lane ||
+        !("branchName" in lane) ||
+        lane.projectId !== doc.projectId ||
+        lane.branchName !== args.authorityBranch ||
+        lane.status !== "active"
+      ) {
+        throw new Error("Publish lane authority does not match an active lane for this project")
+      }
+      publishLane = lane
+    }
+    if (args.publishAttemptId !== undefined) {
+      const publishAttempt = await requireCommittedAttempt(ctx.db, {
+        attemptId: args.publishAttemptId,
+        projectId: doc.projectId,
+        publishBranchId: args.publishBranchId,
+        commitSha: args.commitSha,
+      })
+      if (publishAttempt.branchName !== publishLane?.branchName) {
+        throw new Error("Publish attempt ownership mismatch: attempt branch differs from lane authority")
+      }
+      requireDocumentAssociation(publishAttempt, {
+        documentId: args.id,
+        repoPath: args.repoPath,
+        expectedUpdatedAt: args.expectedUpdatedAt,
+        contentRevision: args.contentRevision,
+        contentVersion: args.publishedContentVersion,
+      })
+    }
+    const publishedProvenance: {
+      authorityKind: "base" | "lane"
+      authorityBranch: string
+      publishBranchId?: typeof args.publishBranchId
+      publishAttemptId?: typeof args.publishAttemptId
+      commitSha: string
+      previousGitBaselineState?: "unknown" | "absent" | "blob"
+      previousGithubSha?: string
+      publishedUpdatedAt: number
+      contentRevision?: string
+      publishedContentVersion?: number
+    } = {
+      authorityKind: args.authorityKind,
+      authorityBranch: args.authorityBranch,
+      commitSha: args.commitSha,
+      publishedUpdatedAt: args.expectedUpdatedAt,
+    }
+    if (args.publishBranchId !== undefined) publishedProvenance.publishBranchId = args.publishBranchId
+    if (args.authorityKind === "lane") {
+      const existingProvenance = doc.publishedProvenance
+      const replayingSameLaneAuthority =
+        existingProvenance?.authorityKind === "lane" &&
+        existingProvenance.authorityBranch === args.authorityBranch &&
+        existingProvenance.publishBranchId === args.publishBranchId &&
+        existingProvenance.publishAttemptId === args.publishAttemptId &&
+        existingProvenance.commitSha === args.commitSha &&
+        existingProvenance.contentRevision === args.contentRevision
+      if (replayingSameLaneAuthority) {
+        if (existingProvenance.previousGitBaselineState !== undefined) {
+          publishedProvenance.previousGitBaselineState = existingProvenance.previousGitBaselineState
+        }
+        if (existingProvenance.previousGithubSha !== undefined) {
+          publishedProvenance.previousGithubSha = existingProvenance.previousGithubSha
+        }
+      } else {
+        const previousGitBaselineState = doc.gitBaselineState ?? (doc.githubSha ? "blob" : "unknown")
+        publishedProvenance.previousGitBaselineState = previousGitBaselineState
+        if (previousGitBaselineState === "blob" && doc.githubSha) {
+          publishedProvenance.previousGithubSha = doc.githubSha
+        }
+      }
+    }
+    if (args.publishAttemptId !== undefined) {
+      publishedProvenance.publishAttemptId = args.publishAttemptId
+    }
+    if (args.contentRevision !== undefined) {
+      publishedProvenance.contentRevision = args.contentRevision
+    }
+    if (args.publishedContentVersion !== undefined) {
+      publishedProvenance.publishedContentVersion = args.publishedContentVersion
+    }
+    await ctx.db.patch(args.id, {
+      githubSha: args.githubSha,
+      gitBaselineState: "blob",
+      publishedProvenance,
+      // Lazy migration: the legacy cleanliness marker is superseded the
+      // first time real provenance lands.
+      lastPublishedUpdatedAt: undefined,
+    })
+    // synchronized: the planned snapshot is still the document's current
+    // content, so it is now clean. A concurrent content edit leaves it
+    // dirty - the provenance still truthfully records what landed.
+    const synchronized =
+      args.publishedContentVersion !== undefined
+        ? args.publishedContentVersion === (doc.contentVersion ?? 0)
+        : doc.updatedAt === args.expectedUpdatedAt
+    return { synchronized }
   },
 })
 
@@ -565,65 +1029,117 @@ export const listDirtyForProject = query({
 export const syncTreeTitles = action({
   args: {
     projectId: v.id("projects"),
-    owner: v.string(),
-    repo: v.string(),
-    branch: v.string(),
+    readRef: v.string(),
     files: v.array(v.object({ path: v.string(), sha: v.string() })),
     githubToken: v.string(),
   },
   handler: async (ctx, args) => {
+    const { actorUserId, project } = await authorizeGitHubProjectActor(ctx, args)
+    if (!Array.isArray(args.files) || args.files.length > TITLE_SYNC_MAX_FILES) {
+      throw new Error(`file list exceeds ${TITLE_SYNC_MAX_FILES} entries`)
+    }
+    for (let index = 0; index < args.files.length; index++) {
+      if (Object.getOwnPropertyDescriptor(args.files, index) === undefined) throw new Error("Invalid file list")
+    }
+    const seenPaths = new Set<string>()
+    let totalPathBytes = 0
+    const files = args.files.map((file) => {
+      assertGitHubCommitSha(file.sha, "file sha")
+      const pathBytes = utf8Encoder.encode(file.path).byteLength
+      if (pathBytes > TITLE_SYNC_MAX_PATH_BYTES) {
+        throw new Error(`content path exceeds ${TITLE_SYNC_MAX_PATH_BYTES} bytes`)
+      }
+      totalPathBytes += pathBytes
+      if (totalPathBytes > TITLE_SYNC_MAX_TOTAL_PATH_BYTES) {
+        throw new Error(`total path bytes exceed ${TITLE_SYNC_MAX_TOTAL_PATH_BYTES}`)
+      }
+      const path = assertContentPath(file.path)
+      if (seenPaths.has(path)) throw new Error("Duplicate content path")
+      seenPaths.add(path)
+      const repoPath = toRepoPath(project.contentRoot, path)
+      if (!/\.(?:md|mdx|markdown)$/i.test(repoPath)) throw new Error("Unsupported content file")
+      return { path, sha: file.sha, repoPath }
+    })
+
+    await ctx.runMutation(internal.projects.consumeGitHubActionRateLimit, {
+      projectId: args.projectId,
+      userId: actorUserId,
+      action: "title_sync",
+    })
+    await verifyGitHubProjectReadAccess(project, args.githubToken, args.readRef)
+
     // Check which files already have document records
     const existingDocs = await ctx.runQuery(internal.documents.listByProjectInternal, {
       projectId: args.projectId,
     })
-    const existingPaths = new Set(existingDocs.map((d) => d.filePath))
+    const existingPaths = new Set(
+      existingDocs.map((document) =>
+        resolveStoredContentPath(
+          project.contentRoot,
+          document.filePath,
+          document.pathRepresentation as StoredPathRepresentation | undefined,
+        ),
+      ),
+    )
 
-    const missingFiles = args.files.filter((f) => !existingPaths.has(f.path))
+    const missingFiles = files.filter((f) => !existingPaths.has(f.path))
     if (missingFiles.length === 0) return
 
-    // Fetch and sync in batches of 5 to avoid rate limits
+    // Fetch and validate every missing file before opening the single write transaction.
     const BATCH_SIZE = 5
+    const normalizedDocuments: NormalizedTitleSyncDocument[] = []
     for (let i = 0; i < missingFiles.length; i += BATCH_SIZE) {
       const batch = missingFiles.slice(i, i + BATCH_SIZE)
-      await Promise.all(
+      const normalizedBatch = await Promise.all(
         batch.map(async (file) => {
+          let response: Response
           try {
-            const response = await fetch(
-              `https://api.github.com/repos/${args.owner}/${args.repo}/contents/${encodeURIComponent(file.path)}?ref=${args.branch}`,
+            response = await fetch(
+              `https://api.github.com/repos/${project.repoOwner}/${project.repoName}/contents/${encodeURIComponent(file.repoPath)}?ref=${encodeURIComponent(args.readRef)}`,
               {
                 headers: {
                   Authorization: `token ${args.githubToken}`,
-                  Accept: "application/vnd.github.v3.raw",
+                  Accept: "application/vnd.github+json",
                 },
               },
             )
-            if (!response.ok) return
-
-            const content = await response.text()
-
-            // Extract title from frontmatter (simple regex - no gray-matter in Convex)
-            let title =
-              file.path
-                .split("/")
-                .pop()
-                ?.replace(/\.(mdx?|markdown)$/i, "") || file.path
-            const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/)
-            if (fmMatch) {
-              const titleMatch = fmMatch[1].match(/^title:\s*["']?(.+?)["']?\s*$/m)
-              if (titleMatch) title = titleMatch[1].trim()
-            }
-
-            await ctx.runMutation(internal.documents.getOrCreateInternal, {
-              projectId: args.projectId,
-              filePath: file.path,
-              title,
-              githubSha: file.sha,
-            })
           } catch {
-            // Skip files that fail to fetch
+            throw new Error("Failed to fetch title content")
           }
+          if (!response.ok) throw new Error("Failed to fetch title content")
+
+          let payload: {
+            type?: string
+            sha?: string
+            size?: number
+            encoding?: string
+            content?: string
+          }
+          try {
+            payload = (await response.json()) as typeof payload
+          } catch {
+            throw new Error("Invalid title content")
+          }
+          if (payload.sha !== file.sha) throw new Error("File SHA mismatch")
+
+          const content = decodeTitleSyncContent(payload)
+          if (content === null) throw new Error("Invalid title content")
+
+          return Object.freeze({
+            filePath: file.path,
+            title: titleFromContent(file.path, content),
+            githubSha: file.sha,
+          })
         }),
       )
+      normalizedDocuments.push(...normalizedBatch)
     }
+
+    const documents = Object.freeze(normalizedDocuments)
+    validateTitleSyncBatch(documents)
+    await ctx.runMutation(internal.documents.getOrCreateTitleSyncBatchInternal, {
+      projectId: args.projectId,
+      documents: documents as NormalizedTitleSyncDocument[],
+    })
   },
 })

@@ -101,7 +101,7 @@ export async function POST(request: Request) {
       contentType,
     })
 
-    const mediaOpId = await convex.mutation(api.mediaOps.stage, {
+    const stageResult = await convex.mutation(api.mediaOps.stage, {
       projectId: project._id,
       userId: convexUserId,
       projectAccessToken,
@@ -114,6 +114,18 @@ export async function POST(request: Request) {
       convexStorageId: storageId,
       githubSha: baseShaAtStage ?? undefined,
     })
+    if (!stageResult.staged) {
+      // The replacement was refused because a publish attempt is at the
+      // commit boundary; stage already deleted the just-uploaded bytes.
+      return NextResponse.json(
+        {
+          error:
+            "A publish is finalizing for this project and the staged upload for this path is locked. Retry the upload after the publish completes.",
+        },
+        { status: 409 },
+      )
+    }
+    const mediaOpId = stageResult.mediaOpId
 
     await recordMediaAsset({
       convex,

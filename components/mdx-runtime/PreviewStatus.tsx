@@ -21,7 +21,7 @@ export function PreviewStatus({ isCompiling, warnings, className }: PreviewStatu
             variant="outline"
             size="sm"
             className={cn(
-              "h-7 gap-1.5 px-2 rounded-full text-[10px] uppercase tracking-wider font-bold shadow-sm transition-colors",
+              "h-7 gap-1.5 px-2 rounded-full text-[10px] uppercase tracking-wider font-medium transition-colors",
               isCompiling
                 ? "border-studio-accent/25 bg-studio-accent-muted text-studio-accent hover:bg-studio-accent-muted/80"
                 : warnings.length > 0
@@ -50,7 +50,7 @@ export function PreviewStatus({ isCompiling, warnings, className }: PreviewStatu
           >
             <div
               className={cn(
-                "flex items-center gap-2 font-bold text-xs uppercase tracking-wider",
+                "flex items-center gap-2 font-medium text-xs uppercase tracking-wider",
                 warnings.length > 0 ? "text-studio-attention" : "text-studio-success",
               )}
             >
@@ -84,17 +84,17 @@ export function PreviewStatus({ isCompiling, warnings, className }: PreviewStatu
               </ul>
             ) : (
               <div className="p-4 text-center space-y-2">
-                <div className="text-2xl">🎉</div>
+                <CheckCircle2 className="mx-auto size-5 text-studio-success" aria-hidden="true" />
                 <p className="text-xs font-medium text-muted-foreground">
-                  Everything looks perfect! No issues detected in your MDX or adapter.
+                  No diagnostics for the current preview snapshot.
                 </p>
               </div>
             )}
           </div>
           <div className="p-3 bg-muted/30 border-t text-[10px] text-muted-foreground italic text-left">
             {warnings.length > 0
-              ? "Issues can usually be resolved in your repopress.config.json or mdx-preview.tsx."
-              : "Your repository is fully optimized for RepoPress MDX editing."}
+              ? "Review the diagnostics for the current snapshot and preview fidelity before publishing."
+              : "No diagnostics were reported; the displayed fidelity may still differ from production."}
           </div>
         </PopoverContent>
       </Popover>

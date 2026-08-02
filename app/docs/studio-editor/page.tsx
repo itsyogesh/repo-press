@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 export default function StudioEditorPage() {
   return (
     <div>
-      <h1 className="mb-6 text-3xl font-semibold tracking-tight">Studio Editor</h1>
+      <h1 className="rp-display mb-6 text-3xl md:text-4xl">Studio Editor</h1>
 
       <p className="mb-4 leading-relaxed text-muted-foreground">
         The Studio is the heart of RepoPress - a visual editor for MDX and Markdown files that commits directly to your
@@ -17,7 +17,7 @@ export default function StudioEditorPage() {
       </p>
 
       {/* Editor Layout */}
-      <h2 className="mb-4 mt-12 text-2xl font-semibold">Editor Layout</h2>
+      <h2 className="rp-display text-2xl mb-4 mt-12">Editor Layout</h2>
       <p className="mb-4 leading-relaxed text-muted-foreground">The Studio is organized into three resizable panels:</p>
       <ul className="mb-4 list-inside list-disc space-y-2 text-muted-foreground">
         <li>
@@ -31,8 +31,8 @@ export default function StudioEditorPage() {
           images, and code blocks.
         </li>
         <li>
-          <strong className="text-foreground">Preview (Right)</strong> - A real-time rendered preview of your MDX
-          content. As you type, the preview updates instantly so you can see exactly how your content will look.
+          <strong className="text-foreground">Preview (Right)</strong> - A live representation of your MDX content. The
+          fidelity badge identifies whether the current result is Generic or Compatible and explains any downgrade.
         </li>
       </ul>
       <p className="mb-4 leading-relaxed text-muted-foreground">
@@ -40,8 +40,47 @@ export default function StudioEditorPage() {
         writing.
       </p>
 
+      <h2 className="mb-4 mt-12 text-2xl font-semibold">Preview Fidelity</h2>
+      <p className="mb-4 leading-relaxed text-muted-foreground">
+        RepoPress labels every preview so an approximation is never presented as the repository&rsquo;s production
+        output:
+      </p>
+      <ul className="mb-4 list-inside list-disc space-y-2 text-muted-foreground">
+        <li>
+          <strong className="text-foreground">Generic</strong> - Renders a safe, bounded Typeset model without running
+          repository code. This fallback is always available.
+        </li>
+        <li>
+          <strong className="text-foreground">Compatible</strong> - Renders an exact signed browser-compatible artifact
+          in an isolated opaque-origin frame. Framework loaders, Server Components, and full application context may
+          still differ from production.
+        </li>
+        <li>
+          <strong className="text-foreground">Native</strong> - Reserved for a future isolated managed runner that uses
+          the repository&rsquo;s real framework runtime. It is not available in the current first slice.
+        </li>
+      </ul>
+      <p className="mb-4 leading-relaxed text-muted-foreground">
+        When a trusted Compatible artifact is unavailable, stale, or unsupported, the Studio keeps editing available,
+        downgrades to Generic, and shows the reason.
+      </p>
+
+      <h3 className="mb-3 mt-8 text-lg font-semibold">Product-specific MDX components</h3>
+      <p className="mb-4 leading-relaxed text-muted-foreground">
+        A repository can declare complete component fields in its RepoPress config and provide a product-owned preview
+        entry. That entry maps names such as an information box, checklist, or product CTA to RepoPress&rsquo;s portable
+        preview primitives. Your production site keeps its own framework bindings; the Studio adapter does not need
+        Next.js, Astro, or another application runtime.
+      </p>
+      <p className="mb-4 leading-relaxed text-muted-foreground">
+        Compatible product previews are structural and intentionally inert. Images appear as labelled placeholders and
+        actions cannot navigate. RepoPress authorizes the project, reads the adapter from the exact Git commit, signs
+        the current snapshot, and verifies it before the isolated preview mounts. Until that succeeds, the Generic
+        preview remains visible.
+      </p>
+
       {/* MDX Editing */}
-      <h2 className="mb-4 mt-12 text-2xl font-semibold">MDX Editing with Frontmatter</h2>
+      <h2 className="rp-display text-2xl mb-4 mt-12">MDX Editing with Frontmatter</h2>
       <p className="mb-4 leading-relaxed text-muted-foreground">
         RepoPress understands MDX frontmatter natively. When you open a file with frontmatter (the YAML block between{" "}
         <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm">---</span> delimiters), the Studio displays
@@ -74,7 +113,7 @@ export default function StudioEditorPage() {
       </p>
 
       {/* Saving Drafts */}
-      <h2 className="mb-4 mt-12 text-2xl font-semibold">Saving Drafts</h2>
+      <h2 className="rp-display text-2xl mb-4 mt-12">Saving Drafts</h2>
       <p className="mb-4 leading-relaxed text-muted-foreground">
         Every change you make in the Studio is automatically saved as a draft. Drafts are stored in Convex (not in your
         Git repository) so you can freely experiment without affecting your live content.
@@ -95,19 +134,19 @@ export default function StudioEditorPage() {
       </ul>
 
       {/* Publishing Workflow */}
-      <h2 className="mb-4 mt-12 text-2xl font-semibold">Publishing Workflow</h2>
+      <h2 className="rp-display text-2xl mb-4 mt-12">Publishing Workflow</h2>
       <p className="mb-4 leading-relaxed text-muted-foreground">
         When your content is ready, the publishing workflow guides you through committing changes back to your
         repository:
       </p>
 
-      <h3 className="mb-3 mt-8 text-lg font-semibold">Draft → Review</h3>
+      <h3 className="rp-display text-lg mb-3 mt-8">Draft → Review</h3>
       <p className="mb-4 leading-relaxed text-muted-foreground">
         Mark a document for review to signal to collaborators that it&rsquo;s ready for feedback. Documents in review
         are visible to all project members but are not yet committed to Git.
       </p>
 
-      <h3 className="mb-3 mt-8 text-lg font-semibold">Review → Publish</h3>
+      <h3 className="rp-display text-lg mb-3 mt-8">Review → Publish</h3>
       <p className="mb-4 leading-relaxed text-muted-foreground">
         Once reviewed (or if you skip the review step), click{" "}
         <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm">Publish</span> to commit the changes.
@@ -115,14 +154,14 @@ export default function StudioEditorPage() {
         your repository via the GitHub API.
       </p>
 
-      <h3 className="mb-3 mt-8 text-lg font-semibold">Publish → Live</h3>
+      <h3 className="rp-display text-lg mb-3 mt-8">Publish → Live</h3>
       <p className="mb-4 leading-relaxed text-muted-foreground">
         Once published, your changes are live in the repository. If your site has CI/CD (e.g., Vercel, Netlify), it will
         pick up the commit and redeploy automatically.
       </p>
 
       {/* Version History */}
-      <h2 className="mb-4 mt-12 text-2xl font-semibold">Version History</h2>
+      <h2 className="rp-display text-2xl mb-4 mt-12">Version History</h2>
       <p className="mb-4 leading-relaxed text-muted-foreground">
         Since all published content is committed to Git, you get full version history for free. RepoPress shows the
         commit history for the current file, including:
@@ -138,7 +177,7 @@ export default function StudioEditorPage() {
       </p>
 
       {/* Keyboard Shortcuts */}
-      <h2 className="mb-4 mt-12 text-2xl font-semibold">Keyboard Shortcuts</h2>
+      <h2 className="rp-display text-2xl mb-4 mt-12">Keyboard Shortcuts</h2>
       <p className="mb-4 leading-relaxed text-muted-foreground">
         The Studio supports keyboard shortcuts for common editing actions:
       </p>

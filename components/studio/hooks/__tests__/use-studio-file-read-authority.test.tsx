@@ -1,0 +1,291 @@
+import { act, renderHook, waitFor } from "@testing-library/react"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+
+const BASE_SHA = "a".repeat(40)
+const studioContext = {
+  owner: "acme",
+  repo: "docs",
+  branch: "release",
+  baseCommitSha: BASE_SHA,
+  projectId: "project-1",
+  contentRoot: "content",
+  tree: [{ name: "guide.mdx", path: "content/guide.mdx", sha: "f".repeat(40), type: "file" }],
+  role: "owner" as const,
+}
+
+vi.mock("../../studio-context", () => ({ useStudio: () => studioContext }))
+
+import { useStudioFile } from "../use-studio-file"
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((settle) => {
+    resolve = settle
+  })
+  return { promise, resolve }
+}
+
+describe("useStudioFile immutable read authority", () => {
+  beforeEach(() => {
+    studioContext.tree = [{ name: "guide.mdx", path: "content/guide.mdx", sha: "f".repeat(40), type: "file" }]
+    localStorage.clear()
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          path: "content/guide.mdx",
+          name: "guide.mdx",
+          sha: "f".repeat(40),
+          content: "# Base snapshot",
+        }),
+      }),
+    )
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    localStorage.clear()
+  })
+
+  it("reads later-opened files from the captured base SHA while retaining branch navigation", async () => {
+    const { result } = renderHook(() => useStudioFile(null, ""))
+
+    act(() => result.current.navigateToFile("content/guide.mdx"))
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledOnce())
+    const requestUrl = String(vi.mocked(fetch).mock.calls[0][0])
+    expect(requestUrl).toContain(`ref=${BASE_SHA}`)
+    expect(requestUrl).not.toContain("branch=release")
+    expect(window.location.search).toContain("branch=release")
+  })
+
+  it("fetches a cold deep link from the captured base SHA before the tree hydrates", async () => {
+    studioContext.tree = []
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({
+        path: "content/cold.mdx",
+        name: "cold.mdx",
+        sha: "b".repeat(40),
+        content: "# Cold snapshot",
+      }),
+    } as never)
+
+    const { result } = renderHook(() => useStudioFile(null, "content/cold.mdx"))
+
+    await waitFor(() => expect(result.current.content).toBe("# Cold snapshot"))
+    const requestUrl = String(vi.mocked(fetch).mock.calls[0][0])
+    expect(requestUrl).toContain("path=content%2Fcold.mdx")
+    expect(requestUrl).toContain(`ref=${BASE_SHA}`)
+    expect(result.current.sha).toBe("b".repeat(40))
+  })
+
+  it("tries GitHub for a sha-null cached draft and preserves it when the remote path is absent", async () => {
+    studioContext.tree = []
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined)
+    vi.mocked(fetch).mockResolvedValueOnce({ ok: false, status: 404 } as never)
+    const { result } = renderHook(() => useStudioFile(null, ""))
+
+    act(() => {
+      result.current.primeFileSnapshot("content/new.mdx", {
+        content: "# Local draft",
+        frontmatter: { title: "Local" },
+        sha: null,
+      })
+    })
+    act(() => result.current.navigateToFile("content/new.mdx"))
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledOnce())
+    await waitFor(() => expect(result.current.content).toBe("# Local draft"))
+    expect(result.current.frontmatter).toEqual({ title: "Local" })
+    expect(result.current.sha).toBeNull()
+    expect(consoleError).toHaveBeenCalledWith("Failed to open file", expect.any(Error))
+    consoleError.mockRestore()
+  })
+
+  it("preserves a late Convex draft and its dirty editor state when the cold read returns 404", async () => {
+    studioContext.tree = []
+    const response = deferred<Response>()
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined)
+    vi.mocked(fetch).mockReturnValueOnce(response.promise)
+    const { result } = renderHook(() => useStudioFile(null, ""))
+
+    act(() => result.current.navigateToFile("content/draft.mdx"))
+    await waitFor(() => expect(fetch).toHaveBeenCalledOnce())
+    act(() => {
+      result.current.hydrateFromDocument({
+        body: "# Saved Convex draft",
+        frontmatter: { title: "Draft title" },
+      })
+    })
+    await waitFor(() => expect(result.current.frontmatter).toEqual({ title: "Draft title" }))
+    act(() => result.current.setContent("# Unsaved local edit"))
+    expect(result.current.isDirty).toBe(true)
+
+    await act(async () => response.resolve({ ok: false, status: 404 } as Response))
+    await waitFor(() => expect(result.current.isFileLoading).toBe(false))
+
+    expect(result.current.content).toBe("# Unsaved local edit")
+    expect(result.current.frontmatter).toEqual({ title: "Draft title" })
+    expect(result.current.sha).toBeNull()
+    expect(result.current.isDirty).toBe(true)
+    expect(consoleError).toHaveBeenCalledWith("Failed to open file", expect.any(Error))
+    consoleError.mockRestore()
+  })
+
+  it("preserves a late Convex draft and its dirty editor state when the cold read returns 200", async () => {
+    studioContext.tree = []
+    const response = deferred<Response>()
+    vi.mocked(fetch).mockReturnValueOnce(response.promise)
+    const { result } = renderHook(() => useStudioFile(null, ""))
+
+    act(() => result.current.navigateToFile("content/draft.mdx"))
+    await waitFor(() => expect(fetch).toHaveBeenCalledOnce())
+    act(() => {
+      result.current.hydrateFromDocument({
+        body: "# Saved Convex draft",
+        frontmatter: { title: "Draft title" },
+      })
+    })
+    await waitFor(() => expect(result.current.frontmatter).toEqual({ title: "Draft title" }))
+    act(() => result.current.setFrontmatterKey("description", "Unsaved description"))
+
+    await act(async () =>
+      response.resolve({
+        ok: true,
+        json: async () => ({
+          path: "content/draft.mdx",
+          name: "draft.mdx",
+          sha: "d".repeat(40),
+          content: "# Stale remote body",
+        }),
+      } as Response),
+    )
+    await waitFor(() => expect(result.current.isFileLoading).toBe(false))
+
+    expect(result.current.content).toBe("# Saved Convex draft")
+    expect(result.current.frontmatter).toEqual({
+      title: "Draft title",
+      description: "Unsaved description",
+    })
+    expect(result.current.sha).toBeNull()
+    expect(result.current.isDirty).toBe(true)
+  })
+
+  it("preserves a late primed snapshot when the cold read returns 404", async () => {
+    studioContext.tree = []
+    const response = deferred<Response>()
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined)
+    vi.mocked(fetch).mockReturnValueOnce(response.promise)
+    const { result } = renderHook(() => useStudioFile(null, ""))
+
+    act(() => result.current.navigateToFile("content/primed.mdx"))
+    await waitFor(() => expect(fetch).toHaveBeenCalledOnce())
+    act(() => {
+      result.current.primeFileSnapshot("content/primed.mdx", {
+        content: "# Primed local body",
+        frontmatter: { title: "Primed title" },
+        sha: null,
+      })
+    })
+    await act(async () => response.resolve({ ok: false, status: 404 } as Response))
+    await waitFor(() => expect(result.current.isFileLoading).toBe(false))
+
+    expect(result.current.content).toBe("# Primed local body")
+    expect(result.current.frontmatter).toEqual({ title: "Primed title" })
+    expect(result.current.sha).toBeNull()
+    expect(result.current.isDirty).toBe(false)
+    expect(consoleError).toHaveBeenCalledWith("Failed to open file", expect.any(Error))
+    consoleError.mockRestore()
+  })
+
+  it("keeps a late primed snapshot out of a stale remote success and does not cache the remote body", async () => {
+    studioContext.tree = []
+    const response = deferred<Response>()
+    vi.mocked(fetch)
+      .mockReturnValueOnce(response.promise)
+      .mockResolvedValueOnce({ ok: false, status: 404 } as never)
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined)
+    const { result } = renderHook(() => useStudioFile(null, ""))
+
+    act(() => result.current.navigateToFile("content/primed.mdx"))
+    await waitFor(() => expect(fetch).toHaveBeenCalledOnce())
+    act(() => {
+      result.current.primeFileSnapshot("content/primed.mdx", {
+        content: "# Primed local body",
+        frontmatter: { title: "Primed title" },
+        sha: null,
+      })
+    })
+    await act(async () =>
+      response.resolve({
+        ok: true,
+        json: async () => ({
+          path: "content/primed.mdx",
+          name: "primed.mdx",
+          sha: "c".repeat(40),
+          content: "# Stale remote body",
+        }),
+      } as Response),
+    )
+
+    await waitFor(() => expect(result.current.content).toBe("# Primed local body"))
+    expect(result.current.frontmatter).toEqual({ title: "Primed title" })
+    expect(result.current.sha).toBeNull()
+    expect(result.current.isDirty).toBe(false)
+
+    act(() => result.current.navigateToFile("content/primed.mdx"))
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(result.current.content).toBe("# Primed local body"))
+    expect(result.current.content).not.toContain("Stale remote")
+    consoleError.mockRestore()
+  })
+
+  it("keeps a newer file request loading until that request settles", async () => {
+    const guideResponse = deferred<Response>()
+    const otherResponse = deferred<Response>()
+    studioContext.tree = [
+      { name: "guide.mdx", path: "content/guide.mdx", sha: "f".repeat(40), type: "file" },
+      { name: "other.mdx", path: "content/other.mdx", sha: "e".repeat(40), type: "file" },
+    ]
+    vi.mocked(fetch).mockImplementation((input) =>
+      String(input).includes("guide.mdx") ? guideResponse.promise : otherResponse.promise,
+    )
+    const { result } = renderHook(() => useStudioFile(null, ""))
+
+    act(() => result.current.navigateToFile("content/guide.mdx"))
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1))
+    act(() => result.current.navigateToFile("content/other.mdx"))
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
+
+    await act(async () =>
+      guideResponse.resolve({
+        ok: true,
+        json: async () => ({
+          path: "content/guide.mdx",
+          name: "guide.mdx",
+          sha: "f".repeat(40),
+          content: "# Stale guide",
+        }),
+      } as Response),
+    )
+    expect(result.current.selectedFile?.path).toBe("content/other.mdx")
+    expect(result.current.content).toBe("")
+    expect(result.current.isFileLoading).toBe(true)
+
+    await act(async () =>
+      otherResponse.resolve({
+        ok: true,
+        json: async () => ({
+          path: "content/other.mdx",
+          name: "other.mdx",
+          sha: "e".repeat(40),
+          content: "# Current other",
+        }),
+      } as Response),
+    )
+    await waitFor(() => expect(result.current.content).toBe("# Current other"))
+    expect(result.current.isFileLoading).toBe(false)
+  })
+})

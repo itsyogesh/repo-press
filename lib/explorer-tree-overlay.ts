@@ -1,4 +1,10 @@
 import type { FileTreeNode } from "./github"
+import {
+  resolveStoredRepoPath,
+  type StoredPathRepresentation,
+  toRepoPath,
+  toRepoPathFromLegacyRepoPath,
+} from "./preview/path-policy"
 
 export type OverlayTreeNode = FileTreeNode & {
   isNew?: boolean
@@ -9,20 +15,17 @@ export type ExplorerOp = {
   opType: "create" | "delete"
   filePath: string
   status: "pending" | "committed" | "undone"
+  pathRepresentation?: StoredPathRepresentation
 }
 
 /**
- * Build full repo path from contentRoot-relative path.
- * If contentRoot is empty, returns filePath as-is.
- * If filePath already starts with contentRoot, returns as-is (no double-prefixing).
+ * @deprecated Compatibility for callers whose value is explicitly known to be
+ * repository-relative already. Canonical content-relative paths must use
+ * toRepoPath(contentRoot, filePath) instead.
  */
 export function prefixContentRoot(filePath: string, contentRoot: string): string {
-  if (!contentRoot) return filePath
-  // Don't double-prefix if already prefixed
-  if (filePath.startsWith(`${contentRoot}/`) || filePath === contentRoot) {
-    return filePath
-  }
-  return `${contentRoot}/${filePath}`
+  if (!contentRoot) return toRepoPath(contentRoot, filePath)
+  return toRepoPathFromLegacyRepoPath(contentRoot, filePath)
 }
 
 /**
@@ -112,11 +115,15 @@ function ensureDir(tree: OverlayTreeNode[], dirPath: string, contentRoot: string
  */
 export function overlayOpsOnTree(tree: FileTreeNode[], ops: ExplorerOp[], contentRoot: string): OverlayTreeNode[] {
   const result = cloneTree(tree)
+  const repositoryOps = ops.map((op) => ({
+    ...op,
+    repositoryPath: resolveStoredRepoPath(contentRoot, op.filePath, op.pathRepresentation),
+  }))
 
   // Process delete ops
-  for (const op of ops) {
+  for (const op of repositoryOps) {
     if (op.opType !== "delete" || op.status !== "pending") continue
-    const fullPath = prefixContentRoot(op.filePath, contentRoot)
+    const fullPath = op.repositoryPath
     const node = findNode(result, fullPath)
     if (node) {
       node.isDeleted = true
@@ -124,9 +131,9 @@ export function overlayOpsOnTree(tree: FileTreeNode[], ops: ExplorerOp[], conten
   }
 
   // Process create ops
-  for (const op of ops) {
+  for (const op of repositoryOps) {
     if (op.opType !== "create" || op.status !== "pending") continue
-    const fullPath = prefixContentRoot(op.filePath, contentRoot)
+    const fullPath = op.repositoryPath
 
     // Don't create if a node already exists at this path
     if (findNode(result, fullPath)) continue

@@ -1,4 +1,10 @@
 import { Octokit } from "@octokit/rest"
+import {
+  assertCanonicalPublishOperationPath,
+  assertGitRepositoryPath,
+  gitRepositoryPathIdentity,
+} from "@/lib/git-path-policy"
+import type { PublishOperationDescriptor } from "@/lib/publish-plan"
 
 export type GitHubFile = {
   name: string
@@ -172,6 +178,78 @@ export async function getFile(accessToken: string, owner: string, repo: string, 
   }
 }
 
+/**
+ * A GitHub read failed for a reason other than the file being absent.
+ * Publish preflight must abort on this instead of treating the file as
+ * missing - conflating failures with 404 silently disables conflict
+ * detection and produces unflagged overwrites on the publish branch.
+ */
+export class GitHubReadError extends Error {
+  readonly cause?: unknown
+
+  constructor(message: string, cause?: unknown) {
+    super(message)
+    this.name = "GitHubReadError"
+    this.cause = cause
+  }
+}
+
+export type PublishFileReadResult =
+  | { status: "found"; file: { content: string; sha: string; name: string; path: string } }
+  | { status: "absent" }
+
+/**
+ * Typed file read for the publish path: only a 404 means the file is absent.
+ * Every other outcome (server error, rate limit, directory at the path,
+ * malformed response) throws GitHubReadError so publishing aborts instead of
+ * proceeding on ambiguous state.
+ */
+export async function getFileForPublish(
+  accessToken: string,
+  owner: string,
+  repo: string,
+  path: string,
+  ref?: string,
+): Promise<PublishFileReadResult> {
+  const octokit = createGitHubClient(accessToken)
+  let data: Awaited<ReturnType<typeof octokit.repos.getContent>>["data"]
+  try {
+    ;({ data } = await octokit.repos.getContent({ owner, repo, path, ref }))
+  } catch (error: any) {
+    if (error?.status === 404) {
+      return { status: "absent" }
+    }
+    throw new GitHubReadError(
+      `GitHub read failed for ${path}${ref ? ` at ${ref}` : ""} (status: ${error?.status ?? "unknown"})`,
+      error,
+    )
+  }
+
+  if (Array.isArray(data)) {
+    throw new GitHubReadError(`GitHub read for ${path} resolved to a directory, not a file`)
+  }
+  if (!("sha" in data) || !data.sha) {
+    throw new GitHubReadError(`GitHub read for ${path} returned no blob sha`)
+  }
+
+  let content: string
+  if ("content" in data && data.content) {
+    content = Buffer.from(data.content, "base64").toString("utf-8")
+  } else {
+    try {
+      const { data: blobData } = await octokit.git.getBlob({ owner, repo, file_sha: data.sha })
+      content = Buffer.from(blobData.content, "base64").toString("utf-8")
+    } catch (error: any) {
+      throw new GitHubReadError(`GitHub blob read failed for ${path} (status: ${error?.status ?? "unknown"})`, error)
+    }
+  }
+
+  return {
+    status: "found",
+    file: { content, sha: data.sha, name: data.name, path: data.path },
+  }
+}
+
 const CONTENT_EXTENSIONS = [".md", ".mdx", ".markdown"]
 
 /**
@@ -311,6 +389,44 @@ export async function saveFileContent(
   }
 }
 
+const MAX_CREATE_FILE_BYTES = 2 * 1024 * 1024
+
+/**
+ * Creates a repository file only when the path is absent at the branch head.
+ *
+ * GitHub's Contents API interprets an omitted `sha` as create-only. The API
+ * atomically rejects an existing path, including a concurrent winner; this
+ * helper intentionally performs no preflight read, update retry, or ref write.
+ */
+export async function createFileContentIfAbsent(
+  accessToken: string,
+  owner: string,
+  repo: string,
+  path: string,
+  content: string,
+  message = "Create file via RepoPress",
+  branch?: string,
+) {
+  assertRepository(owner, repo)
+  assertRepositoryPath(path)
+  assertCommitMessage(message)
+  if (branch !== undefined) assertBranch(branch)
+  if (typeof content !== "string" || Buffer.byteLength(content, "utf8") > MAX_CREATE_FILE_BYTES) {
+    throw new TypeError("Create-only file content exceeds byte limit")
+  }
+
+  const octokit = createGitHubClient(accessToken)
+  const { data } = await octokit.repos.createOrUpdateFileContents({
+    owner,
+    repo,
+    path,
+    message,
+    content: Buffer.from(content, "utf8").toString("base64"),
+    ...(branch === undefined ? {} : { branch }),
+  })
+  return data
+}
+
 export async function deleteFileContent(
   accessToken: string,
   owner: string,
@@ -380,6 +496,856 @@ export type BatchOperation = {
   contentEncoding?: "utf-8" | "base64"
   blobSha?: string
   action: "create" | "update" | "delete"
+}
+
+const GITHUB_SHA = /^[a-f0-9]{40}$/u
+const GITHUB_REPOSITORY_PART = /^[A-Za-z0-9_.-]{1,100}$/u
+const GITHUB_BRANCH = /^[A-Za-z0-9._/-]{1,200}$/u
+const MAX_BATCH_OPERATIONS = 2_048
+const MAX_BATCH_BYTES = 32 * 1024 * 1024
+const MAX_SNAPSHOT_FILES = 2_048
+const MAX_SNAPSHOT_FILE_BYTES = 2 * 1024 * 1024
+const MAX_SNAPSHOT_BYTES = 64 * 1024 * 1024
+const MAX_VERIFY_TREE_ENTRIES = 100_000
+const MAX_VERIFY_TREE_PATH_BYTES = 16 * 1024 * 1024
+
+function assertRepository(owner: string, repo: string): void {
+  if (!GITHUB_REPOSITORY_PART.test(owner) || !GITHUB_REPOSITORY_PART.test(repo)) {
+    throw new TypeError("Invalid GitHub repository coordinates")
+  }
+}
+
+function assertBranch(branch: string): void {
+  if (
+    !GITHUB_BRANCH.test(branch) ||
+    branch.startsWith(".") ||
+    branch.startsWith("/") ||
+    branch.endsWith(".") ||
+    branch.endsWith("/") ||
+    branch.includes("..") ||
+    branch.includes("//") ||
+    branch.includes("@{")
+  )
+    throw new TypeError("Invalid GitHub branch")
+}
+
+function assertSha(sha: string): void {
+  if (!GITHUB_SHA.test(sha)) throw new TypeError("Invalid GitHub commit SHA")
+}
+
+function assertRepositoryPath(path: string): void {
+  assertGitRepositoryPath(path)
+}
+
+function ownOptionalData(object: object, key: string, label: string): unknown {
+  const descriptor = Object.getOwnPropertyDescriptor(object, key)
+  if (!descriptor) return undefined
+  if (!("value" in descriptor)) throw new TypeError(`${label} must be an own data property`)
+  return descriptor.value
+}
+
+function ownRequiredData(object: object, key: string, label: string): unknown {
+  const descriptor = Object.getOwnPropertyDescriptor(object, key)
+  if (!descriptor || !("value" in descriptor)) throw new TypeError(`${label} must be an own data property`)
+  return descriptor.value
+}
+
+function validateBatchOperations(operations: readonly BatchOperation[]): BatchOperation[] {
+  if (!Array.isArray(operations)) {
+    throw new TypeError("Batch operations must be a non-empty bounded array")
+  }
+  const length = ownRequiredData(operations, "length", "Batch operations length")
+  if (typeof length !== "number" || !Number.isSafeInteger(length) || length === 0 || length > MAX_BATCH_OPERATIONS) {
+    throw new TypeError("Batch operations must be a non-empty bounded array")
+  }
+  const paths = new Set<string>()
+  const validated: BatchOperation[] = []
+  let bytes = 0
+  for (let index = 0; index < length; index += 1) {
+    const rawOperation = ownRequiredData(operations, String(index), `Batch operation ${index}`)
+    if (!rawOperation || typeof rawOperation !== "object" || Array.isArray(rawOperation)) {
+      throw new TypeError("Batch operation must be an object")
+    }
+    const path = ownOptionalData(rawOperation, "path", "Batch operation path")
+    const action = ownOptionalData(rawOperation, "action", "Batch operation action")
+    const content = ownOptionalData(rawOperation, "content", "Batch operation content")
+    const contentEncoding = ownOptionalData(rawOperation, "contentEncoding", "Batch operation contentEncoding")
+    const blobSha = ownOptionalData(rawOperation, "blobSha", "Batch operation blobSha")
+    if (typeof path !== "string") throw new TypeError("Batch operation path must be a string")
+    assertRepositoryPath(path)
+    const identity = gitRepositoryPathIdentity(path)
+    if (paths.has(identity)) throw new TypeError(`Duplicate batch operation path ${path}`)
+    paths.add(identity)
+    if (action !== "create" && action !== "update" && action !== "delete") {
+      throw new TypeError("Invalid batch operation action")
+    }
+    if (contentEncoding !== undefined && contentEncoding !== "utf-8" && contentEncoding !== "base64") {
+      throw new TypeError("Invalid batch operation content encoding")
+    }
+    if (content !== undefined && typeof content !== "string") {
+      throw new TypeError("Batch operation content must be a string")
+    }
+    if (action === "delete") {
+      if (content !== undefined || blobSha !== undefined)
+        throw new TypeError("Delete operation must not contain content")
+    } else if (blobSha !== undefined) {
+      if (typeof blobSha !== "string") throw new TypeError("Batch operation blob SHA must be a string")
+      assertSha(blobSha)
+    } else if (typeof content !== "string") {
+      throw new TypeError("Create and update operations require content")
+    }
+    bytes +=
+      typeof content === "string" ? Buffer.byteLength(content, contentEncoding === "base64" ? "base64" : "utf8") : 0
+    if (bytes > MAX_BATCH_BYTES) throw new TypeError("Batch operation content exceeds byte limit")
+    const operation: BatchOperation = { path, action }
+    if (content !== undefined) operation.content = content
+    if (contentEncoding !== undefined) operation.contentEncoding = contentEncoding
+    if (blobSha !== undefined) operation.blobSha = blobSha as string
+    validated.push(operation)
+  }
+  return validated
+}
+
+function assertCommitMessage(message: string): void {
+  if (typeof message !== "string" || message.length === 0 || Buffer.byteLength(message, "utf8") > 4_096) {
+    throw new TypeError("Invalid Git commit message")
+  }
+  if (
+    [...message].some((character) => {
+      const code = character.codePointAt(0) ?? 0
+      return (code < 0x20 && character !== "\n" && character !== "\t") || code === 0x7f
+    })
+  )
+    throw new TypeError("Git commit message contains control characters")
+}
+
+export async function getBranchHeadSha(
+  accessToken: string,
+  owner: string,
+  repo: string,
+  branch: string,
+): Promise<string> {
+  assertRepository(owner, repo)
+  assertBranch(branch)
+  const octokit = createGitHubClient(accessToken)
+  const { data } = await octokit.git.getRef({ owner, repo, ref: `heads/${branch}` })
+  assertSha(data.object.sha)
+  return data.object.sha
+}
+
+export async function createBranchFromSha(
+  accessToken: string,
+  owner: string,
+  repo: string,
+  branch: string,
+  baseSha: string,
+): Promise<void> {
+  assertRepository(owner, repo)
+  assertBranch(branch)
+  assertSha(baseSha)
+  if (!branch.startsWith("repopress/install/")) throw new TypeError("Registry installs require a dedicated branch")
+  const octokit = createGitHubClient(accessToken)
+  await octokit.git.createRef({ owner, repo, ref: `refs/heads/${branch}`, sha: baseSha })
+}
+
+/**
+ * Create a publish lane branch from an exact pinned SHA (never from a
+ * re-resolved mutable ref). Restricted to `repopress/` lane names, excluding
+ * the registry-install namespace.
+ */
+export async function createPublishBranchFromSha(
+  accessToken: string,
+  owner: string,
+  repo: string,
+  branch: string,
+  baseSha: string,
+): Promise<void> {
+  assertRepository(owner, repo)
+  assertBranch(branch)
+  assertSha(baseSha)
+  if (!branch.startsWith("repopress/") || branch.startsWith("repopress/install/"))
+    throw new TypeError("Publish lanes require a repopress/ branch outside the install namespace")
+  const octokit = createGitHubClient(accessToken)
+  await octokit.git.createRef({ owner, repo, ref: `refs/heads/${branch}`, sha: baseSha })
+}
+
+/**
+ * Typed head resolution for the publish path: absent branch reads as
+ * { status: "absent" }; any other failure throws GitHubReadError so callers
+ * abort instead of guessing.
+ */
+export async function getBranchHeadForPublish(
+  accessToken: string,
+  owner: string,
+  repo: string,
+  branch: string,
+): Promise<{ status: "found"; sha: string } | { status: "absent" }> {
+  assertRepository(owner, repo)
+  assertBranch(branch)
+  const octokit = createGitHubClient(accessToken)
+  try {
+    const { data } = await octokit.git.getRef({ owner, repo, ref: `heads/${branch}` })
+    assertSha(data.object.sha)
+    return { status: "found", sha: data.object.sha }
+  } catch (error: any) {
+    if (error?.status === 404) return { status: "absent" }
+    throw new GitHubReadError(`GitHub head read failed for ${branch} (status: ${error?.status ?? "unknown"})`, error)
+  }
+}
+
+/**
+ * Read a commit's message and parents for publish-attempt recovery. Throws
+ * GitHubReadError on any failure - recovery decisions must not run on
+ * ambiguous evidence.
+ */
+export async function getCommitDetailsForPublish(
+  accessToken: string,
+  owner: string,
+  repo: string,
+  sha: string,
+): Promise<{ message: string; parents: string[] }> {
+  assertRepository(owner, repo)
+  assertSha(sha)
+  const octokit = createGitHubClient(accessToken)
+  try {
+    const { data } = await octokit.git.getCommit({ owner, repo, commit_sha: sha })
+    return { message: data.message, parents: data.parents.map((parent) => parent.sha) }
+  } catch (error: any) {
+    throw new GitHubReadError(`GitHub commit read failed for ${sha} (status: ${error?.status ?? "unknown"})`, error)
+  }
+}
+
+export async function deleteBranchRef(accessToken: string, owner: string, repo: string, branch: string): Promise<void> {
+  assertRepository(owner, repo)
+  assertBranch(branch)
+  if (!branch.startsWith("repopress/install/")) throw new TypeError("Refusing to delete a non-dedicated branch")
+  const octokit = createGitHubClient(accessToken)
+  await octokit.git.deleteRef({ owner, repo, ref: `heads/${branch}` })
+}
+
+export interface DedicatedBranchState {
+  headSha: string
+  commit: null | { sha: string; parents: readonly string[]; message: string }
+}
+
+export async function getDedicatedBranchState(
+  accessToken: string,
+  owner: string,
+  repo: string,
+  branch: string,
+  baseSha: string,
+): Promise<DedicatedBranchState | null> {
+  assertRepository(owner, repo)
+  assertBranch(branch)
+  assertSha(baseSha)
+  if (!branch.startsWith("repopress/install/")) throw new TypeError("Registry installs require a dedicated branch")
+  const octokit = createGitHubClient(accessToken)
+  try {
+    const { data: ref } = await octokit.git.getRef({ owner, repo, ref: `heads/${branch}` })
+    assertSha(ref.object.sha)
+    if (ref.object.sha === baseSha) return { headSha: baseSha, commit: null }
+    const { data: commit } = await octokit.git.getCommit({ owner, repo, commit_sha: ref.object.sha })
+    if (typeof commit.message !== "string" || Buffer.byteLength(commit.message, "utf8") > 16 * 1024) {
+      throw new TypeError("Dedicated branch commit message exceeds limit")
+    }
+    const parents = commit.parents.map((parent) => {
+      assertSha(parent.sha)
+      return parent.sha
+    })
+    if (parents.length > 16) throw new TypeError("Dedicated branch commit parent limit exceeded")
+    return { headSha: ref.object.sha, commit: { sha: ref.object.sha, parents, message: commit.message } }
+  } catch (error) {
+    if ((error as { status?: number }).status === 404) return null
+    throw error
+  }
+}
+
+export interface ExistingPullRequest {
+  number: number
+  htmlUrl: string
+}
+
+export async function findOpenPullRequestByHead(
+  accessToken: string,
+  owner: string,
+  repo: string,
+  branch: string,
+  baseBranch: string,
+  expectedHeadSha: string,
+): Promise<ExistingPullRequest | null> {
+  assertRepository(owner, repo)
+  assertBranch(branch)
+  assertBranch(baseBranch)
+  assertSha(expectedHeadSha)
+  if (!branch.startsWith("repopress/install/") || branch === baseBranch) {
+    throw new TypeError("Pull request lookup requires a dedicated branch")
+  }
+  const octokit = createGitHubClient(accessToken)
+  const { data } = await octokit.pulls.list({
+    owner,
+    repo,
+    state: "open",
+    head: `${owner}:${branch}`,
+    base: baseBranch,
+    per_page: 10,
+  })
+  const matches = data.filter(
+    (pull) =>
+      pull.state === "open" &&
+      pull.head.ref === branch &&
+      pull.head.sha === expectedHeadSha &&
+      pull.base.ref === baseBranch &&
+      pull.head.repo?.owner.login === owner &&
+      pull.head.repo?.name === repo,
+  )
+  if (matches.length > 1) throw new Error("Multiple open pull requests match the dedicated branch")
+  const pull = matches[0]
+  return pull ? { number: pull.number, htmlUrl: pull.html_url } : null
+}
+
+export interface ExpectedBranchHead {
+  branch: string
+  protectedBaseBranch: string
+  expectedHeadSha: string
+}
+
+function validateExpectedBranchHead(expected: ExpectedBranchHead): ExpectedBranchHead {
+  if (!expected || typeof expected !== "object" || Array.isArray(expected)) {
+    throw new TypeError("Expected branch head must be an object")
+  }
+  const branch = ownRequiredData(expected, "branch", "Expected branch")
+  const protectedBaseBranch = ownRequiredData(expected, "protectedBaseBranch", "Protected base branch")
+  const expectedHeadSha = ownRequiredData(expected, "expectedHeadSha", "Expected head SHA")
+  if (typeof branch !== "string" || typeof protectedBaseBranch !== "string" || typeof expectedHeadSha !== "string") {
+    throw new TypeError("Expected branch head fields must be strings")
+  }
+  return { branch, protectedBaseBranch, expectedHeadSha }
+}
+
+/**
+ * The expected-head compare-and-swap commit failed because the branch head
+ * moved between planning and committing. No commit was created; callers can
+ * safely re-plan against the new head and retry.
+ */
+export class BranchHeadMovedError extends Error {
+  constructor(branch: string) {
+    super(`Branch ${branch} head changed since the publish was planned`)
+    this.name = "BranchHeadMovedError"
+  }
+}
+
+function assertExpectedHeadPreconditions(expected: ExpectedBranchHead) {
+  assertBranch(expected.branch)
+  assertBranch(expected.protectedBaseBranch)
+  assertSha(expected.expectedHeadSha)
+  if (expected.branch === expected.protectedBaseBranch)
+    throw new TypeError("Refusing to mutate the protected base branch")
+}
+
+/**
+ * Expected-head CAS commit for RepoPress publish lanes (`repopress/<scope>`
+ * branches created by the publish flow). Same compare-and-swap semantics as
+ * the registry-install variant: the commit's parent is exactly
+ * `expectedHeadSha` and the ref update is non-forced, so a branch that moved
+ * after planning fails with BranchHeadMovedError instead of overwriting.
+ */
+export async function batchCommitPublishLaneAtExpectedHead(
+  accessToken: string,
+  owner: string,
+  repo: string,
+  rawExpected: ExpectedBranchHead,
+  rawOperations: readonly BatchOperation[],
+  message: string,
+): Promise<{ commitSha: string; treeSha: string }> {
+  assertRepository(owner, repo)
+  const expected = validateExpectedBranchHead(rawExpected)
+  assertExpectedHeadPreconditions(expected)
+  if (!expected.branch.startsWith("repopress/") || expected.branch.startsWith("repopress/install/"))
+    throw new TypeError("Publish commits require a repopress/ publish lane branch")
+  return commitBatchAtValidatedHead(accessToken, owner, repo, expected, rawOperations, message)
+}
+
+export async function batchCommitAtExpectedHead(
+  accessToken: string,
+  owner: string,
+  repo: string,
+  rawExpected: ExpectedBranchHead,
+  rawOperations: readonly BatchOperation[],
+  message: string,
+): Promise<{ commitSha: string; treeSha: string }> {
+  assertRepository(owner, repo)
+  const expected = validateExpectedBranchHead(rawExpected)
+  assertExpectedHeadPreconditions(expected)
+  if (!expected.branch.startsWith("repopress/install/"))
+    throw new TypeError("Registry installs require a dedicated branch")
+  return commitBatchAtValidatedHead(accessToken, owner, repo, expected, rawOperations, message)
+}
+
+async function commitBatchAtValidatedHead(
+  accessToken: string,
+  owner: string,
+  repo: string,
+  expected: ExpectedBranchHead,
+  rawOperations: readonly BatchOperation[],
+  message: string,
+): Promise<{ commitSha: string; treeSha: string }> {
+  assertCommitMessage(message)
+  const operations = validateBatchOperations(rawOperations)
+  const octokit = createGitHubClient(accessToken)
+  const { data: branchRef } = await octokit.git.getRef({ owner, repo, ref: `heads/${expected.branch}` })
+  if (branchRef.object.sha !== expected.expectedHeadSha) throw new BranchHeadMovedError(expected.branch)
+  const { data: baseCommit } = await octokit.git.getCommit({
+    owner,
+    repo,
+    commit_sha: expected.expectedHeadSha,
+  })
+  const tree = await Promise.all(
+    operations.map(async (operation) => {
+      if (operation.action === "delete") {
+        return { path: operation.path, mode: "100644" as const, type: "blob" as const, sha: null }
+      }
+      if (operation.blobSha) {
+        return { path: operation.path, mode: "100644" as const, type: "blob" as const, sha: operation.blobSha }
+      }
+      if (operation.contentEncoding === "base64") {
+        const { data: blob } = await octokit.git.createBlob({
+          owner,
+          repo,
+          content: operation.content as string,
+          encoding: "base64",
+        })
+        return { path: operation.path, mode: "100644" as const, type: "blob" as const, sha: blob.sha }
+      }
+      return {
+        path: operation.path,
+        mode: "100644" as const,
+        type: "blob" as const,
+        content: operation.content as string,
+      }
+    }),
+  )
+  const { data: newTree } = await octokit.git.createTree({
+    owner,
+    repo,
+    base_tree: baseCommit.tree.sha,
+    tree,
+  })
+  const { data: newCommit } = await octokit.git.createCommit({
+    owner,
+    repo,
+    message,
+    tree: newTree.sha,
+    parents: [expected.expectedHeadSha],
+  })
+  try {
+    await octokit.git.updateRef({
+      owner,
+      repo,
+      ref: `heads/${expected.branch}`,
+      sha: newCommit.sha,
+      force: false,
+    })
+  } catch (error: any) {
+    // A 422 on a non-forced ref update is USUALLY a fast-forward failure,
+    // but 422 is also GitHub's generic validation status. Confirm the head
+    // actually moved before normalizing to the typed CAS error; when the
+    // head is still at the expected SHA (or the confirmation read fails),
+    // surface the original error - it is not proof of a conflict.
+    if (error?.status === 422) {
+      try {
+        const { data: confirmRef } = await octokit.git.getRef({ owner, repo, ref: `heads/${expected.branch}` })
+        if (confirmRef.object.sha !== expected.expectedHeadSha) {
+          throw new BranchHeadMovedError(expected.branch)
+        }
+      } catch (confirmError) {
+        if (confirmError instanceof BranchHeadMovedError) throw confirmError
+      }
+    }
+    throw error
+  }
+  return { commitSha: newCommit.sha, treeSha: newTree.sha }
+}
+
+type GitLeaf = Readonly<{ mode: string; type: string; sha: string }>
+type IndexedGitTree = Readonly<{ leaves: Map<string, GitLeaf>; directories: Set<string> }>
+
+function ownData(object: object, key: string): unknown {
+  const descriptor = Object.getOwnPropertyDescriptor(object, key)
+  if (!descriptor || !("value" in descriptor)) throw new TypeError(`Git tree ${key} must be an own data property`)
+  return descriptor.value
+}
+
+function indexGitTree(data: unknown): IndexedGitTree | null {
+  try {
+    if (!data || typeof data !== "object" || Array.isArray(data)) return null
+    if (ownData(data, "truncated") !== false) return null
+    const rawTree = ownData(data, "tree")
+    if (!Array.isArray(rawTree) || rawTree.length > MAX_VERIFY_TREE_ENTRIES) return null
+    const leaves = new Map<string, GitLeaf>()
+    const directories = new Set<string>()
+    let pathBytes = 0
+    for (let index = 0; index < rawTree.length; index += 1) {
+      const descriptor = Object.getOwnPropertyDescriptor(rawTree, String(index))
+      if (!descriptor || !("value" in descriptor)) return null
+      const entry = descriptor.value
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null
+      const path = ownData(entry, "path")
+      const type = ownData(entry, "type")
+      const mode = ownData(entry, "mode")
+      const sha = ownData(entry, "sha")
+      if (typeof path !== "string" || typeof type !== "string" || typeof mode !== "string" || typeof sha !== "string")
+        return null
+      assertRepositoryPath(path)
+      assertSha(sha)
+      pathBytes += Buffer.byteLength(path, "utf8")
+      if (pathBytes > MAX_VERIFY_TREE_PATH_BYTES || !/^[0-7]{6}$/u.test(mode)) return null
+      if (type === "tree") {
+        if (mode !== "040000") return null
+        if (directories.has(path) || leaves.has(path)) return null
+        directories.add(path)
+        continue
+      }
+      if ((type !== "blob" && type !== "commit") || leaves.has(path) || directories.has(path)) return null
+      leaves.set(path, { mode, type, sha })
+    }
+    return { leaves, directories }
+  } catch {
+    return null
+  }
+}
+
+function validatePublishOperationDescriptors(
+  rawDescriptors: readonly PublishOperationDescriptor[],
+): PublishOperationDescriptor[] {
+  if (!Array.isArray(rawDescriptors) || rawDescriptors.length === 0 || rawDescriptors.length > MAX_BATCH_OPERATIONS) {
+    throw new TypeError("Publish descriptors must be a non-empty bounded array")
+  }
+  const paths = new Set<string>()
+  return rawDescriptors.map((rawDescriptor, index) => {
+    if (!rawDescriptor || typeof rawDescriptor !== "object" || Array.isArray(rawDescriptor)) {
+      throw new TypeError(`Publish descriptor ${index} must be an object`)
+    }
+    const path = ownData(rawDescriptor, "path")
+    const action = ownData(rawDescriptor, "action")
+    if (typeof path !== "string") throw new TypeError("Publish descriptor path must be a string")
+    assertCanonicalPublishOperationPath(path)
+    const pathIdentity = gitRepositoryPathIdentity(path)
+    if (paths.has(pathIdentity)) throw new TypeError(`Duplicate publish descriptor path ${path}`)
+    paths.add(pathIdentity)
+    if (action === "delete") {
+      if (Object.hasOwn(rawDescriptor, "expectedBlobSha")) {
+        throw new TypeError("Delete publish descriptor must not contain a blob SHA")
+      }
+      return { path, action }
+    }
+    if (action !== "create" && action !== "update") throw new TypeError("Invalid publish descriptor action")
+    const expectedBlobSha = ownData(rawDescriptor, "expectedBlobSha")
+    if (typeof expectedBlobSha !== "string") throw new TypeError("Publish descriptor blob SHA must be a string")
+    assertSha(expectedBlobSha)
+    return { path, action, expectedBlobSha }
+  })
+}
+
+async function readGitTreeForPublish(
+  octokit: ReturnType<typeof createGitHubClient>,
+  owner: string,
+  repo: string,
+  sha: string,
+): Promise<IndexedGitTree> {
+  try {
+    const { data } = await octokit.git.getTree({ owner, repo, tree_sha: sha, recursive: "1" })
+    const tree = indexGitTree(data)
+    if (!tree) throw new GitHubReadError(`GitHub returned a truncated or malformed tree for ${sha}`)
+    return tree
+  } catch (error: any) {
+    if (error instanceof GitHubReadError) throw error
+    throw new GitHubReadError(`GitHub tree read failed for ${sha} (status: ${error?.status ?? "unknown"})`, error)
+  }
+}
+
+async function readCommitForPublish(
+  octokit: ReturnType<typeof createGitHubClient>,
+  owner: string,
+  repo: string,
+  commitSha: string,
+): Promise<{ treeSha: string; parents: string[] }> {
+  try {
+    const { data } = await octokit.git.getCommit({ owner, repo, commit_sha: commitSha })
+    if (!data || typeof data !== "object" || Array.isArray(data)) {
+      throw new GitHubReadError(`GitHub returned a malformed commit for ${commitSha}`)
+    }
+    const rawTree = ownData(data, "tree")
+    const rawParents = ownData(data, "parents")
+    if (!rawTree || typeof rawTree !== "object" || Array.isArray(rawTree) || !Array.isArray(rawParents)) {
+      throw new GitHubReadError(`GitHub returned a malformed commit for ${commitSha}`)
+    }
+    const treeSha = ownData(rawTree, "sha")
+    if (typeof treeSha !== "string") throw new GitHubReadError(`GitHub returned a malformed tree for ${commitSha}`)
+    assertSha(treeSha)
+    const parents = rawParents.map((parent) => {
+      if (!parent || typeof parent !== "object" || Array.isArray(parent)) {
+        throw new GitHubReadError(`GitHub returned malformed parents for ${commitSha}`)
+      }
+      const parentSha = ownData(parent, "sha")
+      if (typeof parentSha !== "string") throw new GitHubReadError(`GitHub returned malformed parents for ${commitSha}`)
+      assertSha(parentSha)
+      return parentSha
+    })
+    return { treeSha, parents }
+  } catch (error: any) {
+    if (error instanceof GitHubReadError) throw error
+    throw new GitHubReadError(
+      `GitHub commit read failed for ${commitSha} (status: ${error?.status ?? "unknown"})`,
+      error,
+    )
+  }
+}
+
+function applyPublishDescriptors(
+  baseTree: IndexedGitTree,
+  descriptors: readonly PublishOperationDescriptor[],
+): IndexedGitTree | null {
+  const expectedLeaves = new Map(baseTree.leaves)
+  const expectedDirectories = new Set(baseTree.directories)
+  const deleteParentCandidates = new Set<string>()
+  const parentDirectories = (path: string) => {
+    const segments = path.split("/")
+    return segments.slice(0, -1).map((_segment, index) => segments.slice(0, index + 1).join("/"))
+  }
+  for (const descriptor of descriptors) {
+    const baseLeaf = baseTree.leaves.get(descriptor.path)
+    const baseDirectory = baseTree.directories.has(descriptor.path)
+    const baseFileExists = baseLeaf?.type === "blob"
+    if (descriptor.action === "create") {
+      if (baseLeaf || baseDirectory) return null
+      expectedLeaves.set(descriptor.path, {
+        mode: "100644",
+        type: "blob",
+        sha: descriptor.expectedBlobSha,
+      })
+      for (const parent of parentDirectories(descriptor.path)) {
+        if (expectedLeaves.has(parent)) return null
+        expectedDirectories.add(parent)
+      }
+    } else if (descriptor.action === "update") {
+      if (!baseFileExists || baseDirectory) return null
+      expectedLeaves.set(descriptor.path, {
+        mode: "100644",
+        type: "blob",
+        sha: descriptor.expectedBlobSha,
+      })
+    } else {
+      if (!baseFileExists || baseDirectory) return null
+      expectedLeaves.delete(descriptor.path)
+      for (const parent of parentDirectories(descriptor.path)) deleteParentCandidates.add(parent)
+    }
+  }
+  const deepestFirst = [...deleteParentCandidates].sort((a, b) => b.split("/").length - a.split("/").length)
+  for (const directory of deepestFirst) {
+    const prefix = `${directory}/`
+    const hasContent =
+      [...expectedLeaves.keys()].some((path) => path.startsWith(prefix)) ||
+      [...expectedDirectories].some((path) => path !== directory && path.startsWith(prefix))
+    if (!hasContent) expectedDirectories.delete(directory)
+  }
+  return { leaves: expectedLeaves, directories: expectedDirectories }
+}
+
+function gitLeavesEqual(expected: Map<string, GitLeaf>, actual: Map<string, GitLeaf>): boolean {
+  if (expected.size !== actual.size) return false
+  for (const [path, leaf] of expected) {
+    const candidate = actual.get(path)
+    if (!candidate || candidate.mode !== leaf.mode || candidate.type !== leaf.type || candidate.sha !== leaf.sha) {
+      return false
+    }
+  }
+  return true
+}
+
+function gitTreesEqual(expected: IndexedGitTree, actual: IndexedGitTree): boolean {
+  if (!gitLeavesEqual(expected.leaves, actual.leaves) || expected.directories.size !== actual.directories.size) {
+    return false
+  }
+  for (const directory of expected.directories) {
+    if (!actual.directories.has(directory)) return false
+  }
+  return true
+}
+
+/**
+ * Prove that a candidate is exactly the CAS commit described by a durable
+ * publish attempt: it must directly parent the planned head and its complete
+ * tree must equal that head's tree with only the described changes applied.
+ */
+export async function verifyPublishAttemptCommitForPublish(
+  accessToken: string,
+  owner: string,
+  repo: string,
+  expectedHeadSha: string,
+  candidateSha: string,
+  rawDescriptors: readonly PublishOperationDescriptor[],
+): Promise<boolean> {
+  assertRepository(owner, repo)
+  assertSha(expectedHeadSha)
+  assertSha(candidateSha)
+  const descriptors = validatePublishOperationDescriptors(rawDescriptors)
+  const octokit = createGitHubClient(accessToken)
+  const candidateCommit = await readCommitForPublish(octokit, owner, repo, candidateSha)
+  if (candidateCommit.parents.length !== 1 || candidateCommit.parents[0] !== expectedHeadSha) return false
+  const baseCommit = await readCommitForPublish(octokit, owner, repo, expectedHeadSha)
+  const [baseTree, candidateTree] = await Promise.all([
+    readGitTreeForPublish(octokit, owner, repo, baseCommit.treeSha),
+    readGitTreeForPublish(octokit, owner, repo, candidateCommit.treeSha),
+  ])
+  const expectedTree = applyPublishDescriptors(baseTree, descriptors)
+  return expectedTree ? gitTreesEqual(expectedTree, candidateTree) : false
+}
+
+export type PublishPathOutcome = {
+  path: string
+  disposition: "finalize" | "restore"
+  finalBlobSha?: string
+}
+
+/** Inspect how each attempted path exists at an immutable final authority. */
+export async function inspectPublishEffectsAtCommit(
+  accessToken: string,
+  owner: string,
+  repo: string,
+  authoritySha: string,
+  rawDescriptors: readonly PublishOperationDescriptor[],
+): Promise<PublishPathOutcome[]> {
+  assertRepository(owner, repo)
+  assertSha(authoritySha)
+  const descriptors = validatePublishOperationDescriptors(rawDescriptors)
+  const octokit = createGitHubClient(accessToken)
+  const authorityCommit = await readCommitForPublish(octokit, owner, repo, authoritySha)
+  const tree = await readGitTreeForPublish(octokit, owner, repo, authorityCommit.treeSha)
+  return descriptors.map((descriptor) => {
+    const finalLeaf = tree.leaves.get(descriptor.path)
+    const finalDirectory = tree.directories.has(descriptor.path)
+    const finalBlobSha = finalLeaf?.type === "blob" ? finalLeaf.sha : undefined
+    const disposition =
+      descriptor.action === "delete"
+        ? finalLeaf === undefined && !finalDirectory
+          ? "finalize"
+          : "restore"
+        : finalLeaf?.type === "blob" && finalLeaf.mode === "100644" && finalLeaf.sha === descriptor.expectedBlobSha
+          ? "finalize"
+          : "restore"
+    return { path: descriptor.path, disposition, ...(finalBlobSha ? { finalBlobSha } : {}) }
+  })
+}
+
+function operationBytes(operation: BatchOperation): Buffer | null {
+  if (operation.blobSha) return null
+  const content = operation.content as string
+  if (operation.contentEncoding !== "base64") return Buffer.from(content, "utf8")
+  if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(content)) return null
+  const bytes = Buffer.from(content, "base64")
+  return bytes.toString("base64") === content ? bytes : null
+}
+
+async function gitBlobSha(bytes: Buffer): Promise<string> {
+  const prefix = new TextEncoder().encode(`blob ${bytes.byteLength}\0`)
+  const input = new Uint8Array(prefix.byteLength + bytes.byteLength)
+  input.set(prefix)
+  input.set(bytes, prefix.byteLength)
+  const digest = await globalThis.crypto.subtle.digest("SHA-1", input)
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")
+}
+
+export async function verifyBatchCommitTree(
+  accessToken: string,
+  owner: string,
+  repo: string,
+  baseSha: string,
+  headSha: string,
+  rawOperations: readonly BatchOperation[],
+): Promise<boolean> {
+  assertRepository(owner, repo)
+  assertSha(baseSha)
+  assertSha(headSha)
+  if (baseSha === headSha) return false
+  const operations = validateBatchOperations(rawOperations)
+  const octokit = createGitHubClient(accessToken)
+  const [{ data: baseTree }, { data: headTree }] = await Promise.all([
+    octokit.git.getTree({ owner, repo, tree_sha: baseSha, recursive: "1" }),
+    octokit.git.getTree({ owner, repo, tree_sha: headSha, recursive: "1" }),
+  ])
+  const indexedBase = indexGitTree(baseTree)
+  const indexedHead = indexGitTree(headTree)
+  if (!indexedBase || !indexedHead) return false
+  const expected = indexedBase.leaves
+  const actual = indexedHead.leaves
+  for (const operation of operations) {
+    const exists = expected.has(operation.path)
+    if (operation.action === "create" && exists) return false
+    if ((operation.action === "update" || operation.action === "delete") && !exists) return false
+    if (operation.action === "delete") {
+      expected.delete(operation.path)
+      continue
+    }
+    let sha: string
+    if (operation.blobSha) sha = operation.blobSha
+    else {
+      const bytes = operationBytes(operation)
+      if (!bytes) return false
+      sha = await gitBlobSha(bytes)
+    }
+    expected.set(operation.path, { mode: "100644", type: "blob", sha })
+  }
+  if (expected.size !== actual.size) return false
+  for (const [path, leaf] of expected) {
+    const candidate = actual.get(path)
+    if (!candidate || candidate.mode !== leaf.mode || candidate.type !== leaf.type || candidate.sha !== leaf.sha)
+      return false
+  }
+  return true
+}
+
+export interface GitHubTextFileSnapshot {
+  path: string
+  content: string
+}
+
+export async function getTextFilesAtCommit(
+  accessToken: string,
+  owner: string,
+  repo: string,
+  commitSha: string,
+  rawPaths: readonly string[],
+): Promise<GitHubTextFileSnapshot[]> {
+  assertRepository(owner, repo)
+  assertSha(commitSha)
+  if (!Array.isArray(rawPaths) || rawPaths.length > MAX_SNAPSHOT_FILES)
+    throw new TypeError("Repository snapshot path limit exceeded")
+  const paths = [...new Set(rawPaths)].sort()
+  for (const path of paths) assertRepositoryPath(path)
+  const octokit = createGitHubClient(accessToken)
+  let totalBytes = 0
+  const snapshots: GitHubTextFileSnapshot[] = []
+  for (const path of paths) {
+    try {
+      const { data } = await octokit.repos.getContent({ owner, repo, path, ref: commitSha })
+      if (Array.isArray(data)) throw new TypeError(`Repository snapshot path is a directory: ${path}`)
+      let bytes: Buffer
+      if ("content" in data && typeof data.content === "string" && data.content.length > 0) {
+        bytes = Buffer.from(data.content, "base64")
+      } else {
+        const { data: blob } = await octokit.git.getBlob({ owner, repo, file_sha: data.sha })
+        bytes = Buffer.from(blob.content, "base64")
+      }
+      if (bytes.byteLength > MAX_SNAPSHOT_FILE_BYTES) throw new TypeError(`Repository snapshot file too large: ${path}`)
+      totalBytes += bytes.byteLength
+      if (totalBytes > MAX_SNAPSHOT_BYTES) throw new TypeError("Repository snapshot byte limit exceeded")
+      snapshots.push({ path, content: new TextDecoder("utf-8", { fatal: true }).decode(bytes) })
+    } catch (error) {
+      if ((error as { status?: number }).status === 404) continue
+      throw error
+    }
+  }
+  return snapshots
 }
 
 export async function batchCommit(
@@ -482,6 +1448,44 @@ export async function batchCommit(
   return { commitSha: newCommit.sha, treeSha: newTree.sha }
 }
 
+/**
+ * Look up an existing open pull request for a publish lane (head = lane
+ * branch, base = the protected base branch). Used to make PR creation an
+ * idempotent ensure: after an uncertain createPullRequest outcome, adopt the
+ * PR that actually exists instead of guessing. Throws GitHubReadError on any
+ * lookup failure so callers keep the uncertainty explicit.
+ */
+export async function findOpenPublishLanePullRequest(
+  accessToken: string,
+  owner: string,
+  repo: string,
+  branch: string,
+  baseBranch: string,
+): Promise<{ number: number; htmlUrl: string } | null> {
+  assertRepository(owner, repo)
+  assertBranch(branch)
+  assertBranch(baseBranch)
+  if (!branch.startsWith("repopress/") || branch.startsWith("repopress/install/") || branch === baseBranch) {
+    throw new TypeError("Publish lane PR lookup requires a repopress/ lane branch")
+  }
+  const octokit = createGitHubClient(accessToken)
+  try {
+    const { data } = await octokit.pulls.list({
+      owner,
+      repo,
+      state: "open",
+      head: `${owner}:${branch}`,
+      base: baseBranch,
+      per_page: 2,
+    })
+    const pr = data[0]
+    if (!pr) return null
+    return { number: pr.number, htmlUrl: pr.html_url }
+  } catch (error: any) {
+    throw new GitHubReadError(`GitHub PR lookup failed for ${branch} (status: ${error?.status ?? "unknown"})`, error)
+  }
+}
+
 export async function createPullRequest(
   accessToken: string,
   owner: string,
@@ -490,7 +1494,15 @@ export async function createPullRequest(
   base: string,
   title: string,
   body?: string,
-): Promise<{ number: number; url: string; htmlUrl: string }> {
+): Promise<{
+  number: number
+  url: string
+  htmlUrl: string
+  headSha: string
+  headRef: string
+  headRepoFullName: string
+  baseRef: string
+}> {
   const octokit = createGitHubClient(accessToken)
   const { data } = await octokit.pulls.create({
     owner,
@@ -500,7 +1512,15 @@ export async function createPullRequest(
     title,
     body,
   })
-  return { number: data.number, url: data.url, htmlUrl: data.html_url }
+  return {
+    number: data.number,
+    url: data.url,
+    htmlUrl: data.html_url,
+    headSha: data.head.sha,
+    headRef: data.head.ref,
+    headRepoFullName: data.head.repo?.full_name ?? "",
+    baseRef: data.base.ref,
+  }
 }
 
 export async function updatePullRequest(

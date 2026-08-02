@@ -93,7 +93,7 @@ function CalloutPreview() {
 
 function CardPreview() {
   return (
-    <div className="relative w-24 h-32 rounded border border-studio-border bg-studio-canvas p-2.5 space-y-3 shadow-sm overflow-hidden">
+    <div className="relative w-24 h-32 rounded border border-studio-border bg-studio-canvas p-2.5 space-y-3 overflow-hidden">
       <div className="w-full h-10 rounded-sm bg-studio-canvas-inset border border-studio-border-muted relative">
         <div className="absolute inset-1 border border-dashed border-studio-fg/5 rounded-[1px]" />
       </div>

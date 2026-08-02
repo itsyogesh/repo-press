@@ -342,7 +342,7 @@ export function TreeItem({
                   {displayTitle && (
                     <span
                       className={cn(
-                        "w-full truncate text-left text-[10px] text-studio-fg-muted",
+                        "w-full truncate text-left font-mono text-[10px] text-studio-fg-muted",
                         isDeleted && "line-through",
                       )}
                     >

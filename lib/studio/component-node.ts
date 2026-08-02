@@ -7,7 +7,9 @@
 // ensuring a clean boundary between UI/form concerns and output generation.
 // ---------------------------------------------------------------------------
 
-import type { RepoComponentDef, RepoComponentPropDef } from "./component-registry"
+import { compareCodeUnits } from "@/lib/repopress/registry-schema"
+import type { AuthoringComponent, AuthoringProp } from "./authoring-catalog"
+import { componentAcceptsChildren } from "./authoring-catalog"
 
 /**
  * A resolved component instance ready for serialization.
@@ -30,34 +32,34 @@ export type ComponentNode = {
 // ---------------------------------------------------------------------------
 
 /**
- * Build a `ComponentNode` from a registry definition and raw form state.
+ * Build a `ComponentNode` from declarative authoring metadata and raw form state.
  *
  * Rules:
  * 1. Only props defined in `def.props` are included.
  * 2. Undefined / empty-string values are omitted (serializer will skip them).
  * 3. Default values from the definition fill in when the form value is absent.
- * 4. `children` is only set when `def.hasChildren` is true and the value is
+ * 4. `children` is only set when the catalog declares a children slot and the value is
  *    a non-empty string.
  */
-export function buildComponentNode(def: RepoComponentDef, formState: Record<string, unknown>): ComponentNode {
-  const props: Record<string, unknown> = {}
+export function buildComponentNode(def: AuthoringComponent, formState: Record<string, unknown>): ComponentNode {
+  const props = Object.create(null) as Record<string, unknown>
 
   for (const propDef of def.props) {
-    const value = resolveValue(propDef, formState[propDef.name])
+    const value = resolveValue(propDef, Object.hasOwn(formState, propDef.name) ? formState[propDef.name] : undefined)
     if (value !== undefined) {
       props[propDef.name] = value
     }
   }
 
   const node: ComponentNode = {
-    name: def.name,
+    name: def.mdxName,
     kind: def.kind,
     props,
-    hasChildren: def.hasChildren,
+    hasChildren: componentAcceptsChildren(def),
   }
 
-  if (def.hasChildren) {
-    const raw = formState.children
+  if (componentAcceptsChildren(def)) {
+    const raw = Object.hasOwn(formState, "children") ? formState.children : undefined
     if (typeof raw === "string" && raw.length > 0) {
       node.children = raw
     }
@@ -83,12 +85,12 @@ export function buildComponentNode(def: RepoComponentDef, formState: Record<stri
  */
 export function toJsxProperties(
   node: ComponentNode,
-  def: RepoComponentDef,
+  def: AuthoringComponent,
 ): Record<string, string | { type: "expression"; value: string }> {
   const propTypes = new Map(def.props.map((p) => [p.name, p.type]))
-  const result: Record<string, string | { type: "expression"; value: string }> = {}
+  const result = Object.create(null) as Record<string, string | { type: "expression"; value: string }>
 
-  const sortedPropKeys = Object.keys(node.props).sort((a, b) => a.localeCompare(b))
+  const sortedPropKeys = Object.keys(node.props).sort(compareCodeUnits)
   for (const key of sortedPropKeys) {
     const value = node.props[key]
     if (value === undefined) continue
@@ -124,7 +126,7 @@ export function toJsxProperties(
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-function resolveValue(propDef: RepoComponentPropDef, formValue: unknown): unknown {
+function resolveValue(propDef: AuthoringProp, formValue: unknown): unknown {
   // Form provided a value → use it
   if (formValue !== undefined) {
     return coerce(propDef.type, formValue)

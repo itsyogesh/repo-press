@@ -1,0 +1,14 @@
+/* ============================================================
+   RepoPress — Webfonts
+   ------------------------------------------------------------
+   Editorial register:
+   • Instrument Serif  → display / marketing headlines (weight 400 only)
+   • Geist             → UI + body (400 / 500 / 600)
+   • Geist Mono        → technical register: paths, branches, SHAs,
+                         frontmatter keys, inline code, overlines
+
+   Loaded from Google Fonts. To self-host, replace this @import with
+   local @font-face rules pointing at woff2 files in assets/fonts/.
+   ============================================================ */
+
+@import url("https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&display=swap");

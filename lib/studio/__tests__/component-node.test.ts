@@ -1,19 +1,28 @@
 import { describe, expect, it } from "vitest"
+import type { AuthoringComponent } from "../authoring-catalog"
 import { buildComponentNode, toJsxProperties } from "../component-node"
-import type { RepoComponentDef } from "../component-registry"
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeDef(overrides: Partial<RepoComponentDef> & { name: string }): RepoComponentDef {
+function makeDef(overrides: Partial<AuthoringComponent> & { name: string; hasChildren?: boolean }): AuthoringComponent {
+  const { name, hasChildren = true, ...metadata } = overrides
   return {
+    logicalId: name,
+    mdxName: name,
+    displayName: name,
+    exportName: name,
+    frameworks: [],
+    runtime: "client",
+    schemaStatus: "complete",
     props: [],
-    hasChildren: true,
+    slots: hasChildren ? [{ name: "children", accepts: "mdx" }] : [],
+    assets: [],
+    previewFixtures: [],
+    provenance: { source: "manual" },
     kind: "flow",
-    source: "config",
-    capabilities: {},
-    ...overrides,
+    ...metadata,
   }
 }
 
@@ -113,6 +122,16 @@ describe("buildComponentNode - defaults", () => {
 
     expect(node.props.type).toBe("warning")
   })
+
+  it("uses a declared valueOf default instead of inherited Object.prototype.valueOf", () => {
+    const def = makeDef({
+      name: "Widget",
+      props: [{ name: "valueOf", type: "string", default: "declared" }],
+    })
+    const node = buildComponentNode(def, {})
+    expect(node.props.valueOf).toBe("declared")
+    expect(Object.getPrototypeOf(node.props)).toBeNull()
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -202,6 +221,12 @@ describe("buildComponentNode - children", () => {
 
     expect(node.children).toBeUndefined()
   })
+
+  it("ignores inherited children values", () => {
+    const def = makeDef({ name: "Callout", hasChildren: true })
+    const formState = Object.create({ children: "inherited" }) as Record<string, unknown>
+    expect(buildComponentNode(def, formState).children).toBeUndefined()
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -209,6 +234,10 @@ describe("buildComponentNode - children", () => {
 // ---------------------------------------------------------------------------
 
 describe("toJsxProperties", () => {
+  it("returns a null-prototype prop map", () => {
+    const def = makeDef({ name: "Widget", props: [{ name: "title", type: "string" }] })
+    expect(Object.getPrototypeOf(toJsxProperties(buildComponentNode(def, { title: "Hello" }), def))).toBeNull()
+  })
   it("converts string props to plain strings", () => {
     const def = makeDef({
       name: "Callout",

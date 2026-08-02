@@ -2,42 +2,66 @@
 
 import { revalidatePath } from "next/cache"
 import { getGitHubToken } from "@/lib/auth-server"
-import { batchCommit } from "@/lib/github"
+import { repoPressConfigSchema } from "@/lib/config-schema"
+import { createFileContentIfAbsent } from "@/lib/github"
 import { resolveRepoRole } from "@/lib/github-permissions"
 import { resolveActingUserId } from "@/lib/server-context"
 
-const DEFAULT_ADAPTER_SOURCE = `"use client"
-
-import { DocsImage, Callout, DocsVideo } from "@/components/docs/doc-media"
-
-export const adapter = {
-  components: {
-    DocsImage,
-    Callout,
-    DocsVideo,
-  },
-  scope: {
-    // Shared constants for expressions
-    DOCS_SETUP_MEDIA: {},
-  },
-  allowImports: {
-    "@/components/docs/doc-media": { DocsImage, Callout, DocsVideo },
-  }
+type InitialProjectConfig = {
+  id: string
+  name: string
+  contentRoot: string
+  framework: string
+  contentType: string
 }
-`
+
+function readOwnDataField(projectConfig: unknown, field: keyof InitialProjectConfig): unknown {
+  if (!projectConfig || typeof projectConfig !== "object") {
+    throw new TypeError("Project configuration must be an object")
+  }
+  const descriptor = Object.getOwnPropertyDescriptor(projectConfig, field)
+  if (!descriptor || !("value" in descriptor)) {
+    throw new TypeError(`Project configuration field "${field}" must be an own data property`)
+  }
+  return descriptor.value
+}
+
+function buildInitialConfig(branch: string, projectConfig: unknown) {
+  return repoPressConfigSchema.parse({
+    version: 1,
+    defaults: {
+      branch,
+      framework: "auto",
+    },
+    projects: [
+      {
+        id: readOwnDataField(projectConfig, "id"),
+        name: readOwnDataField(projectConfig, "name"),
+        contentRoot: readOwnDataField(projectConfig, "contentRoot"),
+        framework: readOwnDataField(projectConfig, "framework"),
+        contentType: readOwnDataField(projectConfig, "contentType"),
+        branch,
+      },
+    ],
+  })
+}
 
 export async function initRepoPressAction(
   owner: string,
   repo: string,
   branch: string,
-  projectConfig: {
-    id: string
-    name: string
-    contentRoot: string
-    framework: string
-    contentType: string
-  },
+  projectConfig: InitialProjectConfig,
 ) {
+  let config: ReturnType<typeof buildInitialConfig>
+  try {
+    config = buildInitialConfig(branch, projectConfig)
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Invalid project configuration",
+    }
+  }
+
   const token = await getGitHubToken()
   if (!token) return { success: false, error: "Not authenticated" }
 
@@ -53,67 +77,18 @@ export async function initRepoPressAction(
     return { success: false, error: "No access to this repository" }
   }
 
-  const config = {
-    version: 1,
-    defaults: {
-      branch,
-      framework: "auto",
-      preview: {
-        entry: ".repopress/mdx-preview.tsx",
-      },
-    },
-    projects: [
-      {
-        ...projectConfig,
-        branch,
-        components: {
-          DocsImage: {
-            props: [
-              { name: "src", type: "image", label: "Source" },
-              { name: "alt", type: "string", label: "Alt text" },
-              { name: "caption", type: "string", label: "Caption" },
-            ],
-            hasChildren: false,
-            kind: "flow",
-          },
-          DocsVideo: {
-            props: [
-              { name: "src", type: "string", label: "Source" },
-              { name: "title", type: "string", label: "Title" },
-            ],
-            hasChildren: false,
-            kind: "flow",
-          },
-          Callout: {
-            props: [{ name: "type", type: "string", label: "Type", default: "info" }],
-            hasChildren: true,
-            kind: "flow",
-          },
-        },
-      },
-    ],
-  }
-
   try {
-    // Commit repopress.config.json and .repopress/mdx-preview.tsx atomically
-    await batchCommit(
+    // A Contents request without a SHA is an atomic create-only operation.
+    // Existing or concurrently created config paths fail instead of becoming
+    // an implicit update.
+    await createFileContentIfAbsent(
       token,
       owner,
       repo,
+      "repopress.config.json",
+      JSON.stringify(config, null, 2),
+      "chore: initialize RepoPress configuration",
       branch,
-      [
-        {
-          path: "repopress.config.json",
-          content: JSON.stringify(config, null, 2),
-          action: "create",
-        },
-        {
-          path: ".repopress/mdx-preview.tsx",
-          content: DEFAULT_ADAPTER_SOURCE,
-          action: "create",
-        },
-      ],
-      "chore: initialize RepoPress configuration and preview adapter",
     )
 
     revalidatePath(`/dashboard/${owner}/${repo}/setup`)

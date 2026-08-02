@@ -159,6 +159,7 @@ export default defineSchema({
     projectId: v.id("projects"),
     collectionId: v.optional(v.id("collections")),
     filePath: v.string(), // relative to project contentRoot
+    pathRepresentation: v.optional(v.union(v.literal("legacy_repo_v0"), v.literal("content_relative_v1"))),
     title: v.string(),
     description: v.optional(v.string()),
     slug: v.optional(v.string()),
@@ -173,6 +174,11 @@ export default defineSchema({
     // Content
     body: v.optional(v.string()), // MDX content (draft body stored here)
     frontmatter: v.optional(v.any()), // Full frontmatter as JSON
+    // Content-specific version counter: bumped ONLY when body/frontmatter
+    // change (never by workflow/status transitions or provenance stamps).
+    // Absent counts as 0. Publish cleanliness compares this against
+    // publishedProvenance.publishedContentVersion.
+    contentVersion: v.optional(v.number()),
     coverImage: v.optional(v.string()),
     // Relationships
     authorIds: v.optional(v.array(v.id("authors"))),
@@ -185,7 +191,42 @@ export default defineSchema({
     order: v.optional(v.number()),
     // GitHub sync state
     githubSha: v.optional(v.string()),
+    // Explicit optimistic-lock state. Missing means a pre-migration row;
+    // new reconciliation distinguishes a known blob from known absence.
+    gitBaselineState: v.optional(v.union(v.literal("unknown"), v.literal("absent"), v.literal("blob"))),
     lastSyncedAt: v.optional(v.number()),
+    // LEGACY (lazily migrated): retained for reads, but never considered
+    // clean until byte equality is proven against a final Git authority.
+    lastPublishedUpdatedAt: v.optional(v.number()),
+    // Git-synchronization provenance: which base/lane branch and commit hold
+    // this document's published snapshot, the content-specific revision
+    // (sha256 of the serialized bytes), the document's contentVersion at
+    // planning time, and the planned updatedAt. The document is "clean"
+    // for publishing while publishedContentVersion === contentVersion
+    // (workflow-only transitions bump updatedAt but not contentVersion, so
+    // they cannot dirty unchanged content); recording provenance never
+    // bumps either field, so replays are no-ops. Lane-owned provenance also
+    // carries the publish branch (and attempt when applicable).
+    publishedProvenance: v.optional(
+      v.object({
+        // Optional only for legacy rows. Every new provenance write records
+        // the explicit Git authority kind and branch.
+        authorityKind: v.optional(v.union(v.literal("base"), v.literal("lane"))),
+        authorityBranch: v.optional(v.string()),
+        publishBranchId: v.optional(v.id("publishBranches")),
+        publishAttemptId: v.optional(v.id("publishAttempts")),
+        commitSha: v.string(),
+        // Lane provenance remembers the Git baseline it replaced so a
+        // no-attempt lane synchronization can be restored safely on close.
+        previousGitBaselineState: v.optional(v.union(v.literal("unknown"), v.literal("absent"), v.literal("blob"))),
+        previousGithubSha: v.optional(v.string()),
+        contentRevision: v.optional(v.string()),
+        // Optional only for provenance recorded before the field existed;
+        // those rows remain dirty until exact Git byte identity is proven.
+        publishedContentVersion: v.optional(v.number()),
+        publishedUpdatedAt: v.number(),
+      }),
+    ),
     // Scheduling
     publishedAt: v.optional(v.number()),
     scheduledAt: v.optional(v.number()),
@@ -198,6 +239,18 @@ export default defineSchema({
     .index("by_projectId_status", ["projectId", "status"])
     .index("by_projectId_filePath", ["projectId", "filePath"])
     .index("by_collectionId", ["collectionId"])
+    // Bounded closed-lane invalidation: fetch exactly the documents whose
+    // clean state points at one lane, in batches.
+    .index("by_publishedProvenance_publishBranchId", ["publishedProvenance.publishBranchId"])
+    .index("by_publishedProvenance_lane_attempt", [
+      "publishedProvenance.publishBranchId",
+      "publishedProvenance.publishAttemptId",
+    ])
+    .index("by_publishedProvenance_lane_attempt_status", [
+      "publishedProvenance.publishBranchId",
+      "publishedProvenance.publishAttemptId",
+      "status",
+    ])
     .searchIndex("search_title", {
       searchField: "title",
       filterFields: ["projectId"],
@@ -292,6 +345,19 @@ export default defineSchema({
     .index("by_userId", ["userId"])
     .index("by_expiresAt", ["expiresAt"]),
 
+  // ─── GitHub Action Rate Limits ──────────────────────────────
+  githubActionRateLimits: defineTable({
+    projectId: v.optional(v.id("projects")),
+    scopeKey: v.string(),
+    userId: v.string(),
+    action: v.union(v.literal("title_sync"), v.literal("gallery_scan")),
+    windowStartedAt: v.number(),
+    attempts: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_scope_user_action", ["scopeKey", "userId", "action"])
+    .index("by_projectId", ["projectId"]),
+
   // ─── Deleted Config Projects (tombstone for config-driven project deletion) ─
   deletedConfigProjects: defineTable({
     configProjectId: v.string(), // The id field from repopress.config.json
@@ -310,18 +376,28 @@ export default defineSchema({
     userId: v.string(),
     opType: v.union(v.literal("create"), v.literal("delete")),
     filePath: v.string(),
+    pathRepresentation: v.optional(v.union(v.literal("legacy_repo_v0"), v.literal("content_relative_v1"))),
     initialBody: v.optional(v.string()),
     initialFrontmatter: v.optional(v.any()),
     previousSha: v.optional(v.string()),
     status: v.union(v.literal("pending"), v.literal("committed"), v.literal("undone")),
     commitSha: v.optional(v.string()),
     publishBranchId: v.optional(v.id("publishBranches")),
+    publishAttemptId: v.optional(v.id("publishAttempts")),
+    // Canonical repository path captured when the operation is planned.
+    // Newer pending intent checks use this directly instead of resolving a
+    // mixture of legacy/content-relative paths during cleanup.
+    repoPath: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_projectId", ["projectId"])
     .index("by_projectId_status", ["projectId", "status"])
-    .index("by_projectId_filePath", ["projectId", "filePath"]),
+    .index("by_projectId_filePath", ["projectId", "filePath"])
+    .index("by_projectId_repoPath_status", ["projectId", "repoPath", "status"])
+    // Bounded lane cleanup: fetch exactly one lane's committed ops in batches.
+    .index("by_publishBranchId_status", ["publishBranchId", "status"])
+    .index("by_publishBranchId_status_publishAttemptId", ["publishBranchId", "status", "publishAttemptId"]),
 
   // ─── Media Ops (staged media writes for PR-based publish) ──────────────
   mediaOps: defineTable({
@@ -339,30 +415,218 @@ export default defineSchema({
     githubPath: v.optional(v.string()),
     githubSha: v.optional(v.string()),
     convexStorageId: v.optional(v.string()),
+    // "failed" rows are storage-deletion tombstones: they own a Convex
+    // storage object whose delete failed, so the nightly cron can retry
+    // until the object is gone (see mediaOps.stage / cleanupStaleUploads).
     status: v.union(v.literal("pending"), v.literal("committed"), v.literal("undone"), v.literal("failed")),
     commitSha: v.optional(v.string()),
     publishBranchId: v.optional(v.id("publishBranches")),
+    publishAttemptId: v.optional(v.id("publishAttempts")),
+    // Indexed cleanup eligibility. Pending Convex uploads start at their
+    // stale deadline; failed deletes advance it with backoff so a permanent
+    // failure prefix cannot starve later storage owners.
+    storageCleanupAt: v.optional(v.number()),
+    storageDeleteAttempts: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_projectId", ["projectId"])
     .index("by_projectId_status", ["projectId", "status"])
-    .index("by_projectId_repoPath", ["projectId", "repoPath"]),
+    .index("by_status_createdAt", ["status", "createdAt"])
+    .index("by_storage_cleanup_eligibility", ["status", "sourceType", "publishBranchId", "storageCleanupAt"])
+    .index("by_projectId_repoPath", ["projectId", "repoPath"])
+    // Bounded lane cleanup: fetch exactly one lane's committed uploads in batches.
+    .index("by_publishBranchId_status", ["publishBranchId", "status"])
+    .index("by_publishBranchId_status_publishAttemptId", ["publishBranchId", "status", "publishAttemptId"]),
 
   // ─── Publish Branches (PR-based publish workflow) ─────────────────
   publishBranches: defineTable({
     projectId: v.id("projects"),
+    // Denormalized repository identity makes webhook lookup repository- and
+    // PR-scoped. Optional only for lanes created before this field existed;
+    // the authenticated status-sync route backfills those rows by ID.
+    repoOwner: v.optional(v.string()),
+    repoName: v.optional(v.string()),
+    // Canonical lookup keys are persisted separately because GitHub treats
+    // repository owner/name casing as identity-insensitive.
+    repoOwnerKey: v.optional(v.string()),
+    repoNameKey: v.optional(v.string()),
     branchName: v.string(),
     baseBranch: v.string(),
     prNumber: v.optional(v.number()),
     prUrl: v.optional(v.string()),
     status: v.union(v.literal("active"), v.literal("inactive"), v.literal("merged"), v.literal("closed")),
+    // Immutable Git authority for a merged PR. The event/fallback path only
+    // records this SHA; attempt-scoped reconciliation verifies exact trees
+    // before any staged state is finalized.
+    mergeCommitSha: v.optional(v.string()),
+    mergeVerificationState: v.optional(v.union(v.literal("pending"), v.literal("complete"))),
+    closeVerificationState: v.optional(v.union(v.literal("pending"), v.literal("complete"))),
     lastCommitSha: v.optional(v.string()),
     committedFilePaths: v.optional(v.array(v.string())),
+    // Set when lane synchronization cleanup (closed-lane invalidation OR
+    // merged-lane finalization, dispatched by laneCleanupAction) is incomplete -
+    // deferred behind an active publish attempt or split across bounded
+    // batches. The nightly cron, the scheduled continuation, and attempt
+    // recovery finish it durably.
+    laneInvalidationPending: v.optional(v.boolean()),
+    laneCleanupAction: v.optional(v.union(v.literal("restore_legacy"), v.literal("finalize_legacy"))),
+    // Durable round-robin cursor for bounded PR status synchronization.
+    lastStatusCheckedAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_projectId", ["projectId"])
     .index("by_projectId_status", ["projectId", "status"])
-    .index("by_prNumber", ["prNumber"]),
+    .index("by_projectId_status_lastStatusCheckedAt_createdAt", [
+      "projectId",
+      "status",
+      "lastStatusCheckedAt",
+      "createdAt",
+    ])
+    .index("by_prNumber", ["prNumber"])
+    .index("by_repo_key_pr_head_base", ["repoOwnerKey", "repoNameKey", "prNumber", "branchName", "baseBranch"])
+    .index("by_projectId_mergeVerificationState", ["projectId", "mergeVerificationState"])
+    .index("by_projectId_closeVerificationState", ["projectId", "closeVerificationState"])
+    .index("by_project_merge_lastStatusCheckedAt", [
+      "projectId",
+      "mergeVerificationState",
+      "lastStatusCheckedAt",
+      "createdAt",
+    ])
+    .index("by_project_close_lastStatusCheckedAt", [
+      "projectId",
+      "closeVerificationState",
+      "lastStatusCheckedAt",
+      "createdAt",
+    ])
+    .index("by_laneInvalidationPending", ["laneInvalidationPending"]),
+
+  // ─── Publish Attempts (durable commit/reconcile boundary) ─────────
+  // One row per publish request that reaches the commit boundary. Recovery
+  // uses expectedHeadSha + planDigest (also embedded in the Git commit
+  // message) to prove whether the commit landed, so a retry after a
+  // post-commit failure reconciles instead of committing again.
+  publishAttempts: defineTable({
+    projectId: v.id("projects"),
+    publishBranchId: v.id("publishBranches"),
+    branchName: v.string(),
+    expectedHeadSha: v.string(),
+    planDigest: v.string(),
+    operationDescriptors: v.optional(
+      v.array(
+        v.union(
+          v.object({ path: v.string(), action: v.literal("delete") }),
+          v.object({
+            path: v.string(),
+            action: v.union(v.literal("create"), v.literal("update")),
+            expectedBlobSha: v.string(),
+          }),
+        ),
+      ),
+    ),
+    // Compatibility projection for attempts created before exact descriptors.
+    operationPaths: v.array(v.string()),
+    opIds: v.array(v.id("explorerOps")),
+    // Canonical, versioned ownership projection used by bounded cleanup.
+    // Optional only for attempts written before attempt-scoped cleanup.
+    explorerAssociations: v.optional(
+      v.array(
+        v.object({
+          opId: v.id("explorerOps"),
+          repoPath: v.string(),
+          expectedUpdatedAt: v.number(),
+        }),
+      ),
+    ),
+    // Versioned media snapshot: identity + planned repoPath + planned
+    // updatedAt, so an in-place replacement racing the publish is caught
+    // transactionally at begin.
+    mediaAssociations: v.array(
+      v.object({
+        mediaOpId: v.id("mediaOps"),
+        repoPath: v.string(),
+        expectedUpdatedAt: v.number(),
+      }),
+    ),
+    documentAssociations: v.array(
+      v.object({
+        documentId: v.id("documents"),
+        repoPath: v.string(),
+        expectedUpdatedAt: v.number(),
+        // sha256 of the exact serialized content this publish planned for
+        // the document; stored into the document's publishedProvenance at
+        // reconcile time. Optional only for attempts recorded before the
+        // field existed.
+        contentRevision: v.optional(v.string()),
+        // The document's contentVersion at planning time - becomes the
+        // provenance's publishedContentVersion. Optional only for attempts
+        // recorded before the field existed.
+        contentVersion: v.optional(v.number()),
+      }),
+    ),
+    deleteAssociations: v.array(
+      v.object({
+        opId: v.id("explorerOps"),
+        documentId: v.id("documents"),
+        expectedUpdatedAt: v.number(),
+      }),
+    ),
+    status: v.union(
+      v.literal("committing"),
+      v.literal("committed"),
+      v.literal("reconciled"),
+      v.literal("cleanup_pending"),
+      v.literal("cleaned"),
+      v.literal("superseded"),
+    ),
+    commitSha: v.optional(v.string()),
+    cleanupId: v.optional(v.id("publishAttemptCleanups")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_projectId_status", ["projectId", "status"])
+    .index("by_publishBranchId_status", ["publishBranchId", "status"]),
+
+  // ─── Publish Attempt Cleanups (durable bounded reconciliation) ───
+  publishAttemptCleanups: defineTable({
+    projectId: v.id("projects"),
+    laneId: v.id("publishBranches"),
+    attemptId: v.id("publishAttempts"),
+    pathOutcomes: v.array(
+      v.object({
+        path: v.string(),
+        disposition: v.union(v.literal("finalize"), v.literal("restore"), v.literal("discard")),
+        finalBlobSha: v.optional(v.string()),
+      }),
+    ),
+    authoritySha: v.optional(v.string()),
+    phase: v.union(v.literal("explorer"), v.literal("media"), v.literal("documents"), v.literal("complete")),
+    cursor: v.number(),
+    status: v.union(v.literal("pending"), v.literal("complete")),
+    lastRescheduledAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_attemptId", ["attemptId"])
+    .index("by_laneId_status", ["laneId", "status"])
+    .index("by_status", ["status"])
+    .index("by_status_lastRescheduledAt_createdAt", ["status", "lastRescheduledAt", "createdAt"]),
+
+  // A merged lane may contain several publish attempts that touch the same
+  // path. The first (newest) attempt whose descriptor matches the immutable
+  // merge tree owns that path; older attempts persist a discard outcome.
+  publishLanePathResolutions: defineTable({
+    projectId: v.id("projects"),
+    laneId: v.id("publishBranches"),
+    authoritySha: v.string(),
+    repoPath: v.string(),
+    claimedAttemptId: v.id("publishAttempts"),
+    // Optional only for pre-migration claims; recovery fails closed until
+    // such a claim can be reviewed rather than guessing its final baseline.
+    finalPathState: v.optional(v.union(v.literal("absent"), v.literal("blob"))),
+    finalBlobSha: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_lane_authority_path", ["laneId", "authoritySha", "repoPath"]),
 })

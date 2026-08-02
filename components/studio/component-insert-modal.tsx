@@ -8,6 +8,11 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
+  type AuthoringCatalog,
+  type AuthoringComponent,
+  componentAcceptsChildren,
+} from "@/lib/studio/authoring-catalog"
+import {
   ALL_CATEGORIES,
   buildComponentCatalog,
   type ComponentCategory,
@@ -15,8 +20,6 @@ import {
   getComponentLabel,
 } from "@/lib/studio/component-catalog"
 import { buildComponentNode, type ComponentNode } from "@/lib/studio/component-node"
-import type { RepoComponentDef } from "@/lib/studio/component-registry"
-import { buildComponentRegistry } from "@/lib/studio/component-registry"
 import { serializeComponentNode } from "@/lib/studio/component-serializer"
 import { resolveStudioAssetUrl } from "@/lib/studio/media-resolve"
 import { cn } from "@/lib/utils"
@@ -29,9 +32,9 @@ import { VideoPreview as StudioVideoPreview } from "./video-preview"
 // LiveConfigurePreview - reacts to formState for known component types
 // ---------------------------------------------------------------------------
 
-function LiveConfigurePreview({ def, formState }: { def: RepoComponentDef; formState: PropFormState }) {
+function LiveConfigurePreview({ def, formState }: { def: AuthoringComponent; formState: PropFormState }) {
   const studio = useStudio()
-  const normalizedName = def.name.replace(/Adapter$/i, "").toLowerCase()
+  const normalizedName = def.mdxName.replace(/Adapter$/i, "").toLowerCase()
 
   // DocsImage / image component - show actual image when src is provided
   if (
@@ -74,8 +77,8 @@ function LiveConfigurePreview({ def, formState }: { def: RepoComponentDef; formS
   ) {
     return (
       <div className="w-full max-w-sm space-y-3">
-        <div className="w-full aspect-video rounded-xl border border-studio-border overflow-hidden bg-studio-canvas-inset">
-          <StudioVideoPreview url={formState.src} className="w-full h-full rounded-xl" />
+        <div className="w-full aspect-video rounded-lg border border-studio-border overflow-hidden bg-studio-canvas-inset">
+          <StudioVideoPreview url={formState.src} className="w-full h-full rounded-lg" />
         </div>
         {typeof formState.title === "string" && formState.title && (
           <p className="text-xs font-medium text-studio-fg text-center">{formState.title}</p>
@@ -86,24 +89,20 @@ function LiveConfigurePreview({ def, formState }: { def: RepoComponentDef; formS
 
   // Callout - show a styled live callout preview
   if (normalizedName === "callout") {
-    const type = typeof formState.type === "string" ? formState.type : "info"
+    const variant = formState.variant === "accent" ? "accent" : "default"
     const title = typeof formState.title === "string" ? formState.title : ""
-
-    const typeStyles: Record<string, { bg: string; border: string; icon: string }> = {
-      info: { bg: "bg-studio-accent/5", border: "border-studio-accent/20", icon: "ℹ" },
-      warning: { bg: "bg-studio-attention/5", border: "border-studio-attention/20", icon: "⚠" },
-      error: { bg: "bg-studio-danger/5", border: "border-studio-danger/20", icon: "✕" },
-      tip: { bg: "bg-studio-success/5", border: "border-studio-success/20", icon: "✓" },
-    }
-    const s = typeStyles[type] ?? typeStyles.info
+    const style =
+      variant === "accent"
+        ? { background: "bg-studio-accent/5", border: "border-studio-accent/20" }
+        : { background: "bg-studio-canvas-inset", border: "border-studio-border" }
 
     return (
-      <div className={cn("w-full max-w-sm rounded-xl border p-4 space-y-2", s.bg, s.border)}>
+      <div className={cn("w-full max-w-sm rounded-lg border p-4 space-y-2", style.background, style.border)}>
         <div className="flex items-center gap-2">
-          <span className="text-sm">{s.icon}</span>
-          <p className="text-xs font-semibold text-studio-fg">
-            {title || type.charAt(0).toUpperCase() + type.slice(1)}
-          </p>
+          <span aria-hidden="true" className="text-sm">
+            ℹ
+          </span>
+          <p className="text-xs font-medium text-studio-fg">{title || "Callout"}</p>
         </div>
         <div className="space-y-1.5 pl-5">
           <div className="w-full h-1.5 rounded-full bg-studio-fg/10" />
@@ -115,7 +114,7 @@ function LiveConfigurePreview({ def, formState }: { def: RepoComponentDef; formS
   }
 
   // Default fallback - static wireframe preview
-  return <ComponentPreview name={def.name} className="shadow-none border-none bg-transparent" />
+  return <ComponentPreview name={def.mdxName} className="shadow-none border-none bg-transparent" />
 }
 
 // ---------------------------------------------------------------------------
@@ -152,12 +151,8 @@ function addRecentComponent(name: string): void {
 interface ComponentInsertModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  /** Adapter-discovered components. */
-  adapterComponents?: Record<string, any> | null
-  /** Project config components (from repopress.config.json). */
-  projectComponents?: Record<string, any> | null
-  /** Detected framework (e.g. "fumadocs", "nextra", "astro") - used for fallback component schemas. */
-  framework?: string
+  /** Serializable authoring metadata prepared at the Studio boundary. */
+  authoringCatalog: AuthoringCatalog
   /** Optional repo context for image uploads in prop form. */
   repoContext?: {
     projectId: string
@@ -168,7 +163,7 @@ interface ComponentInsertModalProps {
     selectedFilePath?: string
   }
   /** Called with serialized JSX, component metadata, and the resolved node when user confirms insert. */
-  onInsert: (jsx: string, def: RepoComponentDef, node: ComponentNode) => void
+  onInsert: (jsx: string, def: AuthoringComponent, node: ComponentNode) => void
 }
 
 // ---------------------------------------------------------------------------
@@ -186,8 +181,8 @@ type ModalStep = "pick" | "configure"
  * 1. **Pick** - choose a component from the catalog.
  * 2. **Configure** - fill in props (and optional children), then insert.
  *
- * The registry is built on each open from adapter + project components
- * (single source of truth). Catalog is a read-only projection.
+ * The catalog is built from native component names and serializable project
+ * metadata. Executable bindings never enter modal state.
  *
  * Insert flow:
  *   form state → ComponentNode → serializer → onInsert callback
@@ -195,25 +190,16 @@ type ModalStep = "pick" | "configure"
 export function ComponentInsertModal({
   open,
   onOpenChange,
-  adapterComponents,
-  projectComponents,
-  framework,
+  authoringCatalog,
   repoContext,
   onInsert,
 }: ComponentInsertModalProps) {
   // -- Registry & catalog (recomputed when inputs change) --
-  const registry = React.useMemo(
-    () => buildComponentRegistry(adapterComponents, projectComponents, framework),
-    [adapterComponents, projectComponents, framework],
-  )
-  const catalog = React.useMemo(() => {
-    const hasProjectComponents = !!projectComponents && Object.keys(projectComponents).length > 0
-    return buildComponentCatalog(registry, { hasProjectComponents })
-  }, [registry, projectComponents])
+  const catalog = React.useMemo(() => buildComponentCatalog(authoringCatalog), [authoringCatalog])
 
   // -- Modal state --
   const [step, setStep] = React.useState<ModalStep>("pick")
-  const [selectedDef, setSelectedDef] = React.useState<RepoComponentDef | null>(null)
+  const [selectedDef, setSelectedDef] = React.useState<AuthoringComponent | null>(null)
   const [formState, setFormState] = React.useState<PropFormState>({})
   const [searchQuery, setSearchQuery] = React.useState("")
   const [activeCategory, setActiveCategory] = React.useState<ComponentCategory | "All">("All")
@@ -224,14 +210,14 @@ export function ComponentInsertModal({
   const recentCatalog = React.useMemo(() => {
     if (!catalog) return []
     return recentNames
-      .map((name) => catalog.find((c) => c.name === name))
-      .filter((c): c is RepoComponentDef => c !== undefined)
+      .map((name) => catalog.find((c) => c.mdxName === name))
+      .filter((c): c is AuthoringComponent => c !== undefined)
   }, [recentNames, catalog])
 
   // Real-time validation for the configure step
   const formErrors = React.useMemo(() => {
     if (!selectedDef) return {}
-    return validateFormState(selectedDef.props, formState)
+    return validateFormState(selectedDef, formState)
   }, [selectedDef, formState])
   const hasErrors = Object.keys(formErrors).length > 0
 
@@ -259,7 +245,7 @@ export function ComponentInsertModal({
       result = result.filter(
         (def) =>
           getComponentLabel(def).toLowerCase().includes(q) ||
-          def.name.toLowerCase().includes(q) ||
+          def.mdxName.toLowerCase().includes(q) ||
           def.description?.toLowerCase().includes(q),
       )
     }
@@ -272,8 +258,8 @@ export function ComponentInsertModal({
     if (recentCatalog.length === 0 || searchQuery || activeCategory !== "All") {
       return filteredCatalog
     }
-    const recentNameSet = new Set(recentCatalog.map((c) => c.name))
-    return filteredCatalog.filter((c) => !recentNameSet.has(c.name))
+    const recentNameSet = new Set(recentCatalog.map((c) => c.mdxName))
+    return filteredCatalog.filter((c) => !recentNameSet.has(c.mdxName))
   }, [filteredCatalog, recentCatalog, searchQuery, activeCategory])
 
   // Reset state when modal opens/closes
@@ -291,7 +277,7 @@ export function ComponentInsertModal({
 
   // -- Handlers --
   const handleSelectComponent = React.useCallback(
-    (def: RepoComponentDef) => {
+    (def: AuthoringComponent) => {
       setSelectedDef(def)
       // Pre-populate with defaults
       const defaults: PropFormState = {}
@@ -303,10 +289,10 @@ export function ComponentInsertModal({
       setFormState(defaults)
 
       // If no configurable props and no children, insert immediately
-      if (def.props.length === 0 && !def.hasChildren) {
+      if (def.props.length === 0 && !componentAcceptsChildren(def)) {
         const node = buildComponentNode(def, defaults)
         const jsx = serializeComponentNode(node)
-        addRecentComponent(def.name)
+        addRecentComponent(def.mdxName)
         onInsert(jsx, def, node)
         onOpenChange(false)
         return
@@ -322,10 +308,11 @@ export function ComponentInsertModal({
       console.warn("handleInsert called but no selectedDef")
       return
     }
+    if (Object.keys(validateFormState(selectedDef, formState)).length > 0) return
     try {
       const node = buildComponentNode(selectedDef, formState)
       const jsx = serializeComponentNode(node)
-      addRecentComponent(selectedDef.name)
+      addRecentComponent(selectedDef.mdxName)
       onInsert(jsx, selectedDef, node)
       onOpenChange(false)
     } catch (error) {
@@ -360,9 +347,7 @@ export function ComponentInsertModal({
               <div className="px-6 pt-5 pb-4 border-b border-studio-border shrink-0">
                 <div className="flex items-start justify-between mb-3">
                   <div>
-                    <DialogTitle className="text-xl font-semibold tracking-tight text-studio-fg">
-                      Insert Component
-                    </DialogTitle>
+                    <DialogTitle className="rp-display text-xl text-studio-fg">Insert Component</DialogTitle>
                     <DialogDescription className="text-xs text-studio-fg-muted mt-0.5">
                       Extend your document with a reusable component
                     </DialogDescription>
@@ -399,9 +384,9 @@ export function ComponentInsertModal({
                       type="button"
                       onClick={() => setActiveCategory(cat)}
                       className={cn(
-                        "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold transition-all duration-150 whitespace-nowrap shrink-0",
+                        "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium transition-all duration-150 whitespace-nowrap shrink-0",
                         activeCategory === cat
-                          ? "bg-studio-accent text-white shadow-sm border border-studio-accent"
+                          ? "bg-studio-accent text-white border border-studio-accent"
                           : "text-studio-fg hover:text-studio-accent hover:bg-studio-canvas-inset",
                       )}
                     >
@@ -488,7 +473,7 @@ export function ComponentInsertModal({
                   <div className="relative z-10 w-full max-w-xs flex items-center justify-center">
                     {selectedDef && (
                       <motion.div
-                        key={selectedDef.name}
+                        key={selectedDef.mdxName}
                         initial={{ opacity: 0, scale: 0.94 }}
                         animate={{ opacity: 1, scale: 1 }}
                         transition={{ duration: 0.18, ease: "easeOut" }}
@@ -527,7 +512,7 @@ export function ComponentInsertModal({
                     <button
                       type="button"
                       onClick={() => setShowPreview(!showPreview)}
-                      className="flex items-center gap-1.5 text-[12px] font-semibold text-studio-fg-muted hover:text-studio-fg transition-colors group"
+                      className="flex items-center gap-1.5 text-[12px] font-medium text-studio-fg-muted hover:text-studio-fg transition-colors group"
                       title="Preview the generated JSX code"
                     >
                       <Code className="h-4 w-4 transition-colors group-hover:text-studio-accent" />
@@ -561,8 +546,8 @@ export function ComponentInsertModal({
                         disabled={hasErrors}
                         size="sm"
                         className={cn(
-                          "h-9 px-6 text-xs font-semibold tracking-wide",
-                          hasErrors ? "opacity-50 cursor-not-allowed" : "shadow-sm",
+                          "h-9 px-6 text-xs font-medium tracking-wide",
+                          hasErrors ? "opacity-50 cursor-not-allowed" : "",
                         )}
                         title={hasErrors ? "Fill all required fields" : "Insert this component"}
                       >
@@ -611,7 +596,7 @@ const categoryStyles = {
   },
 } as const
 
-function ComponentCard({ def, onSelect }: { def: RepoComponentDef; onSelect: (def: RepoComponentDef) => void }) {
+function ComponentCard({ def, onSelect }: { def: AuthoringComponent; onSelect: (def: AuthoringComponent) => void }) {
   const category = deriveCategory(def)
   const label = getComponentLabel(def)
   const style = categoryStyles[category]
@@ -648,8 +633,8 @@ function CatalogGallery({
   catalog,
   onSelect,
 }: {
-  catalog: RepoComponentDef[]
-  onSelect: (def: RepoComponentDef) => void
+  catalog: AuthoringComponent[]
+  onSelect: (def: AuthoringComponent) => void
 }) {
   if (catalog.length === 0) {
     return (
@@ -664,7 +649,7 @@ function CatalogGallery({
   return (
     <div className="space-y-0.5">
       {catalog.map((def) => (
-        <ComponentCard key={def.name} def={def} onSelect={onSelect} />
+        <ComponentCard key={def.mdxName} def={def} onSelect={onSelect} />
       ))}
     </div>
   )

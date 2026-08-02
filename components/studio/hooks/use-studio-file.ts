@@ -16,12 +16,14 @@ interface CachedFileSnapshot {
   content: string
   frontmatter: Record<string, unknown>
   sha: string | null
+  isDirty: boolean
 }
 
 interface PrimeSnapshotInput {
   content: string
   frontmatter?: Record<string, unknown>
   sha?: string | null
+  isDirty?: boolean
 }
 
 interface GitHubFileResponse {
@@ -38,6 +40,7 @@ function parseFileSnapshot(rawContent: string, sha: string | null): CachedFileSn
       content,
       frontmatter: normalizeFrontmatterDates(data) as Record<string, unknown>,
       sha,
+      isDirty: false,
     }
   } catch {
     // Attempt to strip frontmatter even if gray-matter fails
@@ -46,12 +49,13 @@ function parseFileSnapshot(rawContent: string, sha: string | null): CachedFileSn
       content: stripped,
       frontmatter: {},
       sha,
+      isDirty: false,
     }
   }
 }
 
 export function useStudioFile(initialFile: InitialFile | null | undefined, currentPath: string) {
-  const { owner, repo, branch, projectId, tree } = useStudio()
+  const { owner, repo, branch, baseCommitSha, projectId, tree } = useStudio()
   const openFilesStorageKey = React.useMemo(
     () => `studio:openFiles:${owner}:${repo}:${branch}:${projectId || "none"}`,
     [owner, repo, branch, projectId],
@@ -77,7 +81,18 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
   const [isFileLoading, setIsFileLoading] = React.useState(false)
 
   const fileCacheRef = React.useRef<Map<string, CachedFileSnapshot>>(new Map())
+  const fileCacheRevisionRef = React.useRef<Map<string, number>>(new Map())
   const requestVersionRef = React.useRef(0)
+
+  const writeCachedSnapshot = React.useCallback((filePath: string, snapshot: CachedFileSnapshot) => {
+    fileCacheRef.current.set(filePath, snapshot)
+    fileCacheRevisionRef.current.set(filePath, (fileCacheRevisionRef.current.get(filePath) ?? 0) + 1)
+  }, [])
+
+  const deleteCachedSnapshot = React.useCallback((filePath: string) => {
+    fileCacheRef.current.delete(filePath)
+    fileCacheRevisionRef.current.set(filePath, (fileCacheRevisionRef.current.get(filePath) ?? 0) + 1)
+  }, [])
 
   const buildStudioUrl = React.useCallback(
     (filePath?: string) => {
@@ -124,13 +139,14 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
       setContent(snapshot.content)
       setFrontmatter(snapshot.frontmatter)
       setSha(snapshot.sha)
-      setIsDirty(false)
+      setIsDirty(snapshot.isDirty)
     },
     [resolveFileNode],
   )
 
   const clearSelection = React.useCallback(
     (mode: "push" | "replace" | "none" = "push") => {
+      requestVersionRef.current += 1
       setSelectedFile(null)
       setContent("")
       setFrontmatter({})
@@ -151,24 +167,29 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
     setRecentFiles((prev) => [filePath, ...prev.filter((item) => item !== filePath)].slice(0, 24))
   }, [])
 
-  const primeFileSnapshot = React.useCallback((filePath: string, snapshot: PrimeSnapshotInput) => {
-    const normalizedSnapshot: CachedFileSnapshot = {
-      content: snapshot.content,
-      frontmatter: snapshot.frontmatter
-        ? (normalizeFrontmatterDates(snapshot.frontmatter) as Record<string, unknown>)
-        : {},
-      sha: snapshot.sha ?? null,
-    }
+  const primeFileSnapshot = React.useCallback(
+    (filePath: string, snapshot: PrimeSnapshotInput) => {
+      const normalizedSnapshot: CachedFileSnapshot = {
+        content: snapshot.content,
+        frontmatter: snapshot.frontmatter
+          ? (normalizeFrontmatterDates(snapshot.frontmatter) as Record<string, unknown>)
+          : {},
+        sha: snapshot.sha ?? null,
+        isDirty: snapshot.isDirty ?? false,
+      }
 
-    fileCacheRef.current.set(filePath, normalizedSnapshot)
-    setOpenFiles((prev) => (prev.includes(filePath) ? prev : [...prev, filePath]))
-  }, [])
+      writeCachedSnapshot(filePath, normalizedSnapshot)
+      setOpenFiles((prev) => (prev.includes(filePath) ? prev : [...prev, filePath]))
+    },
+    [writeCachedSnapshot],
+  )
 
   const openFile = React.useCallback(
     async (filePath: string, mode: "push" | "replace" | "none" = "push") => {
       setOpenFiles((prev) => (prev.includes(filePath) ? prev : [...prev, filePath]))
       trackRecentFile(filePath)
       syncBrowserUrl(filePath, mode)
+      const requestVersion = ++requestVersionRef.current
 
       const resolvedNode = resolveFileNode(filePath)
       const cached = fileCacheRef.current.get(filePath)
@@ -178,19 +199,26 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
       const shouldTryRemoteForLocalCache = Boolean(cached && cached.sha === null)
 
       if (cached && !shouldTryRemoteForLocalCache && (cacheMatchesRemoteSha || cacheIsLocalDraft)) {
-        setIsFileLoading(false)
-        applySnapshot(filePath, cached)
+        if (requestVersionRef.current === requestVersion) {
+          setIsFileLoading(false)
+          applySnapshot(filePath, cached)
+        }
         return
       }
 
       if (cached && hasRemoteSha && cached.sha !== resolvedNode.sha) {
-        fileCacheRef.current.delete(filePath)
+        deleteCachedSnapshot(filePath)
       }
+
+      const requestStartCacheRevision = fileCacheRevisionRef.current.get(filePath) ?? 0
+      const requestStartCached = fileCacheRef.current.get(filePath)
+      const requestStartHasLocalSnapshot = requestStartCached?.sha === null
 
       const emptySnapshot: CachedFileSnapshot = {
         content: "",
         frontmatter: {},
         sha: null,
+        isDirty: false,
       }
 
       // Prevent stale editor data from the previous file while a new file is loading.
@@ -200,17 +228,13 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
       setSha(null)
       setIsDirty(false)
       setIsFileLoading(true)
-      const requestVersion = ++requestVersionRef.current
 
-      if (!resolvedNode.sha) {
-        if (cached) {
-          applySnapshot(filePath, cached)
-        } else {
-          fileCacheRef.current.set(filePath, emptySnapshot)
-          applySnapshot(filePath, emptySnapshot)
-        }
-        setIsFileLoading(false)
-        return
+      const applyNewerLocalSnapshot = () => {
+        const latestRevision = fileCacheRevisionRef.current.get(filePath) ?? 0
+        const latestSnapshot = fileCacheRef.current.get(filePath)
+        if (latestRevision === requestStartCacheRevision || latestSnapshot?.sha !== null) return false
+        applySnapshot(filePath, latestSnapshot)
+        return true
       }
 
       try {
@@ -218,7 +242,7 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
           owner,
           repo,
           path: filePath,
-          branch,
+          ref: baseCommitSha,
         })
 
         const response = await fetch(`/api/github/file?${params.toString()}`, {
@@ -232,25 +256,40 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
 
         const file = (await response.json()) as GitHubFileResponse
         if (requestVersionRef.current !== requestVersion) return
+        if (applyNewerLocalSnapshot()) return
 
         const snapshot = parseFileSnapshot(file.content, file.sha)
-        fileCacheRef.current.set(filePath, snapshot)
+        writeCachedSnapshot(filePath, snapshot)
         applySnapshot(filePath, snapshot)
       } catch (error) {
         if (requestVersionRef.current === requestVersion) {
           console.error("Failed to open file", error)
-          if (cached && shouldTryRemoteForLocalCache) {
-            applySnapshot(filePath, cached)
+          if (applyNewerLocalSnapshot()) {
+            return
+          }
+          if (requestStartCached && requestStartHasLocalSnapshot) {
+            applySnapshot(filePath, requestStartCached)
           } else {
             applySnapshot(filePath, emptySnapshot)
           }
-          setIsFileLoading(false)
         }
       } finally {
-        setIsFileLoading(false)
+        if (requestVersionRef.current === requestVersion) {
+          setIsFileLoading(false)
+        }
       }
     },
-    [owner, repo, branch, syncBrowserUrl, applySnapshot, resolveFileNode, trackRecentFile],
+    [
+      owner,
+      repo,
+      baseCommitSha,
+      syncBrowserUrl,
+      applySnapshot,
+      resolveFileNode,
+      trackRecentFile,
+      deleteCachedSnapshot,
+      writeCachedSnapshot,
+    ],
   )
 
   const readPathFromUrl = React.useCallback(() => {
@@ -338,7 +377,7 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
   React.useEffect(() => {
     if (initialFile) {
       const snapshot = parseFileSnapshot(initialFile.content, initialFile.sha)
-      fileCacheRef.current.set(initialFile.path, snapshot)
+      writeCachedSnapshot(initialFile.path, snapshot)
       applySnapshot(initialFile.path, snapshot)
       syncBrowserUrl(initialFile.path, "replace")
       return
@@ -395,6 +434,7 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
     clearSelection,
     openFile,
     syncBrowserUrl,
+    writeCachedSnapshot,
   ])
 
   React.useEffect(() => {
@@ -456,21 +496,21 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
 
   const discardFileFromClientState = React.useCallback(
     (path: string) => {
-      fileCacheRef.current.delete(path)
+      deleteCachedSnapshot(path)
       setRecentFiles((prev) => prev.filter((item) => item !== path))
       closeFile(path)
     },
-    [closeFile],
+    [closeFile, deleteCachedSnapshot],
   )
 
   const reloadFileFromRemote = React.useCallback(
     (path: string) => {
-      fileCacheRef.current.delete(path)
+      deleteCachedSnapshot(path)
       if (selectedFile?.path === path) {
         void openFile(path, "replace")
       }
     },
-    [selectedFile?.path, openFile],
+    [selectedFile?.path, openFile, deleteCachedSnapshot],
   )
 
   const hydrateFromDocument = React.useCallback(
@@ -496,10 +536,11 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
           setFrontmatter(nextFrontmatter)
         }
 
-        fileCacheRef.current.set(activePath, {
+        writeCachedSnapshot(activePath, {
           content: nextContent,
           frontmatter: nextFrontmatter,
           sha: currentSha,
+          isDirty: false,
         })
 
         setIsDirty(false)
@@ -507,7 +548,7 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
         console.error("Error hydrating from Convex document draft:", error)
       }
     },
-    [selectedFile?.path],
+    [selectedFile?.path, writeCachedSnapshot],
   )
 
   const handleContentChange = React.useCallback(
@@ -515,14 +556,15 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
       setContent(newContent)
       setIsDirty(true)
       if (selectedFile?.path) {
-        fileCacheRef.current.set(selectedFile.path, {
+        writeCachedSnapshot(selectedFile.path, {
           content: newContent,
           frontmatter,
           sha,
+          isDirty: true,
         })
       }
     },
-    [selectedFile?.path, frontmatter, sha],
+    [selectedFile?.path, frontmatter, sha, writeCachedSnapshot],
   )
 
   const handleFrontmatterChangeKey = React.useCallback(
@@ -530,17 +572,18 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
       setFrontmatter((prev) => {
         const next = { ...prev, [key]: value }
         if (selectedFile?.path) {
-          fileCacheRef.current.set(selectedFile.path, {
+          writeCachedSnapshot(selectedFile.path, {
             content,
             frontmatter: next,
             sha,
+            isDirty: true,
           })
         }
         return next
       })
       setIsDirty(true)
     },
-    [selectedFile?.path, content, sha],
+    [selectedFile?.path, content, sha, writeCachedSnapshot],
   )
 
   const handleFrontmatterChangeAll = React.useCallback(
@@ -548,14 +591,15 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
       setFrontmatter(nextFrontmatter)
       setIsDirty(true)
       if (selectedFile?.path) {
-        fileCacheRef.current.set(selectedFile.path, {
+        writeCachedSnapshot(selectedFile.path, {
           content,
           frontmatter: nextFrontmatter,
           sha,
+          isDirty: true,
         })
       }
     },
-    [selectedFile?.path, content, sha],
+    [selectedFile?.path, content, sha, writeCachedSnapshot],
   )
 
   const navigateToFile = React.useCallback(

@@ -54,12 +54,12 @@ export function DeleteProjectDialog({ project, open, onOpenChange, onSuccess }: 
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Delete &ldquo;{project?.name}&rdquo;?</AlertDialogTitle>
+          <AlertDialogTitle className="rp-display">Delete &ldquo;{project?.name}&rdquo;?</AlertDialogTitle>
           <AlertDialogDescription>
             This will permanently delete{" "}
             <button
               type="button"
-              className="inline font-bold cursor-pointer hover:underline bg-transparent border-0 p-0 text-inherit"
+              className="inline font-medium cursor-pointer hover:underline bg-transparent border-0 p-0 text-inherit"
               title="Click to fill"
               onClick={() => setConfirmName(project?.name ?? "")}
             >
@@ -73,7 +73,7 @@ export function DeleteProjectDialog({ project, open, onOpenChange, onSuccess }: 
             Type{" "}
             <button
               type="button"
-              className="inline font-mono font-bold text-foreground cursor-pointer hover:underline bg-transparent border-0 p-0 text-sm"
+              className="inline font-mono font-medium text-foreground cursor-pointer hover:underline bg-transparent border-0 p-0 text-sm"
               title="Click to fill"
               onClick={() => setConfirmName(project?.name ?? "")}
             >

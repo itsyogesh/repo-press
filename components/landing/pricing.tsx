@@ -1,5 +1,6 @@
-import { Check, Sparkles } from "lucide-react"
+import { Check } from "lucide-react"
 import Link from "next/link"
+import { Button } from "@/components/ui/button"
 
 const features = [
   "Unlimited repositories",
@@ -9,42 +10,37 @@ const features = [
   "Full version history",
   "Webhook integrations",
   "Multi-project workspace",
-  "GitHub login - no extra accounts",
+  "GitHub login — no extra accounts",
 ]
 
 export default function Pricing() {
   return (
-    <section id="pricing" className="container mx-auto px-4 py-24">
-      <div className="mx-auto flex max-w-[58rem] flex-col items-center space-y-4 text-center mb-16">
-        <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-4 py-1.5 text-sm font-medium text-foreground">
-          <Sparkles className="h-4 w-4 text-primary" />
-          Early Access
+    <section id="pricing" className="border-t border-border px-6 py-24">
+      <div className="mx-auto max-w-[1120px]">
+        <div className="mb-16 text-center">
+          <h2 className="rp-display text-[clamp(2rem,4.5vw,3rem)]">Free to use. Open source forever.</h2>
+          <p className="mx-auto mt-5 max-w-[48ch] text-balance text-lg text-muted-foreground">
+            RepoPress is free during early access and will remain open source under the MIT license. No credit card, no
+            trial expiration.
+          </p>
         </div>
-        <h2 className="text-3xl font-semibold tracking-tight md:text-4xl">Free to use. Open source forever.</h2>
-        <p className="max-w-[85%] text-muted-foreground sm:text-lg text-balance">
-          RepoPress is free during early access and will remain open source under the MIT license. No credit card, no
-          trial expiration.
-        </p>
-      </div>
 
-      <div className="mx-auto max-w-md">
-        <div className="rounded-2xl border border-border bg-card p-8 text-center">
-          <div className="text-5xl font-semibold tracking-tight mb-2">$0</div>
-          <p className="text-muted-foreground mb-8">Free forever for open source</p>
-          <ul className="space-y-3 text-left mb-8">
-            {features.map((feature) => (
-              <li key={feature} className="flex items-center gap-3 text-sm">
-                <Check className="h-4 w-4 text-primary shrink-0" />
-                <span className="text-foreground">{feature}</span>
-              </li>
-            ))}
-          </ul>
-          <Link
-            href="/dashboard"
-            className="inline-flex items-center justify-center rounded-full bg-primary px-8 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors w-full"
-          >
-            Try the visual editor
-          </Link>
+        <div className="mx-auto max-w-sm">
+          <div className="rounded-lg border border-border bg-background p-8">
+            <div className="mb-1 font-mono text-4xl font-medium tabular-nums">$0</div>
+            <p className="mb-8 text-sm text-muted-foreground">Free forever for open source</p>
+            <ul className="mb-8 space-y-3">
+              {features.map((feature) => (
+                <li key={feature} className="flex items-center gap-3 text-sm">
+                  <Check className="h-4 w-4 shrink-0 text-primary" />
+                  <span className="text-foreground">{feature}</span>
+                </li>
+              ))}
+            </ul>
+            <Button size="lg" className="w-full" asChild>
+              <Link href="/dashboard">Try the visual editor</Link>
+            </Button>
+          </div>
         </div>
       </div>
     </section>

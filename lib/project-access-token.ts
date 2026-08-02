@@ -1,4 +1,4 @@
-import type { Role } from "@/lib/roles"
+import type { Role } from "./roles"
 
 const encoder = new TextEncoder()
 
@@ -17,10 +17,25 @@ type GitHubAccountLookupTokenPayload = {
   exp: number
 }
 
+export type GitHubIdentityClaims = {
+  githubAccountId: string
+  githubUsername: string
+  name: string | null
+  image: string | null
+}
+
+type GitHubIdentityBootstrapTokenPayload = GitHubIdentityClaims & {
+  type: "github-identity-bootstrap"
+  exp: number
+}
+
 function getSecret() {
-  const secret = process.env.BETTER_AUTH_SECRET
+  const secret = process.env.REPOPRESS_CAPABILITY_SECRET
   if (!secret) {
-    throw new Error("BETTER_AUTH_SECRET is required for project access tokens")
+    throw new Error("REPOPRESS_CAPABILITY_SECRET is required for RepoPress capability tokens")
+  }
+  if (secret.length < 32 || /\s/.test(secret)) {
+    throw new Error("REPOPRESS_CAPABILITY_SECRET must contain at least 32 non-whitespace characters")
   }
   return secret
 }
@@ -103,7 +118,7 @@ export async function verifyProjectAccessToken(token: string | undefined | null)
 
 /**
  * Lightweight server-to-Convex query token. Proves the caller is the Next.js
- * server (has access to BETTER_AUTH_SECRET) without requiring a project or user.
+ * server (has access to REPOPRESS_CAPABILITY_SECRET) without requiring a project or user.
  * Used by route handlers and server components that need to read project data
  * before minting a full projectAccessToken.
  */
@@ -173,4 +188,74 @@ export async function verifyGitHubAccountLookupToken(token: string | undefined |
     return false
   }
   return payload.githubAccountId === githubAccountId && payload.exp > Date.now()
+}
+
+function isGitHubIdentityClaims(value: unknown): value is GitHubIdentityClaims {
+  if (!value || typeof value !== "object") return false
+  const claims = value as Partial<GitHubIdentityClaims>
+  return (
+    typeof claims.githubAccountId === "string" &&
+    /^\d{1,32}$/.test(claims.githubAccountId) &&
+    typeof claims.githubUsername === "string" &&
+    /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(claims.githubUsername) &&
+    (claims.name === null ||
+      (typeof claims.name === "string" && claims.name.length > 0 && claims.name.length <= 256)) &&
+    (claims.image === null ||
+      (typeof claims.image === "string" && claims.image.length <= 2048 && claims.image.startsWith("https://")))
+  )
+}
+
+/**
+ * Proves that the Next.js server resolved these identity claims through an
+ * authenticated GitHub API call. The GitHub access token is intentionally not
+ * included in the payload and is never sent to Convex by this flow.
+ */
+export async function mintGitHubIdentityBootstrapToken(identity: GitHubIdentityClaims, ttlSeconds = 60) {
+  if (!isGitHubIdentityClaims(identity)) {
+    throw new Error("Invalid GitHub identity claims")
+  }
+  const body: GitHubIdentityBootstrapTokenPayload = {
+    ...identity,
+    type: "github-identity-bootstrap",
+    exp: Date.now() + ttlSeconds * 1000,
+  }
+  const serialized = JSON.stringify(body)
+  const signature = await signValue(serialized)
+  return `${encodeURIComponent(serialized)}.${signature}`
+}
+
+export async function verifyGitHubIdentityBootstrapToken(
+  token: string | undefined | null,
+): Promise<GitHubIdentityClaims | null> {
+  if (!token) return null
+
+  const separatorIndex = token.lastIndexOf(".")
+  if (separatorIndex <= 0) return null
+
+  let serialized: string
+  try {
+    serialized = decodeURIComponent(token.slice(0, separatorIndex))
+  } catch {
+    return null
+  }
+  const signature = token.slice(separatorIndex + 1)
+  if (!(await verifyValue(serialized, signature))) return null
+
+  let payload: GitHubIdentityBootstrapTokenPayload
+  try {
+    payload = JSON.parse(serialized) as GitHubIdentityBootstrapTokenPayload
+  } catch {
+    return null
+  }
+  if (payload.type !== "github-identity-bootstrap" || !Number.isFinite(payload.exp) || payload.exp <= Date.now()) {
+    return null
+  }
+  if (!isGitHubIdentityClaims(payload)) return null
+
+  return {
+    githubAccountId: payload.githubAccountId,
+    githubUsername: payload.githubUsername,
+    name: payload.name,
+    image: payload.image,
+  }
 }

@@ -19,22 +19,31 @@ export async function syncProjectsServerSide(
   {
     runOrphanDetection = true,
     restoredConfigProjectIds,
-  }: { runOrphanDetection?: boolean; restoredConfigProjectIds?: string[] } = {},
+    configRef,
+  }: { runOrphanDetection?: boolean; restoredConfigProjectIds?: string[]; configRef?: string } = {},
 ): Promise<{ synced: string[]; created: string[]; unchanged: string[]; orphaned?: string[] } | null> {
-  const { config } = await fetchRepoConfig(token, owner, repo, branch)
+  const { config } = await fetchRepoConfig(token, owner, repo, configRef ?? branch)
   if (!config) return null
 
-  const projectsToSync = config.projects.map((p) => ({
-    configProjectId: p.id,
-    name: p.name,
-    contentRoot: p.contentRoot,
-    framework: p.framework === "auto" ? "detected" : p.framework,
-    contentType: p.contentType as "blog" | "docs" | "pages" | "changelog" | "custom",
-    branch: p.branch || config.defaults?.branch || branch,
-    previewEntry: p.preview?.entry || config.defaults?.preview?.entry,
-    enabledPlugins: p.preview?.plugins || config.defaults?.preview?.plugins,
-    components: p.components,
-  }))
+  const projectsToSync = config.projects.map((p) => {
+    // These fields are optional compatibility inputs. Persisting their
+    // declarative values lets older configs remain readable, but does not make
+    // an adapter or component map trusted native/host execution authority.
+    const previewEntry = p.preview?.entry ?? config.defaults?.preview?.entry
+    const enabledPlugins = p.preview?.plugins ?? config.defaults?.preview?.plugins
+
+    return {
+      configProjectId: p.id,
+      name: p.name,
+      contentRoot: p.contentRoot,
+      framework: p.framework === "auto" ? "detected" : p.framework,
+      contentType: p.contentType as "blog" | "docs" | "pages" | "changelog" | "custom",
+      branch: p.branch || config.defaults?.branch || branch,
+      previewEntry,
+      enabledPlugins,
+      components: p.components,
+    }
+  })
 
   const { convex, serverQueryToken } = await createServerQueryContext()
 

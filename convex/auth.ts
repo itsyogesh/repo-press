@@ -2,10 +2,10 @@ import { createClient, type GenericCtx } from "@convex-dev/better-auth"
 import { convex } from "@convex-dev/better-auth/plugins"
 import { betterAuth } from "better-auth/minimal"
 import { v } from "convex/values"
-import { verifyGitHubAccountLookupToken } from "../lib/project-access-token"
+import { verifyGitHubAccountLookupToken, verifyGitHubIdentityBootstrapToken } from "../lib/project-access-token"
 import { components } from "./_generated/api"
 import type { DataModel } from "./_generated/dataModel"
-import { query } from "./_generated/server"
+import { mutation, query } from "./_generated/server"
 import authConfig from "./auth.config"
 
 // SITE_URL must be the app URL (not Convex site URL) so that OAuth
@@ -78,5 +78,61 @@ export const resolveUserIdByGitHubAccount = query({
     })) as { userId?: string | null } | null
 
     return account?.userId ?? null
+  },
+})
+
+/**
+ * Creates the Better Auth identity needed by PAT-only users on a fresh
+ * deployment. The signed token proves that the Next.js server verified the
+ * GitHub profile. No GitHub access token crosses this boundary or is persisted.
+ */
+export const resolveOrCreatePatUser = mutation({
+  args: {
+    bootstrapToken: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const identity = await verifyGitHubIdentityBootstrapToken(args.bootstrapToken)
+    if (!identity) return null
+
+    const existingAccount = (await ctx.runQuery(components.betterAuth.adapter.findOne, {
+      model: "account",
+      where: [
+        { field: "providerId", value: "github" },
+        { field: "accountId", value: identity.githubAccountId },
+      ],
+    })) as { userId?: string | null } | null
+    if (existingAccount?.userId) return existingAccount.userId
+
+    const now = Date.now()
+    const user = (await ctx.runMutation(components.betterAuth.adapter.create, {
+      input: {
+        model: "user",
+        data: {
+          name: identity.name ?? identity.githubUsername,
+          email: `github-${identity.githubAccountId}@pat.repopress.invalid`,
+          emailVerified: false,
+          image: identity.image,
+          username: identity.githubUsername,
+          displayUsername: identity.githubUsername,
+          createdAt: now,
+          updatedAt: now,
+        },
+      },
+    })) as { _id: string }
+
+    await ctx.runMutation(components.betterAuth.adapter.create, {
+      input: {
+        model: "account",
+        data: {
+          accountId: identity.githubAccountId,
+          providerId: "github",
+          userId: user._id,
+          createdAt: now,
+          updatedAt: now,
+        },
+      },
+    })
+
+    return user._id
   },
 })

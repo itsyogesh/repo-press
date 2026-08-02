@@ -116,8 +116,9 @@ export function HistoryClient({ owner, repo, branch: _branch, projectId, project
           </div>
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-semibold">Document History</h1>
-              <p className="text-muted-foreground">View version history and compare changes</p>
+              <p className="font-mono text-[0.72rem] uppercase tracking-[0.24em] text-muted-foreground">Repository</p>
+              <h1 className="rp-display mt-1 text-2xl">Document History</h1>
+              <p className="mt-0.5 text-sm text-muted-foreground">View version history and compare changes</p>
             </div>
             {selectedDoc && documentHistory && documentHistory.length > 0 && (
               <div className="flex gap-2">
@@ -147,7 +148,7 @@ export function HistoryClient({ owner, repo, branch: _branch, projectId, project
       <div className="container mx-auto px-4 py-6">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="border rounded-lg p-4">
-            <h2 className="text-lg font-medium mb-4 flex items-center gap-2">
+            <h2 className="rp-display text-lg mb-4 flex items-center gap-2">
               <FileText className="h-5 w-5" />
               Documents
             </h2>
@@ -207,7 +208,7 @@ export function HistoryClient({ owner, repo, branch: _branch, projectId, project
           <div className="lg:col-span-2 border rounded-lg p-4">
             {viewMode === "list" ? (
               <>
-                <h2 className="text-lg font-medium mb-4 flex items-center gap-2">
+                <h2 className="rp-display text-lg mb-4 flex items-center gap-2">
                   <Clock className="h-5 w-5" />
                   Version History
                   {documentHistory && (
@@ -307,7 +308,7 @@ export function HistoryClient({ owner, repo, branch: _branch, projectId, project
               </>
             ) : (
               <>
-                <h2 className="text-lg font-medium mb-4 flex items-center gap-2">
+                <h2 className="rp-display text-lg mb-4 flex items-center gap-2">
                   <GitCommit className="h-5 w-5" />
                   Compare Versions
                 </h2>
@@ -344,7 +345,7 @@ export function HistoryClient({ owner, repo, branch: _branch, projectId, project
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Restore this version?</AlertDialogTitle>
+            <AlertDialogTitle className="rp-display">Restore this version?</AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-2">
                 <p>This will overwrite the current document content with the selected version.</p>

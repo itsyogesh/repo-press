@@ -6,6 +6,8 @@ import { toast } from "sonner"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
 import type { FileTreeNode } from "@/lib/github"
+import { CONTENT_PATH_REPRESENTATION } from "@/lib/preview/path-policy"
+import { treePathToContentPath } from "@/lib/studio/path-adapters"
 import { useStudio } from "../studio-context"
 
 interface UseStudioSaveProps {
@@ -29,7 +31,7 @@ export function useStudioSave({
   frontmatter,
   sha,
 }: UseStudioSaveProps) {
-  const { projectId } = useStudio()
+  const { projectId, contentRoot } = useStudio()
   const [isSaving, setIsSaving] = React.useState(false)
 
   const getOrCreateDocument = useMutation(api.documents.getOrCreate)
@@ -55,7 +57,8 @@ export function useStudioSave({
     try {
       const docId = await getOrCreateDocument({
         projectId: projectId as Id<"projects">,
-        filePath: selectedFile.path,
+        filePath: treePathToContentPath(contentRoot, selectedFile.path),
+        pathRepresentation: CONTENT_PATH_REPRESENTATION,
         title: frontmatterRef.current.title || selectedFile.name.replace(/\.(mdx?|markdown)$/i, ""),
         body: contentRef.current,
         frontmatter: frontmatterRef.current,
@@ -68,7 +71,7 @@ export function useStudioSave({
       console.error("Error creating document record:", error)
       return null
     }
-  }, [projectId, selectedFile, userId, projectAccessToken, documentId, getOrCreateDocument])
+  }, [projectId, selectedFile, userId, projectAccessToken, documentId, getOrCreateDocument, contentRoot])
 
   const saveDraft = React.useCallback(async () => {
     if (!selectedFile) {

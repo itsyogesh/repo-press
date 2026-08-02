@@ -1,199 +1,157 @@
 import { v } from "convex/values"
 import { verifyServerQueryToken } from "../lib/project-access-token"
+import type { Doc, Id } from "./_generated/dataModel"
+import type { MutationCtx } from "./_generated/server"
 import { mutation } from "./_generated/server"
+import { invalidateClosedLaneSync } from "./lib/laneInvalidation"
+import { completeCloseVerificationIfIdle } from "./lib/publishAttemptCleanup"
+import { recordMergedLaneAuthority } from "./lib/publishBranchMerge"
 
-/**
- * Handle a GitHub PR merge event.
- * Looks up the publishBranch by PR number, marks it as merged,
- * clears committed explorer ops, and publishes all affected documents.
- */
+const identityValidators = {
+  prNumber: v.number(),
+  repoOwner: v.string(),
+  repoName: v.string(),
+  baseRepoFullName: v.string(),
+  baseBranch: v.string(),
+  headRepoFullName: v.string(),
+  headBranch: v.string(),
+}
+
+type PullRequestIdentity = {
+  prNumber: number
+  repoOwner: string
+  repoName: string
+  baseRepoFullName: string
+  baseBranch: string
+  headRepoFullName: string
+  headBranch: string
+}
+
+async function assertLaneIdentity(
+  ctx: Pick<MutationCtx, "db">,
+  lane: Doc<"publishBranches">,
+  identity: PullRequestIdentity,
+) {
+  const project = await ctx.db.get(lane.projectId)
+  const projectFullName = project && `${project.repoOwner}/${project.repoName}`.toLowerCase()
+  if (
+    !project ||
+    project.repoOwner.toLowerCase() !== identity.repoOwner.toLowerCase() ||
+    project.repoName.toLowerCase() !== identity.repoName.toLowerCase() ||
+    identity.baseRepoFullName.toLowerCase() !== projectFullName ||
+    identity.headRepoFullName.toLowerCase() !== projectFullName ||
+    lane.prNumber !== identity.prNumber ||
+    lane.baseBranch !== identity.baseBranch ||
+    lane.branchName !== identity.headBranch
+  ) {
+    throw new Error("Pull request identity does not match the RepoPress publish lane")
+  }
+  return project
+}
+
+async function findWebhookLane(ctx: Pick<MutationCtx, "db">, identity: PullRequestIdentity) {
+  const lane = await ctx.db
+    .query("publishBranches")
+    .withIndex("by_repo_key_pr_head_base", (q) =>
+      q
+        .eq("repoOwnerKey", identity.repoOwner.toLowerCase())
+        .eq("repoNameKey", identity.repoName.toLowerCase())
+        .eq("prNumber", identity.prNumber)
+        .eq("branchName", identity.headBranch)
+        .eq("baseBranch", identity.baseBranch),
+    )
+    .first()
+  if (!lane) return null
+  await assertLaneIdentity(ctx, lane, identity)
+  return lane
+}
+
+async function closeLane(ctx: MutationCtx, lane: Doc<"publishBranches">, identity: PullRequestIdentity) {
+  const project = await assertLaneIdentity(ctx, lane, identity)
+  const closedLane = {
+    ...lane,
+    repoOwner: project.repoOwner,
+    repoName: project.repoName,
+    repoOwnerKey: project.repoOwner.toLowerCase(),
+    repoNameKey: project.repoName.toLowerCase(),
+    status: "closed" as const,
+    laneInvalidationPending: true as const,
+    laneCleanupAction: "restore_legacy" as const,
+  }
+  await ctx.db.patch(lane._id, {
+    status: "closed",
+    repoOwner: project.repoOwner,
+    repoName: project.repoName,
+    repoOwnerKey: project.repoOwner.toLowerCase(),
+    repoNameKey: project.repoName.toLowerCase(),
+    laneInvalidationPending: true,
+    laneCleanupAction: "restore_legacy",
+    closeVerificationState: "pending" as const,
+    updatedAt: Date.now(),
+  })
+  const cleanup = await invalidateClosedLaneSync(ctx, closedLane)
+  const complete = await completeCloseVerificationIfIdle(ctx, lane._id)
+  return { cleanup, verificationPending: !complete }
+}
+
+/** Signed GitHub webhook merge path, scoped by complete PR identity. */
 export const handlePRMerged = mutation({
   args: {
-    prNumber: v.number(),
+    ...identityValidators,
     mergeCommitSha: v.string(),
     serverQueryToken: v.string(),
   },
   handler: async (ctx, args) => {
-    if (!(await verifyServerQueryToken(args.serverQueryToken))) {
-      throw new Error("Unauthorized")
-    }
+    if (!(await verifyServerQueryToken(args.serverQueryToken))) throw new Error("Unauthorized")
+    const lane = await findWebhookLane(ctx, args)
+    if (!lane) return
+    await recordMergedLaneAuthority(ctx, lane, args)
+  },
+})
 
-    // 1. Look up publishBranch by PR number
-    const publishBranch = await ctx.db
-      .query("publishBranches")
-      .withIndex("by_prNumber", (q) => q.eq("prNumber", args.prNumber))
-      .first()
-
-    if (!publishBranch) {
-      // Not a RepoPress PR -- ignore silently
-      return
-    }
-
-    const projectId = publishBranch.projectId
-    const committedPaths = publishBranch.committedFilePaths
-
-    // 2. Mark branch as merged
-    await ctx.db.patch(publishBranch._id, {
-      status: "merged",
-      updatedAt: Date.now(),
-    })
-
-    // 3. Clear only committed explorer ops tied to this publish branch
-    const committedOps = await ctx.db
-      .query("explorerOps")
-      .withIndex("by_projectId_status", (q) => q.eq("projectId", projectId).eq("status", "committed"))
-      .collect()
-
-    for (const op of committedOps) {
-      if (op.status !== "committed" || op.publishBranchId !== publishBranch._id) {
-        continue
-      }
-
-      await ctx.db.delete(op._id)
-    }
-
-    const committedMediaOps = await ctx.db
-      .query("mediaOps")
-      .withIndex("by_projectId_status", (q) => q.eq("projectId", projectId).eq("status", "committed"))
-      .collect()
-
-    for (const op of committedMediaOps) {
-      if (op.status !== "committed" || op.publishBranchId !== publishBranch._id) {
-        continue
-      }
-
-      if (op.convexStorageId) {
-        try {
-          await ctx.storage.delete(op.convexStorageId)
-        } catch {
-          // Already gone or unavailable; don't block publish finalization.
-        }
-      }
-
-      await ctx.db.delete(op._id)
-    }
-
-    // 4. If no committed file paths were recorded, skip publishing (safe default)
-    if (!committedPaths || committedPaths.length === 0) {
-      return
-    }
-
-    // Build a set of committed paths for fast lookup.
-    // committedFilePaths are full repo paths (with contentRoot prefix),
-    // but document filePaths are relative to contentRoot. Fetch the project
-    // to strip the prefix when matching.
-    const project = await ctx.db.get(projectId)
-    const contentRoot = project?.contentRoot ?? ""
-    const committedRelativePaths = new Set(
-      committedPaths.map((p) => {
-        if (contentRoot && p.startsWith(`${contentRoot}/`)) {
-          return p.slice(contentRoot.length + 1)
-        }
-        if (contentRoot && p.startsWith(contentRoot)) {
-          return p.slice(contentRoot.length)
-        }
-        return p
-      }),
-    )
-
-    // 5. Publish only documents whose filePaths are in the committed set
-    const drafts = await ctx.db
-      .query("documents")
-      .withIndex("by_projectId_status", (q) => q.eq("projectId", projectId).eq("status", "draft"))
-      .collect()
-
-    const approved = await ctx.db
-      .query("documents")
-      .withIndex("by_projectId_status", (q) => q.eq("projectId", projectId).eq("status", "approved"))
-      .collect()
-
-    const docsToPublish = [...drafts, ...approved].filter(
-      (d) => d.body != null && committedRelativePaths.has(d.filePath),
-    )
-
-    // Also handle docs in non-publishable states (in_review, scheduled)
-    const inReview = await ctx.db
-      .query("documents")
-      .withIndex("by_projectId_status", (q) => q.eq("projectId", projectId).eq("status", "in_review"))
-      .collect()
-
-    const scheduled = await ctx.db
-      .query("documents")
-      .withIndex("by_projectId_status", (q) => q.eq("projectId", projectId).eq("status", "scheduled"))
-      .collect()
-
-    const otherDocs = [...inReview, ...scheduled].filter(
-      (d) => d.body != null && committedRelativePaths.has(d.filePath),
-    )
-
-    const now = Date.now()
-
-    for (const doc of docsToPublish) {
-      try {
-        if (doc.status === "published") continue
-
-        // Do NOT set githubSha here - mergeCommitSha is a git commit SHA,
-        // not a blob SHA. The correct blob SHAs were already stored by the
-        // publish-ops route before the PR was created. Storing a commit SHA
-        // would break conflict detection (which compares blob SHAs).
-        await ctx.db.patch(doc._id, {
-          status: "published",
-          lastSyncedAt: now,
-          publishedAt: now,
-          updatedAt: now,
-        })
-      } catch (error) {
-        console.error(`Failed to publish document ${doc._id}:`, error)
-      }
-    }
-
-    for (const doc of otherDocs) {
-      try {
-        if (doc.status === "published") continue
-
-        await ctx.db.patch(doc._id, {
-          status: "draft",
-          updatedAt: now,
-        })
-
-        await ctx.db.patch(doc._id, {
-          status: "published",
-          lastSyncedAt: now,
-          publishedAt: now,
-          updatedAt: now,
-        })
-      } catch (error) {
-        console.error(`Failed to publish document ${doc._id}:`, error)
-      }
-    }
+/** Signed GitHub webhook unmerged-close path, scoped by complete PR identity. */
+export const handlePRClosed = mutation({
+  args: { ...identityValidators, serverQueryToken: v.string() },
+  handler: async (ctx, args) => {
+    if (!(await verifyServerQueryToken(args.serverQueryToken))) throw new Error("Unauthorized")
+    const lane = await findWebhookLane(ctx, args)
+    if (!lane) return
+    await closeLane(ctx, lane, args)
   },
 })
 
 /**
- * Handle a GitHub PR close event (without merge).
- * Marks the publish branch as closed. Explorer and media ops remain pending
- * so the user can re-publish later.
+ * Authenticated status-sync command. The Next.js route reads GitHub first;
+ * this server-token mutation binds that proof to one exact project lane.
  */
-export const handlePRClosed = mutation({
+export const recordVerifiedPullRequestState = mutation({
   args: {
-    prNumber: v.number(),
+    laneId: v.id("publishBranches"),
+    projectId: v.id("projects"),
+    ...identityValidators,
+    state: v.union(v.literal("open"), v.literal("closed")),
+    merged: v.boolean(),
+    mergeCommitSha: v.optional(v.string()),
     serverQueryToken: v.string(),
   },
   handler: async (ctx, args) => {
-    if (!(await verifyServerQueryToken(args.serverQueryToken))) {
-      throw new Error("Unauthorized")
-    }
-
-    const publishBranch = await ctx.db
-      .query("publishBranches")
-      .withIndex("by_prNumber", (q) => q.eq("prNumber", args.prNumber))
-      .first()
-
-    if (!publishBranch) return
-
-    await ctx.db.patch(publishBranch._id, {
-      status: "closed",
-      updatedAt: Date.now(),
+    if (!(await verifyServerQueryToken(args.serverQueryToken))) throw new Error("Unauthorized")
+    const lane = await ctx.db.get(args.laneId as Id<"publishBranches">)
+    if (!lane || lane.projectId !== args.projectId) throw new Error("Publish lane does not belong to the project")
+    const project = await assertLaneIdentity(ctx, lane, args)
+    await ctx.db.patch(lane._id, {
+      repoOwner: project.repoOwner,
+      repoName: project.repoName,
+      repoOwnerKey: project.repoOwner.toLowerCase(),
+      repoNameKey: project.repoName.toLowerCase(),
+      lastStatusCheckedAt: Date.now(),
     })
+    if (args.state === "open") return { state: "open" as const }
+    if (args.merged) {
+      if (!args.mergeCommitSha) throw new Error("Merged pull request is missing its commit authority")
+      return await recordMergedLaneAuthority(ctx, lane, { ...args, mergeCommitSha: args.mergeCommitSha })
+    }
+    const closed = await closeLane(ctx, lane, args)
+    return { state: "closed" as const, verificationPending: closed.verificationPending }
   },
 })

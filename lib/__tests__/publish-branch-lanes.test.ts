@@ -160,6 +160,8 @@ describe("Publish branch lanes", () => {
       "publishBranches",
       expect.objectContaining({
         projectId: "project_1",
+        repoOwner: "acme",
+        repoName: "docs",
         branchName: "repopress/main/5678",
         status: "active",
       }),
@@ -173,7 +175,7 @@ describe("Publish branch lanes", () => {
         .fn()
         .mockReturnValueOnce({
           withIndex: () => ({
-            collect: vi.fn().mockResolvedValue([
+            take: vi.fn().mockResolvedValue([
               {
                 _id: "publish_branch_current",
                 projectId: "project_1",
@@ -184,7 +186,7 @@ describe("Publish branch lanes", () => {
         })
         .mockReturnValueOnce({
           withIndex: () => ({
-            collect: vi.fn().mockResolvedValue([
+            take: vi.fn().mockResolvedValue([
               {
                 _id: "publish_branch_inactive",
                 projectId: "project_1",
@@ -212,7 +214,7 @@ describe("Publish branch lanes", () => {
       get: vi.fn().mockResolvedValue(createProject()),
       query: vi.fn().mockReturnValue({
         withIndex: () => ({
-          collect: vi.fn().mockImplementation(() => {
+          take: vi.fn().mockImplementation(() => {
             callIndex++
             if (callIndex === 1) {
               return Promise.resolve([{ _id: "pb_active", projectId: "project_1", branchName: "repopress/hello" }])
@@ -236,7 +238,7 @@ describe("Publish branch lanes", () => {
       get: vi.fn().mockResolvedValue(createProject()),
       query: vi.fn().mockReturnValue({
         withIndex: () => ({
-          collect: vi.fn().mockResolvedValue([]),
+          take: vi.fn().mockResolvedValue([]),
         }),
       }),
     })

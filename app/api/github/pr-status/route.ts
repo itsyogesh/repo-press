@@ -33,7 +33,21 @@ export async function GET(request: Request) {
   try {
     const octokit = createGitHubClient(token)
     const { data: pr } = await octokit.rest.pulls.get({ owner, repo, pull_number: prNumber })
-    return NextResponse.json({ state: pr.state, merged: pr.merged })
+    if (pr.merged && !/^[0-9a-f]{40}$/.test(pr.merge_commit_sha ?? "")) {
+      return NextResponse.json(
+        { error: "GitHub returned a merged PR without a valid merge commit authority" },
+        { status: 502 },
+      )
+    }
+    return NextResponse.json({
+      state: pr.state,
+      merged: pr.merged,
+      mergeCommitSha: pr.merge_commit_sha,
+      headRef: pr.head?.ref,
+      headRepoFullName: pr.head?.repo?.full_name ?? null,
+      baseRef: pr.base?.ref,
+      baseRepoFullName: pr.base?.repo?.full_name ?? null,
+    })
   } catch (error: unknown) {
     const status = (error as any)?.status
     if (status === 404) {

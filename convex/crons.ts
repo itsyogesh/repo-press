@@ -9,4 +9,8 @@ crons.interval("cleanup expired repo access cache", { minutes: 30 }, internal.re
 // Clean up stale Convex storage files for abandoned pending media ops (older than 7 days)
 crons.interval("cleanup stale media uploads", { hours: 24 }, internal.mediaOps.cleanupStaleUploads)
 
+// Re-dispatch bounded attempt cleanups whose scheduled continuation was lost
+// or failed. The indexed retry cursor rotates permanently failing jobs.
+crons.interval("resume pending publish cleanups", { minutes: 5 }, internal.publishAttemptCleanups.resumePendingCleanups)
+
 export default crons

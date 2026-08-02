@@ -22,21 +22,21 @@ export function ViewportToggle({ value, onChange }: ViewportToggleProps) {
     >
       <ToggleGroupItem
         value="desktop"
-        className="h-6 w-7 p-0 data-[state=on]:bg-studio-canvas data-[state=on]:shadow-sm"
+        className="h-6 w-7 p-0 data-[state=on]:bg-studio-canvas data-[state=on]:border data-[state=on]:border-studio-border/80"
         title="Desktop"
       >
         <Monitor className="h-3.5 w-3.5" />
       </ToggleGroupItem>
       <ToggleGroupItem
         value="tablet"
-        className="h-6 w-7 p-0 data-[state=on]:bg-studio-canvas data-[state=on]:shadow-sm"
+        className="h-6 w-7 p-0 data-[state=on]:bg-studio-canvas data-[state=on]:border data-[state=on]:border-studio-border/80"
         title="Tablet (768px)"
       >
         <Tablet className="h-3.5 w-3.5" />
       </ToggleGroupItem>
       <ToggleGroupItem
         value="mobile"
-        className="h-6 w-7 p-0 data-[state=on]:bg-studio-canvas data-[state=on]:shadow-sm"
+        className="h-6 w-7 p-0 data-[state=on]:bg-studio-canvas data-[state=on]:border data-[state=on]:border-studio-border/80"
         title="Mobile (375px)"
       >
         <Smartphone className="h-3.5 w-3.5" />

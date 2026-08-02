@@ -2,12 +2,12 @@
 
 import * as React from "react"
 import type { FileTreeNode } from "@/lib/github"
-import type { RepoPressPreviewAdapter } from "@/lib/repopress/evaluate-adapter"
 
 interface StudioContextValue {
   owner: string
   repo: string
   branch: string
+  baseCommitSha: string
   projectId?: string
   projectAccessToken?: string
   userId?: string
@@ -15,14 +15,6 @@ interface StudioContextValue {
   contentRoot: string
   tree: FileTreeNode[]
   role: "owner" | "editor" | "viewer"
-  // Dynamic Adapter state
-  adapter: RepoPressPreviewAdapter | null
-  adapterLoading: boolean
-  adapterError: string | null
-  adapterDiagnostics: string[]
-  components: Record<string, any> | undefined
-  /** Adapter components for the insert picker, filtered to the current contentRoot via componentsByContext. Falls back to standardComponents (universal safe set) when no context split is declared - intentionally excludes adapter-specific docs components from appearing in non-docs insert pickers. */
-  resolvedComponents: Record<string, any> | undefined
 }
 
 const StudioContext = React.createContext<StudioContextValue | null>(null)

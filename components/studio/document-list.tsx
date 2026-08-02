@@ -3,15 +3,16 @@
 import { useQuery } from "convex/react"
 import { FileText, Search } from "lucide-react"
 import * as React from "react"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
+import { StatusBadge } from "@/components/ui/status-badge"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
 import { DOCUMENT_STATUS_CONFIG, type DocumentStatus } from "@/lib/document-status"
+import { resolveStoredRepoPath, type StoredPathRepresentation } from "@/lib/preview/path-policy"
 import { cn } from "@/lib/utils"
 import { useStudio } from "./studio-context"
 
@@ -22,7 +23,7 @@ interface DocumentListProps {
 }
 
 export function DocumentList({ projectId, selectedFilePath, onSelectDocument }: DocumentListProps) {
-  const { projectAccessToken } = useStudio()
+  const { projectAccessToken, contentRoot } = useStudio()
   const user = useQuery(api.auth.getCurrentUser)
   const userId = user?._id as string | undefined
 
@@ -107,7 +108,11 @@ export function DocumentList({ projectId, selectedFilePath, onSelectDocument }: 
             </div>
           ) : (
             displayedDocs.map((doc) => {
-              const statusInfo = DOCUMENT_STATUS_CONFIG[doc.status as DocumentStatus] || DOCUMENT_STATUS_CONFIG.draft
+              const repoPath = resolveStoredRepoPath(
+                contentRoot,
+                doc.filePath,
+                doc.pathRepresentation as StoredPathRepresentation | undefined,
+              )
               return (
                 <Button
                   key={doc._id}
@@ -115,17 +120,15 @@ export function DocumentList({ projectId, selectedFilePath, onSelectDocument }: 
                   size="sm"
                   className={cn(
                     "w-full justify-start gap-2 px-2 h-auto py-2 font-normal",
-                    selectedFilePath === doc.filePath && "bg-accent text-accent-foreground",
+                    selectedFilePath === repoPath && "bg-accent text-accent-foreground",
                   )}
-                  onClick={() => onSelectDocument(doc.filePath)}
+                  onClick={() => onSelectDocument(repoPath)}
                 >
                   <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
                   <div className="flex flex-col items-start gap-0.5 min-w-0">
                     <span className="truncate text-sm w-full text-left">{doc.title}</span>
                     <div className="flex items-center gap-1">
-                      <Badge variant={statusInfo.variant} className="text-[10px] px-1 py-0 h-4">
-                        {statusInfo.label}
-                      </Badge>
+                      <StatusBadge status={doc.status as DocumentStatus} size="sm" dot={false} />
                       <span className="text-[10px] text-muted-foreground truncate">
                         {doc.filePath.split("/").pop()}
                       </span>

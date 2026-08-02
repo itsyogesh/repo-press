@@ -112,6 +112,12 @@ vercel env add NEXT_PUBLIC_CONVEX_URL production
 - `BETTER_AUTH_SECRET`
 - `SITE_URL`
 
+### Missing capability secret
+
+**Symptom:** repository, Studio, media, or publish routes fail with `REPOPRESS_CAPABILITY_SECRET is required`.
+
+**Fix:** configure the same `REPOPRESS_CAPABILITY_SECRET` value in the Convex deployment and the matching Vercel environment, then redeploy Next.js. Do not copy or rotate `BETTER_AUTH_SECRET`.
+
 ---
 
 ## 6. Incident Response Checklist

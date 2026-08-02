@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 export default function HowItWorksPage() {
   return (
     <div>
-      <h1 className="mb-6 text-3xl font-semibold tracking-tight">How It Works</h1>
+      <h1 className="rp-display mb-6 text-3xl md:text-4xl">How It Works</h1>
 
       <p className="mb-4 leading-relaxed text-muted-foreground">
         RepoPress is a visual editor that works directly with your GitHub repository. Instead of copying your content
@@ -18,7 +18,7 @@ export default function HowItWorksPage() {
       </p>
 
       {/* Architecture */}
-      <h2 className="mb-4 mt-12 text-2xl font-semibold">What happens behind the scenes</h2>
+      <h2 className="rp-display text-2xl mb-4 mt-12">What happens behind the scenes</h2>
       <p className="mb-4 leading-relaxed text-muted-foreground">
         Three pieces work together to give you a smooth editing experience:
       </p>
@@ -38,38 +38,38 @@ export default function HowItWorksPage() {
       </ul>
 
       {/* Content Flow */}
-      <h2 className="mb-4 mt-12 text-2xl font-semibold">Content Flow</h2>
+      <h2 className="rp-display text-2xl mb-4 mt-12">Content Flow</h2>
       <p className="mb-4 leading-relaxed text-muted-foreground">
         Content moves through four stages as you work with it in RepoPress:
       </p>
 
-      <h3 className="mb-3 mt-8 text-lg font-semibold">1. Read from Git</h3>
+      <h3 className="rp-display text-lg mb-3 mt-8">1. Read from Git</h3>
       <p className="mb-4 leading-relaxed text-muted-foreground">
         When you open a project, RepoPress fetches your repository&rsquo;s file tree and content from GitHub. The file
         tree is displayed in the Studio sidebar, and file contents are loaded on demand when you select a file.
       </p>
 
-      <h3 className="mb-3 mt-8 text-lg font-semibold">2. Edit in Studio</h3>
+      <h3 className="rp-display text-lg mb-3 mt-8">2. Edit in Studio</h3>
       <p className="mb-4 leading-relaxed text-muted-foreground">
         The Studio editor provides a rich editing experience for MDX and Markdown files. You can edit frontmatter
         fields, write content with a visual toolbar, and preview your changes in real time.
       </p>
 
-      <h3 className="mb-3 mt-8 text-lg font-semibold">3. Save as a draft</h3>
+      <h3 className="rp-display text-lg mb-3 mt-8">3. Save as a draft</h3>
       <p className="mb-4 leading-relaxed text-muted-foreground">
         Every edit is automatically saved as a draft. Drafts are separate from your live site - nothing changes in your
         repository until you explicitly publish. You can work on multiple pages without worrying about incomplete
         updates.
       </p>
 
-      <h3 className="mb-3 mt-8 text-lg font-semibold">4. Publish back to GitHub</h3>
+      <h3 className="rp-display text-lg mb-3 mt-8">4. Publish back to GitHub</h3>
       <p className="mb-4 leading-relaxed text-muted-foreground">
         When you&rsquo;re ready, hit Publish. RepoPress commits your changes to the branch you chose when setting up the
         project. You can customize the commit message before publishing.
       </p>
 
       {/* Framework Detection */}
-      <h2 className="mb-4 mt-12 text-2xl font-semibold">Automatic setup</h2>
+      <h2 className="rp-display text-2xl mb-4 mt-12">Automatic setup</h2>
       <p className="mb-4 leading-relaxed text-muted-foreground">
         When you connect a repository, RepoPress detects your site framework by looking at configuration files like{" "}
         <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm">next.config.js</span>,{" "}
@@ -82,7 +82,7 @@ export default function HowItWorksPage() {
       </p>
 
       {/* Document Lifecycle */}
-      <h2 className="mb-4 mt-12 text-2xl font-semibold">Content workflow</h2>
+      <h2 className="rp-display text-2xl mb-4 mt-12">Content workflow</h2>
       <p className="mb-4 leading-relaxed text-muted-foreground">Every document moves through a clear workflow:</p>
       <ul className="mb-4 list-inside list-disc space-y-2 text-muted-foreground">
         <li>

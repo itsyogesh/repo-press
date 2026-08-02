@@ -14,14 +14,14 @@ export default function TermsPage() {
       <main className="flex-1">
         <div className="container mx-auto px-4 py-16 md:py-24">
           <div className="max-w-3xl mx-auto">
-            <h1 className="text-3xl md:text-4xl font-semibold tracking-tight text-foreground mb-8">Terms of Service</h1>
+            <h1 className="rp-display mb-8 text-3xl md:text-4xl">Terms of Service</h1>
 
             <p className="text-muted-foreground leading-relaxed mb-8">
               Welcome to RepoPress. By using our service, you agree to these terms. Please read them carefully.
             </p>
 
             {/* Acceptance of Terms */}
-            <h2 className="text-xl font-semibold text-foreground mt-8 mb-4">Acceptance of Terms</h2>
+            <h2 className="rp-display text-xl mt-8 mb-4">Acceptance of Terms</h2>
             <p className="text-muted-foreground leading-relaxed">
               By accessing or using RepoPress, you agree to be bound by these Terms of Service. If you do not agree to
               these terms, you may not use the service. We may update these terms from time to time, and your continued
@@ -29,7 +29,7 @@ export default function TermsPage() {
             </p>
 
             {/* Description of Service */}
-            <h2 className="text-xl font-semibold text-foreground mt-8 mb-4">Description of Service</h2>
+            <h2 className="rp-display text-xl mt-8 mb-4">Description of Service</h2>
             <p className="text-muted-foreground leading-relaxed">
               RepoPress is a visual editor for content stored in your GitHub repositories. The service lets you create
               and edit Markdown and MDX files in a Studio interface, with all changes committed directly to your
@@ -37,7 +37,7 @@ export default function TermsPage() {
             </p>
 
             {/* GitHub Integration */}
-            <h2 className="text-xl font-semibold text-foreground mt-8 mb-4">GitHub Integration</h2>
+            <h2 className="rp-display text-xl mt-8 mb-4">GitHub Integration</h2>
             <p className="text-muted-foreground leading-relaxed mb-4">
               RepoPress requires you to authenticate with your GitHub account and grant access to repositories you
               choose to connect. By using RepoPress, you acknowledge that:
@@ -60,7 +60,7 @@ export default function TermsPage() {
             </ul>
 
             {/* User Content */}
-            <h2 className="text-xl font-semibold text-foreground mt-8 mb-4">User Content</h2>
+            <h2 className="rp-display text-xl mt-8 mb-4">User Content</h2>
             <p className="text-muted-foreground leading-relaxed mb-4">
               Your content remains yours. RepoPress does not claim any ownership over the content you create, edit, or
               manage through our service.
@@ -73,7 +73,7 @@ export default function TermsPage() {
             </ul>
 
             {/* Acceptable Use */}
-            <h2 className="text-xl font-semibold text-foreground mt-8 mb-4">Acceptable Use</h2>
+            <h2 className="rp-display text-xl mt-8 mb-4">Acceptable Use</h2>
             <p className="text-muted-foreground leading-relaxed mb-4">You agree not to use RepoPress to:</p>
             <ul className="list-disc list-inside space-y-2 text-muted-foreground">
               <li>Violate any applicable laws, regulations, or third-party rights</li>
@@ -85,7 +85,7 @@ export default function TermsPage() {
             </ul>
 
             {/* Intellectual Property */}
-            <h2 className="text-xl font-semibold text-foreground mt-8 mb-4">Intellectual Property</h2>
+            <h2 className="rp-display text-xl mt-8 mb-4">Intellectual Property</h2>
             <p className="text-muted-foreground leading-relaxed mb-4">
               RepoPress is open-source software released under the{" "}
               <a
@@ -105,7 +105,7 @@ export default function TermsPage() {
             </ul>
 
             {/* Limitation of Liability */}
-            <h2 className="text-xl font-semibold text-foreground mt-8 mb-4">Limitation of Liability</h2>
+            <h2 className="rp-display text-xl mt-8 mb-4">Limitation of Liability</h2>
             <p className="text-muted-foreground leading-relaxed mb-4">
               RepoPress is provided &ldquo;as is&rdquo; and &ldquo;as available&rdquo; without warranties of any kind,
               whether express or implied. To the fullest extent permitted by law:
@@ -124,7 +124,7 @@ export default function TermsPage() {
             </ul>
 
             {/* Changes to Terms */}
-            <h2 className="text-xl font-semibold text-foreground mt-8 mb-4">Changes to Terms</h2>
+            <h2 className="rp-display text-xl mt-8 mb-4">Changes to Terms</h2>
             <p className="text-muted-foreground leading-relaxed">
               We reserve the right to modify these terms at any time. We will notify users of material changes by
               updating the date at the bottom of this page and, where possible, providing notice through the service.
@@ -132,7 +132,7 @@ export default function TermsPage() {
             </p>
 
             {/* Contact */}
-            <h2 className="text-xl font-semibold text-foreground mt-8 mb-4">Contact</h2>
+            <h2 className="rp-display text-xl mt-8 mb-4">Contact</h2>
             <p className="text-muted-foreground leading-relaxed">
               If you have any questions about these terms, please open an issue on our{" "}
               <a

@@ -14,7 +14,7 @@ RepoPress connects to your GitHub repositories and gives you a Notion-like editi
 
 ### Key Features
 
-- **Visual MDX Studio Editor** -- Rich text editing with live preview, frontmatter management, and split-pane layout
+- **Visual MDX Studio Editor** -- Rich text editing with explicit preview fidelity, frontmatter management, and a split-pane layout
 - **Content Stays in Git** -- No vendor lock-in. Drafts are saved to Convex; published content is committed directly to your GitHub repo
 - **Framework Auto-detection** -- Automatically detects Fumadocs, Nextra, Astro, Hugo, Docusaurus, Jekyll, Contentlayer, and Next.js MDX setups from your repo and configures frontmatter fields accordingly
 - **Document Workflows** -- Full state machine: draft → in review → approved → published → archived, with publish requiring a GitHub commit
@@ -26,6 +26,7 @@ RepoPress connects to your GitHub repositories and gives you a Notion-like editi
 - **Taxonomy Management** -- Authors, tags, and nested categories per project
 - **Media Asset Library** -- Track images and files referenced in your content
 - **Folder Meta** -- Sidebar ordering via meta.json / _meta.json patterns (Fumadocs, Nextra compatible)
+- **Reusable MDX Components** -- Install integrity-pinned registry components through a GitHub pull request, then insert and edit them through declarative Studio forms
 
 ---
 
@@ -38,7 +39,7 @@ RepoPress connects to your GitHub repositories and gives you a Notion-like editi
 | **Database** | Convex (real-time, serverless) |
 | **Auth** | Better Auth + @convex-dev/better-auth (GitHub OAuth) |
 | **GitHub API** | Octokit (@octokit/rest) for file read/write/commit |
-| **Content Parsing** | gray-matter (frontmatter), react-markdown, remark-gfm |
+| **Content Parsing** | gray-matter, unified/remark MDX, bounded generic render models |
 | **Deployment** | Vercel |
 
 ---
@@ -128,6 +129,18 @@ RepoPress auto-detects these frameworks from your repo and adapts frontmatter fi
 
 ---
 
+## MDX Preview Fidelity
+
+RepoPress reports which preview it is showing instead of treating every approximation as native:
+
+- **Generic** renders a safe, bounded shadcn Typeset model. It never executes repository code and remains available as the default fallback.
+- **Compatible** renders only an exact signed browser-compatible artifact on a separately configured origin in an opaque iframe. It does not promise Server Component, framework-loader, or full application context parity.
+- **Native** is reserved for a future managed runner that executes the repository's actual framework in isolation. That runner is not included in the current first slice.
+
+New repository setup uses native discovery: RepoPress inspects the repository's existing framework, component aliases, MDX runtime map, and CSS target. Setup commits a lightweight `repopress.config.json`; it does not generate `.repopress/mdx-preview.tsx` or make a generated component catalog authoritative. Older explicit preview entries remain readable as untrusted compatibility overrides and never authorize execution in the Studio.
+
+---
+
 ## Environment Variables
 
 ### Required (Convex)
@@ -145,7 +158,24 @@ RepoPress auto-detects these frameworks from your repo and adapts frontmatter fi
 | `GITHUB_CLIENT_ID` | From your [GitHub OAuth App](https://github.com/settings/developers) |
 | `GITHUB_CLIENT_SECRET` | From your GitHub OAuth App |
 | `BETTER_AUTH_SECRET` | Random secret string for session encryption |
+| `REPOPRESS_CAPABILITY_SECRET` | Random 32+ character capability-signing secret; use the same value in the Next.js runtime |
 | `SITE_URL` | Your Convex site URL (same as `NEXT_PUBLIC_CONVEX_SITE_URL`) |
+
+### Next.js runtime
+
+| Variable | Description |
+|---|---|
+| `REPOPRESS_CAPABILITY_SECRET` | Same capability-signing value configured in Convex; never reuse `BETTER_AUTH_SECRET` |
+| `PREVIEW_APPROVAL_PRIVATE_KEY_JWK` | Server-only EC P-256 private JWK used to sign Compatible preview artifacts; never expose or log it |
+
+### Compatible preview browser configuration
+
+| Variable | Description |
+|---|---|
+| `NEXT_PUBLIC_PREVIEW_ORIGIN` | Separately hosted preview sandbox origin; production must not reuse the Studio origin |
+| `NEXT_PUBLIC_PREVIEW_APPROVAL_PUBLIC_KEY_JWK` | Public EC P-256 verification JWK matching the server-only preview signing key |
+
+The private and public preview JWKs must be generated as one P-256 key pair. Keep the private JWK only in the Next.js server environment. The public JWK is intentionally browser-readable and cannot sign artifacts.
 
 ### Optional
 
@@ -188,13 +218,15 @@ This will prompt you to create a Convex project and populate your `.env.local` w
 
 ### 4. Set up environment variables
 
-Add the GitHub OAuth variables to your `.env.local`:
+Configure the GitHub OAuth variables and `BETTER_AUTH_SECRET` in the Convex dashboard. Generate a separate capability secret, set it in Convex, and add only that shared capability value to `.env.local` for the Next.js server:
 
 ```bash
-GITHUB_CLIENT_ID=<your-id>
-GITHUB_CLIENT_SECRET=<your-secret>
-BETTER_AUTH_SECRET=<random-string>
-SITE_URL=https://your-project.convex.site
+openssl rand -base64 32
+npx convex env set REPOPRESS_CAPABILITY_SECRET <generated-value>
+```
+
+```dotenv
+REPOPRESS_CAPABILITY_SECRET=<same-generated-value>
 ```
 
 ### 5. Run the dev servers

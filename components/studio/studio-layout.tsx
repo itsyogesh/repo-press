@@ -2,12 +2,11 @@
 
 import { useMutation } from "convex/react"
 import matter from "gray-matter"
-import { AlertCircle, Command, FileText, FolderOpen, History, Loader2, Search, Settings, X } from "lucide-react"
+import { Command, FileText, FolderOpen, History, Loader2, Search, Settings, X } from "lucide-react"
 import Link from "next/link"
 import * as React from "react"
 import { toast } from "sonner"
 import { syncProjectsFromConfigAction } from "@/app/dashboard/[owner]/[repo]/actions"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -22,21 +21,27 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
 import { Skeleton } from "@/components/ui/skeleton"
+import { StatusBadge } from "@/components/ui/status-badge"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
-import { DOCUMENT_STATUS_CONFIG, type DocumentStatus, isPublishableDocumentStatus } from "@/lib/document-status"
+import { type DocumentStatus, isPublishableDocumentStatus } from "@/lib/document-status"
 import { getFrameworkAdapter } from "@/lib/framework-adapters"
 import { type FileTreeNode, findTreeNode } from "@/lib/github"
-import { usePreviewContext } from "@/lib/hooks/use-preview-context"
-import { standardComponents } from "@/lib/repopress/standard-library"
+import type { PreviewResult } from "@/lib/preview/contracts"
+import { buildGenericRenderModel } from "@/lib/preview/generic-render-model"
+import { CONTENT_PATH_REPRESENTATION, toRepoPath } from "@/lib/preview/path-policy"
+import { type AuthoringComponentMetadata, buildAuthoringCatalog } from "@/lib/studio/authoring-catalog"
 import { buildHistoryHref } from "@/lib/studio/history-link"
+import { resolveStudioCreatePaths, treePathToContentPath } from "@/lib/studio/path-adapters"
 import { getPublishLaneViewModel } from "@/lib/studio/publish-lane-view-model"
+import { buildStudioAuthoringCatalog } from "@/lib/studio/studio-authoring-catalog"
 import { cn } from "@/lib/utils"
 import { CommandPalette } from "./command-palette"
 import { getDiscardPlan } from "./discard-pending-changes"
 import { Editor } from "./editor"
 import { FileTree } from "./file-tree"
+import { useCompatiblePreview } from "./hooks/use-compatible-preview"
 import { usePrStatusSync } from "./hooks/use-pr-status-sync"
 import { useStudioFile } from "./hooks/use-studio-file"
 import { useStudioPublish } from "./hooks/use-studio-publish"
@@ -54,10 +59,11 @@ import {
 } from "./scroll-sync"
 import { SmartCreateFileDialog } from "./smart-create-file-dialog"
 import { StatusActions } from "./status-actions"
-import { StudioAdapterProvider } from "./studio-adapter-context"
+import { createStudioAdapterState, StudioAdapterProvider, useStudioAdapter } from "./studio-adapter-context"
 import { StudioProvider, useStudio } from "./studio-context"
 import { StudioFooter } from "./studio-footer"
 import { StudioHeader } from "./studio-header"
+import { resolveStudioPreviewPanelMode } from "./studio-preview-panel-mode"
 import { useViewMode, ViewModeProvider } from "./view-mode-context"
 
 // ── Insert Component Modal Context ──────────────────────────────────────
@@ -87,11 +93,14 @@ export interface StudioLayoutProps {
   owner: string
   repo: string
   branch: string
+  baseCommitSha: string
   currentPath: string
   projectId?: string
   projectAccessToken?: string
   contentRoot?: string
   role?: "owner" | "editor" | "viewer"
+  registryAuthoringMetadata?: Readonly<Record<string, AuthoringComponentMetadata>>
+  registryAuthoringDiagnostics?: readonly string[]
 }
 
 function findTreeNodeByPath(nodes: FileTreeNode[], path: string): FileTreeNode | null {
@@ -108,6 +117,22 @@ function findTreeNodeByPath(nodes: FileTreeNode[], path: string): FileTreeNode |
 function inferTitleFromPath(path: string) {
   const fileName = path.split("/").pop() || path
   return fileName.replace(/\.(mdx?|markdown)$/i, "")
+}
+
+function freezePreviewData<T>(value: T): T {
+  if (value === null || typeof value !== "object" || Object.isFrozen(value)) return value
+  for (const key of Object.keys(value)) freezePreviewData(Object.getOwnPropertyDescriptor(value, key)?.value)
+  return Object.freeze(value)
+}
+
+function genericPreviewSessionId(filePath: string, content: string): string {
+  let hash = 2_166_136_261
+  const source = `${filePath}\0${content}`
+  for (let index = 0; index < source.length; index += 1) {
+    hash ^= source.charCodeAt(index)
+    hash = Math.imul(hash, 16_777_619)
+  }
+  return `studio-generic-${(hash >>> 0).toString(16)}`
 }
 
 type FlatFileEntry = {
@@ -195,7 +220,7 @@ function StudioNoSelectionLoading() {
           <Skeleton className="h-8 w-52 mx-auto" />
           <Skeleton className="h-4 w-96 mx-auto max-w-full" />
         </div>
-        <div className="mx-auto max-w-2xl rounded-[1.75rem] border border-studio-border/70 bg-studio-canvas-inset/30 p-4 shadow-sm">
+        <div className="mx-auto max-w-2xl rounded-lg border border-studio-border/70 bg-studio-canvas-inset/30 p-4">
           <div className="mx-auto max-w-xl space-y-3">
             <Skeleton className="h-11 w-full rounded-md" />
             <div className="space-y-1 rounded-lg border border-studio-border bg-studio-canvas-inset/30 p-2">
@@ -231,12 +256,12 @@ function StudioPreviewLoading() {
 
       <div className="flex-1 overflow-y-auto bg-studio-canvas-inset/30">
         <div className="mx-auto max-w-[920px] p-5">
-          <div className="rounded-[1.5rem] border border-studio-border/70 bg-studio-canvas p-7 shadow-sm">
+          <div className="rounded-lg border border-studio-border/70 bg-studio-canvas p-7">
             <div className="space-y-4">
               <Skeleton className="h-4 w-24 rounded-full" />
               <Skeleton className="h-10 w-2/3" />
               <Skeleton className="h-5 w-1/2" />
-              <Skeleton className="h-52 w-full rounded-[1.25rem]" />
+              <Skeleton className="h-52 w-full rounded-lg" />
               <Skeleton className="h-4 w-full" />
               <Skeleton className="h-4 w-11/12" />
               <Skeleton className="h-4 w-10/12" />
@@ -348,7 +373,7 @@ function StudioSidebarRail({
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-10 w-10 rounded-xl text-studio-fg transition-colors hover:bg-studio-canvas-inset"
+                className="h-10 w-10 rounded-md text-studio-fg transition-colors hover:bg-studio-canvas-inset"
                 title="Expand sidebar"
                 aria-label="Expand sidebar"
                 onClick={onExpand}
@@ -442,18 +467,8 @@ function StudioLayoutInner({
   studioFile: ReturnType<typeof useStudioFile>
   studioQueries: ReturnType<typeof useStudioQueries>
 }) {
-  const {
-    projectId,
-    projectAccessToken,
-    contentRoot,
-    owner,
-    repo,
-    branch,
-    adapter,
-    adapterLoading,
-    adapterError,
-    adapterDiagnostics,
-  } = useStudio()
+  const { projectId, projectAccessToken, contentRoot, owner, repo, branch, baseCommitSha } = useStudio()
+  const { diagnostics: authoringDiagnostics } = useStudioAdapter()
 
   // Framework adapter for file naming / frontmatter - uses the project's detectedFramework string
   const frameworkAdapter = React.useMemo(() => {
@@ -504,13 +519,36 @@ function StudioLayoutInner({
     dirtyDocs,
     frontmatterSchema,
     fieldVariants,
+    previewEntry,
   } = studioQueries
 
-  // Build a set of full repo-relative paths for documents with pending edits.
-  // doc.filePath is already the full tree path (set from selectedFile.path on save).
+  const deferredPreviewContent = React.useDeferredValue(content)
+  const genericPreviewResult = React.useMemo<PreviewResult>(() => {
+    const filePath = selectedFile?.path ?? "untitled.mdx"
+    return freezePreviewData({
+      fidelity: "generic",
+      sessionId: genericPreviewSessionId(filePath, deferredPreviewContent),
+      snapshotVersion: 1,
+      status: deferredPreviewContent === content ? "ready" : "building",
+      target: { kind: "safe-fallback", renderModel: buildGenericRenderModel(deferredPreviewContent) },
+      diagnostics: [],
+      downgradeReasons: ["NATIVE_UNAVAILABLE", "COMPATIBLE_UNAVAILABLE"],
+      cache: { hit: false },
+    })
+  }, [content, deferredPreviewContent, selectedFile?.path])
+  const compatiblePreview = useCompatiblePreview({
+    projectId,
+    filePath: selectedFile?.path,
+    baseCommitSha,
+    previewEntry,
+    documentSource: content,
+    genericPreviewResult,
+  })
+
+  // The tree is repository-relative; document state is content-root-relative.
   const dirtyPaths = React.useMemo(() => {
-    return new Set((dirtyDocs ?? []).map((doc: any) => doc.filePath))
-  }, [dirtyDocs])
+    return new Set((dirtyDocs ?? []).map((doc: any) => toRepoPath(contentRoot, doc.filePath)))
+  }, [contentRoot, dirtyDocs])
 
   const publishLaneViewModel = React.useMemo(
     () =>
@@ -616,17 +654,8 @@ function StudioLayoutInner({
   const handleConfirmCreate = React.useCallback(
     async (fileName: string, parentPath: string, initialFrontmatter?: Record<string, unknown>) => {
       if (!projectId || !canMutateExplorer) return
-      const isAlreadyPrefixed = contentRoot && (parentPath === contentRoot || parentPath.startsWith(`${contentRoot}/`))
-      let filePath: string
-      if (isAlreadyPrefixed) {
-        filePath = parentPath ? `${parentPath}/${fileName}` : fileName
-      } else if (contentRoot) {
-        filePath = parentPath ? `${contentRoot}/${parentPath}/${fileName}` : `${contentRoot}/${fileName}`
-      } else {
-        filePath = parentPath ? `${parentPath}/${fileName}` : fileName
-      }
-      // For index-if-empty: the actual file is at filePath (e.g. slug/index.mdx)
-      // but it may include a newly created subfolder - keep filePath as-is.
+      const { contentPath, repoPath } = resolveStudioCreatePaths(contentRoot, parentPath, fileName)
+      // For index-if-empty, fileName may itself contain a subfolder (for example slug/index.mdx).
       try {
         const fm = initialFrontmatter ?? {}
         const title =
@@ -637,19 +666,20 @@ function StudioLayoutInner({
           projectId: projectId as Id<"projects">,
           userId,
           projectAccessToken,
-          filePath,
+          filePath: contentPath,
+          pathRepresentation: CONTENT_PATH_REPRESENTATION,
           title,
           initialBody: "",
           initialFrontmatter: { title, ...fm },
         })
-        primeFileSnapshot(filePath, {
+        primeFileSnapshot(repoPath, {
           content: "",
           frontmatter: { title, ...fm },
           sha: null,
         })
         const displayName = fileName.split("/").pop() ?? fileName
         toast.success(`Created ${displayName}`)
-        navigateToFile(filePath)
+        navigateToFile(repoPath)
       } catch (error: any) {
         console.error("Error creating file:", error)
         toast.error(error.message || "Failed to create file")
@@ -671,8 +701,9 @@ function StudioLayoutInner({
     async (filePath: string, fileSha: string) => {
       if (!projectId || !canMutateExplorer) return
       try {
+        const contentPath = treePathToContentPath(contentRoot, filePath)
         const pendingCreateOp = pendingOps?.find(
-          (op: any) => op.filePath === filePath && op.opType === "create" && op.status === "pending",
+          (op: any) => op.filePath === contentPath && op.opType === "create" && op.status === "pending",
         )
         if (pendingCreateOp) {
           await undoOp({ id: pendingCreateOp._id, userId, projectAccessToken })
@@ -685,7 +716,8 @@ function StudioLayoutInner({
           projectId: projectId as Id<"projects">,
           userId,
           projectAccessToken,
-          filePath,
+          filePath: contentPath,
+          pathRepresentation: CONTENT_PATH_REPRESENTATION,
           previousSha: fileSha || undefined,
         })
         toast("File staged for deletion", {
@@ -712,6 +744,7 @@ function StudioLayoutInner({
       userId,
       projectAccessToken,
       pendingOps,
+      contentRoot,
       undoOp,
       discardFileFromClientState,
       stageDelete,
@@ -721,7 +754,10 @@ function StudioLayoutInner({
   const handleUndoDelete = React.useCallback(
     async (filePath: string) => {
       if (!projectId || !canMutateExplorer || !pendingOps) return
-      const op = pendingOps.find((o: any) => o.filePath === filePath && o.opType === "delete" && o.status === "pending")
+      const contentPath = treePathToContentPath(contentRoot, filePath)
+      const op = pendingOps.find(
+        (o: any) => o.filePath === contentPath && o.opType === "delete" && o.status === "pending",
+      )
       if (!op) return
       try {
         await undoOp({ id: op._id, userId, projectAccessToken })
@@ -731,7 +767,7 @@ function StudioLayoutInner({
         toast.error(error.message || "Failed to undo")
       }
     },
-    [projectId, canMutateExplorer, userId, projectAccessToken, pendingOps, undoOp],
+    [projectId, canMutateExplorer, userId, projectAccessToken, pendingOps, undoOp, contentRoot],
   )
 
   const handleDiscardAll = React.useCallback(async () => {
@@ -776,10 +812,12 @@ function StudioLayoutInner({
       })
 
       for (const filePath of plan.filePathsToReset) {
+        const isMediaSourcePath = (pendingMediaOps ?? []).some((op: any) => op.sourceFilePath === filePath)
+        const repoPath = isMediaSourcePath ? filePath : toRepoPath(contentRoot, filePath)
         if (createdPaths.has(filePath)) {
-          discardFileFromClientState(filePath)
+          discardFileFromClientState(repoPath)
         } else {
-          reloadFileFromRemote(filePath)
+          reloadFileFromRemote(repoPath)
         }
       }
       toast.success("All pending changes discarded")
@@ -799,10 +837,12 @@ function StudioLayoutInner({
     discardAllPendingChanges,
     discardFileFromClientState,
     reloadFileFromRemote,
+    contentRoot,
   ])
 
   const resolveRelocatePayload = React.useCallback(
     async (oldPath: string) => {
+      const oldContentPath = treePathToContentPath(contentRoot, oldPath)
       const selectedPath = selectedFile?.path
       if (selectedPath === oldPath) {
         const currentFrontmatter = (frontmatter || {}) as Record<string, unknown>
@@ -822,7 +862,7 @@ function StudioLayoutInner({
       }
 
       const pendingCreateOp = pendingOps?.find(
-        (op: any) => op.filePath === oldPath && op.opType === "create" && op.status === "pending",
+        (op: any) => op.filePath === oldContentPath && op.opType === "create" && op.status === "pending",
       )
       if (pendingCreateOp) {
         const pendingFrontmatter = (pendingCreateOp.initialFrontmatter || {}) as Record<string, unknown>
@@ -845,7 +885,7 @@ function StudioLayoutInner({
         owner,
         repo,
         path: oldPath,
-        branch,
+        ref: baseCommitSha,
       })
       const response = await fetch(`/api/github/file?${params.toString()}`)
       if (!response.ok) {
@@ -873,7 +913,7 @@ function StudioLayoutInner({
         pendingCreateOpId: undefined as Id<"explorerOps"> | undefined,
       }
     },
-    [selectedFile?.path, frontmatter, content, sha, pendingOps, owner, repo, branch],
+    [selectedFile?.path, frontmatter, content, sha, pendingOps, owner, repo, baseCommitSha, contentRoot],
   )
 
   const stageRelocateFile = React.useCallback(
@@ -886,12 +926,15 @@ function StudioLayoutInner({
       const newName = newPath.split("/").pop() || newPath
 
       try {
+        const oldContentPath = treePathToContentPath(contentRoot, oldPath)
+        const newContentPath = treePathToContentPath(contentRoot, newPath)
         const payload = await resolveRelocatePayload(oldPath)
         const createOpId = await stageCreate({
           projectId: projectId as Id<"projects">,
           userId,
           projectAccessToken,
-          filePath: newPath,
+          filePath: newContentPath,
+          pathRepresentation: CONTENT_PATH_REPRESENTATION,
           title: payload.title || inferTitleFromPath(newPath),
           initialBody: payload.body,
           initialFrontmatter: payload.frontmatter,
@@ -915,7 +958,8 @@ function StudioLayoutInner({
               projectId: projectId as Id<"projects">,
               userId,
               projectAccessToken,
-              filePath: oldPath,
+              filePath: oldContentPath,
+              pathRepresentation: CONTENT_PATH_REPRESENTATION,
               previousSha: oldNode?.sha || payload.previousSha,
             })
           } catch (error) {
@@ -968,6 +1012,7 @@ function StudioLayoutInner({
       selectedFile?.path,
       primeFileSnapshot,
       navigateToFile,
+      contentRoot,
     ],
   )
 
@@ -1246,6 +1291,14 @@ function StudioLayoutInner({
   const shouldShowProjectDataSkeleton =
     Boolean(projectId) && resolvedProjectDataId !== projectId && isProjectDataLoading
   const isSelectedDocumentLoading = isFileLoading
+  const previewPanelMode = resolveStudioPreviewPanelMode({
+    isSelectedDocumentLoading,
+    selectedFile: Boolean(selectedFile),
+    shouldShowProjectDataSkeleton,
+    adapterLoading: false,
+    adapterError: null,
+    adapterDiagnostics: [...authoringDiagnostics],
+  })
 
   const pendingSummary = React.useMemo(
     () =>
@@ -1298,7 +1351,6 @@ function StudioLayoutInner({
   const showSidebarRail = !isMobile && isSidebarCollapsed
 
   const currentStatus: DocumentStatus = (document?.status as DocumentStatus | undefined) ?? "draft"
-  const statusInfo = DOCUMENT_STATUS_CONFIG[currentStatus] || DOCUMENT_STATUS_CONFIG.draft
   const canPublish = isPublishableDocumentStatus(currentStatus)
   const historyHref = buildHistoryHref({ owner, repo, branch, projectId })
 
@@ -1323,7 +1375,6 @@ function StudioLayoutInner({
             contentRoot={contentRoot}
             documentId={document?._id}
             currentStatus={currentStatus}
-            statusInfo={statusInfo}
             onSave={saveDraft}
             isSaving={isSaving || isFileLoading}
           />
@@ -1361,7 +1412,7 @@ function StudioLayoutInner({
                   }}
                   className="min-w-0"
                 >
-                  <StudioPanelShell className="bg-studio-canvas-inset/70">
+                  <StudioPanelShell className="flex flex-col bg-studio-canvas-inset/70">
                     {projectId && shouldShowProjectDataSkeleton ? (
                       <StudioSidebarLoading />
                     ) : (
@@ -1391,7 +1442,7 @@ function StudioLayoutInner({
                               asChild
                               variant="ghost"
                               size="sm"
-                              className="h-9 w-full justify-between rounded-xl border border-studio-border bg-studio-canvas px-3 text-xs hover:bg-studio-canvas-inset"
+                              className="h-9 w-full justify-between rounded-md border border-studio-border bg-studio-canvas px-3 text-xs hover:bg-studio-canvas-inset"
                             >
                               <Link href={historyHref}>
                                 <span className="inline-flex items-center gap-2">
@@ -1411,7 +1462,7 @@ function StudioLayoutInner({
                               asChild
                               variant="ghost"
                               size="sm"
-                              className="h-9 w-full justify-start rounded-xl border border-studio-border bg-studio-canvas px-3 text-xs hover:bg-studio-canvas-inset"
+                              className="h-9 w-full justify-start rounded-md border border-studio-border bg-studio-canvas px-3 text-xs hover:bg-studio-canvas-inset"
                             >
                               <Link href={`/dashboard/${owner}/${repo}/settings`}>
                                 <span className="inline-flex items-center gap-2">
@@ -1465,7 +1516,7 @@ function StudioLayoutInner({
                 {openFiles.length > 0 && (
                   <div className="shrink-0 border-b border-studio-border bg-studio-canvas">
                     <div className="flex items-center gap-2 overflow-x-auto px-3 py-2">
-                      <span className="hidden shrink-0 text-[10px] font-semibold uppercase tracking-[0.16em] text-studio-fg-muted md:inline">
+                      <span className="hidden shrink-0 text-[10px] font-medium uppercase tracking-[0.16em] text-studio-fg-muted md:inline">
                         Open
                       </span>
                       {openFiles.map((path: string) => {
@@ -1475,7 +1526,7 @@ function StudioLayoutInner({
                           <div
                             key={path}
                             className={cn(
-                              "group flex h-9 items-center gap-2 rounded-xl border px-2.5 text-xs shadow-sm transition-colors",
+                              "group flex h-9 items-center gap-2 rounded-md border px-2.5 text-xs transition-colors",
                               isActive
                                 ? "border-studio-accent/30 bg-studio-accent-muted text-studio-fg"
                                 : "border-studio-border/70 bg-studio-canvas-inset/40 text-studio-fg-muted hover:bg-studio-canvas-inset/70",
@@ -1533,7 +1584,7 @@ function StudioLayoutInner({
                         canPublish={canPublish}
                         statusBadge={
                           <div className="flex items-center gap-1">
-                            <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
+                            <StatusBadge status={currentStatus} />
                             {document && <StatusActions documentId={document._id} currentStatus={currentStatus} />}
                           </div>
                         }
@@ -1553,11 +1604,11 @@ function StudioLayoutInner({
                     <StudioNoSelectionLoading />
                   ) : (
                     <div className="flex h-full items-center justify-center bg-studio-canvas-inset/20 px-6 py-8">
-                      <div className="w-full max-w-xl rounded-xl bg-studio-canvas p-6 shadow-sm">
+                      <div className="w-full max-w-xl rounded-lg border border-studio-border/60 bg-studio-canvas p-6">
                         <div className="space-y-5">
                           <div className="space-y-3 text-left">
                             <div className="space-y-2">
-                              <h2 className="text-2xl font-semibold tracking-tight text-studio-fg">
+                              <h2 className="rp-display text-2xl text-studio-fg">
                                 Open a file and keep the whole studio in flow
                               </h2>
                               <p className="max-w-xl text-sm leading-6 text-studio-fg-muted">
@@ -1617,7 +1668,7 @@ function StudioLayoutInner({
                                     navigateToFile(firstResult.path)
                                   }
                                 }}
-                                className="h-11 rounded-xl border-studio-border bg-studio-canvas pl-10 pr-10 shadow-sm"
+                                className="h-11 rounded-md border-studio-border bg-studio-canvas pl-10 pr-10"
                                 placeholder="Search docs..."
                               />
                               <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
@@ -1655,7 +1706,7 @@ function StudioLayoutInner({
                                       <li key={file.path}>
                                         <button
                                           type="button"
-                                          className="flex w-full items-start gap-2 rounded-xl px-2 py-2 text-left transition-colors hover:bg-studio-canvas-inset"
+                                          className="flex w-full items-start gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-studio-canvas-inset"
                                           onClick={() => navigateToFile(file.path)}
                                         >
                                           <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-studio-fg-muted" />
@@ -1680,7 +1731,7 @@ function StudioLayoutInner({
                                     <li key={file.path}>
                                       <button
                                         type="button"
-                                        className="flex w-full items-start gap-2 rounded-xl px-2 py-2 text-left transition-colors hover:bg-studio-canvas-inset"
+                                        className="flex w-full items-start gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-studio-canvas-inset"
                                         onClick={() => navigateToFile(file.path)}
                                       >
                                         <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-studio-fg-muted" />
@@ -1719,25 +1770,14 @@ function StudioLayoutInner({
                   className="min-w-0"
                 >
                   <StudioPanelShell className="bg-studio-canvas">
-                    {isSelectedDocumentLoading || (!selectedFile && shouldShowProjectDataSkeleton) ? (
+                    {previewPanelMode === "loading" ? (
                       <StudioPreviewLoading />
-                    ) : adapterLoading && !adapter ? (
-                      <div className="h-full flex items-center justify-center">
-                        <div className="text-sm text-studio-fg-muted">Loading preview adapter...</div>
-                      </div>
-                    ) : adapterError && !adapter ? (
-                      <div className="h-full flex items-center justify-center p-4">
-                        <Alert variant="destructive">
-                          <AlertCircle className="h-4 w-4" />
-                          <AlertTitle>Adapter Error</AlertTitle>
-                          <AlertDescription>{adapterError}</AlertDescription>
-                        </Alert>
-                      </div>
-                    ) : !selectedFile ? (
+                    ) : previewPanelMode === "empty" ? (
                       <StudioNoSelectionPreviewState />
-                    ) : (
+                    ) : selectedFile ? (
                       <Preview
-                        content={content}
+                        {...compatiblePreview}
+                        fallbackResult={genericPreviewResult}
                         frontmatter={frontmatter}
                         fieldVariants={fieldVariants}
                         projectId={projectId}
@@ -1747,10 +1787,8 @@ function StudioLayoutInner({
                         scrollContainerRef={previewScrollRef}
                         onScroll={handlePreviewScroll}
                         onCompilingChange={handlePreviewCompilingChange}
-                        adapter={adapter}
-                        adapterDiagnostics={adapterDiagnostics}
                       />
-                    )}
+                    ) : null}
                   </StudioPanelShell>
                 </ResizablePanel>
               </>
@@ -1781,6 +1819,7 @@ function StudioLayoutInner({
           owner={owner}
           repo={repo}
           branch={branch}
+          baseCommitSha={baseCommitSha}
           onConfirm={({ fileName, parentPath, frontmatter }) => handleConfirmCreate(fileName, parentPath, frontmatter)}
         />
 
@@ -1820,7 +1859,7 @@ function StudioLayoutInner({
         >
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Discard all pending changes?</AlertDialogTitle>
+              <AlertDialogTitle className="rp-display">Discard all pending changes?</AlertDialogTitle>
               <AlertDialogDescription>
                 This will revert all your staged creations, deletions, and edits. This action cannot be undone.
               </AlertDialogDescription>
@@ -1857,6 +1896,7 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
     owner,
     repo,
     branch,
+    baseCommitSha,
     projectId,
     projectAccessToken,
     contentRoot = "",
@@ -1864,6 +1904,8 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
     initialFile,
     currentPath,
     role = "owner",
+    registryAuthoringMetadata,
+    registryAuthoringDiagnostics = [],
   } = props
 
   // Tree starts from the server-provided value ([] when server deferred loading).
@@ -1872,12 +1914,12 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
   const [tree, setTree] = React.useState<FileTreeNode[]>(initialTree)
   React.useEffect(() => {
     if (initialTree.length > 0) return
-    const qp = new URLSearchParams({ owner, repo, branch: branch ?? "main", contentRoot })
+    const qp = new URLSearchParams({ owner, repo, ref: baseCommitSha, contentRoot })
     fetch(`/api/github/tree?${qp}`)
       .then((res) => (res.ok ? res.json() : Promise.reject(res)))
       .then((data: FileTreeNode[]) => setTree(data))
       .catch(() => {}) // non-critical: empty tree is an acceptable fallback
-  }, [owner, repo, branch, contentRoot, initialTree.length])
+  }, [owner, repo, baseCommitSha, contentRoot, initialTree.length])
 
   // 1. File state hook
   const studioFile = useStudioFile(initialFile, currentPath)
@@ -1886,51 +1928,80 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
   // 2. Queries hook - pass the local tree state so overlayTree uses the async-fetched
   // tree rather than the outer StudioProvider's empty initialTree.
   const studioQueries = useStudioQueries(selectedFile?.path, { tree })
-  const {
-    previewEntry,
-    enabledPlugins,
-    pluginRegistry,
-    currentPublishLane,
-    userId,
-    components: componentSchema,
-  } = studioQueries
+  const { statusSyncLane, userId, components: componentSchema } = studioQueries
 
   // Verify the active publish lane's PR is still open on GitHub.
   // Corrects state drift when the closed/merged webhook was never delivered.
   usePrStatusSync({
-    laneId: currentPublishLane?._id as any,
-    prNumber: currentPublishLane?.prNumber,
-    laneStatus: currentPublishLane?.status,
+    projectId,
+    laneId: statusSyncLane?._id as any,
+    prNumber: statusSyncLane?.prNumber,
+    laneStatus: statusSyncLane?.status,
     owner,
     repo,
-    userId: userId ?? undefined,
-    projectAccessToken: projectAccessToken ?? undefined,
-  })
-
-  // 3. Preview Context hook
-  const previewContext = usePreviewContext({
-    owner,
-    repo,
-    branch: currentPublishLane?.branchName ?? branch,
-    adapterPath: previewEntry,
-    enabledPlugins,
-    pluginRegistry,
+    headBranch: statusSyncLane?.branchName,
+    baseBranch: statusSyncLane?.baseBranch,
   })
 
   // 3. Auto-sync config logic
   React.useEffect(() => {
     if (!owner || !repo || !branch) return
-    syncProjectsFromConfigAction(owner, repo, branch).catch((err) => {
+    syncProjectsFromConfigAction(owner, repo, branch, baseCommitSha).catch((err) => {
       console.warn("Background config sync failed:", err)
     })
-  }, [owner, repo, branch])
+  }, [owner, repo, branch, baseCommitSha])
 
-  // 4. Memoize Context Value
+  const authoringState = React.useMemo(() => {
+    try {
+      const authoringCatalog = buildStudioAuthoringCatalog({
+        projectMetadata: componentSchema,
+        installedRegistryMetadata: registryAuthoringMetadata,
+        framework: studioQueries.project?.detectedFramework as string | undefined,
+      })
+      return createStudioAdapterState({
+        authoringCatalog,
+        nativeComponentNames: [],
+        ...(studioQueries.project?.detectedFramework
+          ? { detectedFramework: studioQueries.project.detectedFramework as string }
+          : {}),
+        diagnostics: [...registryAuthoringDiagnostics],
+      })
+    } catch (error) {
+      let fallbackCatalog = buildAuthoringCatalog({})
+      try {
+        fallbackCatalog = buildStudioAuthoringCatalog({
+          installedRegistryMetadata: registryAuthoringMetadata,
+          framework: studioQueries.project?.detectedFramework as string | undefined,
+        })
+      } catch {
+        // Preserve the already validated empty fallback when registry metadata is invalid.
+      }
+      return createStudioAdapterState({
+        authoringCatalog: fallbackCatalog,
+        nativeComponentNames: [],
+        ...(studioQueries.project?.detectedFramework
+          ? { detectedFramework: studioQueries.project.detectedFramework as string }
+          : {}),
+        diagnostics: [
+          ...registryAuthoringDiagnostics,
+          error instanceof Error ? error.message : "Invalid authoring metadata",
+        ],
+      })
+    }
+  }, [
+    componentSchema,
+    registryAuthoringDiagnostics,
+    registryAuthoringMetadata,
+    studioQueries.project?.detectedFramework,
+  ])
+
+  // 4. Memoize serializable Studio Context Value
   const contextValue = React.useMemo(
     () => ({
       owner,
       repo,
       branch,
+      baseCommitSha,
       projectId,
       projectAccessToken,
       userId,
@@ -1938,30 +2009,12 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
       contentRoot,
       tree,
       role,
-      adapter: previewContext.context,
-      adapterLoading: previewContext.loading,
-      adapterError: previewContext.error,
-      adapterDiagnostics: previewContext.diagnostics,
-      components: componentSchema,
-      // Resolve insert-picker components by contentRoot:
-      //  1. If the adapter declares componentsByContext for this root, use that (fully context-aware).
-      //  2. Otherwise fall back to standardComponents - the universal safe set that never includes
-      //     docs-only components like DocsImage/DocsVideo that come from the adapter layer.
-      //     The full previewContext.context.components (adapter-augmented) is still used for
-      //     *rendering* existing MDX; we deliberately exclude adapter additions from the insert picker
-      //     when no explicit context split is declared.
-      resolvedComponents:
-        contentRoot && previewContext.context?.componentsByContext?.[contentRoot]
-          ? previewContext.context.componentsByContext[contentRoot]
-          : previewContext.context
-            ? standardComponents
-            : undefined,
-      detectedFramework: studioQueries.project?.detectedFramework as string | undefined,
     }),
     [
       owner,
       repo,
       branch,
+      baseCommitSha,
       projectId,
       projectAccessToken,
       userId,
@@ -1969,15 +2022,12 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
       contentRoot,
       tree,
       role,
-      previewContext,
-      componentSchema,
-      studioQueries.project?.detectedFramework,
     ],
   )
 
   return (
     <StudioProvider value={contextValue}>
-      <StudioAdapterProvider value={contextValue}>
+      <StudioAdapterProvider value={authoringState}>
         <StudioLayoutInner studioFile={studioFile} studioQueries={studioQueries} />
       </StudioAdapterProvider>
     </StudioProvider>
@@ -1985,13 +2035,24 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
 }
 
 export function StudioLayout(props: StudioLayoutProps) {
-  const { owner, repo, branch, projectId, projectAccessToken, contentRoot = "", tree, role = "owner" } = props
+  const {
+    owner,
+    repo,
+    branch,
+    baseCommitSha,
+    projectId,
+    projectAccessToken,
+    contentRoot = "",
+    tree,
+    role = "owner",
+  } = props
 
   const baseContextValue = React.useMemo(
     () => ({
       owner,
       repo,
       branch,
+      baseCommitSha,
       projectId,
       projectAccessToken,
       userId: undefined,
@@ -1999,14 +2060,8 @@ export function StudioLayout(props: StudioLayoutProps) {
       contentRoot,
       tree,
       role,
-      adapter: null,
-      adapterLoading: false,
-      adapterError: null,
-      adapterDiagnostics: [],
-      components: undefined,
-      resolvedComponents: undefined,
     }),
-    [owner, repo, branch, projectId, projectAccessToken, contentRoot, tree, role],
+    [owner, repo, branch, baseCommitSha, projectId, projectAccessToken, contentRoot, tree, role],
   )
 
   return (

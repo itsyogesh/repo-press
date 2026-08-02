@@ -118,7 +118,7 @@ export function FolderPickerDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Select Content Root</DialogTitle>
+          <DialogTitle className="rp-display">Select Content Root</DialogTitle>
           <DialogDescription>
             Browse directories in {owner}/{repo} to select the content root folder.
           </DialogDescription>

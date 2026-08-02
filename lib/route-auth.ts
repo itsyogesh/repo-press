@@ -5,6 +5,7 @@ import { getRepoRole, probeRepoReadAccess } from "@/lib/github-permissions"
 
 export { getContentType } from "@/lib/media/content-type"
 
+import { resolveProjectAccessRole } from "@/lib/project-access-role"
 import { mintProjectAccessToken } from "@/lib/project-access-token"
 import type { Role } from "@/lib/roles"
 import { roleAtLeast } from "@/lib/roles"
@@ -15,6 +16,12 @@ interface RouteAuthResult {
   role: Role
   projectAccessToken: string
   githubToken: string
+}
+
+export async function resolveRouteGitHubCredential(): Promise<{ githubToken: string }> {
+  const githubToken = await getGitHubToken()
+  if (!githubToken) throw new RouteAuthError("Unauthorized", 401)
+  return { githubToken }
 }
 
 /**
@@ -31,10 +38,7 @@ export async function resolveRouteAuth(
   project: Doc<"projects">,
   minimumRole: Role = "editor",
 ): Promise<RouteAuthResult> {
-  const githubToken = await getGitHubToken()
-  if (!githubToken) {
-    throw new RouteAuthError("Unauthorized", 401)
-  }
+  const { githubToken } = await resolveRouteGitHubCredential()
 
   // 1. Resolve acting user
   const actingUserId = await resolveActingUserId(githubToken)
@@ -45,8 +49,11 @@ export async function resolveRouteAuth(
 
   // 2. Check GitHub permissions, fall back to project ownership, then cache
   const { role: githubRole } = await getRepoRole(githubToken, project.repoOwner, project.repoName)
-  const isProjectOwner = project.userId === actingUserId
-  let role: Role | null = githubRole ?? (isProjectOwner ? "owner" : null)
+  let role: Role | null = resolveProjectAccessRole({
+    actingUserId,
+    projectOwnerId: project.userId,
+    resolvedRepoRole: githubRole,
+  })
 
   // Fallback chain when getRepoRole returns null (e.g. OAuth app lacks org access)
   if (!role) {

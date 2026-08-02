@@ -1,447 +1,120 @@
-# RepoPress MDX Runtime - Comprehensive Implementation Plan (Source of Truth)
+# RepoPress MDX Runtime Architecture and Roadmap
 
-> This document is the **single source of truth** for building the
-> RepoPress Multi‑Project MDX Runtime. It consolidates architecture
-> decisions, risks, prototype strategy, implementation phases, and
-> pseudocode required to begin development safely.
->
-> **Status:** PARTIAL (Core Complete, Hardening Active)  
-> **Done:** Phases -1 through 5 and mirror architecture are complete.  
-> **Left:** Phase 6 hardening tasks tracked in `docs/plans/2026-03-02-mdx-runtime-hardening-plan.md`.  
-> **Last Updated:** 2026-03-03
+> **Status:** Generic and compatible first slice implemented; managed native runner planned.
+> **Last updated:** 2026-07-17
 
----
+This document replaces the earlier same-origin, config-executed adapter plan. The ratified design is in `docs/plans/2026-07-12-native-mdx-preview-ecosystem-design.md`; the task-level implementation record is in `docs/plans/2026-07-12-native-mdx-preview-ecosystem.md`.
 
-# 1. Vision
+## Product direction
 
-Build a **config‑driven MDX runtime preview system** capable of:
+RepoPress should author reusable MDX components while keeping content portable and Git-native. A repository should use its existing framework, component map, aliases, styles, and package layout. RepoPress coordinates editing and installation without becoming a second application runtime.
 
-- Rendering MDX with JSX, imports, and expressions
-- Supporting multiple projects per repository
-- Allowing repo-defined adapters and plugins
-- Providing stable, safe, deterministic preview execution
+The architectural rule is simple: metadata may enter the Studio; repository execution may not.
 
-Core Principle:
+## Runtime planes
 
-> Validate runtime first → then scale architecture.
+### Studio plane
 
----
+The Next.js application handles project navigation, editing, workflow, and a safe generic preview. It accepts only bounded serializable contracts:
 
-# 2. Core Concepts
+- MDX source and document metadata;
+- `AuthoringCatalog` entries;
+- generic render models;
+- preview status, diagnostics, size, and fidelity events.
 
-## 2.1 Config (Source of Truth)
+It never receives React component functions, evaluated adapter exports, arbitrary scope values, or repository modules.
 
-`repopress.config.json` - defines projects - defines preview adapters -
-declares plugins
+### Compatible sandbox plane
 
-Config always overrides database state.
+A separately configured sandbox origin hosts an iframe with exactly `sandbox="allow-scripts"`. The parent establishes an authenticated `MessageChannel` using exact window identity and a single-use capability. The protocol binds messages to a session, repository snapshot, sequence, and bounded payload.
 
----
+Only immutable, signed, RepoPress-produced compatible artifacts may render there. This path supports a bounded browser-safe component graph; it is not a general arbitrary-code security boundary and does not claim framework-native behavior.
 
-## 2.2 Preview Adapter
+### Future native plane
 
-Repo-provided runtime definition:
+A managed native provider will materialize an authorized immutable repository revision in an isolated environment, install dependencies under policy, run the actual framework, and return a short-lived preview target. It must preserve the existing preview session and downgrade contracts.
 
-Provides: - components - scope variables - allowed imports - asset
-resolution
+This provider is not part of the current slice. `native` is a contract value, not a claim that setup or an adapter path enables native execution today.
 
-Example:
+## Preview selection
 
-```ts
-export const adapter = {
-  components: { DocsImage },
-  scope: { DOCS_SETUP_MEDIA },
-  allowImports: {
-    "@/components": { DocsImage },
-  },
-};
-```
+1. Select `native` only when an authorized managed native target exists for the exact snapshot.
+2. Otherwise select `compatible` only when the exact signed artifact and sandbox authority are valid.
+3. Otherwise select `generic` and include a structured downgrade reason.
 
----
+Provider changes must not replace editor state. Generic output stays available during higher-fidelity cold starts and failures.
 
-## 2.3 Plugins
+## Repository configuration
 
-Repo-local extensions contributing:
+`repopress.config.json` owns project coordination:
 
-- components
-- scope
-- allowImports fragments
+- project IDs, names, branches, and content roots;
+- framework/content-type hints;
+- optional explicit compatibility overrides for older repositories;
+- optional declarative authoring metadata.
 
-Merged deterministically.
+It does not own executable runtime bindings. New initialization writes only the lightweight config and does not generate `.repopress/mdx-preview.tsx` or a component catalog.
 
-Merge precedence:
+Existing explicit adapter paths remain readable. They are untrusted inputs and can affect compatible rendering only after isolated artifact production and signed snapshot binding. They never authorize host or native execution.
 
-    Project Adapter
-      > Plugins
-      > Default Adapter
+Registry namespaces, install aliases, runtime maps, and CSS targets currently come from repository-native evidence rather than duplicated RepoPress config fields. Project-facing overrides need a separately ratified, versioned contract before they are added.
 
----
+## Discovery and installation
 
-# 3. Architecture Overview
+Native discovery starts from an immutable repository revision and detects the framework layout from owned files. The current Next.js/Fumadocs slice resolves:
 
-    MDX File
-       ↓
-    Import Transformer
-       ↓
-    MDX Compiler (@mdx-js/mdx)
-       ↓
-    Runtime Evaluation (Sandboxed)
-       ↓
-    React Renderer
-       ↓
-    Live Preview
+- component aliases from `components.json` and path configuration;
+- the MDX runtime-map path;
+- the Tailwind CSS target;
+- package and lock paths;
+- existing files and RepoPress registry lock state.
 
----
+Registry resolution normalizes and integrity-checks items before planning. The planner is pure and deterministic, fails on dependency cycles/collisions/local modifications, and produces surgical file/package/CSS/runtime-map edits. Publishing authenticates the caller, derives repository authority server-side, creates one exact commit on a dedicated branch, and opens a pull request.
 
-# 4. Known Engineering Risks
+## Authoring contract
 
-## 4.1 Import Resolution (Highest Risk)
+The Studio consumes normalized declarative metadata, not runtime code. Metadata can describe:
 
-MDX expects bundlers; preview must simulate module loading.
+- component and export names;
+- string, boolean, number, enum, expression-as-data, and slot fields;
+- framework/runtime compatibility;
+- assets, fixtures, provenance, and integrity.
 
-Solution: - Parse AST imports - Remove import nodes - Inject bindings
-manually
+Registry metadata wins over optional project metadata for the same MDX name. Unknown native components may appear as incomplete placeholders rather than guessed schemas. Insertion and editing remain import-free where the installed runtime map already supplies the binding.
 
----
+## Generic Typeset fallback
 
-## 4.2 Adapter Execution
+Generic rendering parses an owned, bounded subset into a serializable render model and renders it with pinned shadcn Typeset styles. It preserves useful Markdown structure and represents unsupported MDX as inert placeholders. It never evaluates expressions, imports, adapters, plugins, JSX implementations, or event handlers.
 
-Adapters are TSX files.
+## Security and failure handling
 
-Required pipeline: 1. Fetch repo file 2. Transpile (esbuild) 3. Execute
-safely 4. Extract exports
+- Fail closed when sandbox origin configuration, signatures, sequence, snapshot, or artifact identity is invalid.
+- Reject repository execution in host source through the host-execution regression guard.
+- Keep compatible networking and navigation unavailable by default.
+- Bound source, AST/model, messages, files, manifests, dependency graphs, and outputs both before and after transformation.
+- Keep installation dry-run and write plans byte-identical; refuse stale base revisions and local modifications.
+- Preserve OAuth/PAT authentication boundaries and derive repository/project authority on the server.
+- Surface diagnostics without exposing credentials, repository source, or executable bindings to the Studio.
 
----
+## Delivered first slice
 
-## 4.3 Scope Injection
-
-Expressions only access injected runtime scope.
-
-All constants must be explicitly provided.
-
----
-
-## 4.4 Performance
-
-Must implement: - debounce (300--500ms) - hash memoization - cancel
-stale builds
-
----
-
-## 4.5 Error Isolation
-
-Three layers:
-
-Layer Handles
-
----
-
-Compile MDX syntax
-Evaluate JS execution
-Render React failures
-
-Editor must never crash.
-
----
-
-# 5. Minimal Working Prototype (MANDATORY FIRST STEP)
-
-## Purpose
-
-Validate runtime before introducing config or plugins.
-
-## Scope
-
-[COMPLETE] Single MDX file  
-[COMPLETE] Hardcoded adapter  
-[COMPLETE] No backend  
-[COMPLETE] No plugins  
-[COMPLETE] No config parsing
-
----
-
-## Prototype Flow
-
-    Hardcoded Adapter
-           +
-    MDX Source
-           ↓
-    Import Rewrite
-           ↓
-    Compile
-           ↓
-    Evaluate
-           ↓
-    Render
-
----
-
-## Exit Criteria
-
-Prototype complete when:
-
-1.  Custom component renders
-2.  Scope variable works
-3.  Invalid import shows diagnostic
-4.  Runtime error doesn't crash editor
-5.  Typing remains responsive
-
----
-
-# 6. Implementation Phases
-
-## Phase -1 - Minimal Prototype [COMPLETE]
-
-Goal: Prove MDX runtime viability.
-
-Deliverables: - import transformer - runtime evaluator - error
-boundary - hardcoded adapter
-
-**Note on Final Implementation:** Used `esbuild-wasm` for browser-side transpilation of adapters.
-
----
-
-## Phase 0 - Config Foundations [COMPLETE]
-
-- schema validator
-- precedence resolver
-- project sync model
-
----
-
-## Phase 1 - Runtime Integration [COMPLETE]
-
-- replace markdown preview
-- integrate MDX compiler
-- adapter loading
-
-**Note on Final Implementation:** Implemented a robust `compileMdx` pipeline that uses `try/catch` and `let` for MDX fallback assignments. This allows the runtime to catch missing component references and render placeholders instead of throwing hard errors that crash the preview.
-
----
-
-## Phase 2 - Plugin System [COMPLETE]
-
-- plugin manifest loader
-- context merging
-- diagnostics UI
-
----
-
-## Phase 3 - Init Flows [COMPLETE]
-
-- CLI init
-- web setup wizard
-
----
-
-## Phase 4 - Hardening [COMPLETE]
-
-- performance optimization
-- auto sync
-- improved error UX
-- atomic repository initialization (batch commits)
-- local esbuild.wasm hosting
-
----
-
-## Phase 5 - Plugin UX Preparation [COMPLETE]
-
-- metadata definitions
-- extension points
-- diagnostics panel refinement
-
----
-
-# 7. Minimal Prototype - File Structure
-
-    prototype/
-     ├── PreviewRuntime.tsx
-     ├── PreviewStatus.tsx
-     ├── compileMdx.ts
-     ├── transformImports.ts
-     ├── evaluateMdx.ts
-     ├── adapter.ts
-     ├── ErrorBoundary.tsx
-     └── index.tsx
-
----
-
-# 8. Pseudocode Blueprint (≈300‑Line Mental Model)
-
-## adapter.ts
-
-```ts
-export const adapter = {
-  components: { DocsImage },
-  scope: { DOCS_SETUP_MEDIA },
-  allowImports: {
-    "@/components": { DocsImage },
-  },
-};
-```
-
----
-
-## transformImports.ts
-
-```ts
-export function transformImports(ast, allowImports) {
-  const imports = collectImports(ast);
-
-  for (const imp of imports) {
-    if (!allowImports[imp.source]) {
-      throw new Error("Import not allowed");
-    }
-  }
-
-  removeImportNodes(ast);
-
-  return generateRuntimeBindings(imports);
-}
-```
-
----
-
-## compileMdx.ts
-
-```ts
-import { compile } from "@mdx-js/mdx";
-
-export async function compileMdx(source) {
-  // Uses targeted regex to replace const { with let { for fallbacks
-  return compile(source, {
-    outputFormat: "function-body",
-  });
-}
-```
-
----
-
-## evaluateMdx.ts
-
-```ts
-export function evaluateMdx(code, context) {
-  // Uses aligned key/value mapping to prevent misaligned scope
-  const fn = new Function(...Object.keys(context), code);
-  return fn(...Object.values(context));
-}
-```
-
----
-
-## ErrorBoundary.tsx
-
-```tsx
-export class ErrorBoundary extends React.Component {
-  state = { error: null };
-
-  static getDerivedStateFromError(error) {
-    return { error };
-  }
-
-  render() {
-    if (this.state.error) {
-      return <div>Preview Error</div>;
-    }
-    return this.props.children;
-  }
-}
-```
-
----
-
-## PreviewRuntime.tsx
-
-```tsx
-export function PreviewRuntime({ source }) {
-  const [Component, setComponent] = useState(null);
-
-  useEffect(() => {
-    async function run() {
-      const compiled = await compileMdx(source);
-      const context = buildContext(adapter);
-      // Clears preview on compilation error to prevent stale content
-      const Comp = evaluateMdx(compiled, context);
-      setComponent(() => Comp);
-    }
-    run();
-  }, [hash(source)]);
-
-  return <ErrorBoundary>{Component && <Component />}</ErrorBoundary>;
-}
-```
-
----
-
-# 9. Progress Tracking
-
-Each phase must define:
-
-- [COMPLETE] Deliverables
-- [COMPLETE] Acceptance tests
-- [COMPLETE] Known risks
-- [COMPLETE] Performance checks
-
-This document is now finalized following full implementation and UI polish.
-
----
-
-# 10. Development Rules
-
-1.  Never add config before runtime stability.
-2.  Never execute unknown imports.
-3.  Preview must never crash editor.
-4.  Prototype must pass exit criteria before Phase 0.
-5.  This document remains the authoritative roadmap.
-
----
-
-# 11. Final Principle
-
-> Build the smallest working MDX runtime first. Everything else scales
-> from proven execution.
-
----
-
-# UI Polish & Issues [COMPLETE]
-
-- **Smooth Transitions**: Implemented opacity-based fade-in when switching between file previews or when compilation finishes.
-- **Skeleton Placeholders**: Replaced "Initializing runtime..." text with high-fidelity skeleton loaders that match MDX content structure.
-- **Diagnostics UI**: Unified compilation status and warnings into a single "Status Pill" in the Preview header.
-- **Placeholder Styling**: Refined "Missing Component" boxes to use a professional "Dev Placeholder" aesthetic.
-- **Empty State Enhancement**: Added a polished "Ready to Render" state for the Studio preview when no file is selected.
-- **Stable Previews**: Fixed infinite loops by stabilizing resolver props and using ref-based diagnostics synchronization.
-
----
-
-# Mirror Architecture (High-Fidelity Editor) [COMPLETE]
-
-- **Live Bridge**: Implemented `RepoJsxBridge` to render actual repository React components directly inside the MDXEditor WYSIWYG canvas.
-- **Dynamic Discovery**: Added automatic component extraction from repository adapters, making them available in the editor's schema.
-- **Config-Driven Descriptors**: Extended `repopress.config.json` with a `components` block to define component signatures and prop types.
-- **Insert Menu**: Added a dynamic "JSX" insertion dropdown to the Studio toolbar that automatically lists all discovered and configured components.
-- **Visual Parity**: Achieved 100% visual identity between the Editor and Preview by sharing the same transpiled component implementations and asset resolution logic.
-
----
-
-# Phase 6 - Runtime Hardening [IN PROGRESS]
-
-Detailed implementation plan: `docs/plans/2026-03-02-mdx-runtime-hardening-plan.md`
-
-## Tasks
-
-1. **Persistent Adapter Cache** - IndexedDB cache for transpiled adapters
-2. **Rate Limiting & Debounce** - Protect GitHub API quota, prevent thundering herd
-3. **Private Asset URL Signing** - Signed URLs for private repository assets
-4. **Expression Sandbox** - Safe evaluation replacing `new Function()`
-5. **Compile Cache** - Memoize MDX compilation by source + adapter hash
-6. **Plugin Merge Determinism** - Defined precedence order for context merging
-
-## Status
-
-See `docs/plans/2026-03-02-mdx-runtime-hardening-plan.md` for detailed progress tracking.
-As of 2026-03-03, Task 1-6 in the hardening plan remain open (planned/in progress, not yet fully checked off).
-
----
-
-END OF DOCUMENT
+- explicit `generic` / `compatible` / `native` contracts and ordered preview sessions;
+- safe Typeset generic renderer;
+- opaque-origin compatible frame and bounded worker containment;
+- serializable authoring catalog and surgical MDX edits;
+- normalized registry and lock schemas;
+- official Callout fixture;
+- deterministic Next.js/Fumadocs install planner;
+- authenticated GitHub branch/commit/PR installation route;
+- Studio Callout palette → form → insertion → edit → preview proof;
+- native-discovery-first lightweight setup.
+
+## Follow-on work
+
+1. Design and threat-model the managed native runner separately.
+2. Expand framework discovery fixtures without weakening fail-closed layout detection.
+3. Add more official components and third-party registry governance.
+4. Improve compatible graph coverage while retaining immutable signed artifacts.
+5. Add project-facing diagnostics for discovered aliases, runtime map, CSS target, and downgrade causes.
+
+No follow-on item should reintroduce repository execution into the Studio or imply native fidelity from compatibility alone.

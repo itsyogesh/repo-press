@@ -1,6 +1,15 @@
+import fs from "node:fs"
+import path from "node:path"
 import { describe, expect, it, vi } from "vitest"
 
 describe("createCompileStatusForwarder", () => {
+  it("keeps Generic preview wired as fallback while forwarding the compatible state", () => {
+    const source = fs.readFileSync(path.join(process.cwd(), "components/studio/studio-layout.tsx"), "utf8")
+    expect(source).toContain("const compatiblePreview = useCompatiblePreview({")
+    expect(source).toContain("{...compatiblePreview}")
+    expect(source).toContain("fallbackResult={genericPreviewResult}")
+  })
+
   it("emits true immediately and debounces the settled false signal", async () => {
     vi.useFakeTimers()
 

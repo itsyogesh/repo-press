@@ -1,53 +1,20 @@
-## RepoPress Multi-Project MDX Runtime Spec + Implementation Plan
+# RepoPress Multi-Project MDX Specification
 
-> **Status:** COMPLETE  
-> **Done:** Spec + implementation phases 0-5 are marked complete and verified in this document.  
-> **Left:** None for v1 scope.  
-> **Last Updated:** 2026-03-03
+> **Status:** Signed framework-neutral product extensions are implemented; managed native execution is follow-on work.
+> **Last updated:** 2026-08-02
 
-### Summary
-Replace Markdown-only preview with a true MDX runtime that is driven by a repo-owned configuration contract (`repopress.config.json`) and repo-provided preview adapter(s).  
-Key decisions locked:
-1. Framework is per-project (not repo-global).
-2. Config is source of truth; Convex stores synced/project runtime state.
-3. Preview adapter supports repo default + per-project override.
-4. Plugins in v1 are manifest + renderer only, repo-local only.
-5. `react-markdown` preview path is removed for MDX preview.
+RepoPress is a Git-native CMS for repositories that may contain several content projects. A project identifies a content root, branch, framework hint, and content type. RepoPress discovers the repository's existing MDX layout instead of generating a parallel runtime.
 
----
+## Configuration contract
 
-## 1) Product Spec
+`repopress.config.json` coordinates projects. It is authoritative for project identity and content location, not for executable React components.
 
-### 1.1 Goals [Implemented]
-1. Render MDX with imports, JSX components, and expressions in live preview.
-2. Support one repo with multiple content projects and different frameworks.
-3. Provide deterministic setup via config + init flow (CLI + web).
-4. Support repo-defined preview plugins (renderer-level) in v1.
-5. Keep preview stable with graceful fallbacks (no blank/crash output).
-
-### 1.2 Non-Goals (v1)
-1. Full arbitrary runtime execution of the target app (Next.js server/runtime parity).
-2. Marketplace/distributed external plugin packages.
-3. Drag-drop and slash-command insertion UX (phase 2).
-4. Executing unknown imports outside declared adapter/plugin scope.
-
-### 1.3 New Contract Files [Implemented]
-1. `repopress.config.json` (repo root, required after init).
-2. `.repopress/mdx-preview.tsx` (repo default preview adapter).
-3. Optional per-project adapter entries (for overrides).
-4. Optional repo-local plugin manifests and renderers under `.repopress/plugins/*`.
-
-### 1.4 `repopress.config.json` Schema (v1) [Implemented]
 ```json
 {
   "version": 1,
   "defaults": {
     "branch": "main",
-    "framework": "auto",
-    "preview": {
-      "entry": ".repopress/mdx-preview.tsx",
-      "allowImports": []
-    }
+    "framework": "auto"
   },
   "projects": [
     {
@@ -55,201 +22,124 @@ Key decisions locked:
       "name": "Documentation",
       "contentRoot": "content/docs",
       "framework": "fumadocs",
-      "contentType": "docs",
-      "branch": "main",
-      "preview": {
-        "entry": ".repopress/mdx-preview.docs.tsx",
-        "plugins": ["docs-media", "callouts"]
-      }
+      "contentType": "docs"
     },
     {
-      "id": "blog",
-      "name": "Blog",
+      "id": "legacy-blog",
+      "name": "Legacy blog",
       "contentRoot": "content/blog",
-      "framework": "contentlayer",
-      "contentType": "blog"
+      "framework": "next-mdx",
+      "contentType": "blog",
+      "preview": {
+        "entry": ".repopress/custom-preview.tsx"
+      }
     }
-  ],
-  "plugins": {
-    "docs-media": ".repopress/plugins/docs-media/plugin.json"
-  }
+  ]
 }
 ```
 
-### 1.5 Precedence Rules [Implemented]
-1. Project-level settings override `defaults`.
-2. If `framework=auto`, detect per project `contentRoot`.
-3. Adapter resolution order:
-   - `project.preview.entry`
-   - `defaults.preview.entry`
-   - built-in fallback adapter (placeholder-only mode).
-4. Config is authoritative:
-   - RepoPress syncs Convex project rows from config on setup/open.
-   - UI edits that affect config-owned fields must write back to repo config (or be blocked in v1 if write-back isn’t available yet).
+The lightweight default contains no preview entry and no generated component catalog. The web setup flow creates only this config file.
 
-### 1.6 Preview Adapter Contract (TypeScript) [Implemented]
-```ts
-export type RepoPressPreviewAdapter = {
-  components?: Record<string, React.ComponentType<any>>;
-  scope?: Record<string, unknown>; // constants/functions used in MDX expressions
-  allowImports?: Record<string, Record<string, unknown>>; // module -> named exports
-  resolveAssetUrl?: (input: string, ctx: { owner: string; repo: string; branch: string; filePath: string }) => string;
-  onPreviewError?: (error: Error, ctx: { filePath: string }) => React.ReactNode;
-};
-```
+### Project fields
 
-### 1.7 Plugin Contract (v1 manifest + renderer) [Implemented]
-`plugin.json`:
-```json
-{
-  "id": "docs-media",
-  "name": "Docs Media",
-  "version": "1.0.0",
-  "entry": "./index.tsx",
-  "components": ["DocsImage", "DocsVideo"],
-  "scopeExports": ["DOCS_SETUP_MEDIA"]
-}
-```
-Plugin entry exports an object compatible with adapter partials (`components`, `scope`, optional `allowImports` fragments).  
-RepoPress merges plugin contributions into resolved adapter for the active project.
+- `id`: stable identity within the repository config.
+- `name`: display name.
+- `contentRoot`: repository-relative content root; an empty string means repository root.
+- `framework`: explicit framework hint or `auto`.
+- `contentType`: `blog`, `docs`, `pages`, `changelog`, or `custom`.
+- `branch`: optional content branch override.
+- `preview`: optional product preview entry for the signed Compatible sandbox.
+- `components`: optional bounded declarative authoring hints retained for compatibility. They contain metadata, never functions or runtime bindings.
 
-### 1.8 MDX Runtime Architecture [Implemented]
-1. Parse frontmatter/body with `gray-matter`.
-2. Compile/evaluate MDX body using `@mdx-js/mdx`.
-3. Import handling:
-   - Parse/transform top-level MDX `import` statements.
-   - Resolve only through merged `allowImports` map from adapter + plugins.
-   - Reject unknown imports with visible preview diagnostics.
-4. Expression execution:
-   - Evaluate with injected `scope` only.
-   - Runtime errors captured by error boundary and surfaced in preview panel.
-5. Component rendering:
-   - Use resolved component map from adapter/plugins.
-   - Missing components render deterministic placeholder blocks.
-6. Remove `react-markdown` path for MDX preview.
-   - Keep markdown-only fallback mode only for legacy non-MDX files if desired.
+Project settings override defaults. Sync copies project coordination data into Convex so the Studio can query it reactively. Drafts, history, taxonomy, and workflow state remain in Convex; published content remains in Git.
 
-### 1.9 Security and Stability Model (v1) [Implemented]
-1. Deny-by-default imports.
-2. No filesystem/server APIs available to evaluated MDX.
-3. Safe fallback for missing exports/components.
-4. Hard timeout/debounce for compile loop to protect editor responsiveness.
-5. Preview errors are non-fatal to editor state.
+## Native discovery is the default
 
-### 1.10 CLI + Web Init Behavior [Implemented]
-#### CLI: `npx repopress init`
-1. Detect candidate projects by scanning content directories.
-2. Suggest per-project framework/contentType; user confirms.
-3. Scaffold config + default adapter + example plugin manifest.
-4. Validate schema and adapter exports.
-5. Optional commit (`chore: initialize repopress config`).
+RepoPress inspects the selected immutable repository revision and content root. Depending on the framework, discovery uses existing repository files such as:
 
-#### Web setup flow
-1. On project/repo setup, check for `repopress.config.json`.
-2. If missing: offer “Initialize RepoPress config” wizard (same decisions as CLI).
-3. Generate files server-side via GitHub API commit.
-4. If present: parse and sync Convex rows from config.
+- `package.json` and framework configuration;
+- `components.json` aliases and Tailwind CSS target;
+- TypeScript/JavaScript path aliases;
+- the repository's MDX component/runtime map;
+- RepoPress's integrity-pinned registry lock.
 
----
+Registry installation resolves these inputs to a deterministic plan and publishes changes on a dedicated branch through a GitHub pull request. RepoPress does not create `.repopress/mdx-preview.tsx` during setup and does not treat a generated adapter as repository truth.
 
-## 2) Important API / Interface / Data Changes
+The current config schema does not duplicate shadcn registry namespaces, install aliases, or CSS targets. Those values are discovered from the repository's canonical files. A future explicit override shape requires a separate versioned design so it cannot become a competing authority.
 
-### 2.1 Convex `projects` table additions [Implemented]
-1. `configProjectId` (string, required for config-backed projects).
-2. `configVersion` (number).
-3. `configPath` (string, default `repopress.config.json`).
-4. `previewEntry` (optional string).
-5. `enabledPlugins` (optional string[]).
-6. `frameworkSource` (`"config" | "detected"`).
+“Native discovery” describes how RepoPress finds the repository's real component and styling boundaries. It does **not** mean the current first slice runs the repository's framework inside the Studio.
 
-### 2.2 New backend/API surfaces [Implemented]
-1. `GET /api/repopress/config` (fetch + validate config from selected repo/branch).
-2. `POST /api/repopress/init` (scaffold config/adapter/plugin files and commit).
-3. `POST /api/repopress/sync-projects` (sync config projects into Convex rows).
-4. Internal loader service:
-   - `loadResolvedPreviewContext({owner,repo,branch,projectId,filePath})`.
+## Preview fidelity
 
-### 2.3 Frontend contracts [Implemented]
-1. `usePreviewContext({ owner, repo, branch, adapterPath, enabledPlugins, pluginRegistry })`
-2. `PreviewRuntime({ source, adapter, externalDiagnostics, resolveAssetUrl })`
+Every preview result has an explicit fidelity grade.
 
----
+| Grade | Current behavior | Trust boundary |
+|---|---|---|
+| `generic` | Renders a bounded, serializable Typeset model for Markdown and safe MDX placeholders. | Runs in the RepoPress UI; repository code is never executed. |
+| `compatible` | Renders a browser-compatible, RepoPress-produced artifact when an exact signed artifact/session/snapshot is available. | Runs on a separately configured origin in an opaque-origin iframe with exactly `sandbox="allow-scripts"`. |
+| `native` | Reserved for a future managed runner that materializes the repository and runs its actual framework. | Not implemented in this slice and never inferred from an adapter path. |
 
-## 3) Implementation Plan
+The Studio shows downgrade reasons. Generic preview remains available whenever a trusted compatible artifact is missing, stale, invalid, or unsupported.
 
-### Phase 0: Foundations (Schema + Config + Validation) [COMPLETE]
-1. Add `repopress.config.json` schema validator (zod/typed runtime validator).
-2. Add config parser + precedence resolver.
-3. Add Convex schema/mutations for config-synced project metadata.
-4. Add `sync-projects` flow that upserts Convex projects by `configProjectId`.
+## Explicit product preview extensions
 
-### Phase 1: MDX Runtime Replacement [COMPLETE]
-1. Replace current preview engine with MDX compile/evaluate pipeline.
-2. Implement import rewrite + allowlist resolver.
-3. Add adapter loader (repo default + project override).
-4. Add placeholder renderer + runtime/compile error UI.
-5. Keep editor/frontmatter pipeline unchanged except preview integration seam.
+`projects[].preview.entry` may name a product-owned single-file adapter. The path and source remain untrusted inputs:
 
-### Phase 2: Adapter + Plugin Loading [COMPLETE]
-1. Implement adapter contract loader from repo files.
-2. Implement plugin manifest loader (repo-local only).
-3. Merge plugin exports into resolved preview context.
-4. Add diagnostics panel for invalid plugin manifests/exports.
+- an entry path is not native authority and never implies a framework;
+- it is never imported, transpiled, evaluated, or rendered in the Studio realm;
+- compatible use requires editor authorization, the exact current branch commit, static import validation, bounded
+  source, a short-lived P-256 signature, and the isolated sandbox path;
+- plugins and component metadata do not grant package, network, filesystem, or host credentials.
 
-### Phase 3: Init Flows [COMPLETE]
-1. CLI `init` command (scaffold + validate + optional commit).
-2. Web init wizard + commit endpoint.
-3. Setup page changes: prefer config projects; manual setup becomes fallback.
+The first profile accepts only `react`, React&rsquo;s JSX runtimes, and `@repopress/preview`; it rejects relative imports,
+aliases, framework modules, `require`, and dynamic imports. Production runtime bindings are separate: a Next.js site
+may still use `next/link`, an Astro site may use Astro assets, and neither choice leaks into the portable preview
+adapter.
 
-### Phase 4: Sync and UX Hardening [COMPLETE]
-1. Auto-sync config on studio open and branch switch.
-2. Conflict policy: config overwrites Convex for config-owned fields.
-3. Preview performance: debounce compile, memoize by source hash.
-4. Improve error messages with file+import context and remediation hints.
+Declarative `components` metadata may help construct an authoring catalog. Installed registry metadata with verified integrity takes precedence. Neither source supplies executable `RenderBindings` to the Studio.
 
-### Phase 5: Plugin UX Preparation [COMPLETE]
-1. Define plugin metadata for future slash/drag insertion.
-2. Store metadata in UI state but keep insertion UI behind feature flag.
-3. Document extension points for phase-2 UX.
+## Component ecosystem
 
----
+Authoring and rendering have separate contracts:
 
-## 4) Testing and Acceptance Scenarios [Verified]
+- `AuthoringCatalog` is bounded, JSON-serializable, detached, and deeply frozen metadata used by insertion and prop forms.
+- `RenderBindings` contains executable component bindings and is sandbox-only.
+- Registry items carry normalized authoring metadata, provenance, immutable integrity, dependencies, install targets, fixtures, and framework support.
+- Source edits are surgical and fail closed when the selected MDX node is stale or ambiguous.
 
-### 4.1 Config + Sync
-1. Repo with 2 projects (`fumadocs` + `contentlayer`) produces two Convex projects with correct per-project framework/contentRoot.
-2. Config update (project framework/contentRoot change) syncs correctly.
-3. Missing/invalid config shows actionable setup/validation errors.
+The registry proof is a Callout component. The first product-extension proof is Merry Magic Mail: five product-owned
+MDX names retain complete authoring contracts while their adapter composes only frozen RepoPress primitives. In both
+paths, insertion produces import-free MDX, prop edits preserve unrelated source, and Compatible rendering is selected
+only for a current signed artifact.
 
-### 4.2 MDX Runtime
-1. `porkbun.mdx` renders `DocsVideo` and all `DocsImage` entries via adapter scope.
-2. Conditional expression using `DOCS_SETUP_MEDIA` resolves correctly.
-3. Unknown import path fails with visible error, editor remains usable.
-4. Missing component export renders placeholder, not crash/blank page.
-5. Missing media URL renders fallback placeholder component.
+## Security invariants
 
-### 4.3 Plugin Loading
-1. Valid plugin manifest contributes components/scope to preview.
-2. Invalid manifest reports diagnostics and skips plugin safely.
-3. Plugin declared but missing files does not break core preview.
+1. Repository adapters and MDX never execute in the Studio/host realm.
+2. Generic preview is bounded before and after parsing and contains no functions.
+3. Compatible frames omit `allow-same-origin`, forms, popups, and navigation.
+4. Opaque-frame authentication uses exact window identity, a transferred single-use capability, session ID, snapshot version, and monotonic sequence; it does not trust `event.origin`.
+5. Registry resolution is allowlisted, integrity-pinned, deterministic, and collision-aware.
+6. Installation writes one exact commit to a dedicated branch and opens a PR; it never writes the base branch directly.
+7. OAuth and PAT requests use the existing server-side authorization and repository-role checks.
 
-### 4.4 Init Flows
-1. `npx repopress init` creates valid config/adapter/plugin scaffold.
-2. Web init commits the same artifacts and opens studio in synced state.
-3. Re-running init is idempotent (no duplicate projects or broken config).
+## Setup and migration
 
-### 4.5 Regression
-1. Non-MDX markdown files still preview correctly.
-2. Existing save/publish workflows remain unaffected.
-3. Multi-project switch in studio uses correct adapter/plugin set per project.
+New setup:
 
----
+1. Detect the repository framework and candidate content roots.
+2. Let the user confirm branch, root, framework, and content type.
+3. Commit only `repopress.config.json`.
+4. Sync project coordination data to Convex.
+5. Use generic preview while higher-fidelity providers are unavailable.
 
-## 5) Assumptions and Defaults
-1. `repopress.config.json` is authoritative for project/framework/contentRoot metadata.
-2. Repo default adapter exists at `.repopress/mdx-preview.tsx` unless overridden.
-3. Per-project framework is mandatory in resolved project config (explicit or auto-resolved).
-4. Plugin origin in v1 is repo-local only (`.repopress/plugins/*`).
-5. Plugin UX insertion (drag/drop/slash) is out of scope for this implementation plan.
-6. MDX preview executes only allowlisted imports from adapter/plugin merged context.
-7. Legacy `react-markdown` path is removed for MDX preview to avoid inconsistent behavior.
+Existing repositories may keep explicit preview entries while migrating. Removing an old `.repopress/mdx-preview.tsx` is a repository-owner decision; RepoPress does not delete it automatically. Its presence alone does not change fidelity or trust.
+
+## Current limitations
+
+- There is no managed native framework runner yet.
+- Compatible preview currently supports one product adapter file and a deliberately bounded browser-safe graph, not arbitrary application code, Server Components, framework loaders, product CSS, or unrestricted provider context.
+- Registry installation currently proves the official Callout path and a narrow Next.js/Fumadocs runtime-map integration.
+- Project-facing registry/alias/CSS discovery overrides do not yet have a ratified config shape.
+- Component auto-discovery beyond verified registry metadata and explicit declarative hints remains incremental.
+
+These limits are product state, not error fallbacks to hide. The fidelity badge and diagnostics must remain honest as coverage expands.

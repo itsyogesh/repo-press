@@ -25,16 +25,18 @@ import "@mdxeditor/editor/style.css"
 import "./mdxeditor-theme.css"
 
 import type { FieldVariantMap, FrontmatterFieldDef } from "@/lib/framework-adapters"
+import { createCurrentDocumentAuthoringStateCache, discoverMdxComponents } from "@/lib/studio/component-discovery"
 import { getAuthoredImageValue } from "@/lib/studio/image-authoring"
 import { getSuggestedImagePath, resolveStudioAssetUrl } from "@/lib/studio/media-resolve"
 import { uploadMedia } from "@/lib/studio/media-upload"
+import { ComponentEditProvider } from "./component-edit-context"
 import { shouldResetEditorBoundary } from "./editor-error-boundary-utils"
 import { EditorErrorFallback } from "./error-boundary"
 import { ForwardRefEditor } from "./forward-ref-editor"
 import { FrontmatterPanel } from "./frontmatter-panel"
 import { getJsxComponentDescriptors } from "./jsx-component-descriptors"
 import { IMAGE_EXTENSIONS } from "./shared-constants"
-import { useStudioAdapter } from "./studio-adapter-context"
+import { createStudioAdapterState, StudioAdapterProvider, useStudioAdapter } from "./studio-adapter-context"
 import { StudioToolbar } from "./studio-toolbar"
 
 // Error boundary for MDXEditor
@@ -132,29 +134,30 @@ export function Editor({
   contentRoot = "",
   tree = [],
 }: EditorProps) {
-  const { adapter, components: componentSchema, resolvedComponents } = useStudioAdapter()
+  const outerAuthoringState = useStudioAdapter()
   const editorRef = React.useRef<MDXEditorMethods>(null)
-
-  const discoveredJsxComponentNames = React.useMemo(() => {
-    const names = new Set<string>()
-    const componentTagRegex = /<\/?([A-Z][A-Za-z0-9_]*)\b/g
-    for (const match of content.matchAll(componentTagRegex)) {
-      const name = match[1]
-      if (name) {
-        names.add(name)
-      }
-    }
-
-    return Array.from(names)
-  }, [content])
+  const authoringStateCache = React.useRef(createCurrentDocumentAuthoringStateCache()).current
+  const componentDiscovery = React.useMemo(() => discoverMdxComponents(content), [content])
+  const documentAuthoringState = authoringStateCache.resolve(
+    outerAuthoringState.authoringCatalog,
+    componentDiscovery,
+    outerAuthoringState.nativeComponentNames,
+    outerAuthoringState.diagnostics,
+  )
+  const editorProviderState = React.useMemo(
+    () =>
+      createStudioAdapterState({
+        ...documentAuthoringState,
+        ...(outerAuthoringState.detectedFramework !== undefined
+          ? { detectedFramework: outerAuthoringState.detectedFramework }
+          : {}),
+      }),
+    [documentAuthoringState, outerAuthoringState.detectedFramework],
+  )
+  const { authoringCatalog, nativeComponentNames: discoveredJsxComponentNames } = documentAuthoringState
 
   const hasConfiguredMediaComponent = React.useMemo(() => {
-    // Use resolvedComponents (contentRoot-filtered) so blog context doesn't
-    // treat docs-only media components as available for inline inserts.
-    const configuredNames = new Set([
-      ...Object.keys(resolvedComponents || adapter?.components || {}),
-      ...Object.keys(componentSchema || {}),
-    ])
+    const configuredNames = new Set(authoringCatalog.map((component) => component.mdxName))
 
     return (
       configuredNames.has("DocsImage") ||
@@ -162,7 +165,7 @@ export function Editor({
       configuredNames.has("DocsVideo") ||
       configuredNames.has("Video")
     )
-  }, [resolvedComponents, adapter, componentSchema])
+  }, [authoringCatalog])
 
   // Image upload handler - Blob-first with GitHub fallback
   const handleImageUpload = React.useCallback(
@@ -255,11 +258,7 @@ export function Editor({
         directiveDescriptors: [AdmonitionDirectiveDescriptor, YouTubeDirectiveDescriptor],
       }),
       jsxPlugin({
-        jsxComponentDescriptors: getJsxComponentDescriptors(
-          adapter?.components,
-          componentSchema,
-          discoveredJsxComponentNames,
-        ),
+        jsxComponentDescriptors: getJsxComponentDescriptors(authoringCatalog, discoveredJsxComponentNames),
       }),
       diffSourcePlugin({
         diffMarkdown: "",
@@ -283,8 +282,7 @@ export function Editor({
       handleImageUpload,
       imageAutocompleteSuggestions,
       handleImagePreview,
-      adapter,
-      componentSchema,
+      authoringCatalog,
       discoveredJsxComponentNames,
       owner,
       repo,
@@ -309,6 +307,18 @@ export function Editor({
 
   const errorBoundaryResetKey = React.useMemo(() => `${filePath}:${sanitizedContent}`, [filePath, sanitizedContent])
 
+  const getEditSource = React.useCallback(
+    () => editorRef.current?.getMarkdown() ?? sanitizedContent,
+    [sanitizedContent],
+  )
+  const applyEditedSource = React.useCallback(
+    (source: string) => {
+      editorRef.current?.setMarkdown(source)
+      onChangeContent(source)
+    },
+    [onChangeContent],
+  )
+
   // Sync content to MDXEditor when content changes externally (file switch)
   const lastSyncedContent = React.useRef<string | null>(null)
   React.useEffect(() => {
@@ -319,48 +329,56 @@ export function Editor({
   }, [sanitizedContent])
 
   return (
-    <div className="h-full flex flex-col">
-      <div ref={scrollContainerRef} onScroll={onScroll} className="flex-1 overflow-y-auto">
-        <div className="space-y-0">
-          {/* Frontmatter Panel (Phase 6) */}
-          <FrontmatterPanel
-            frontmatter={frontmatter}
-            frontmatterSchema={frontmatterSchema}
-            fieldVariants={fieldVariants}
-            onChangeFrontmatter={onChangeFrontmatter}
-            filePath={filePath}
-          />
-
-          {/* MDXEditor */}
-          <div className="min-h-[500px]" data-scroll-sync-root="editor">
-            <EditorErrorBoundary
-              resetKey={errorBoundaryResetKey}
-              fallback={
-                <EditorErrorFallback
-                  content={content}
-                  onOpenSource={() => {
-                    // The error boundary will automatically reset when content changes
-                    // This is handled in componentDidUpdate
-                  }}
-                  onCopy={() => {
-                    navigator.clipboard.writeText(content)
-                  }}
-                />
-              }
-            >
-              <ForwardRefEditor
-                ref={editorRef}
-                key={filePath || "empty"}
-                markdown={sanitizedContent}
-                contentEditableClassName="prose prose-neutral dark:prose-invert max-w-none font-sans px-6 py-4 min-h-[500px] focus:outline-none"
-                onChange={handleContentChange}
-                plugins={plugins}
-                className="mdxeditor-studio"
+    <StudioAdapterProvider value={editorProviderState}>
+      <ComponentEditProvider
+        authoringCatalog={authoringCatalog}
+        getSource={getEditSource}
+        applySource={applyEditedSource}
+      >
+        <div className="h-full flex flex-col">
+          <div ref={scrollContainerRef} onScroll={onScroll} className="flex-1 overflow-y-auto">
+            <div className="space-y-0">
+              {/* Frontmatter Panel (Phase 6) */}
+              <FrontmatterPanel
+                frontmatter={frontmatter}
+                frontmatterSchema={frontmatterSchema}
+                fieldVariants={fieldVariants}
+                onChangeFrontmatter={onChangeFrontmatter}
+                filePath={filePath}
               />
-            </EditorErrorBoundary>
+
+              {/* MDXEditor */}
+              <div className="min-h-[500px]" data-scroll-sync-root="editor">
+                <EditorErrorBoundary
+                  resetKey={errorBoundaryResetKey}
+                  fallback={
+                    <EditorErrorFallback
+                      content={content}
+                      onOpenSource={() => {
+                        // The error boundary will automatically reset when content changes
+                        // This is handled in componentDidUpdate
+                      }}
+                      onCopy={() => {
+                        navigator.clipboard.writeText(content)
+                      }}
+                    />
+                  }
+                >
+                  <ForwardRefEditor
+                    ref={editorRef}
+                    key={filePath || "empty"}
+                    markdown={sanitizedContent}
+                    contentEditableClassName="prose prose-neutral dark:prose-invert max-w-none font-sans px-6 py-4 min-h-[500px] focus:outline-none"
+                    onChange={handleContentChange}
+                    plugins={plugins}
+                    className="mdxeditor-studio"
+                  />
+                </EditorErrorBoundary>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
-    </div>
+      </ComponentEditProvider>
+    </StudioAdapterProvider>
   )
 }

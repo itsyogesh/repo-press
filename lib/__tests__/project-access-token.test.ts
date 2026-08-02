@@ -1,16 +1,19 @@
 import { beforeEach, describe, expect, it } from "vitest"
 import {
   mintGitHubAccountLookupToken,
+  mintGitHubIdentityBootstrapToken,
   mintProjectAccessToken,
   mintServerQueryToken,
   verifyGitHubAccountLookupToken,
+  verifyGitHubIdentityBootstrapToken,
   verifyProjectAccessToken,
   verifyServerQueryToken,
 } from "../project-access-token"
 
 describe("project access token", () => {
   beforeEach(() => {
-    process.env.BETTER_AUTH_SECRET = "test-secret"
+    delete process.env.BETTER_AUTH_SECRET
+    process.env.REPOPRESS_CAPABILITY_SECRET = "test-capability-secret-at-least-32"
   })
 
   it("round-trips a valid token payload", async () => {
@@ -53,11 +56,40 @@ describe("project access token", () => {
     await expect(verifyGitHubAccountLookupToken(token, "12345")).resolves.toBe(true)
     await expect(verifyGitHubAccountLookupToken(token, "54321")).resolves.toBe(false)
   })
+
+  it("round-trips signed GitHub identity claims without carrying the PAT", async () => {
+    const token = await mintGitHubIdentityBootstrapToken({
+      githubAccountId: "12345",
+      githubUsername: "octocat",
+      name: "The Octocat",
+      image: "https://avatars.githubusercontent.com/u/12345",
+    })
+
+    await expect(verifyGitHubIdentityBootstrapToken(token)).resolves.toEqual({
+      githubAccountId: "12345",
+      githubUsername: "octocat",
+      name: "The Octocat",
+      image: "https://avatars.githubusercontent.com/u/12345",
+    })
+    expect(decodeURIComponent(token)).not.toContain("github_pat")
+  })
+
+  it("rejects tampered GitHub identity bootstrap claims", async () => {
+    const token = await mintGitHubIdentityBootstrapToken({
+      githubAccountId: "12345",
+      githubUsername: "octocat",
+      name: null,
+      image: null,
+    })
+
+    await expect(verifyGitHubIdentityBootstrapToken(token.replace("octocat", "attacker"))).resolves.toBeNull()
+  })
 })
 
 describe("server query token", () => {
   beforeEach(() => {
-    process.env.BETTER_AUTH_SECRET = "test-secret"
+    delete process.env.BETTER_AUTH_SECRET
+    process.env.REPOPRESS_CAPABILITY_SECRET = "test-capability-secret-at-least-32"
   })
 
   it("round-trips a valid server query token", async () => {
@@ -81,5 +113,36 @@ describe("server query token", () => {
 
   it("rejects malformed tokens without a separator", async () => {
     await expect(verifyServerQueryToken("noseparator")).resolves.toBe(false)
+  })
+})
+
+describe("capability secret boundary", () => {
+  beforeEach(() => {
+    delete process.env.BETTER_AUTH_SECRET
+    delete process.env.REPOPRESS_CAPABILITY_SECRET
+  })
+
+  it("works without exposing the Better Auth secret to the application server", async () => {
+    process.env.REPOPRESS_CAPABILITY_SECRET = "dedicated-capability-secret-32-plus"
+
+    const token = await mintServerQueryToken()
+
+    await expect(verifyServerQueryToken(token)).resolves.toBe(true)
+  })
+
+  it("does not silently reuse the Better Auth session secret", async () => {
+    process.env.BETTER_AUTH_SECRET = "better-auth-session-secret"
+
+    await expect(mintServerQueryToken()).rejects.toThrow(
+      "REPOPRESS_CAPABILITY_SECRET is required for RepoPress capability tokens",
+    )
+  })
+
+  it.each(["short", "                                "])("rejects weak capability secrets", async (secret) => {
+    process.env.REPOPRESS_CAPABILITY_SECRET = secret
+
+    await expect(mintServerQueryToken()).rejects.toThrow(
+      "REPOPRESS_CAPABILITY_SECRET must contain at least 32 non-whitespace characters",
+    )
   })
 })
