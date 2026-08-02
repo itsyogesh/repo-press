@@ -75,7 +75,7 @@ Convex provides automatic backups:
 
 1. Go to [GitHub Developer Settings](https://github.com/settings/developers)
 2. Select your OAuth App
-3. Update "Authorization callback URL" to: `https://<prod-convex>.convex.site/api/auth/callback/github`
+3. Update "Authorization callback URL" to: `https://<app-origin>/api/auth/callback/github`
 4. Verify: attempt OAuth login flow
 
 ### Session tokens invalid

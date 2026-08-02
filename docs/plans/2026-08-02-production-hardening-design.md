@@ -32,9 +32,9 @@ Copy the existing production Convex `REPOPRESS_CAPABILITY_SECRET` into productio
 
 ### Dedicated Compatible preview origin
 
-Add a deployment-role gate controlled by `REPOPRESS_DEPLOYMENT_ROLE=sandbox`. In sandbox mode, only `/preview/sandbox` and the static assets required to render it are reachable; application, dashboard, auth, and mutation routes return 404. Normal Studio deployments are unchanged.
+Add a deployment-role gate controlled by `REPOPRESS_DEPLOYMENT_ROLE=sandbox`. In sandbox mode, only `GET` and `HEAD` requests for `/preview/sandbox`, immutable Next.js bundles, and an exact allowlist of public assets required to render it are reachable; application, dashboard, auth, mutation, and dynamic extension-suffixed routes return 404. Normal Studio deployments are unchanged.
 
-Create a dedicated public Vercel sandbox project from the same reviewed commit. Generate one P-256 key pair: the private JWK is server-only in the Studio production environment, while the matching public JWK is browser-readable in both Studio and sandbox builds. Point `NEXT_PUBLIC_PREVIEW_ORIGIN` at the dedicated sandbox production origin. The sandbox remains public at the network edge because repository code is admitted only through RepoPress's signed approval protocol and executes inside the opaque iframe containment boundary.
+Create a dedicated public Vercel sandbox project from the same reviewed commit. Generate one P-256 key pair: the private JWK is server-only in the Studio production environment, while the matching public JWK is browser-readable in both Studio and sandbox builds. The sandbox also receives the public Convex URL and site URL because the shared application build requires them; the role gate prevents those values from exposing application or API routes at runtime. Point `NEXT_PUBLIC_PREVIEW_ORIGIN` at the dedicated sandbox production origin. The sandbox remains public at the network edge because repository code is admitted only through RepoPress's signed approval protocol and executes inside the opaque iframe containment boundary.
 
 ### Data flow
 

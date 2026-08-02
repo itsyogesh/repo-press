@@ -73,6 +73,8 @@ describe("proxy.ts", () => {
       "/api/auth/get-session",
       "/api/github/tree",
       "/_next/image",
+      "/dashboard/acme/repo/blob/private.png",
+      "/blog/diagram.svg",
     ]) {
       const response = proxy(new NextRequest(`https://preview.repo-press.dev${pathname}`))
 
@@ -88,9 +90,34 @@ describe("proxy.ts", () => {
     expect(response.headers.get("x-middleware-next")).toBe("1")
   })
 
+  it.each([
+    "POST",
+    "PUT",
+    "PATCH",
+    "DELETE",
+    "OPTIONS",
+  ])("returns 404 for %s requests to the sandbox document", (method) => {
+    process.env.REPOPRESS_DEPLOYMENT_ROLE = "sandbox"
+    const response = proxy(
+      new NextRequest("https://preview.repo-press.dev/preview/sandbox", {
+        method,
+      }),
+    )
+
+    expect(response.status).toBe(404)
+    expect(response.headers.get("cache-control")).toBe("no-store")
+  })
+
   it("exports a static matcher that covers application and API routes while excluding immutable assets", () => {
     expect(config).toEqual({
-      matcher: ["/((?!_next/static|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff2?|ttf|wasm)$).*)"],
+      matcher: ["/((?!_next/static).*)"],
     })
+    const matcher = new RegExp(`^${config.matcher[0]}$`)
+
+    for (const pathname of ["/dashboard/acme/repo/blob/private.png", "/blog/diagram.svg", "/preview/sandbox"]) {
+      expect(matcher.test(pathname), pathname).toBe(true)
+    }
+
+    expect(matcher.test("/_next/static/chunks/app.js")).toBe(false)
   })
 })

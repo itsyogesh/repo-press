@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { canServeDeploymentPath } from "@/lib/deployment-role"
+import { canServeDeploymentRequest } from "@/lib/deployment-role"
 
 const DASHBOARD_PATH = "/dashboard"
 const CONVEX_JWT_COOKIE_NAMES = ["better-auth.convex_jwt", "convex_jwt"] as const
@@ -18,7 +18,7 @@ function getAuthSignals(request: NextRequest) {
 export function proxy(request: NextRequest) {
   const { pathname, searchParams } = request.nextUrl
 
-  if (!canServeDeploymentPath(pathname)) {
+  if (!canServeDeploymentRequest(pathname, request.method)) {
     return new NextResponse("Not Found", {
       status: 404,
       headers: {
@@ -54,5 +54,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff2?|ttf|wasm)$).*)"],
+  matcher: ["/((?!_next/static).*)"],
 }

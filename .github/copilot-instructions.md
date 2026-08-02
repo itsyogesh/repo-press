@@ -331,7 +331,7 @@ npx convex dev  # in another terminal
 
 ### Troubleshooting
 - **"ConvexReactClient not initialized"** → `NEXT_PUBLIC_CONVEX_URL` is missing
-- **"OAuth callback failed"** → GitHub OAuth App callback URL must be `https://your-convex-project.convex.site/api/auth/callback/github`
+- **"OAuth callback failed"** → GitHub OAuth App callback URL must be `https://your-app.example/api/auth/callback/github`
 - **"ctx is not a mutation context"** → Auth.ts was edited incorrectly; reset from git
 
 ## Common Pitfalls

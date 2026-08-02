@@ -189,7 +189,7 @@ The private and public preview JWKs must be generated as one P-256 key pair. Kee
 1. Go to [GitHub Developer Settings](https://github.com/settings/developers)
 2. Click **New OAuth App**
 3. Set **Homepage URL** to your app URL
-4. Set **Authorization callback URL** to `https://your-convex-project.convex.site/api/auth/callback/github`
+4. Set **Authorization callback URL** to `https://your-app.example/api/auth/callback/github`
 5. Copy the Client ID and generate a Client Secret
 
 ---

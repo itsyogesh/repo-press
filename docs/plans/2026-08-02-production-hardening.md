@@ -175,9 +175,13 @@ Create a dedicated Vercel project from the reviewed branch with:
 
 - `REPOPRESS_DEPLOYMENT_ROLE=sandbox`;
 - `NEXT_PUBLIC_APP_URL=https://repo-press-itsyogesh.vercel.app` for CSP `frame-ancestors`;
+- the public production `NEXT_PUBLIC_CONVEX_URL` and `NEXT_PUBLIC_CONVEX_SITE_URL` required by the shared build;
 - the matching `NEXT_PUBLIC_PREVIEW_APPROVAL_PUBLIC_KEY_JWK`.
 
-Keep the sandbox production deployment public; do not add Studio auth or the private key.
+Keep the sandbox production deployment public; do not add Studio auth,
+`CONVEX_DEPLOYMENT`, the capability secret, or the private key. The deployment
+gate must still reject all runtime application/API routes and all non-GET/HEAD
+requests.
 
 **Step 5: Push, open PR, review, and merge**
 

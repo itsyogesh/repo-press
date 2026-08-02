@@ -56,9 +56,11 @@ Step-by-step instructions for deploying RepoPress to production. This guide cove
 2. **Create a new OAuth App** (separate from dev):
    - **Application name**: `RepoPress` (or `RepoPress Production`)
    - **Homepage URL**: `https://your-domain.com`
-   - **Authorization callback URL**: `https://<your-project>.convex.site/api/auth/callback/github`
+   - **Authorization callback URL**: `https://your-domain.com/api/auth/callback/github`
 
-   > ⚠️ The callback URL MUST point to your **Convex site URL**, not your Vercel domain. Better Auth runs inside Convex.
+   > The callback URL must use the public RepoPress application origin. The
+   > Next.js auth route proxies the callback to Better Auth in Convex and lets
+   > the application origin receive the session cookies.
 
 3. **Copy the Client ID and Client Secret** - you already set these in Step 1.
 
@@ -98,12 +100,17 @@ protection disabled and these production variables:
 |----------|-------|
 | `REPOPRESS_DEPLOYMENT_ROLE` | `sandbox` |
 | `NEXT_PUBLIC_APP_URL` | Public Studio origin, used by the sandbox CSP `frame-ancestors` rule |
+| `NEXT_PUBLIC_CONVEX_URL` | Same public Convex deployment URL used by Studio; required at build time |
+| `NEXT_PUBLIC_CONVEX_SITE_URL` | Same public Convex site URL used by Studio; required at build time |
 | `NEXT_PUBLIC_PREVIEW_APPROVAL_PUBLIC_KEY_JWK` | Public half of the Studio signing key pair |
 
-The sandbox role serves only `/preview/sandbox` and immutable assets. It must
-not receive the private signing JWK, GitHub credentials, auth secrets, or the
-RepoPress capability secret. The origin is public at the network edge because
-the signed approval protocol and opaque iframe are the execution boundary.
+The Convex URLs are public build configuration, not credentials. The sandbox
+role still rejects runtime application and API access: it serves only `GET` and
+`HEAD` requests for `/preview/sandbox`, immutable Next.js bundles, and the exact
+public assets needed by that page. It must not receive the private signing JWK,
+GitHub credentials, auth secrets, `CONVEX_DEPLOYMENT`, or the RepoPress
+capability secret. The origin is public at the network edge because the signed
+approval protocol and opaque iframe are the execution boundary.
 
 ---
 
@@ -200,7 +207,7 @@ Run Lighthouse on `/` targeting:
 | Symptom | Cause | Fix |
 |---------|-------|-----|
 | "ConvexReactClient not initialized" | Missing `NEXT_PUBLIC_CONVEX_URL` | Set it in Vercel env vars and redeploy |
-| OAuth callback fails | Wrong callback URL in GitHub OAuth App | Must be `https://<project>.convex.site/api/auth/callback/github` |
+| OAuth callback fails | Wrong callback URL in GitHub OAuth App | Must be `https://<app-origin>/api/auth/callback/github` |
 | "ctx is not a mutation context" | Auth.ts modified incorrectly | Reset `convex/auth.ts` from git |
 | 401 on API routes | Missing/expired GitHub token | Re-login via OAuth |
 | OG image not showing | `NEXT_PUBLIC_APP_URL` not set | Set it and redeploy for correct `metadataBase` |
