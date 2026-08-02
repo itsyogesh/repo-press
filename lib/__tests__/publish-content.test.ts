@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { parseContentFile } from "@/lib/content-metadata"
 import { bodyEmbedsMetadataExport, detectMetadataSource, serializePublishContent } from "@/lib/publish-content"
 
 describe("detectMetadataSource", () => {
@@ -96,6 +97,51 @@ describe("bodyEmbedsMetadataExport", () => {
 })
 
 describe("serializePublishContent", () => {
+  it("round-trips parsed metadata without losing or duplicating unrelated ESM", () => {
+    const source =
+      'import { site } from "./config"\n\nexport const metadata = { title: "Hello" }\nexport const revalidate = 3600\n\n# Body\n'
+    const parsed = parseContentFile(source, "docs/a.mdx")
+
+    const result = serializePublishContent({
+      filePath: "docs/a.mdx",
+      body: parsed.body,
+      frontmatter: { ...parsed.metadata },
+      metadataSource: parsed.metadataSource,
+      existingContent: source,
+    })
+
+    expect(result).toEqual({
+      ok: true,
+      content:
+        'export const metadata = {\n  "title": "Hello"\n}\n\nimport { site } from "./config"\n\nexport const revalidate = 3600\n\n# Body\n',
+    })
+    if (result.ok) {
+      expect(result.content.match(/export const metadata/g)).toHaveLength(1)
+      expect(result.content.match(/import \{ site \}/g)).toHaveLength(1)
+      expect(result.content.match(/export const revalidate/g)).toHaveLength(1)
+    }
+  })
+
+  it("does not duplicate preserved ESM when parsed export metadata is empty", () => {
+    const source =
+      'import { site } from "./config"\n\nexport const metadata = {}\nexport const revalidate = 3600\n\n# Body\n'
+    const parsed = parseContentFile(source, "docs/a.mdx")
+
+    const result = serializePublishContent({
+      filePath: "docs/a.mdx",
+      body: parsed.body,
+      frontmatter: {},
+      metadataSource: parsed.metadataSource,
+      existingContent: source,
+    })
+
+    expect(result).toEqual({
+      ok: true,
+      content:
+        'export const metadata = {}\n\nimport { site } from "./config"\n\nexport const revalidate = 3600\n\n# Body\n',
+    })
+  })
+
   it("round-trips a YAML frontmatter document", () => {
     const result = serializePublishContent({
       filePath: "docs/a.mdx",

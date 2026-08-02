@@ -8,7 +8,7 @@ export type ParsedContentFile = Readonly<{
   metadata: Readonly<Record<string, unknown>>
   metadataSource: ContentMetadataSource
   editable: boolean
-  diagnostic?: "UNSUPPORTED_METADATA_EXPORT"
+  diagnostic?: "UNSUPPORTED_FRONTMATTER" | "UNSUPPORTED_METADATA_EXPORT"
 }>
 
 const YAML_FRONTMATTER_PATTERN = /^\uFEFF?---\r?\n/
@@ -23,6 +23,10 @@ const MAX_METADATA_KEYS = 256
 const MAX_ARRAY_ITEMS = 1_024
 const MAX_STRING_LENGTH = 65_536
 const MAX_TOTAL_STRING_LENGTH = 262_144
+const MAX_FRONTMATTER_LENGTH = 65_536
+// Bound lexical work before Acorn sees repository-controlled JavaScript.
+const MAX_ESM_STATEMENT_LENGTH = 65_536
+const MAX_LEXICAL_BRACKET_DEPTH = 128
 
 const EMPTY_METADATA = Object.freeze({}) as Readonly<Record<string, unknown>>
 
@@ -65,7 +69,7 @@ function matchesMetadataDeclarationStart(content: string, start: number) {
 }
 
 /** Find a column-zero metadata declaration outside CommonMark code fences. */
-export function findTopLevelMetadataExportOffset(content: string) {
+function findTopLevelMetadataExportOffset(content: string) {
   let openFence: { marker: string; length: number } | null = null
   let offset = 0
   for (const line of content.split(/\r?\n/)) {
@@ -112,6 +116,7 @@ function consumeLeadingEsmStatement(content: string, start: number) {
   let metadataObjectClosed = false
 
   for (let index = start; index < content.length; index += 1) {
+    if (index - start >= MAX_ESM_STATEMENT_LENGTH) return null
     const character = content[index]
     const nextCharacter = content[index + 1]
 
@@ -161,6 +166,7 @@ function consumeLeadingEsmStatement(content: string, start: number) {
         metadataInitializerObjectStarted = true
       }
       brackets.push(character)
+      if (brackets.length > MAX_LEXICAL_BRACKET_DEPTH) return null
       continue
     }
     if (character === "}" || character === "]" || character === ")") {
@@ -218,7 +224,7 @@ function scanLeadingEsmPreamble(content: string): LeadingEsmScan | null {
   return { end: safeEnd, metadataDeclarations }
 }
 
-export function findLeadingEsmPreambleEnd(content: string) {
+function findLeadingEsmPreambleEnd(content: string) {
   return scanLeadingEsmPreamble(content)?.end ?? null
 }
 
@@ -238,8 +244,8 @@ function declarationHasUnsupportedContinuation(content: string, declarationEnd: 
   return startsUnsupportedContinuation(content.slice(lineBreakStart))
 }
 
-/** Recover the complete leading ESM preamble containing the metadata export. */
-export function extractMetadataExport(content: string) {
+/** Recover publish-safe string parts without exposing lexical offsets. */
+export function extractMetadataExportRecovery(content: string) {
   const start = findTopLevelMetadataExportOffset(content)
   if (start === null) return null
 
@@ -259,6 +265,7 @@ export function extractMetadataExport(content: string) {
   let objectEnd: number | null = null
 
   for (let index = prefixMatch[0].length; index < declaration.length; index += 1) {
+    if (index >= MAX_ESM_STATEMENT_LENGTH) return null
     const character = declaration[index]
     const nextCharacter = declaration[index + 1]
 
@@ -299,6 +306,7 @@ export function extractMetadataExport(content: string) {
       if (!objectStarted && character !== "{") return null
       objectStarted = true
       brackets.push(character)
+      if (brackets.length > MAX_LEXICAL_BRACKET_DEPTH) return null
       continue
     }
     if (character === "}" || character === "]" || character === ")") {
@@ -321,7 +329,15 @@ export function extractMetadataExport(content: string) {
   const hasTerminatingSemicolon = /;\s*(?:\/\/[^\r\n]*)?$/.test(suffix)
   if (!hasTerminatingSemicolon && startsUnsupportedContinuation(declaration.slice(lineEnd))) return null
 
-  return content.slice(0, preambleEnd).trimEnd()
+  const declarationEnd = start + lineEnd + (lineEndMatch?.[0].length ?? 0)
+  return Object.freeze({
+    declaration: content.slice(start, start + lineEnd).trimEnd(),
+    fullPreamble: content.slice(0, preambleEnd).trimEnd(),
+    preambleWithoutMetadata: removeMetadataDeclaration(content.slice(0, preambleEnd), {
+      start,
+      end: declarationEnd,
+    }).trimEnd(),
+  })
 }
 
 type ParseBudget = {
@@ -335,6 +351,13 @@ function consumeStringBudget(value: string, budget: ParseBudget) {
   if (value.length > MAX_STRING_LENGTH) throw new Error("Metadata string exceeds limit")
   budget.stringLength += value.length
   if (budget.stringLength > MAX_TOTAL_STRING_LENGTH) throw new Error("Metadata strings exceed limit")
+}
+
+function consumeNodeBudget(depth: number, budget: ParseBudget) {
+  budget.nodes += 1
+  if (budget.nodes > MAX_METADATA_NODES || depth > MAX_METADATA_DEPTH) {
+    throw new Error("Metadata structure exceeds limit")
+  }
 }
 
 function literalValue(node: Literal, budget: ParseBudget) {
@@ -370,9 +393,7 @@ function propertyKey(property: Property, budget: ParseBudget) {
 }
 
 function staticValue(node: Expression, depth: number, budget: ParseBudget): unknown {
-  budget.nodes += 1
-  if (budget.nodes > MAX_METADATA_NODES || depth > MAX_METADATA_DEPTH)
-    throw new Error("Metadata structure exceeds limit")
+  consumeNodeBudget(depth, budget)
 
   if (node.type === "Literal") return literalValue(node, budget)
   if (node.type === "UnaryExpression") {
@@ -416,6 +437,69 @@ function staticValue(node: Expression, depth: number, budget: ParseBudget): unkn
   throw new Error("Unsupported metadata expression")
 }
 
+function cloneYamlValue(value: unknown, depth: number, budget: ParseBudget, ancestors: WeakSet<object>): unknown {
+  consumeNodeBudget(depth, budget)
+
+  if (value === null || typeof value === "boolean") return value
+  if (typeof value === "string") {
+    consumeStringBudget(value, budget)
+    return value
+  }
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) throw new Error("Frontmatter number must be finite")
+    return value
+  }
+  if (typeof value !== "object") throw new Error("Frontmatter must be JSON-compatible")
+  if (ancestors.has(value)) throw new Error("Cyclic frontmatter is unsupported")
+
+  ancestors.add(value)
+  try {
+    if (Array.isArray(value)) {
+      budget.arrayItems += value.length
+      if (budget.arrayItems > MAX_ARRAY_ITEMS) throw new Error("Frontmatter array exceeds limit")
+      const clone = value.map((item) => cloneYamlValue(item, depth + 1, budget, ancestors))
+      return Object.freeze(clone)
+    }
+
+    const prototype = Object.getPrototypeOf(value)
+    if (prototype !== Object.prototype && prototype !== null) {
+      throw new Error("Frontmatter must contain only plain records")
+    }
+
+    const record: Record<string, unknown> = {}
+    for (const key of Object.keys(value)) {
+      budget.nodes += 1
+      budget.keys += 1
+      if (budget.nodes > MAX_METADATA_NODES || budget.keys > MAX_METADATA_KEYS) {
+        throw new Error("Frontmatter object exceeds limit")
+      }
+      if (DANGEROUS_KEYS.has(key)) throw new Error("Dangerous frontmatter key")
+      consumeStringBudget(key, budget)
+
+      const descriptor = Object.getOwnPropertyDescriptor(value, key)
+      if (!descriptor || !("value" in descriptor)) throw new Error("Frontmatter accessors are unsupported")
+      Object.defineProperty(record, key, {
+        value: cloneYamlValue(descriptor.value, depth + 1, budget, ancestors),
+        enumerable: true,
+        configurable: false,
+        writable: false,
+      })
+    }
+    return Object.freeze(record)
+  } finally {
+    ancestors.delete(value)
+  }
+}
+
+function cloneYamlMetadata(value: unknown) {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error("Frontmatter root must be a record")
+  }
+  return cloneYamlValue(value, 0, { nodes: 0, keys: 0, arrayItems: 0, stringLength: 0 }, new WeakSet()) as Readonly<
+    Record<string, unknown>
+  >
+}
+
 function parseStaticMetadataDeclaration(declaration: string) {
   const program = parse(declaration, { ecmaVersion: "latest", sourceType: "module" })
   if (program.body.length !== 1) throw new Error("Expected one metadata export")
@@ -445,26 +529,43 @@ function unsupportedMetadataExport(source: string): ParsedContentFile {
   }
 }
 
-function freezeYamlValue(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    for (const item of value) freezeYamlValue(item)
-    return Object.freeze(value)
+function unsupportedFrontmatter(source: string): ParsedContentFile {
+  return {
+    body: source,
+    metadata: EMPTY_METADATA,
+    metadataSource: "frontmatter",
+    editable: false,
+    diagnostic: "UNSUPPORTED_FRONTMATTER",
   }
-  if (value && typeof value === "object") {
-    for (const item of Object.values(value)) freezeYamlValue(item)
-    return Object.freeze(value)
-  }
-  return value
+}
+
+function removeMetadataDeclaration(source: string, declaration: Readonly<{ start: number; end: number }>) {
+  const before = source.slice(0, declaration.start).replace(/^\uFEFF/, "")
+  const after = source.slice(declaration.end)
+  if (before === "") return after.replace(/^(?:\r?\n)+/, "")
+  return before + after
+}
+
+function frontmatterPayloadLength(source: string) {
+  const start = source.startsWith("\uFEFF") ? 4 : 3
+  const closingDelimiter = source.indexOf("\n---", start)
+  return (closingDelimiter === -1 ? source.length : closingDelimiter) - start
 }
 
 export function parseContentFile(source: string, filePath: string): ParsedContentFile {
   if (YAML_FRONTMATTER_PATTERN.test(source)) {
-    const parsed = matter(source.startsWith("\uFEFF") ? source.slice(1) : source)
-    return {
-      body: parsed.content,
-      metadata: freezeYamlValue(parsed.data) as Readonly<Record<string, unknown>>,
-      metadataSource: "frontmatter",
-      editable: true,
+    if (frontmatterPayloadLength(source) > MAX_FRONTMATTER_LENGTH) return unsupportedFrontmatter(source)
+    try {
+      // Supplying options bypasses gray-matter's content-keyed, shallow cache.
+      const parsed = matter(source.startsWith("\uFEFF") ? source.slice(1) : source, {})
+      return {
+        body: parsed.content,
+        metadata: cloneYamlMetadata(parsed.data),
+        metadataSource: "frontmatter",
+        editable: true,
+      }
+    } catch {
+      return unsupportedFrontmatter(source)
     }
   }
 
@@ -482,11 +583,12 @@ export function parseContentFile(source: string, filePath: string): ParsedConten
   }
   const declaration = preamble.metadataDeclarations[0]
   if (declarationHasUnsupportedContinuation(source, declaration.end)) return unsupportedMetadataExport(source)
+  if (declaration.end - declaration.start > MAX_ESM_STATEMENT_LENGTH) return unsupportedMetadataExport(source)
 
   try {
     const metadata = parseStaticMetadataDeclaration(source.slice(declaration.start, declaration.end))
     return {
-      body: source.slice(preamble.end),
+      body: removeMetadataDeclaration(source, declaration),
       metadata,
       metadataSource: "metadata-export",
       editable: true,

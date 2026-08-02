@@ -1,5 +1,16 @@
+import matter from "gray-matter"
 import { describe, expect, it } from "vitest"
 import { parseContentFile } from "@/lib/content-metadata"
+
+function expectUnsupportedFrontmatter(source: string) {
+  expect(parseContentFile(source, "docs/a.md")).toEqual({
+    body: source,
+    metadata: {},
+    metadataSource: "frontmatter",
+    editable: false,
+    diagnostic: "UNSUPPORTED_FRONTMATTER",
+  })
+}
 
 describe("parseContentFile", () => {
   it("parses a static Merry-style metadata export without evaluating it", () => {
@@ -47,8 +58,20 @@ describe("parseContentFile", () => {
       '\uFEFF// Page metadata\r\nimport type { Metadata } from "next"\r\n\r\nexport const metadata = {\r\n  "title": "Hello",\r\n  count: -2.5,\r\n  enabled: true,\r\n  optional: null,\r\n}\r\n\r\n# Body\r\n'
 
     expect(parseContentFile(source, "docs/a.mdx")).toEqual({
-      body: "# Body\r\n",
+      body: '// Page metadata\r\nimport type { Metadata } from "next"\r\n\r\n\r\n# Body\r\n',
       metadata: { title: "Hello", count: -2.5, enabled: true, optional: null },
+      metadataSource: "metadata-export",
+      editable: true,
+    })
+  })
+
+  it("removes only metadata while preserving unrelated leading ESM and comments byte-for-byte", () => {
+    const source =
+      '/* keep */\nimport { site } from "./config"\n\nexport const metadata = { title: "Hello" }\nexport const revalidate = 3600\n\n# Body\n'
+
+    expect(parseContentFile(source, "docs/a.mdx")).toEqual({
+      body: '/* keep */\nimport { site } from "./config"\n\nexport const revalidate = 3600\n\n# Body\n',
+      metadata: { title: "Hello" },
       metadataSource: "metadata-export",
       editable: true,
     })
@@ -147,6 +170,68 @@ describe("parseContentFile", () => {
         diagnostic: "UNSUPPORTED_METADATA_EXPORT",
       })
     }
+  })
+
+  it("rejects oversized metadata declarations and excessive lexical nesting before parsing", () => {
+    for (const initializer of [
+      `{ /* ${"x".repeat(70_000)} */ title: "A" }`,
+      `${"({ value: ".repeat(180)}"end"${" })".repeat(180)}`,
+    ]) {
+      const source = `export const metadata = ${initializer}\n\n# Body\n`
+      expect(parseContentFile(source, "docs/a.mdx")).toEqual({
+        body: source,
+        metadata: {},
+        metadataSource: "metadata-export",
+        editable: false,
+        diagnostic: "UNSUPPORTED_METADATA_EXPORT",
+      })
+    }
+  })
+
+  it.each([
+    ["malformed YAML", "---\ntitle: [unterminated\n---\n# Body\n"],
+    ["cyclic aliases", "---\nroot: &root\n  self: *root\n---\n# Body\n"],
+    ["a scalar root", "---\njust a scalar\n---\n# Body\n"],
+    ["dangerous keys", "---\n__proto__:\n  polluted: true\n---\n# Body\n"],
+    ["date values", "---\npublishedAt: 2025-12-25\n---\n# Body\n"],
+  ])("fails closed and preserves source for unsupported frontmatter containing %s", (_name, source) => {
+    expectUnsupportedFrontmatter(source)
+  })
+
+  it("bounds YAML depth, keys, arrays, and strings", () => {
+    const deepLines = ["---", "root:"]
+    for (let depth = 0; depth < 40; depth += 1) deepLines.push(`${"  ".repeat(depth + 1)}level${depth}:`)
+    deepLines.push(`${"  ".repeat(41)}value`)
+    deepLines.push("---", "# Body")
+
+    const tooManyKeys = `---\n${Array.from({ length: 300 }, (_, index) => `key${index}: ${index}`).join("\n")}\n---\n# Body\n`
+    const tooManyItems = `---\nitems: [${Array.from({ length: 1100 }, (_, index) => index).join(",")}]\n---\n# Body\n`
+    const oversizedString = `---\ntitle: ${"x".repeat(70_000)}\n---\n# Body\n`
+
+    for (const source of [`${deepLines.join("\n")}\n`, tooManyKeys, tooManyItems, oversizedString]) {
+      expectUnsupportedFrontmatter(source)
+    }
+  })
+
+  it("clones non-cyclic YAML aliases without freezing gray-matter cache values", () => {
+    const source = "---\ndefaults: &defaults\n  label: Shared\nleft: *defaults\nright: *defaults\n---\n# Body\n"
+    const grayMatter = matter as typeof matter & { clearCache: () => void }
+    grayMatter.clearCache()
+
+    const first = parseContentFile(source, "docs/a.md")
+    const direct = matter(source)
+    const second = parseContentFile(source, "docs/a.md")
+
+    expect(first.metadata).toEqual({
+      defaults: { label: "Shared" },
+      left: { label: "Shared" },
+      right: { label: "Shared" },
+    })
+    expect(first.metadata.left).not.toBe(first.metadata.right)
+    expect(Object.isFrozen(direct.data)).toBe(false)
+    expect(Object.isFrozen(direct.data.defaults)).toBe(false)
+    expect(second.metadata).toEqual(first.metadata)
+    grayMatter.clearCache()
   })
 
   it("does not execute repository code while rejecting dynamic metadata", () => {

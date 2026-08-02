@@ -1,5 +1,9 @@
 import matter from "gray-matter"
-import { type ContentMetadataSource, extractMetadataExport, hasTopLevelMetadataExport } from "@/lib/content-metadata"
+import {
+  type ContentMetadataSource,
+  extractMetadataExportRecovery,
+  hasTopLevelMetadataExport,
+} from "@/lib/content-metadata"
 
 export type { ContentMetadataSource } from "@/lib/content-metadata"
 
@@ -65,14 +69,18 @@ export function serializePublishContent({
 
   if (mdx && metadataSource === "metadata-export") {
     if (!hasFrontmatter) {
-      const preservedMetadata = existingContent ? extractMetadataExport(existingContent) : null
-      if (!preservedMetadata) {
+      const recovery = existingContent ? extractMetadataExportRecovery(existingContent) : null
+      if (!recovery) {
         return {
           ok: false,
           reason:
             "Could not recover the existing metadata export from the pinned Git snapshot; publish stopped to prevent metadata loss",
         }
       }
+      const preservedMetadata =
+        recovery.preambleWithoutMetadata !== "" && body.startsWith(recovery.preambleWithoutMetadata)
+          ? recovery.declaration
+          : recovery.fullPreamble
       return { ok: true, content: `${preservedMetadata}\n\n${body.replace(/^\r?\n+/, "")}` }
     }
     return { ok: true, content: `${formatMetadataExport(frontmatter)}\n\n${body}` }
