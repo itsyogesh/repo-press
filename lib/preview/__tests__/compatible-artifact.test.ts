@@ -165,6 +165,14 @@ describe("compatible artifact transport", () => {
       ...trusted.resolution,
       artifact: { ...trusted.resolution.artifact, documentSource: "# Changed after approval" },
     }
+    const tamperedExpired = {
+      ...trusted.resolution,
+      authority: {
+        ...trusted.resolution.authority,
+        issuedAt: Date.now() - 120_000,
+        expiresAt: Date.now() - 60_000,
+      },
+    }
 
     await expect(
       verifySignedCompatiblePreviewResolutionDetailed(forged.wire, {
@@ -178,6 +186,12 @@ describe("compatible artifact transport", () => {
         expectedAuthority,
       }),
     ).resolves.toEqual({ ok: false, reason: "APPROVAL_EXPIRED" })
+    await expect(
+      verifySignedCompatiblePreviewResolutionDetailed(JSON.stringify(tamperedExpired), {
+        publicKey: trusted.publicKey,
+        expectedAuthority,
+      }),
+    ).resolves.toEqual({ ok: false, reason: "SIGNATURE_INVALID" })
     await expect(
       verifySignedCompatiblePreviewResolutionDetailed(JSON.stringify(swapped), {
         publicKey: trusted.publicKey,

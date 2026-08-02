@@ -493,7 +493,6 @@ export async function verifySignedCompatiblePreviewResolutionDetailed(
   ) {
     return { ok: false, reason: "RESOLUTION_INVALID" }
   }
-  if (resolution.authority.expiresAt <= now) return { ok: false, reason: "APPROVAL_EXPIRED" }
   const signature = decodeSignature(resolution.authority.signature)
   if (!signature) return { ok: false, reason: "SIGNATURE_INVALID" }
   if (!globalThis.crypto?.subtle) return { ok: false, reason: "CRYPTO_UNAVAILABLE" }
@@ -523,6 +522,7 @@ export async function verifySignedCompatiblePreviewResolutionDetailed(
     return { ok: false, reason: "CRYPTO_UNAVAILABLE" }
   }
   if (digest !== resolution.authority.executableDigest) return { ok: false, reason: "DIGEST_MISMATCH" }
+  if (resolution.authority.expiresAt <= now) return { ok: false, reason: "APPROVAL_EXPIRED" }
   const verified = deepFreeze(resolution) as VerifiedCompatiblePreviewResolution
   verifiedCompatibleResolutions.add(verified)
   return { ok: true, resolution: verified }
