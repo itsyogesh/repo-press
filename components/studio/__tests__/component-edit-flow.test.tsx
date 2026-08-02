@@ -45,6 +45,28 @@ function renderEditor(source: string, occurrence = 0, mdastSource = source) {
 afterEach(cleanup)
 
 describe("position-bound Studio component editing", () => {
+  it("retries identity capture after the editor source finishes hydrating", () => {
+    const source = '<Callout title="Hydrated" variant="accent">Body</Callout>'
+    let currentSource = ""
+    const catalog = officialCatalog()
+    const adapter = createStudioAdapterState({ authoringCatalog: catalog, nativeComponentNames: [] })
+    const renderTree = () => (
+      <StudioAdapterProvider value={adapter}>
+        <ComponentEditProvider authoringCatalog={catalog} getSource={() => currentSource} applySource={vi.fn()}>
+          <GenericJsxEditor mdastNode={nodeAt(source) as never} descriptor={{ name: "Callout" } as never} />
+        </ComponentEditProvider>
+      </StudioAdapterProvider>
+    )
+
+    const view = render(renderTree())
+    expect(screen.getByRole("button", { name: "Edit Callout" })).toBeDisabled()
+
+    currentSource = source
+    view.rerender(renderTree())
+
+    expect(screen.getByRole("button", { name: "Edit Callout" })).toBeEnabled()
+  })
+
   it("edits one clicked Callout prop while preserving all unrelated source bytes", async () => {
     const source = [
       "import { Callout } from './callout'",

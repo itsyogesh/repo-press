@@ -11,7 +11,7 @@ export function GenericJsxEditor({ descriptor, mdastNode }: JsxEditorProps) {
   const name = typeof mdastNode.name === "string" ? mdastNode.name : descriptor.name
   const start = mdastNode.position?.start.offset
   const identityRef = React.useRef<MdxComponentEditIdentity | null | undefined>(undefined)
-  if (identityRef.current === undefined && editBridge && typeof name === "string" && Number.isSafeInteger(start)) {
+  if (identityRef.current == null && editBridge && typeof name === "string" && Number.isSafeInteger(start)) {
     identityRef.current = editBridge.captureIdentity({ name, start: start as number })
   }
   const canRequestEdit = editBridge !== null && identityRef.current != null
