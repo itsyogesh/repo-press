@@ -30,9 +30,7 @@ export function ErrorRecovery({
       <div className="w-full max-w-xl border-y border-border py-10 sm:rounded-lg sm:border sm:px-10">
         <div className="flex items-center gap-3">
           <BrandMark tile className="size-10" />
-          <p className="font-mono text-[0.65rem] uppercase tracking-[0.22em] text-muted-foreground">
-            Recovery
-          </p>
+          <p className="font-mono text-[0.65rem] uppercase tracking-[0.22em] text-muted-foreground">Recovery</p>
         </div>
 
         <div className="mt-8 space-y-3">
@@ -54,9 +52,7 @@ export function ErrorRecovery({
         </div>
 
         {digest ? (
-          <p className="mt-8 border-t border-border pt-4 font-mono text-xs text-muted-foreground">
-            Reference {digest}
-          </p>
+          <p className="mt-8 border-t border-border pt-4 font-mono text-xs text-muted-foreground">Reference {digest}</p>
         ) : null}
       </div>
     </section>

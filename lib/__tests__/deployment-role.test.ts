@@ -2,12 +2,16 @@ import { describe, expect, it } from "vitest"
 import { canServeDeploymentPath } from "@/lib/deployment-role"
 
 describe("deployment role path policy", () => {
-  it.each(["/", "/login", "/dashboard", "/dashboard/acme/docs", "/api/auth/get-session", "/api/github/tree"])(
-    "rejects %s from a sandbox-only deployment",
-    (pathname) => {
-      expect(canServeDeploymentPath(pathname, "sandbox")).toBe(false)
-    },
-  )
+  it.each([
+    "/",
+    "/login",
+    "/dashboard",
+    "/dashboard/acme/docs",
+    "/api/auth/get-session",
+    "/api/github/tree",
+  ])("rejects %s from a sandbox-only deployment", (pathname) => {
+    expect(canServeDeploymentPath(pathname, "sandbox")).toBe(false)
+  })
 
   it.each([
     "/preview/sandbox",
