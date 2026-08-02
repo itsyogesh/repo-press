@@ -38,6 +38,12 @@ interface GitHubFileResponse {
   content: string
 }
 
+interface PendingDocumentHydration {
+  requestVersion: number
+  body: string | null
+  frontmatter: Record<string, unknown> | null
+}
+
 function parseFileSnapshot(rawContent: string, sha: string | null, filePath: string): CachedFileSnapshot {
   const parsed = parseContentFile(rawContent, filePath)
   return {
@@ -81,6 +87,8 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
   const fileCacheRef = React.useRef<Map<string, CachedFileSnapshot>>(new Map())
   const fileCacheRevisionRef = React.useRef<Map<string, number>>(new Map())
   const requestVersionRef = React.useRef(0)
+  const remoteReadVersionRef = React.useRef<Map<string, number>>(new Map())
+  const pendingDocumentHydrationRef = React.useRef<Map<string, PendingDocumentHydration>>(new Map())
 
   const writeCachedSnapshot = React.useCallback((filePath: string, snapshot: CachedFileSnapshot) => {
     fileCacheRef.current.set(filePath, snapshot)
@@ -235,6 +243,25 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
       setIsFileLoading(true)
       setIsSourceEditable(true)
       setSourceDiagnostic(undefined)
+      remoteReadVersionRef.current.set(filePath, requestVersion)
+
+      const takePendingDocumentHydration = () => {
+        const pending = pendingDocumentHydrationRef.current.get(filePath)
+        if (pending?.requestVersion !== requestVersion) return null
+        pendingDocumentHydrationRef.current.delete(filePath)
+        return pending
+      }
+
+      const applyDocumentHydration = (snapshot: CachedFileSnapshot, pending: PendingDocumentHydration) => {
+        const hydratedSnapshot: CachedFileSnapshot = {
+          ...snapshot,
+          content: pending.body ?? snapshot.content,
+          frontmatter: pending.frontmatter ?? snapshot.frontmatter,
+          sha: null,
+        }
+        writeCachedSnapshot(filePath, hydratedSnapshot)
+        applySnapshot(filePath, hydratedSnapshot)
+      }
 
       const applyNewerLocalSnapshot = () => {
         const latestRevision = fileCacheRevisionRef.current.get(filePath) ?? 0
@@ -263,15 +290,30 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
 
         const file = (await response.json()) as GitHubFileResponse
         if (requestVersionRef.current !== requestVersion) return
-        if (applyNewerLocalSnapshot()) return
 
         const snapshot = parseFileSnapshot(file.content, file.sha, filePath)
+        const pendingHydration = takePendingDocumentHydration()
+        if (!snapshot.isSourceEditable) {
+          writeCachedSnapshot(filePath, snapshot)
+          applySnapshot(filePath, snapshot)
+          return
+        }
+        if (applyNewerLocalSnapshot()) return
+        if (pendingHydration) {
+          applyDocumentHydration(snapshot, pendingHydration)
+          return
+        }
         writeCachedSnapshot(filePath, snapshot)
         applySnapshot(filePath, snapshot)
       } catch (error) {
         if (requestVersionRef.current === requestVersion) {
           console.error("Failed to open file", error)
+          const pendingHydration = takePendingDocumentHydration()
           if (applyNewerLocalSnapshot()) {
+            return
+          }
+          if (pendingHydration) {
+            applyDocumentHydration(requestStartCached ?? emptySnapshot, pendingHydration)
             return
           }
           if (requestStartCached && requestStartHasLocalSnapshot) {
@@ -281,6 +323,12 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
           }
         }
       } finally {
+        if (remoteReadVersionRef.current.get(filePath) === requestVersion) {
+          remoteReadVersionRef.current.delete(filePath)
+        }
+        if (pendingDocumentHydrationRef.current.get(filePath)?.requestVersion === requestVersion) {
+          pendingDocumentHydrationRef.current.delete(filePath)
+        }
         if (requestVersionRef.current === requestVersion) {
           setIsFileLoading(false)
         }
@@ -552,6 +600,17 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
             unknown
           >
           setFrontmatter(nextFrontmatter)
+        }
+
+        const remoteReadVersion = remoteReadVersionRef.current.get(activePath)
+        if (remoteReadVersion !== undefined) {
+          pendingDocumentHydrationRef.current.set(activePath, {
+            requestVersion: remoteReadVersion,
+            body: draftBody,
+            frontmatter: draftFrontmatter === null ? null : nextFrontmatter,
+          })
+          setIsDirty(false)
+          return true
         }
 
         writeCachedSnapshot(activePath, {

@@ -198,6 +198,96 @@ describe("useStudioFile immutable read authority", () => {
     expect(result.current.isDirty).toBe(false)
   })
 
+  it("lets a delayed unsupported metadata export outrank an earlier Convex draft hydration", async () => {
+    studioContext.tree = []
+    const source = "export const metadata = { title: makeTitle() }\n\n# Remote body\n"
+    const response = deferred<Response>()
+    vi.mocked(fetch).mockReturnValueOnce(response.promise)
+    const { result } = renderHook(() => useStudioFile(null, ""))
+
+    act(() => result.current.navigateToFile("content/draft.mdx"))
+    await waitFor(() => expect(fetch).toHaveBeenCalledOnce())
+    act(() => {
+      result.current.hydrateFromDocument({
+        body: "# Convex draft",
+        frontmatter: { title: "Draft title" },
+      })
+    })
+
+    await act(async () =>
+      response.resolve({
+        ok: true,
+        json: async () => ({
+          path: "content/draft.mdx",
+          name: "draft.mdx",
+          sha: "d".repeat(40),
+          content: source,
+        }),
+      } as Response),
+    )
+    await waitFor(() => expect(result.current.isFileLoading).toBe(false))
+
+    expect(result.current.content).toBe(source)
+    expect(result.current.frontmatter).toEqual({})
+    expect(result.current.sha).toBe("d".repeat(40))
+    expect(result.current.isSourceEditable).toBe(false)
+    expect(result.current.sourceDiagnostic).toBe("UNSUPPORTED_METADATA_EXPORT")
+
+    act(() => {
+      result.current.setContent("# Destructive edit")
+      result.current.setFrontmatterKey("title", "Fabricated")
+      result.current.setFrontmatter({ title: "Fabricated" })
+    })
+    expect(result.current.content).toBe(source)
+    expect(result.current.frontmatter).toEqual({})
+    expect(result.current.isDirty).toBe(false)
+  })
+
+  it("lets delayed unsupported YAML outrank an earlier Convex draft hydration", async () => {
+    studioContext.tree = []
+    const source = "---\ntitle: [unterminated\n---\n# Remote body\n"
+    const response = deferred<Response>()
+    vi.mocked(fetch).mockReturnValueOnce(response.promise)
+    const { result } = renderHook(() => useStudioFile(null, ""))
+
+    act(() => result.current.navigateToFile("content/draft.mdx"))
+    await waitFor(() => expect(fetch).toHaveBeenCalledOnce())
+    act(() => {
+      result.current.hydrateFromDocument({
+        body: "# Convex draft",
+        frontmatter: { title: "Draft title" },
+      })
+    })
+
+    await act(async () =>
+      response.resolve({
+        ok: true,
+        json: async () => ({
+          path: "content/draft.mdx",
+          name: "draft.mdx",
+          sha: "e".repeat(40),
+          content: source,
+        }),
+      } as Response),
+    )
+    await waitFor(() => expect(result.current.isFileLoading).toBe(false))
+
+    expect(result.current.content).toBe(source)
+    expect(result.current.frontmatter).toEqual({})
+    expect(result.current.sha).toBe("e".repeat(40))
+    expect(result.current.isSourceEditable).toBe(false)
+    expect(result.current.sourceDiagnostic).toBe("UNSUPPORTED_FRONTMATTER")
+
+    act(() => {
+      result.current.setContent("# Destructive edit")
+      result.current.setFrontmatterKey("title", "Fabricated")
+      result.current.setFrontmatter({ title: "Fabricated" })
+    })
+    expect(result.current.content).toBe(source)
+    expect(result.current.frontmatter).toEqual({})
+    expect(result.current.isDirty).toBe(false)
+  })
+
   it("retains source-preservation state in primed cache snapshots", async () => {
     const source = "export const metadata = { title: makeTitle() }\n\n# Body\n"
     const { result } = renderHook(() => useStudioFile(null, ""))
@@ -358,6 +448,40 @@ describe("useStudioFile immutable read authority", () => {
     })
     expect(result.current.sha).toBeNull()
     expect(result.current.isDirty).toBe(true)
+  })
+
+  it("applies a held Convex draft after a delayed supported source establishes editability", async () => {
+    studioContext.tree = []
+    const response = deferred<Response>()
+    vi.mocked(fetch).mockReturnValueOnce(response.promise)
+    const { result } = renderHook(() => useStudioFile(null, ""))
+
+    act(() => result.current.navigateToFile("content/draft.mdx"))
+    await waitFor(() => expect(fetch).toHaveBeenCalledOnce())
+    act(() => {
+      result.current.hydrateFromDocument({
+        body: "# Supported Convex draft",
+        frontmatter: { title: "Supported draft title" },
+      })
+    })
+
+    await act(async () =>
+      response.resolve({
+        ok: true,
+        json: async () => ({
+          path: "content/draft.mdx",
+          name: "draft.mdx",
+          sha: "d".repeat(40),
+          content: "# Supported remote body",
+        }),
+      } as Response),
+    )
+    await waitFor(() => expect(result.current.isFileLoading).toBe(false))
+
+    expect(result.current.content).toBe("# Supported Convex draft")
+    expect(result.current.frontmatter).toEqual({ title: "Supported draft title" })
+    expect(result.current.isSourceEditable).toBe(true)
+    expect(result.current.sourceDiagnostic).toBeUndefined()
   })
 
   it("does not let a title-only Convex row replace an in-flight GitHub snapshot", async () => {
