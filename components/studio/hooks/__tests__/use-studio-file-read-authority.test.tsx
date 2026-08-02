@@ -82,6 +82,124 @@ describe("useStudioFile immutable read authority", () => {
     expect(result.current.sha).toBe("b".repeat(40))
   })
 
+  it("opens Merry metadata exports as editable body content with nested properties", async () => {
+    const source = `export const metadata = {
+  title: "Free Printable Santa Letter Templates",
+  description: "Ready-to-print templates",
+  keywords: ["Santa", "letters"],
+  alternates: { canonical: "https://merrymagicmail.com/blog/templates" },
+}
+
+# Free Santa Letter Templates
+`
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: vi.fn().mockResolvedValue({
+        path: "content/guide.mdx",
+        name: "guide.mdx",
+        sha: "f".repeat(40),
+        content: source,
+      }),
+    } as never)
+    const { result } = renderHook(() => useStudioFile(null, ""))
+
+    act(() => result.current.navigateToFile("content/guide.mdx"))
+
+    await waitFor(() => expect(result.current.content).toBe("# Free Santa Letter Templates\n"))
+    expect(result.current.frontmatter).toEqual({
+      title: "Free Printable Santa Letter Templates",
+      description: "Ready-to-print templates",
+      keywords: ["Santa", "letters"],
+      alternates: { canonical: "https://merrymagicmail.com/blog/templates" },
+    })
+  })
+
+  it("continues to open YAML frontmatter as body content and properties", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: vi.fn().mockResolvedValue({
+        path: "content/guide.mdx",
+        name: "guide.mdx",
+        sha: "f".repeat(40),
+        content: "---\ntitle: Guide\ntags:\n  - docs\n---\n\n# Body\n",
+      }),
+    } as never)
+    const { result } = renderHook(() => useStudioFile(null, ""))
+
+    act(() => result.current.navigateToFile("content/guide.mdx"))
+
+    await waitFor(() => expect(result.current.content).toBe("\n# Body\n"))
+    expect(result.current.frontmatter).toEqual({ title: "Guide", tags: ["docs"] })
+  })
+
+  it("preserves unsupported metadata exports byte-for-byte without fabricating properties", async () => {
+    const source = "export const metadata = { title: makeTitle() }\n\n# Body\n"
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: vi.fn().mockResolvedValue({
+        path: "content/guide.mdx",
+        name: "guide.mdx",
+        sha: "f".repeat(40),
+        content: source,
+      }),
+    } as never)
+    const { result } = renderHook(() => useStudioFile(null, ""))
+
+    act(() => result.current.navigateToFile("content/guide.mdx"))
+
+    await waitFor(() => expect(result.current.content).toBe(source))
+    expect(result.current.frontmatter).toEqual({})
+  })
+
+  it("retains parsed metadata values through cache priming and a remote reload", async () => {
+    const firstSource = 'export const metadata = { title: "First", alternates: { canonical: "/first" } }\n\n# First\n'
+    const reloadedSource =
+      'export const metadata = { title: "Reloaded", alternates: { canonical: "/reloaded" } }\n\n# Reloaded\n'
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          path: "content/guide.mdx",
+          name: "guide.mdx",
+          sha: "f".repeat(40),
+          content: firstSource,
+        }),
+      } as never)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          path: "content/guide.mdx",
+          name: "guide.mdx",
+          sha: "f".repeat(40),
+          content: reloadedSource,
+        }),
+      } as never)
+    const { result } = renderHook(() => useStudioFile(null, ""))
+
+    act(() => result.current.navigateToFile("content/guide.mdx"))
+    await waitFor(() =>
+      expect(result.current.frontmatter).toEqual({ title: "First", alternates: { canonical: "/first" } }),
+    )
+
+    act(() => {
+      result.current.primeFileSnapshot("content/guide.mdx", {
+        content: "# Saved draft\n",
+        frontmatter: { title: "Saved", alternates: { canonical: "/saved" } },
+        sha: "f".repeat(40),
+      })
+      result.current.navigateToFile("content/guide.mdx")
+    })
+    await waitFor(() =>
+      expect(result.current.frontmatter).toEqual({ title: "Saved", alternates: { canonical: "/saved" } }),
+    )
+
+    act(() => result.current.reloadFileFromRemote("content/guide.mdx"))
+    await waitFor(() =>
+      expect(result.current.frontmatter).toEqual({ title: "Reloaded", alternates: { canonical: "/reloaded" } }),
+    )
+    expect(result.current.content).toBe("# Reloaded\n")
+  })
+
   it("tries GitHub for a sha-null cached draft and preserves it when the remote path is absent", async () => {
     studioContext.tree = []
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined)

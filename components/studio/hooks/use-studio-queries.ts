@@ -87,7 +87,8 @@ async function syncTitlesForTree(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   })
-    .then(() => {
+    .then((response) => {
+      if (!response.ok) throw new Error(`Title sync failed (${response.status})`)
       entry.status = "done"
     })
     .catch((error) => {

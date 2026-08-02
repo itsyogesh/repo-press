@@ -1,4 +1,5 @@
 import { v } from "convex/values"
+import { parseContentFile } from "../lib/content-metadata"
 import { DOCUMENT_ALLOWED_TRANSITIONS, isPublishableDocumentStatus } from "../lib/document-status"
 import {
   assertContentPath,
@@ -64,12 +65,9 @@ function titleFromContent(filePath: string, content: string): string {
   const fileName = filePath.split("/").pop() ?? filePath
   const fileNameStem = fileName.replace(/\.(mdx?|markdown)$/i, "")
   const fallbackTitle = normalizeBoundedTitle(fileNameStem) ?? "Untitled"
-  const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/)
-  if (!fmMatch) return fallbackTitle
-
-  const titleMatch = fmMatch[1].match(/^title:\s*["']?(.+?)["']?\s*$/m)
-  if (!titleMatch) return fallbackTitle
-  return normalizeBoundedTitle(titleMatch[1]) ?? fallbackTitle
+  const parsedTitle = parseContentFile(content, filePath).metadata.title
+  if (typeof parsedTitle !== "string") return fallbackTitle
+  return normalizeBoundedTitle(parsedTitle) ?? fallbackTitle
 }
 
 function validateTitleSyncBatch(

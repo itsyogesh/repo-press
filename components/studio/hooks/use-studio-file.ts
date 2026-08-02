@@ -1,7 +1,7 @@
 "use client"
 
-import matter from "gray-matter"
 import * as React from "react"
+import { parseContentFile } from "@/lib/content-metadata"
 import { normalizeFrontmatterDates } from "@/lib/framework-adapters"
 import { type FileTreeNode, findTreeNode } from "@/lib/github"
 import { toRepoPath } from "@/lib/preview/path-policy"
@@ -34,24 +34,13 @@ interface GitHubFileResponse {
   content: string
 }
 
-function parseFileSnapshot(rawContent: string, sha: string | null): CachedFileSnapshot {
-  try {
-    const { data, content } = matter(rawContent)
-    return {
-      content,
-      frontmatter: normalizeFrontmatterDates(data) as Record<string, unknown>,
-      sha,
-      isDirty: false,
-    }
-  } catch {
-    // Attempt to strip frontmatter even if gray-matter fails
-    const stripped = rawContent.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "")
-    return {
-      content: stripped,
-      frontmatter: {},
-      sha,
-      isDirty: false,
-    }
+function parseFileSnapshot(rawContent: string, sha: string | null, filePath: string): CachedFileSnapshot {
+  const parsed = parseContentFile(rawContent, filePath)
+  return {
+    content: parsed.body,
+    frontmatter: normalizeFrontmatterDates(parsed.metadata as Record<string, unknown>),
+    sha,
+    isDirty: false,
   }
 }
 
@@ -259,7 +248,7 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
         if (requestVersionRef.current !== requestVersion) return
         if (applyNewerLocalSnapshot()) return
 
-        const snapshot = parseFileSnapshot(file.content, file.sha)
+        const snapshot = parseFileSnapshot(file.content, file.sha, filePath)
         writeCachedSnapshot(filePath, snapshot)
         applySnapshot(filePath, snapshot)
       } catch (error) {
@@ -377,7 +366,7 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
 
   React.useEffect(() => {
     if (initialFile) {
-      const snapshot = parseFileSnapshot(initialFile.content, initialFile.sha)
+      const snapshot = parseFileSnapshot(initialFile.content, initialFile.sha, initialFile.path)
       writeCachedSnapshot(initialFile.path, snapshot)
       applySnapshot(initialFile.path, snapshot)
       syncBrowserUrl(initialFile.path, "replace")

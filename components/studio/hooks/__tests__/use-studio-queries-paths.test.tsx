@@ -64,6 +64,37 @@ describe("useStudioQueries path ingress", () => {
     })
   })
 
+  it("does not cache a failed title sync as success and retries it", async () => {
+    studioContextMock.tree = [{ name: "retry.mdx", path: "content/docs/retry.mdx", sha: "e".repeat(40), type: "file" }]
+    useQueryMock
+      .mockReturnValueOnce({ _id: "user_1" })
+      .mockReturnValueOnce({ _id: "project_123" })
+      .mockReturnValueOnce(null)
+      .mockReturnValueOnce(null)
+      .mockReturnValueOnce([])
+      .mockReturnValueOnce([])
+      .mockReturnValueOnce([])
+      .mockReturnValueOnce(null)
+      .mockReturnValueOnce(null)
+      .mockReturnValueOnce([])
+      .mockReturnValueOnce([])
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined)
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValueOnce({ ok: false, status: 500 }).mockResolvedValueOnce({ ok: true, status: 200 }),
+    )
+
+    const first = renderHook(() => useStudioQueries())
+    await waitFor(() => expect(consoleError).toHaveBeenCalledWith("Failed to sync tree titles:", expect.any(Error)))
+    expect(consoleError.mock.calls[0]?.[1]).toMatchObject({ message: "Title sync failed (500)" })
+    first.unmount()
+
+    renderHook(() => useStudioQueries())
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
+    expect(vi.mocked(fetch).mock.calls.every(([url]) => url === "/api/github/sync-titles")).toBe(true)
+    consoleError.mockRestore()
+  })
+
   it("queries canonical state and normalizes legacy rows at the Studio boundary", () => {
     useQueryMock
       .mockReturnValueOnce({ _id: "user_1" })

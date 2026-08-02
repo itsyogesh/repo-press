@@ -90,6 +90,10 @@ function mockAuthorizedTitlePayload(payload: Record<string, unknown>) {
 
 function utf8TitlePayload(title: string, sha = "f".repeat(40)) {
   const content = `---\ntitle: ${title}\n---\n`
+  return utf8ContentPayload(content, sha)
+}
+
+function utf8ContentPayload(content: string, sha = "f".repeat(40)) {
   const bytes = new TextEncoder().encode(content)
   const binary = Array.from(bytes, (byte) => String.fromCharCode(byte)).join("")
   return {
@@ -660,6 +664,38 @@ describe("public Convex GitHub action boundaries", () => {
     })
     expect(Object.isFrozen(batchArgs.documents)).toBe(true)
     expect(Object.isFrozen(batchArgs.documents[0])).toBe(true)
+  })
+
+  it("extracts a Merry metadata export title before batching the document", async () => {
+    const ctx = actionCtx()
+    authorizeEditor(ctx)
+    mockAuthorizedTitlePayload(
+      utf8ContentPayload(`export const metadata = {
+  title: "Free Printable Santa Letter Templates",
+  description: "Ready-to-print templates",
+}
+
+# Santa letters
+`),
+    )
+
+    await (syncTreeTitles as any).handler(ctx, {
+      projectId: "project_1",
+      readRef: BASE_SHA,
+      files: [{ path: "article/page.mdx", sha: "f".repeat(40) }],
+      githubToken: "editor-token",
+    })
+
+    expect(ctx.runMutation.mock.calls[1][1]).toEqual({
+      projectId: "project_1",
+      documents: [
+        {
+          filePath: "article/page.mdx",
+          title: "Free Printable Santa Letter Templates",
+          githubSha: "f".repeat(40),
+        },
+      ],
+    })
   })
 
   it.each([
