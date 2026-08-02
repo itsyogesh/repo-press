@@ -1,4 +1,4 @@
-import { act, renderHook, waitFor } from "@testing-library/react"
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 const BASE_SHA = "a".repeat(40)
@@ -44,6 +44,7 @@ describe("useStudioFile immutable read authority", () => {
   })
 
   afterEach(() => {
+    cleanup()
     vi.unstubAllGlobals()
     localStorage.clear()
   })
@@ -171,6 +172,112 @@ describe("useStudioFile immutable read authority", () => {
     })
     expect(result.current.sha).toBeNull()
     expect(result.current.isDirty).toBe(true)
+  })
+
+  it("does not let a title-only Convex row replace an in-flight GitHub snapshot", async () => {
+    studioContext.tree = []
+    const response = deferred<Response>()
+    vi.mocked(fetch).mockReturnValueOnce(response.promise)
+    const { result } = renderHook(() => useStudioFile(null, ""))
+
+    act(() => result.current.navigateToFile("content/article.mdx"))
+    await waitFor(() => expect(fetch).toHaveBeenCalledOnce())
+
+    act(() => {
+      result.current.hydrateFromDocument({})
+    })
+
+    await act(async () =>
+      response.resolve({
+        ok: true,
+        json: async () => ({
+          path: "content/article.mdx",
+          name: "article.mdx",
+          sha: "d".repeat(40),
+          content: "# Remote article\n\n<Component />",
+        }),
+      } as Response),
+    )
+
+    await waitFor(() => expect(result.current.content).toContain("# Remote article"))
+    expect(result.current.content).toContain("<Component />")
+    expect(result.current.sha).toBe("d".repeat(40))
+    expect(result.current.isDirty).toBe(false)
+  })
+
+  it("exposes title-only versus real empty-draft hydration during an in-flight read", async () => {
+    studioContext.tree = []
+    const response = deferred<Response>()
+    vi.mocked(fetch).mockReturnValueOnce(response.promise)
+    const { result } = renderHook(() => useStudioFile(null, ""))
+
+    act(() => result.current.navigateToFile("content/new.mdx"))
+    await waitFor(() => expect(fetch).toHaveBeenCalledOnce())
+
+    let titleOnlyHydrated: unknown
+    act(() => {
+      titleOnlyHydrated = result.current.hydrateFromDocument({})
+    })
+    expect(titleOnlyHydrated).toBe(false)
+
+    let emptyDraftHydrated: unknown
+    act(() => {
+      emptyDraftHydrated = result.current.hydrateFromDocument({ body: "", frontmatter: {} })
+    })
+    expect(emptyDraftHydrated).toBe(true)
+
+    await act(async () =>
+      response.resolve({
+        ok: true,
+        json: async () => ({
+          path: "content/new.mdx",
+          name: "new.mdx",
+          sha: "e".repeat(40),
+          content: "# Remote file at colliding path",
+        }),
+      } as Response),
+    )
+
+    await waitFor(() => expect(result.current.isFileLoading).toBe(false))
+    expect(result.current.content).toBe("")
+    expect(result.current.frontmatter).toEqual({})
+    expect(result.current.sha).toBeNull()
+  })
+
+  it("preserves unsaved edits when a Convex draft arrives after the GitHub snapshot", async () => {
+    const { result } = renderHook(() => useStudioFile(null, ""))
+
+    act(() => result.current.navigateToFile("content/guide.mdx"))
+    await waitFor(() => expect(result.current.content).toBe("# Base snapshot"))
+
+    act(() => result.current.setContent("# Unsaved local edit"))
+    act(() => result.current.setFrontmatterKey("description", "Unsaved description"))
+    expect(result.current.isDirty).toBe(true)
+
+    let draftHandled: unknown
+    act(() => {
+      draftHandled = result.current.hydrateFromDocument({
+        body: "# Older saved draft",
+        frontmatter: { description: "Older description" },
+      })
+    })
+
+    expect(draftHandled).toBe(true)
+    expect(result.current.content).toBe("# Unsaved local edit")
+    expect(result.current.frontmatter).toEqual({ description: "Unsaved description" })
+    expect(result.current.isDirty).toBe(true)
+  })
+
+  it("resolves pathname popstate links relative to contentRoot while leaving query paths repository-relative", async () => {
+    studioContext.tree = []
+    const { result } = renderHook(() => useStudioFile(null, ""))
+
+    window.history.replaceState({}, "", "/dashboard/acme/docs/studio/guides/getting-started.mdx?branch=release")
+    act(() => window.dispatchEvent(new PopStateEvent("popstate")))
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledOnce())
+    expect(String(vi.mocked(fetch).mock.calls[0][0])).toContain("path=content%2Fguides%2Fgetting-started.mdx")
+    await waitFor(() => expect(result.current.selectedFile?.path).toBe("content/guides/getting-started.mdx"))
   })
 
   it("preserves a late primed snapshot when the cold read returns 404", async () => {

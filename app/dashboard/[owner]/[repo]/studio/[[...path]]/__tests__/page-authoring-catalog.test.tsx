@@ -141,6 +141,37 @@ describe("authenticated Studio registry authoring", () => {
     )
   })
 
+  it("resolves catch-all deep links relative to the configured content root", async () => {
+    vi.mocked(loadProjectLockAuthoringMetadata).mockResolvedValue({
+      baseSha: BASE_SHA,
+      lockPath: null,
+      metadata: Object.freeze({}),
+      diagnostics: Object.freeze([]),
+    })
+
+    const page = await StudioPage({
+      params: Promise.resolve({
+        owner: "acme",
+        repo: "docs",
+        path: ["guides", "getting-started.mdx"],
+      }),
+      searchParams: Promise.resolve({ branch: "release", projectId: "project-1" }),
+    })
+    render(page)
+
+    expect(getFile).toHaveBeenCalledWith(
+      "github-token",
+      "acme",
+      "docs",
+      "apps/docs/content/guides/getting-started.mdx",
+      BASE_SHA,
+    )
+    expect(StudioLayout).toHaveBeenCalledWith(
+      expect.objectContaining({ currentPath: "apps/docs/content/guides/getting-started.mdx" }),
+      undefined,
+    )
+  })
+
   it("fails closed before content reads when the branch head cannot be resolved", async () => {
     vi.mocked(getBranchHeadSha).mockRejectedValue(new Error("head unavailable"))
 

@@ -571,10 +571,9 @@ function StudioLayoutInner({
     if (!document || hydratedForPath.current === selectedPath) return
 
     const draftStatuses = new Set(["draft", "in_review", "approved"])
-    if (draftStatuses.has(document.status)) {
-      hydrateFromDocument(document)
+    if (draftStatuses.has(document.status) && hydrateFromDocument(document)) {
+      hydratedForPath.current = selectedPath
     }
-    hydratedForPath.current = selectedPath
   }, [document, selectedFile?.path, hydrateFromDocument])
 
   // Explorer mutations
