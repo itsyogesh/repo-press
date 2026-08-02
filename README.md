@@ -159,7 +159,7 @@ New repository setup uses native discovery: RepoPress inspects the repository's 
 | `GITHUB_CLIENT_SECRET` | From your GitHub OAuth App |
 | `BETTER_AUTH_SECRET` | Random secret string for session encryption |
 | `REPOPRESS_CAPABILITY_SECRET` | Random 32+ character capability-signing secret; use the same value in the Next.js runtime |
-| `SITE_URL` | Public RepoPress application origin used by Better Auth (for example, `https://repopress.example`) |
+| `SITE_URL` | Public RepoPress application origin used by Better Auth (`https://repopress.org` in production) |
 
 ### Next.js runtime
 
@@ -173,7 +173,7 @@ New repository setup uses native discovery: RepoPress inspects the repository's 
 
 | Variable | Description |
 |---|---|
-| `NEXT_PUBLIC_PREVIEW_ORIGIN` | Separately hosted preview sandbox origin; production must not reuse the Studio origin |
+| `NEXT_PUBLIC_PREVIEW_ORIGIN` | Separately hosted preview sandbox origin (`https://preview.repopress.org` in production); production must not reuse the Studio origin |
 | `NEXT_PUBLIC_PREVIEW_APPROVAL_PUBLIC_KEY_JWK` | Public EC P-256 verification JWK matching the server-only preview signing key |
 
 The private and public preview JWKs must be generated as one P-256 key pair. Keep the private JWK only in the Next.js server environment. The public JWK is intentionally browser-readable and cannot sign artifacts.
@@ -182,7 +182,7 @@ The private and public preview JWKs must be generated as one P-256 key pair. Kee
 
 | Variable | Description |
 |---|---|
-| `NEXT_PUBLIC_APP_URL` | Your app's public URL (e.g. `https://repopress.app`) |
+| `NEXT_PUBLIC_APP_URL` | Your app's public URL (`https://repopress.org` in production) |
 
 ### Setting up GitHub OAuth
 

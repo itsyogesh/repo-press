@@ -134,15 +134,28 @@ bare endpoint and a valid-looking request such as
 
 ---
 
-## Step 4: Configure Custom Domain (Optional)
+## Step 4: Configure Custom Domains
 
-1. **In Vercel** → Settings → Domains → Add your domain
-2. **Update DNS records** at your registrar:
-   - `A` record: `76.76.21.21` (Vercel)
-   - `CNAME` for `www`: `cname.vercel-dns.com`
-3. **Wait for DNS propagation** (can take up to 48 hours, usually minutes)
-4. **Update** `NEXT_PUBLIC_APP_URL` in Vercel to your custom domain
-5. **Redeploy** to pick up the new URL for `metadataBase`
+Changing the application origin is a coordinated auth and sandbox migration,
+not only a DNS edit. Follow the complete procedure and rollback checklist in
+[`docs/plans/2026-08-02-repopress-org-domain-migration.md`](plans/2026-08-02-repopress-org-domain-migration.md).
+
+At minimum, the migration must:
+
+1. Attach the application, `www`, and isolated preview names to their correct
+   Vercel projects, then apply the exact records Vercel reports. Do not assume
+   a generic CNAME recipe. RepoPress currently uses `A @`, `A www`, and
+   `A preview` records pointing to `76.76.21.21`.
+2. Verify public DNS, Vercel ownership, and TLS before moving authentication.
+3. Set production Convex `SITE_URL` and the Studio's
+   `NEXT_PUBLIC_APP_URL` to the canonical application origin.
+4. Set the Studio's `NEXT_PUBLIC_PREVIEW_ORIGIN` to the isolated preview
+   origin and set the sandbox project's `NEXT_PUBLIC_APP_URL` to the canonical
+   application origin. The latter controls both CORS and CSP `frame-ancestors`.
+5. Update the GitHub OAuth homepage and exact Better Auth callback URL.
+6. Redeploy the sandbox first and the Studio second, then test a fresh OAuth
+   round trip and Compatible preview before treating the old origin as a
+   rollback target.
 
 ---
 
