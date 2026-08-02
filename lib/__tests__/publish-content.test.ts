@@ -148,6 +148,34 @@ describe("serializePublishContent", () => {
     }
   })
 
+  it.each([
+    [
+      "an inline comment",
+      'export const metadata = { title: "Original" } // keep inline\nexport const revalidate = 3600\n\n# Old\n',
+      'export const metadata = {\n  "title": "Edited"\n} // keep inline\nexport const revalidate = 3600\n\n# Edited\n',
+    ],
+    [
+      "a next-line comment",
+      'export const metadata = { title: "Original" }\r\n// keep next line\r\nexport const revalidate = 3600\r\n\r\n# Old\r\n',
+      'export const metadata = {\n  "title": "Edited"\n}\r\n// keep next line\r\nexport const revalidate = 3600\r\n\r\n# Edited\n',
+    ],
+  ])("recovers trailing ESM after metadata-first sources with %s and a stripped body", (_name, source, content) => {
+    const result = serializePublishContent({
+      filePath: "docs/a.mdx",
+      body: "# Edited\n",
+      frontmatter: { title: "Edited" },
+      metadataSource: "metadata-export",
+      existingContent: source,
+    })
+
+    expect(result).toEqual({ ok: true, content })
+    if (result.ok) {
+      expect(result.content.match(/export const revalidate/g)).toHaveLength(1)
+      expect(result.content.match(/keep (?:inline|next line)/g)).toHaveLength(1)
+      expect(result.content.match(/# Edited/g)).toHaveLength(1)
+    }
+  })
+
   it("does not duplicate preserved ESM when parsed export metadata is empty", () => {
     const source =
       'import { site } from "./config"\n\nexport const metadata = {}\nexport const revalidate = 3600\n\n# Body\n'

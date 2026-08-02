@@ -84,7 +84,9 @@ export function serializePublishContent({
       return { ok: true, content: `${preservedMetadata}${separator}${body.replace(/^\r?\n+/, "")}` }
     }
     const recovery = existingContent ? extractMetadataExportRecovery(existingContent) : null
-    if (recovery && body.startsWith(recovery.replacement.bodyBeforeDeclaration)) {
+    const bodyPreservesRecoveredPreamble =
+      recovery && recovery.preambleWithoutMetadata !== "" && body.startsWith(recovery.preambleWithoutMetadata)
+    if (bodyPreservesRecoveredPreamble) {
       const bodyAfterDeclaration = body.slice(recovery.replacement.bodyBeforeDeclaration.length)
       return {
         ok: true,
