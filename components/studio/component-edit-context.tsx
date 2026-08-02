@@ -28,11 +28,13 @@ type EditSession = Readonly<{ component: AuthoringComponent; prepared: PreparedC
 
 export function ComponentEditProvider({
   authoringCatalog,
+  identitySource,
   getSource,
   applySource,
   children,
 }: {
   authoringCatalog: AuthoringCatalog
+  identitySource?: string
   getSource: () => string
   applySource: (source: string) => void
   children: React.ReactNode
@@ -65,7 +67,7 @@ export function ComponentEditProvider({
 
   const captureIdentity = React.useCallback(
     (position: ComponentEditPosition): MdxComponentEditIdentity | null => {
-      const source = getSource()
+      const source = identitySource ?? getSource()
       if (identityIndexCache.current?.source !== source) {
         identityIndexCache.current = { source, index: buildComponentEditIdentityIndex(source) }
       }
@@ -73,7 +75,7 @@ export function ComponentEditProvider({
       const captured = index.ok ? index.capture(position) : index
       return captured.ok ? captured.identity : null
     },
-    [getSource],
+    [getSource, identitySource],
   )
 
   const editBridge = React.useMemo<ComponentEditBridge>(

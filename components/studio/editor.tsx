@@ -332,6 +332,7 @@ export function Editor({
     <StudioAdapterProvider value={editorProviderState}>
       <ComponentEditProvider
         authoringCatalog={authoringCatalog}
+        identitySource={sanitizedContent}
         getSource={getEditSource}
         applySource={applyEditedSource}
       >

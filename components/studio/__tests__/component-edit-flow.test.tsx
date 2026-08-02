@@ -45,6 +45,27 @@ function renderEditor(source: string, occurrence = 0, mdastSource = source) {
 afterEach(cleanup)
 
 describe("position-bound Studio component editing", () => {
+  it("captures identities from the loaded source snapshot before the editor ref hydrates", () => {
+    const source = '<Callout title="Loaded" variant="accent">Body</Callout>'
+    const catalog = officialCatalog()
+    const adapter = createStudioAdapterState({ authoringCatalog: catalog, nativeComponentNames: [] })
+
+    render(
+      <StudioAdapterProvider value={adapter}>
+        <ComponentEditProvider
+          authoringCatalog={catalog}
+          identitySource={source}
+          getSource={() => ""}
+          applySource={vi.fn()}
+        >
+          <GenericJsxEditor mdastNode={nodeAt(source) as never} descriptor={{ name: "Callout" } as never} />
+        </ComponentEditProvider>
+      </StudioAdapterProvider>,
+    )
+
+    expect(screen.getByRole("button", { name: "Edit Callout" })).toBeEnabled()
+  })
+
   it("retries identity capture after the editor source finishes hydrating", () => {
     const source = '<Callout title="Hydrated" variant="accent">Body</Callout>'
     let currentSource = ""
