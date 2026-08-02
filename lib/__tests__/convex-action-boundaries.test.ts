@@ -835,6 +835,29 @@ describe("public Convex GitHub action boundaries", () => {
     })
   })
 
+  it("ignores legacy document rows left outside a config-synced content root", async () => {
+    const ctx = actionCtx()
+    authorizeEditor(ctx, [{ _id: "stale_document", filePath: "page", title: "Stale page" }])
+
+    await (syncTreeTitles as any).handler(ctx, {
+      projectId: "project_1",
+      readRef: BASE_SHA,
+      files: [{ path: "guide.mdx", sha: "f".repeat(40) }],
+      githubToken: "editor-token",
+    })
+
+    expect(ctx.runMutation.mock.calls[1][1]).toEqual({
+      projectId: "project_1",
+      documents: [
+        {
+          filePath: "guide.mdx",
+          title: "Guide",
+          githubSha: "f".repeat(40),
+        },
+      ],
+    })
+  })
+
   it("rejects a gallery scan that forges the project owner through userId", async () => {
     const ctx = actionCtx()
     ctx.runQuery.mockResolvedValue(true)

@@ -82,6 +82,32 @@ describe("Convex ownership guards", () => {
     expect(ctx.db.patch).not.toHaveBeenCalled()
   })
 
+  it("rejects project content-root changes while path-scoped state exists", async () => {
+    const patch = vi.fn()
+    const ctx = createCtx({
+      get: vi.fn().mockResolvedValue({
+        _id: "project_1",
+        userId: "user_owner",
+        repoOwner: "acme",
+        repoName: "docs",
+        name: "Docs",
+        contentRoot: "content/blog",
+      }),
+      patch,
+      queryResult: { _id: "document_1" },
+    })
+
+    await expect(
+      (updateProject as any).handler(ctx, {
+        id: "project_1",
+        userId: "user_owner",
+        contentRoot: "content/docs",
+      }),
+    ).rejects.toThrow("cannot change contentRoot while project content exists")
+
+    expect(patch).not.toHaveBeenCalled()
+  })
+
   it("rejects project deletes when the authenticated user does not own the project", async () => {
     const ctx = createCtx({
       get: vi.fn().mockResolvedValue({ _id: "project_1", userId: "user_other", repoOwner: "acme", repoName: "docs" }),

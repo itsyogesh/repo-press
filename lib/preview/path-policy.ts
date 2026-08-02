@@ -125,6 +125,31 @@ export function resolveStoredContentPath(
   throw new PathPolicyError("UNSAFE_RELATIVE_PATH", "unknown path representation")
 }
 
+/**
+ * Resolve persisted path state without allowing a legacy row from an older
+ * project content root to take down the current workspace. Invalid persisted
+ * rows are isolated; unexpected programmer/runtime failures still propagate.
+ */
+export function tryResolveStoredContentPath(
+  contentRoot: string,
+  storedPath: string,
+  representation?: StoredPathRepresentation,
+): string | null {
+  const isLegacyRepresentation = representation === undefined || representation === "legacy_repo_v0"
+  try {
+    return resolveStoredContentPath(contentRoot, storedPath, representation)
+  } catch (error) {
+    if (
+      isLegacyRepresentation &&
+      error instanceof PathPolicyError &&
+      (error.code === "DOCUMENT_OUTSIDE_CONTENT_ROOT" || error.code === "EMPTY_DOCUMENT_PATH")
+    ) {
+      return null
+    }
+    throw error
+  }
+}
+
 /** Convert a repository-relative file path into the canonical stored form. */
 export function toContentPath(contentRoot: string, repoPath: string): string {
   const root = normalizeContentRoot(contentRoot)

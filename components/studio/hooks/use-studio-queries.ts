@@ -13,6 +13,7 @@ import {
   resolveStoredContentPath,
   type StoredPathRepresentation,
   toRepoPath,
+  tryResolveStoredContentPath,
 } from "@/lib/preview/path-policy"
 import { treePathToContentPath } from "@/lib/studio/path-adapters"
 import { useStudio } from "../studio-context"
@@ -252,29 +253,43 @@ export function useStudioQueries(
 
   const pendingOps = React.useMemo(
     () =>
-      storedPendingOps?.map((op) => ({
-        ...op,
-        filePath: resolveStoredContentPath(
+      storedPendingOps?.flatMap((op) => {
+        const filePath = tryResolveStoredContentPath(
           contentRoot,
           op.filePath,
           op.pathRepresentation as StoredPathRepresentation | undefined,
-        ),
-        pathRepresentation: CONTENT_PATH_REPRESENTATION,
-      })),
+        )
+        return filePath
+          ? [
+              {
+                ...op,
+                filePath,
+                pathRepresentation: CONTENT_PATH_REPRESENTATION,
+              },
+            ]
+          : []
+      }),
     [contentRoot, storedPendingOps],
   )
 
   const dirtyDocs = React.useMemo(
     () =>
-      storedDirtyDocs?.map((doc) => ({
-        ...doc,
-        filePath: resolveStoredContentPath(
+      storedDirtyDocs?.flatMap((doc) => {
+        const filePath = tryResolveStoredContentPath(
           contentRoot,
           doc.filePath,
           doc.pathRepresentation as StoredPathRepresentation | undefined,
-        ),
-        pathRepresentation: CONTENT_PATH_REPRESENTATION,
-      })),
+        )
+        return filePath
+          ? [
+              {
+                ...doc,
+                filePath,
+                pathRepresentation: CONTENT_PATH_REPRESENTATION,
+              },
+            ]
+          : []
+      }),
     [contentRoot, storedDirtyDocs],
   )
 
@@ -315,11 +330,12 @@ export function useStudioQueries(
     if (!titleEntries) return {}
     const map: Record<string, string> = {}
     for (const entry of titleEntries) {
-      const contentPath = resolveStoredContentPath(
+      const contentPath = tryResolveStoredContentPath(
         contentRoot,
         entry.filePath,
         entry.pathRepresentation as StoredPathRepresentation | undefined,
       )
+      if (!contentPath) continue
       map[toRepoPath(contentRoot, contentPath)] = entry.title
     }
     return map
