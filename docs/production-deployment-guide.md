@@ -35,7 +35,7 @@ Step-by-step instructions for deploying RepoPress to production. This guide cove
    | `GITHUB_CLIENT_SECRET` | Your GitHub OAuth App client secret | - |
    | `BETTER_AUTH_SECRET` | A new random 32+ character string | **Do NOT reuse the dev secret** |
    | `REPOPRESS_CAPABILITY_SECRET` | A new random 32+ character string | Also configure this exact value in Vercel; do not reuse `BETTER_AUTH_SECRET` |
-   | `SITE_URL` | `https://your-domain.com` | Public RepoPress application origin; Better Auth callbacks return through this origin |
+   | `SITE_URL` | `https://your-domain.com` | Exact public RepoPress application origin; Better Auth trusts it and sends GitHub callbacks through its Next.js auth proxy |
 
    Generate independent secrets for Better Auth and RepoPress capabilities:
    ```bash
@@ -111,6 +111,26 @@ public assets needed by that page. It must not receive the private signing JWK,
 GitHub credentials, auth secrets, `CONVEX_DEPLOYMENT`, or the RepoPress
 capability secret. The origin is public at the network edge because the signed
 approval protocol and opaque iframe are the execution boundary.
+
+Vercel's managed `/_next/image` endpoint is evaluated before Next.js Proxy in a
+production deployment. Add this project-level route to the **sandbox project
+only**, then publish the staged routing version:
+
+```bash
+vercel routes add "Block Next image optimizer" \
+  --src "/_next/image" \
+  --src-syntax equals \
+  --action set-status \
+  --status 404 \
+  --position start \
+  --yes
+vercel routes publish --yes
+```
+
+Without this edge rule, a syntactically valid local image request can reach
+Vercel's optimizer without invoking application middleware. Verify both the
+bare endpoint and a valid-looking request such as
+`/_next/image?url=%2Ficon-light-32x32.png&w=64&q=75` return 404.
 
 ---
 

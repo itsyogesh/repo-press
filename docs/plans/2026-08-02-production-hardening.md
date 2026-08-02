@@ -181,7 +181,9 @@ Create a dedicated Vercel project from the reviewed branch with:
 Keep the sandbox production deployment public; do not add Studio auth,
 `CONVEX_DEPLOYMENT`, the capability secret, or the private key. The deployment
 gate must still reject all runtime application/API routes and all non-GET/HEAD
-requests.
+requests. Add and publish a sandbox-only Vercel project route that sets status
+404 for the exact `/_next/image` path; the managed image optimizer is evaluated
+before Next.js Proxy in production.
 
 **Step 5: Push, open PR, review, and merge**
 

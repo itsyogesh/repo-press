@@ -1,6 +1,10 @@
-import { beforeEach, describe, expect, it } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 import { resolveOrCreatePatUser } from "@/convex/auth"
 import { mintGitHubIdentityBootstrapToken } from "../project-access-token"
+
+vi.hoisted(() => {
+  process.env.SITE_URL = "https://repo-press.example"
+})
 
 const identity = {
   githubAccountId: "12345",
