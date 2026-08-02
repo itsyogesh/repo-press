@@ -226,6 +226,13 @@ openssl rand -base64 32
 npx convex env set REPOPRESS_CAPABILITY_SECRET <generated-value>
 ```
 
+The command above configures the development deployment selected by
+`npx convex dev`. For production, target the production deployment explicitly:
+
+```bash
+npx convex env set --prod REPOPRESS_CAPABILITY_SECRET <generated-value>
+```
+
 ```dotenv
 REPOPRESS_CAPABILITY_SECRET=<same-generated-value>
 ```
