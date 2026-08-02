@@ -173,6 +173,37 @@ describe("useStudioFile immutable read authority", () => {
     expect(result.current.isDirty).toBe(true)
   })
 
+  it("does not let a title-only Convex row replace an in-flight GitHub snapshot", async () => {
+    studioContext.tree = []
+    const response = deferred<Response>()
+    vi.mocked(fetch).mockReturnValueOnce(response.promise)
+    const { result } = renderHook(() => useStudioFile(null, ""))
+
+    act(() => result.current.navigateToFile("content/article.mdx"))
+    await waitFor(() => expect(fetch).toHaveBeenCalledOnce())
+
+    act(() => {
+      result.current.hydrateFromDocument({})
+    })
+
+    await act(async () =>
+      response.resolve({
+        ok: true,
+        json: async () => ({
+          path: "content/article.mdx",
+          name: "article.mdx",
+          sha: "d".repeat(40),
+          content: "# Remote article\n\n<Component />",
+        }),
+      } as Response),
+    )
+
+    await waitFor(() => expect(result.current.content).toContain("# Remote article"))
+    expect(result.current.content).toContain("<Component />")
+    expect(result.current.sha).toBe("d".repeat(40))
+    expect(result.current.isDirty).toBe(false)
+  })
+
   it("preserves a late primed snapshot when the cold read returns 404", async () => {
     studioContext.tree = []
     const response = deferred<Response>()

@@ -5,6 +5,7 @@ import type { Doc, Id } from "@/convex/_generated/dataModel"
 import { getGitHubToken } from "@/lib/auth-server"
 import { createGitHubClient, getBranchHeadSha, getFile } from "@/lib/github"
 import { resolveRepoRole } from "@/lib/github-permissions"
+import { toRepoPath } from "@/lib/preview/path-policy"
 import { resolveProjectAccessRole } from "@/lib/project-access-role"
 import { mintProjectAccessToken } from "@/lib/project-access-token"
 import { loadProjectLockAuthoringMetadata } from "@/lib/repopress/project-lock-snapshot"
@@ -38,7 +39,6 @@ export default async function StudioPage({
 
   const { owner, repo, path } = resolvedParams
   const { branch, projectId: projectIdParam, file } = resolvedSearchParams
-  const currentPath = file || (path ? path.join("/") : "")
 
   const actingUserId = await resolveActingUserId(token)
   const { convex, serverQueryToken } = await createServerQueryContext()
@@ -118,6 +118,10 @@ export default async function StudioPage({
   }
 
   const contentRoot = project?.contentRoot || ""
+  // Query-string navigation is emitted by the repository tree and is already
+  // repository-relative. Catch-all route links are authored relative to the
+  // configured content root, so normalize them at the Git boundary.
+  const currentPath = file || (path?.length ? toRepoPath(contentRoot, path.join("/")) : "")
 
   let registryAuthoringMetadata = Object.freeze({})
   let registryAuthoringDiagnostics: readonly string[] = Object.freeze([])

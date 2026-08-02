@@ -516,6 +516,12 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
   const hydrateFromDocument = React.useCallback(
     (doc: { body?: unknown; frontmatter?: unknown }) => {
       try {
+        const draftBody = typeof doc.body === "string" ? doc.body : null
+        const draftFrontmatter = doc.frontmatter && typeof doc.frontmatter === "object" ? doc.frontmatter : null
+        // Title synchronization creates index rows without draft content. Those
+        // rows must not become empty local snapshots that outrank the Git read.
+        if (draftBody === null && draftFrontmatter === null) return
+
         const activePath = selectedFile?.path
         if (!activePath) return
 
@@ -524,12 +530,12 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
         let nextFrontmatter = cached?.frontmatter ?? {}
         const currentSha = cached?.sha ?? null
 
-        if (typeof doc.body === "string") {
-          nextContent = doc.body
-          setContent(doc.body)
+        if (draftBody !== null) {
+          nextContent = draftBody
+          setContent(draftBody)
         }
-        if (doc.frontmatter && typeof doc.frontmatter === "object") {
-          nextFrontmatter = normalizeFrontmatterDates(doc.frontmatter as Record<string, unknown>) as Record<
+        if (draftFrontmatter !== null) {
+          nextFrontmatter = normalizeFrontmatterDates(draftFrontmatter as Record<string, unknown>) as Record<
             string,
             unknown
           >
