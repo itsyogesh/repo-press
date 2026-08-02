@@ -154,7 +154,13 @@ Commit message, only if needed: `test: close production hardening regressions`
 
 **Step 1: Configure Convex auth origin**
 
-Set production Convex `SITE_URL` to `https://repo-press-itsyogesh.vercel.app`. Retain the existing production capability secret.
+Set production Convex `SITE_URL` to `https://repo-press.vercel.app` with an explicit production target:
+
+```bash
+npx convex env set --prod SITE_URL https://repo-press.vercel.app
+```
+
+Retain the existing production capability secret.
 
 **Step 2: Generate preview signing material**
 
@@ -174,7 +180,7 @@ Set production Vercel:
 Create a dedicated Vercel project from the reviewed branch with:
 
 - `REPOPRESS_DEPLOYMENT_ROLE=sandbox`;
-- `NEXT_PUBLIC_APP_URL=https://repo-press-itsyogesh.vercel.app` for CSP `frame-ancestors`;
+- `NEXT_PUBLIC_APP_URL=https://repo-press.vercel.app` for CSP `frame-ancestors`;
 - the public production `NEXT_PUBLIC_CONVEX_URL` and `NEXT_PUBLIC_CONVEX_SITE_URL` required by the shared build;
 - the matching `NEXT_PUBLIC_PREVIEW_APPROVAL_PUBLIC_KEY_JWK`.
 
