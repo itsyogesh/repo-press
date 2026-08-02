@@ -16,6 +16,12 @@ describe("detectMetadataSource", () => {
     expect(detectMetadataSource(source, "docs/a.mdx")).toBe("metadata-export")
   })
 
+  it("detects metadata exports after a leading comment and import preamble", () => {
+    const source =
+      '// Keep this preamble\nimport type { Metadata } from "next"\n\nexport const metadata = { title: "Hi" }\n\n# Body\n'
+    expect(detectMetadataSource(source, "docs/a.mdx")).toBe("metadata-export")
+  })
+
   it("detects typed and BOM-prefixed metadata exports", () => {
     const source = '\uFEFFexport const metadata: Metadata = { title: "Hi" }\r\n\r\n# Body\r\n'
     expect(detectMetadataSource(source, "docs/a.mdx")).toBe("metadata-export")
