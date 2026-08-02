@@ -12,9 +12,10 @@ import { resolveFieldValue } from "@/lib/framework-adapters"
 import {
   COMPATIBLE_RENDERER_PROFILE,
   type CompatiblePreviewAuthorityContext,
+  type CompatiblePreviewVerificationFailureReason,
   parseConfiguredPreviewApprovalKey,
   type VerifiedCompatiblePreviewResolution,
-  verifySignedCompatiblePreviewResolution,
+  verifySignedCompatiblePreviewResolutionDetailed,
 } from "@/lib/preview/compatible-artifact"
 import {
   COMPATIBLE_FAILURE_MESSAGES,
@@ -139,6 +140,15 @@ const DOWNGRADE_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
   BROWSER_CAPABILITY_UNSUPPORTED: "This component uses capabilities unavailable in compatible preview.",
 })
 
+const COMPATIBLE_VERIFICATION_MESSAGES: Readonly<Record<CompatiblePreviewVerificationFailureReason, string>> =
+  Object.freeze({
+    RESOLUTION_INVALID: "The compatible preview approval response was invalid.",
+    APPROVAL_EXPIRED: "The compatible preview approval expired; reload the document to retry.",
+    CRYPTO_UNAVAILABLE: "This browser cannot verify compatible preview approvals.",
+    SIGNATURE_INVALID: "The compatible preview approval failed its authenticity check.",
+    DIGEST_MISMATCH: "The compatible preview artifact did not match its approved content digest.",
+  })
+
 const MISSING_COMPATIBLE_FALLBACK_MODEL = freezePreviewValue<GenericRenderModel>({
   blocks: [{ type: "component-placeholder", name: "CompatiblePreview" }],
 })
@@ -221,6 +231,8 @@ export function Preview({
     authorityKey: string
     resolution: VerifiedCompatiblePreviewResolution
   } | null>(null)
+  const [compatibleVerificationFailure, setCompatibleVerificationFailure] =
+    React.useState<CompatiblePreviewVerificationFailureReason | null>(null)
   const [downgradedAttempt, setDowngradedAttempt] = React.useState<{
     key: string
     diagnostics: readonly string[]
@@ -232,13 +244,19 @@ export function Preview({
   React.useEffect(() => {
     let active = true
     setVerifiedCompatibleState(null)
+    setCompatibleVerificationFailure(null)
     if (compatibleContractMatches && compatibleResolution && compatibleAuthority && approvalPublicKey) {
       const authorityKey = compatibleAuthorityKey(compatibleAuthority)
-      void verifySignedCompatiblePreviewResolution(compatibleResolution, {
+      void verifySignedCompatiblePreviewResolutionDetailed(compatibleResolution, {
         publicKey: approvalPublicKey,
         expectedAuthority: compatibleAuthority,
-      }).then((resolution) => {
-        if (active && resolution) setVerifiedCompatibleState({ wire: compatibleResolution, authorityKey, resolution })
+      }).then((result) => {
+        if (!active) return
+        if (result.ok) {
+          setVerifiedCompatibleState({ wire: compatibleResolution, authorityKey, resolution: result.resolution })
+          return
+        }
+        setCompatibleVerificationFailure(result.reason)
       })
     }
     return () => {
@@ -276,8 +294,17 @@ export function Preview({
     ) {
       reasons.push(normalizePreviewDowngradeReason("COMPATIBLE_UNAVAILABLE"))
     }
+    if (activePreviewResult?.fidelity === "compatible" && compatibleVerificationFailure) {
+      reasons.push(COMPATIBLE_VERIFICATION_MESSAGES[compatibleVerificationFailure])
+    }
     return [...new Set(reasons)]
-  }, [activePreviewResult, approvalPublicKey, compatibleContractMatches, compatibleResolution])
+  }, [
+    activePreviewResult,
+    approvalPublicKey,
+    compatibleContractMatches,
+    compatibleResolution,
+    compatibleVerificationFailure,
+  ])
   const visibleDowngradeDiagnostics = compatibleDowngraded ? compatibleDiagnostics : downgradeDiagnostics
   const warnings = React.useMemo(() => {
     if (compatibleDowngraded) return [...compatibleDiagnostics]

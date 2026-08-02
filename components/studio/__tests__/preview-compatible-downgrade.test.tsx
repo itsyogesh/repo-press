@@ -67,6 +67,7 @@ import { Preview } from "../preview"
 
 let firstWire: string
 let changedWire: string
+let untrustedWire: string
 let authority: CompatiblePreviewAuthorityContext
 let publicKey: JsonWebKey
 
@@ -76,8 +77,10 @@ beforeAll(async () => {
     documentSource: "# Changed static",
     keyPair: first.keyPair,
   })
+  const untrusted = await createSignedCompatibleFixture({ documentSource: "# Untrusted" })
   firstWire = first.wire
   changedWire = changed.wire
+  untrustedWire = untrusted.wire
   authority = first.expectedAuthority
   publicKey = first.publicKey
 })
@@ -203,6 +206,16 @@ describe("Studio compatible downgrade", () => {
     )
     expect(await screen.findByTitle("Compatible component preview")).toBeInTheDocument()
     await waitFor(() => expect(frameHarness.mounts).toBe(2))
+  })
+
+  it("explains a browser-side approval rejection instead of silently showing Generic fidelity", async () => {
+    renderCompatible(untrustedWire)
+
+    expect(await screen.findByRole("heading", { name: "Generic fallback" })).toBeInTheDocument()
+    expect(
+      await screen.findByText("The compatible preview approval failed its authenticity check."),
+    ).toBeInTheDocument()
+    expect(screen.queryByTitle("Compatible component preview")).not.toBeInTheDocument()
   })
 
   it.each([
