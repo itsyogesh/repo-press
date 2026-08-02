@@ -66,7 +66,14 @@ describe("proxy.ts", () => {
   it("returns 404 for application and API routes in a sandbox-only deployment", () => {
     process.env.REPOPRESS_DEPLOYMENT_ROLE = "sandbox"
 
-    for (const pathname of ["/", "/login", "/dashboard/acme/docs", "/api/auth/get-session", "/api/github/tree"]) {
+    for (const pathname of [
+      "/",
+      "/login",
+      "/dashboard/acme/docs",
+      "/api/auth/get-session",
+      "/api/github/tree",
+      "/_next/image",
+    ]) {
       const response = proxy(new NextRequest(`https://preview.repo-press.dev${pathname}`))
 
       expect(response.status, pathname).toBe(404)
@@ -83,7 +90,7 @@ describe("proxy.ts", () => {
 
   it("exports a static matcher that covers application and API routes while excluding immutable assets", () => {
     expect(config).toEqual({
-      matcher: ["/((?!_next/static|_next/image|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff2?|ttf|wasm)$).*)"],
+      matcher: ["/((?!_next/static|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff2?|ttf|wasm)$).*)"],
     })
   })
 })

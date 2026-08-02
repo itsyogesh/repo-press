@@ -9,6 +9,7 @@ describe("deployment role path policy", () => {
     "/dashboard/acme/docs",
     "/api/auth/get-session",
     "/api/github/tree",
+    "/_next/image",
   ])("rejects %s from a sandbox-only deployment", (pathname) => {
     expect(canServeDeploymentPath(pathname, "sandbox")).toBe(false)
   })
@@ -16,7 +17,6 @@ describe("deployment role path policy", () => {
   it.each([
     "/preview/sandbox",
     "/_next/static/chunks/app.js",
-    "/_next/image",
     "/esbuild.wasm",
     "/icon.svg",
     "/icon-light-32x32.png",
