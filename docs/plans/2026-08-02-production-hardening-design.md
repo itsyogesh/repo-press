@@ -24,7 +24,7 @@ Messages remain calm and specific: the workspace could not open, saved GitHub co
 
 Treat `signIn.social` as a result-bearing API. A returned Better Auth error becomes a visible destructive alert, thrown/network failures use a generic retry message, and successful results retain the requested safe in-app callback. Loading state always settles and duplicate submission remains disabled.
 
-Production Convex receives `SITE_URL=https://repo-press.vercel.app`. Auth startup validates that value as a single application origin and uses it for Better Auth's `baseURL`, explicit `trustedOrigins`, and the GitHub provider's explicit `/api/auth/callback/github` redirect. This keeps both the sign-in request and callback on the application origin so the application domain receives the state and session cookies.
+Production Convex receives `SITE_URL=https://repopress.org`. Auth startup validates that value as a single application origin and uses it for Better Auth's `baseURL`, explicit `trustedOrigins`, and the GitHub provider's explicit `/api/auth/callback/github` redirect. This keeps both the sign-in request and callback on the canonical application origin so that origin receives the state and session cookies. The `repo-press.vercel.app` alias remains a rollback target that requires coordinated auth and sandbox-origin reconfiguration; it is not the OAuth authority or a seamless failover origin.
 
 ### Capability configuration
 
