@@ -63,6 +63,18 @@ describe("proxy.ts", () => {
     expect(response.headers.get("location")).toBe("https://repo-press.dev/dashboard")
   })
 
+  it("allows dashboard requests authenticated by the secure production Convex JWT cookie", () => {
+    const request = new NextRequest("https://repo-press.dev/dashboard", {
+      headers: {
+        cookie: "__Secure-better-auth.convex_jwt=valid-production-jwt",
+      },
+    })
+    const response = proxy(request)
+
+    expect(response.headers.get("location")).toBeNull()
+    expect(response.headers.get("x-middleware-next")).toBe("1")
+  })
+
   it("returns 404 for application and API routes in a sandbox-only deployment", () => {
     process.env.REPOPRESS_DEPLOYMENT_ROLE = "sandbox"
 
