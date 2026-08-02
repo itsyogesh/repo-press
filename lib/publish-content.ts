@@ -77,11 +77,11 @@ export function serializePublishContent({
             "Could not recover the existing metadata export from the pinned Git snapshot; publish stopped to prevent metadata loss",
         }
       }
-      const preservedMetadata =
+      const bodyPreservesOtherPreamble =
         recovery.preambleWithoutMetadata !== "" && body.startsWith(recovery.preambleWithoutMetadata)
-          ? recovery.declaration
-          : recovery.fullPreamble
-      return { ok: true, content: `${preservedMetadata}\n\n${body.replace(/^\r?\n+/, "")}` }
+      const preservedMetadata = bodyPreservesOtherPreamble ? recovery.declaration : recovery.fullPreamble
+      const separator = bodyPreservesOtherPreamble ? recovery.declarationBodySeparator : "\n\n"
+      return { ok: true, content: `${preservedMetadata}${separator}${body.replace(/^\r?\n+/, "")}` }
     }
     return { ok: true, content: `${formatMetadataExport(frontmatter)}\n\n${body}` }
   }

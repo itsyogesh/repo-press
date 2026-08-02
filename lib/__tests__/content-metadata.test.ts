@@ -78,6 +78,43 @@ describe("parseContentFile", () => {
   })
 
   it.each([
+    [
+      "a next-line line comment with BOM and CRLF",
+      '\uFEFFexport const metadata = { title: "Hello" }\r\n// keep\r\n# Body\r\n',
+      "// keep\r\n# Body\r\n",
+    ],
+    [
+      "an inline trailing line comment",
+      'export const metadata = { title: "Hello" } // keep\n\n# Body\n',
+      " // keep\n\n# Body\n",
+    ],
+    [
+      "an inline trailing block comment",
+      'export const metadata = { title: "Hello" } /* keep */\n\n# Body\n',
+      " /* keep */\n\n# Body\n",
+    ],
+  ])("preserves %s outside the metadata removal span", (_name, source, body) => {
+    expect(parseContentFile(source, "docs/a.mdx")).toEqual({
+      body,
+      metadata: { title: "Hello" },
+      metadataSource: "metadata-export",
+      editable: true,
+    })
+  })
+
+  it("fails closed when comment trivia is followed by a real expression continuation", () => {
+    const source = 'export const metadata = { title: "Hello" }\n// keep\n/* still trivia */\n.withDefaults()\n# Body\n'
+
+    expect(parseContentFile(source, "docs/a.mdx")).toEqual({
+      body: source,
+      metadata: {},
+      metadataSource: "metadata-export",
+      editable: false,
+      diagnostic: "UNSUPPORTED_METADATA_EXPORT",
+    })
+  })
+
+  it.each([
     ["plain Markdown", "# Body\n", "docs/a.md"],
     ["plain MDX", "# Body\n", "docs/a.mdx"],
     ["metadata-like JavaScript in Markdown", 'export const metadata = { title: "Hi" }\n', "docs/a.md"],

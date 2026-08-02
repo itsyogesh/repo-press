@@ -229,12 +229,46 @@ function findLeadingEsmPreambleEnd(content: string) {
 }
 
 function startsUnsupportedContinuation(content: string) {
-  const firstLineEnd = content.startsWith("\r\n") ? 2 : content.startsWith("\n") ? 1 : 0
+  const lineTerminatorLength = (index: number) => {
+    if (content.startsWith("\r\n", index)) return 2
+    return content[index] === "\n" ||
+      content[index] === "\r" ||
+      content[index] === "\u2028" ||
+      content[index] === "\u2029"
+      ? 1
+      : 0
+  }
+  const firstLineEnd = lineTerminatorLength(0)
   if (firstLineEnd === 0) return false
 
   let index = firstLineEnd
-  while (ECMASCRIPT_SAME_LINE_WHITESPACE_PATTERN.test(content[index] ?? "")) index += 1
-  if (content.startsWith("\r\n", index) || content[index] === "\n" || index >= content.length) return false
+  while (index < content.length && index < MAX_ESM_STATEMENT_LENGTH) {
+    while (ECMASCRIPT_SAME_LINE_WHITESPACE_PATTERN.test(content[index] ?? "")) index += 1
+    if (index >= content.length || lineTerminatorLength(index) > 0) return false
+
+    if (content.startsWith("//", index)) {
+      index += 2
+      while (index < content.length && index < MAX_ESM_STATEMENT_LENGTH && lineTerminatorLength(index) === 0) index += 1
+      if (index >= MAX_ESM_STATEMENT_LENGTH) return true
+      const commentLineEnd = lineTerminatorLength(index)
+      if (commentLineEnd === 0) return false
+      index += commentLineEnd
+      continue
+    }
+
+    if (content.startsWith("/*", index)) {
+      const relativeCommentEnd = content.slice(index + 2, MAX_ESM_STATEMENT_LENGTH).indexOf("*/")
+      if (relativeCommentEnd === -1) return true
+      const commentEnd = index + 2 + relativeCommentEnd
+      index = commentEnd + 2
+      while (ECMASCRIPT_SAME_LINE_WHITESPACE_PATTERN.test(content[index] ?? "")) index += 1
+      index += lineTerminatorLength(index)
+      continue
+    }
+
+    break
+  }
+  if (index >= MAX_ESM_STATEMENT_LENGTH) return true
   return /^(?:[.([?:`,+\-*/%<>=!&|^]|in\b|instanceof\b|as\b|satisfies\b)/.test(content.slice(index))
 }
 
@@ -325,18 +359,31 @@ export function extractMetadataExportRecovery(content: string) {
   const lineEndMatch = /\r?\n/.exec(declaration.slice(objectEnd))
   const lineEnd = lineEndMatch ? objectEnd + lineEndMatch.index : declaration.length
   const suffix = declaration.slice(objectEnd, lineEnd)
-  if (!/^\s*(?:(?:satisfies|as)\s+[A-Za-z_$][\w$<>,.[\]\s|&]*)?;?\s*(?:\/\/[^\r\n]*)?$/.test(suffix)) return null
-  const hasTerminatingSemicolon = /;\s*(?:\/\/[^\r\n]*)?$/.test(suffix)
+  const suffixMatch =
+    /^(\s*(?:(?:satisfies|as)\s+[A-Za-z_$][\w$<>,.[\]\s|&]*)?;?\s*)((?:\/\/[^\r\n]*)|(?:\/\*[^\r\n]*\*\/\s*))?$/.exec(
+      suffix,
+    )
+  if (!suffixMatch) return null
+  const codeSuffix = suffixMatch[1].trimEnd()
+  const hasTerminatingSemicolon = codeSuffix.endsWith(";")
   if (!hasTerminatingSemicolon && startsUnsupportedContinuation(declaration.slice(lineEnd))) return null
 
-  const declarationEnd = start + lineEnd + (lineEndMatch?.[0].length ?? 0)
+  const codeEnd = objectEnd + codeSuffix.length
+  const removalEnd = suffixMatch[2] ? codeEnd : lineEnd + (lineEndMatch?.[0].length ?? 0)
+  const preambleWithoutMetadata = removeMetadataDeclaration(content.slice(0, preambleEnd), {
+    start,
+    end: start + removalEnd,
+  }).trimEnd()
   return Object.freeze({
-    declaration: content.slice(start, start + lineEnd).trimEnd(),
+    declaration: content.slice(start, start + codeEnd),
+    declarationBodySeparator:
+      start === 0 && suffixMatch[2]
+        ? ""
+        : start === 0 && preambleWithoutMetadata !== ""
+          ? (lineEndMatch?.[0] ?? "")
+          : "\n\n",
     fullPreamble: content.slice(0, preambleEnd).trimEnd(),
-    preambleWithoutMetadata: removeMetadataDeclaration(content.slice(0, preambleEnd), {
-      start,
-      end: declarationEnd,
-    }).trimEnd(),
+    preambleWithoutMetadata,
   })
 }
 
@@ -516,7 +563,10 @@ function parseStaticMetadataDeclaration(declaration: string) {
   }
   const value = staticValue(declarator.init, 0, { nodes: 0, keys: 0, arrayItems: 0, stringLength: 0 })
   if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error("Metadata must be an object")
-  return value as Readonly<Record<string, unknown>>
+  return {
+    declarationEnd: statement.end,
+    metadata: value as Readonly<Record<string, unknown>>,
+  }
 }
 
 function unsupportedMetadataExport(source: string): ParsedContentFile {
@@ -544,6 +594,11 @@ function removeMetadataDeclaration(source: string, declaration: Readonly<{ start
   const after = source.slice(declaration.end)
   if (before === "") return after.replace(/^(?:\r?\n)+/, "")
   return before + after
+}
+
+function metadataRemovalEnd(source: string, codeEnd: number, lexicalEnd: number) {
+  const trailing = source.slice(codeEnd, lexicalEnd)
+  return /^[^\S\r\n\u2028\u2029]*(?:\r\n|\n)$/.test(trailing) ? lexicalEnd : codeEnd
 }
 
 function frontmatterPayloadLength(source: string) {
@@ -586,10 +641,14 @@ export function parseContentFile(source: string, filePath: string): ParsedConten
   if (declaration.end - declaration.start > MAX_ESM_STATEMENT_LENGTH) return unsupportedMetadataExport(source)
 
   try {
-    const metadata = parseStaticMetadataDeclaration(source.slice(declaration.start, declaration.end))
+    const parsedDeclaration = parseStaticMetadataDeclaration(source.slice(declaration.start, declaration.end))
+    const codeEnd = declaration.start + parsedDeclaration.declarationEnd
     return {
-      body: removeMetadataDeclaration(source, declaration),
-      metadata,
+      body: removeMetadataDeclaration(source, {
+        start: declaration.start,
+        end: metadataRemovalEnd(source, codeEnd, declaration.end),
+      }),
+      metadata: parsedDeclaration.metadata,
       metadataSource: "metadata-export",
       editable: true,
     }

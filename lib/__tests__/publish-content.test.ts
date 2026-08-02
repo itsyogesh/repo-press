@@ -142,6 +142,39 @@ describe("serializePublishContent", () => {
     })
   })
 
+  it.each([
+    "// keep",
+    "/* keep */",
+  ])("round-trips an empty metadata export without losing or duplicating its trailing comment: %s", (comment) => {
+    const source = `export const metadata = {} ${comment}\n\n# Body\n`
+    const parsed = parseContentFile(source, "docs/a.mdx")
+
+    expect(
+      serializePublishContent({
+        filePath: "docs/a.mdx",
+        body: parsed.body,
+        frontmatter: {},
+        metadataSource: parsed.metadataSource,
+        existingContent: source,
+      }),
+    ).toEqual({ ok: true, content: source })
+  })
+
+  it("round-trips a next-line comment with its original CRLF separator", () => {
+    const source = "\uFEFFexport const metadata = {}\r\n// keep\r\n# Body\r\n"
+    const parsed = parseContentFile(source, "docs/a.mdx")
+
+    expect(
+      serializePublishContent({
+        filePath: "docs/a.mdx",
+        body: parsed.body,
+        frontmatter: {},
+        metadataSource: parsed.metadataSource,
+        existingContent: source,
+      }),
+    ).toEqual({ ok: true, content: source })
+  })
+
   it("round-trips a YAML frontmatter document", () => {
     const result = serializePublishContent({
       filePath: "docs/a.mdx",
