@@ -45,6 +45,74 @@ function renderEditor(source: string, occurrence = 0, mdastSource = source) {
 afterEach(cleanup)
 
 describe("position-bound Studio component editing", () => {
+  it("keeps a uniquely attributed component editable when MDXEditor drops source positions", async () => {
+    const source = '<Callout title="First" variant="accent" />\n\n<Callout title="Second" variant="accent" />'
+    const catalog = officialCatalog()
+    const adapter = createStudioAdapterState({ authoringCatalog: catalog, nativeComponentNames: [] })
+
+    render(
+      <StudioAdapterProvider value={adapter}>
+        <ComponentEditProvider
+          authoringCatalog={catalog}
+          identitySource={source}
+          getSource={() => source}
+          applySource={vi.fn()}
+        >
+          <GenericJsxEditor
+            mdastNode={
+              {
+                type: "mdxJsxFlowElement",
+                name: "Callout",
+                attributes: [
+                  { type: "mdxJsxAttribute", name: "title", value: "Second" },
+                  { type: "mdxJsxAttribute", name: "variant", value: "accent" },
+                ],
+              } as never
+            }
+            descriptor={{ name: "Callout" } as never}
+          />
+        </ComponentEditProvider>
+      </StudioAdapterProvider>,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit Callout" }))
+    expect(await screen.findByLabelText("Title")).toHaveValue("Second")
+  })
+
+  it("refuses a positionless identity when the latest source makes it ambiguous", () => {
+    const loadedSource = '<Callout title="Same" variant="accent">One</Callout>'
+    const latestSource = `${loadedSource}\n\n<Callout title="Same" variant="accent">Two</Callout>`
+    const catalog = officialCatalog()
+    const adapter = createStudioAdapterState({ authoringCatalog: catalog, nativeComponentNames: [] })
+
+    render(
+      <StudioAdapterProvider value={adapter}>
+        <ComponentEditProvider
+          authoringCatalog={catalog}
+          identitySource={loadedSource}
+          getSource={() => latestSource}
+          applySource={vi.fn()}
+        >
+          <GenericJsxEditor
+            mdastNode={
+              {
+                type: "mdxJsxTextElement",
+                name: "Callout",
+                attributes: [
+                  { type: "mdxJsxAttribute", name: "title", value: "Same" },
+                  { type: "mdxJsxAttribute", name: "variant", value: "accent" },
+                ],
+              } as never
+            }
+            descriptor={{ name: "Callout" } as never}
+          />
+        </ComponentEditProvider>
+      </StudioAdapterProvider>,
+    )
+
+    expect(screen.getByRole("button", { name: "Edit Callout" })).toBeDisabled()
+  })
+
   it("captures identities from the loaded source snapshot before the editor ref hydrates", () => {
     const source = '<Callout title="Loaded" variant="accent">Body</Callout>'
     const catalog = officialCatalog()
