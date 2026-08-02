@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { canServeDeploymentRequest } from "@/lib/deployment-role"
 
 const DASHBOARD_PATH = "/dashboard"
-const CONVEX_JWT_COOKIE_NAMES = ["better-auth.convex_jwt", "convex_jwt"] as const
+const CONVEX_JWT_COOKIE_NAMES = ["__Secure-better-auth.convex_jwt", "better-auth.convex_jwt", "convex_jwt"] as const
 
 function getAuthSignals(request: NextRequest) {
   const hasConvexJwt = CONVEX_JWT_COOKIE_NAMES.some((cookieName) => Boolean(request.cookies.get(cookieName)?.value))
