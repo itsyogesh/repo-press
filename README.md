@@ -159,7 +159,7 @@ New repository setup uses native discovery: RepoPress inspects the repository's 
 | `GITHUB_CLIENT_SECRET` | From your GitHub OAuth App |
 | `BETTER_AUTH_SECRET` | Random secret string for session encryption |
 | `REPOPRESS_CAPABILITY_SECRET` | Random 32+ character capability-signing secret; use the same value in the Next.js runtime |
-| `SITE_URL` | Your Convex site URL (same as `NEXT_PUBLIC_CONVEX_SITE_URL`) |
+| `SITE_URL` | Public RepoPress application origin used by Better Auth (for example, `https://repopress.example`) |
 
 ### Next.js runtime
 
@@ -167,6 +167,7 @@ New repository setup uses native discovery: RepoPress inspects the repository's 
 |---|---|
 | `REPOPRESS_CAPABILITY_SECRET` | Same capability-signing value configured in Convex; never reuse `BETTER_AUTH_SECRET` |
 | `PREVIEW_APPROVAL_PRIVATE_KEY_JWK` | Server-only EC P-256 private JWK used to sign Compatible preview artifacts; never expose or log it |
+| `REPOPRESS_DEPLOYMENT_ROLE` | Set to `sandbox` only on the separately hosted Compatible preview project; omit on Studio |
 
 ### Compatible preview browser configuration
 

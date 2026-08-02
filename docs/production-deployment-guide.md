@@ -35,7 +35,7 @@ Step-by-step instructions for deploying RepoPress to production. This guide cove
    | `GITHUB_CLIENT_SECRET` | Your GitHub OAuth App client secret | - |
    | `BETTER_AUTH_SECRET` | A new random 32+ character string | **Do NOT reuse the dev secret** |
    | `REPOPRESS_CAPABILITY_SECRET` | A new random 32+ character string | Also configure this exact value in Vercel; do not reuse `BETTER_AUTH_SECRET` |
-   | `SITE_URL` | `https://<your-project>.convex.site` | Your Convex production site URL |
+   | `SITE_URL` | `https://your-domain.com` | Public RepoPress application origin; Better Auth callbacks return through this origin |
 
    Generate independent secrets for Better Auth and RepoPress capabilities:
    ```bash
@@ -77,6 +77,9 @@ Step-by-step instructions for deploying RepoPress to production. This guide cove
    | `CONVEX_DEPLOYMENT` | `prod:<your-project>` | Production |
    | `NEXT_PUBLIC_APP_URL` | `https://your-domain.com` | Production |
    | `REPOPRESS_CAPABILITY_SECRET` | Same value configured in the production Convex deployment | Production |
+   | `PREVIEW_APPROVAL_PRIVATE_KEY_JWK` | Server-only private JWK from a generated EC P-256 key pair | Production |
+   | `NEXT_PUBLIC_PREVIEW_APPROVAL_PUBLIC_KEY_JWK` | Public JWK matching the private signing key | Production |
+   | `NEXT_PUBLIC_PREVIEW_ORIGIN` | HTTPS origin of the dedicated public sandbox project | Production |
    | `NEXT_PUBLIC_SENTRY_DSN` | Your Sentry DSN (optional) | Production |
    | `SENTRY_ORG` | Your Sentry org slug (optional) | Production |
    | `SENTRY_PROJECT` | Your Sentry project slug (optional) | Production |
@@ -85,6 +88,22 @@ Step-by-step instructions for deploying RepoPress to production. This guide cove
 3. **Trigger a deploy** (push to main or manual deploy from Vercel dashboard).
 
 4. **Verify**: Visit `https://your-domain.com` - the landing page should load.
+
+### Dedicated Compatible preview project
+
+Deploy the same reviewed commit as a separate Vercel project with deployment
+protection disabled and these production variables:
+
+| Variable | Value |
+|----------|-------|
+| `REPOPRESS_DEPLOYMENT_ROLE` | `sandbox` |
+| `NEXT_PUBLIC_APP_URL` | Public Studio origin, used by the sandbox CSP `frame-ancestors` rule |
+| `NEXT_PUBLIC_PREVIEW_APPROVAL_PUBLIC_KEY_JWK` | Public half of the Studio signing key pair |
+
+The sandbox role serves only `/preview/sandbox` and immutable assets. It must
+not receive the private signing JWK, GitHub credentials, auth secrets, or the
+RepoPress capability secret. The origin is public at the network edge because
+the signed approval protocol and opaque iframe are the execution boundary.
 
 ---
 

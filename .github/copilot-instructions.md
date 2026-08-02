@@ -310,7 +310,7 @@ Example: "I need `NEXT_PUBLIC_CONVEX_URL` to complete this task. Please provide 
 - `GITHUB_CLIENT_SECRET` – GitHub OAuth App client secret
 - `BETTER_AUTH_SECRET` – Random secret for session encryption
 - `REPOPRESS_CAPABILITY_SECRET` – Separate 32+ character signing secret; set the same value in Convex and the Next.js runtime
-- `SITE_URL` – Your Convex site URL
+- `SITE_URL` – Public RepoPress application origin used by Better Auth callbacks
 
 ### Optional
 - `NEXT_PUBLIC_APP_URL` – Public app URL

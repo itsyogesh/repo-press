@@ -1,6 +1,10 @@
 import { NextRequest } from "next/server"
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it } from "vitest"
 import { config, proxy } from "@/proxy"
+
+afterEach(() => {
+  delete process.env.REPOPRESS_DEPLOYMENT_ROLE
+})
 
 describe("proxy.ts", () => {
   it("redirects unauthenticated dashboard requests to /login", () => {
@@ -59,9 +63,27 @@ describe("proxy.ts", () => {
     expect(response.headers.get("location")).toBe("https://repo-press.dev/dashboard")
   })
 
-  it("exports a static matcher config for login and dashboard routes", () => {
+  it("returns 404 for application and API routes in a sandbox-only deployment", () => {
+    process.env.REPOPRESS_DEPLOYMENT_ROLE = "sandbox"
+
+    for (const pathname of ["/", "/login", "/dashboard/acme/docs", "/api/auth/get-session", "/api/github/tree"]) {
+      const response = proxy(new NextRequest(`https://preview.repo-press.dev${pathname}`))
+
+      expect(response.status, pathname).toBe(404)
+      expect(response.headers.get("location"), pathname).toBeNull()
+    }
+  })
+
+  it("allows the exact sandbox route through without authentication", () => {
+    process.env.REPOPRESS_DEPLOYMENT_ROLE = "sandbox"
+    const response = proxy(new NextRequest("https://preview.repo-press.dev/preview/sandbox"))
+
+    expect(response.headers.get("x-middleware-next")).toBe("1")
+  })
+
+  it("exports a static matcher that covers application and API routes while excluding immutable assets", () => {
     expect(config).toEqual({
-      matcher: ["/", "/login/:path*", "/dashboard/:path*"],
+      matcher: ["/((?!_next/static|_next/image|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff2?|ttf|wasm)$).*)"],
     })
   })
 })

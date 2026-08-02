@@ -319,7 +319,7 @@ Never read `.env.local`, `.env`, or other secrets files directly. If a task need
 - `GITHUB_CLIENT_SECRET` -- GitHub OAuth App client secret
 - `BETTER_AUTH_SECRET` -- Random secret for session encryption
 - `REPOPRESS_CAPABILITY_SECRET` -- Separate 32+ character signing secret; set the same value in Convex and the Next.js runtime
-- `SITE_URL` -- Your Convex site URL (same as NEXT_PUBLIC_CONVEX_SITE_URL)
+- `SITE_URL` -- Public RepoPress application origin used by Better Auth callbacks
 
 ### Optional:
 - `NEXT_PUBLIC_APP_URL` -- Your app's public URL
