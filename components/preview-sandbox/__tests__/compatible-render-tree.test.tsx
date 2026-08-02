@@ -89,6 +89,17 @@ describe("compatible inert render tree", () => {
     expect(sanitizeCompatibleRenderTree([{ kind: "text", value: "x".repeat(300_000) }])).toBeNull()
   })
 
+  it("renders approved void elements without passing a React children argument", () => {
+    const tree = sanitizeCompatibleRenderTree([
+      { kind: "element", tag: "hr", props: {}, children: [] },
+      { kind: "element", tag: "br", props: {}, children: [] },
+    ])
+
+    const { container } = render(<CompatibleRenderTreeView tree={tree ?? []} />)
+    expect(container.querySelectorAll("hr")).toHaveLength(1)
+    expect(container.querySelectorAll("br")).toHaveLength(1)
+  })
+
   it("scopes portable primitive styles without restoring navigation or media behavior", () => {
     const tree = sanitizeCompatibleRenderTree([
       {
