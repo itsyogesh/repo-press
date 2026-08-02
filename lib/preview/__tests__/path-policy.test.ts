@@ -6,6 +6,7 @@ import {
   toContentPath,
   toRepoPath,
   toRepoPathFromLegacyRepoPath,
+  tryResolveStoredContentPath,
 } from "../path-policy"
 
 describe("content path policy", () => {
@@ -51,6 +52,21 @@ describe("content path policy", () => {
 
   it("rejects unknown stored path representation tags", () => {
     expect(() => resolveStoredRepoPath("content/docs", "guides/start.mdx", "guessed" as never)).toThrow(
+      "unknown path representation",
+    )
+  })
+
+  it("isolates only expected legacy rows from an earlier content root", () => {
+    expect(tryResolveStoredContentPath("content/docs", "page")).toBeNull()
+    expect(tryResolveStoredContentPath("content/docs", "content/docs", "legacy_repo_v0")).toBeNull()
+
+    expect(() => tryResolveStoredContentPath("content/docs", "../page.mdx", "legacy_repo_v0")).toThrow(
+      "escapes content root",
+    )
+    expect(() => tryResolveStoredContentPath("content/docs", "../page.mdx", "content_relative_v1")).toThrow(
+      "escapes content root",
+    )
+    expect(() => tryResolveStoredContentPath("content/docs", "page.mdx", "unknown" as never)).toThrow(
       "unknown path representation",
     )
   })

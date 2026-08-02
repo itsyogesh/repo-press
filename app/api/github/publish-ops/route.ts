@@ -21,7 +21,7 @@ import {
   updatePullRequest,
   verifyPublishAttemptCommitForPublish,
 } from "@/lib/github"
-import { resolveStoredRepoPath, type StoredPathRepresentation } from "@/lib/preview/path-policy"
+import { type StoredPathRepresentation, toRepoPath, tryResolveStoredContentPath } from "@/lib/preview/path-policy"
 import { mintServerQueryToken } from "@/lib/project-access-token"
 import { buildPublishBranchName, derivePublishBranchScope } from "@/lib/publish-branch-name"
 import { detectMetadataSource, serializePublishContent } from "@/lib/publish-content"
@@ -133,22 +133,25 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No pending changes to publish" }, { status: 400 })
     }
 
-    const resolvedPendingOps = pendingOps.map((source) => ({
-      source,
-      repoPath: resolveStoredRepoPath(
+    const resolvedPendingOps = pendingOps.flatMap((source) => {
+      const contentPath = tryResolveStoredContentPath(
         contentRoot,
         source.filePath,
         source.pathRepresentation as StoredPathRepresentation | undefined,
-      ),
-    }))
-    const resolvedDirtyDocs = dirtyDocs.map((source) => ({
-      source,
-      repoPath: resolveStoredRepoPath(
+      )
+      return contentPath ? [{ source, repoPath: toRepoPath(contentRoot, contentPath) }] : []
+    })
+    const resolvedDirtyDocs = dirtyDocs.flatMap((source) => {
+      const contentPath = tryResolveStoredContentPath(
         contentRoot,
         source.filePath,
         source.pathRepresentation as StoredPathRepresentation | undefined,
-      ),
-    }))
+      )
+      return contentPath ? [{ source, repoPath: toRepoPath(contentRoot, contentPath) }] : []
+    })
+    if (resolvedPendingOps.length === 0 && resolvedDirtyDocs.length === 0 && pendingMediaOps.length === 0) {
+      return NextResponse.json({ error: "No pending changes to publish" }, { status: 400 })
+    }
     const identityConflicts = findContentIdentityConflicts(resolvedPendingOps, resolvedDirtyDocs)
     if (identityConflicts.length > 0) {
       return NextResponse.json({ ok: false, conflicts: identityConflicts }, { status: 409 })

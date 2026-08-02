@@ -141,4 +141,44 @@ describe("useStudioQueries path ingress", () => {
     )
     expect(result!.document).toEqual(expect.objectContaining({ _id: "doc_legacy", filePath: "guides/start.mdx" }))
   })
+
+  it("isolates legacy rows left outside a config-synced content root", () => {
+    useQueryMock
+      .mockReturnValueOnce({ _id: "user_1" })
+      .mockReturnValueOnce({ _id: "project_123" })
+      .mockReturnValueOnce(null)
+      .mockReturnValueOnce(null)
+      .mockReturnValueOnce([
+        { filePath: "page", title: "Stale page" },
+        { filePath: "content/docs/guides/start.mdx", title: "Start" },
+      ])
+      .mockReturnValueOnce([
+        { _id: "op_stale", opType: "create", filePath: "page", status: "pending" },
+        {
+          _id: "op_current",
+          opType: "create",
+          filePath: "content/docs/guides/new.mdx",
+          status: "pending",
+        },
+      ])
+      .mockReturnValueOnce([])
+      .mockReturnValueOnce(null)
+      .mockReturnValueOnce(null)
+      .mockReturnValueOnce([])
+      .mockReturnValueOnce([
+        { _id: "doc_stale", filePath: "page" },
+        { _id: "doc_current", filePath: "content/docs/guides/edit.mdx" },
+      ])
+
+    let result: ReturnType<typeof useStudioQueries> | null = null
+    function Harness() {
+      result = useStudioQueries()
+      return null
+    }
+
+    expect(() => renderToStaticMarkup(<Harness />)).not.toThrow()
+    expect(result!.titleMap).toEqual({ "content/docs/guides/start.mdx": "Start" })
+    expect(result!.pendingOps).toEqual([expect.objectContaining({ _id: "op_current", filePath: "guides/new.mdx" })])
+    expect(result!.dirtyDocs).toEqual([expect.objectContaining({ _id: "doc_current", filePath: "guides/edit.mdx" })])
+  })
 })

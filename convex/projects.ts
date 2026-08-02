@@ -1,7 +1,8 @@
 import { v } from "convex/values"
 import { verifyProjectAccessToken, verifyServerQueryToken } from "../lib/project-access-token"
 import { internal } from "./_generated/api"
-import { internalMutation, internalQuery, mutation, query } from "./_generated/server"
+import type { Id } from "./_generated/dataModel"
+import { internalMutation, internalQuery, type MutationCtx, mutation, query } from "./_generated/server"
 import { authComponent } from "./auth"
 import { resolveProjectAccess, resolveProjectReader } from "./lib/access"
 
@@ -18,6 +19,52 @@ async function verifyCallerIdentity(ctx: Parameters<typeof authComponent.safeGet
     return
   }
   throw new Error("Unauthorized: Not authenticated")
+}
+
+async function assertSafeContentRootChange(
+  ctx: MutationCtx,
+  projectId: Id<"projects">,
+  currentRoot: string,
+  nextRoot: string,
+  configProjectId: string,
+) {
+  if (currentRoot === nextRoot) return
+
+  const rootScopedState = await Promise.all([
+    ctx.db
+      .query("documents")
+      .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
+      .first(),
+    ctx.db
+      .query("explorerOps")
+      .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
+      .first(),
+    ctx.db
+      .query("folderMeta")
+      .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
+      .first(),
+    ctx.db
+      .query("collections")
+      .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
+      .first(),
+    ctx.db
+      .query("mediaAssets")
+      .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
+      .first(),
+    ctx.db
+      .query("mediaOps")
+      .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
+      .first(),
+    ctx.db
+      .query("publishBranches")
+      .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
+      .first(),
+  ])
+  if (rootScopedState.some(Boolean)) {
+    throw new Error(
+      `Project ${configProjectId} cannot change contentRoot while project content exists; use a new project id or clear the project first`,
+    )
+  }
 }
 
 // Authenticated version - gets projects for the current logged-in user.
@@ -627,6 +674,8 @@ export const syncProjectsFromConfig = mutation({
         )
 
       if (existing) {
+        await assertSafeContentRootChange(ctx, existing._id, existing.contentRoot, p.contentRoot, p.configProjectId)
+
         // Idempotency check: only patch if something actually changed
         const needsUpdate =
           existing.name !== p.name ||
@@ -750,7 +799,7 @@ export const update = mutation({
     components: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
-    await resolveProjectAccess(
+    const { project } = await resolveProjectAccess(
       ctx,
       {
         projectId: args.id,
@@ -759,6 +808,10 @@ export const update = mutation({
       },
       "editor",
     )
+
+    if (args.contentRoot !== undefined) {
+      await assertSafeContentRootChange(ctx, project._id, project.contentRoot, args.contentRoot, project.name)
+    }
 
     const { id, userId: _userId, projectAccessToken: _pat, ...updates } = args
     await ctx.db.patch(id, {

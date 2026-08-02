@@ -304,6 +304,77 @@ describe("POST /api/github/publish-ops", () => {
     )
   })
 
+  it("isolates stale legacy rows while publishing current-root state", async () => {
+    mockPublishQueries({
+      pendingOps: [
+        {
+          _id: "op_stale",
+          opType: "delete",
+          filePath: "page",
+          pathRepresentation: undefined,
+          updatedAt: 1,
+        },
+      ],
+      dirtyDocs: [
+        {
+          _id: "doc_stale",
+          filePath: "page",
+          pathRepresentation: undefined,
+          body: "# Stale",
+          frontmatter: {},
+          updatedAt: 1,
+        },
+        {
+          _id: "doc_current",
+          filePath: "posts/current.mdx",
+          body: "# Current",
+          frontmatter: {},
+          updatedAt: 2,
+        },
+      ],
+    })
+
+    const response = await POST(buildRequest({ projectId: "project_123" }))
+    const payload = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(payload.ok).toBe(true)
+    const readPaths = vi.mocked(getFileForPublish).mock.calls.map((call) => call[3])
+    expect(readPaths).toContain("content/posts/current.mdx")
+    expect(readPaths).not.toContain("page")
+    expect(readPaths).not.toContain("content/page")
+  })
+
+  it("returns no-pending when every content row belongs to an earlier root", async () => {
+    mockPublishQueries({
+      pendingOps: [
+        {
+          _id: "op_stale",
+          opType: "delete",
+          filePath: "page",
+          pathRepresentation: undefined,
+          updatedAt: 1,
+        },
+      ],
+      dirtyDocs: [
+        {
+          _id: "doc_stale",
+          filePath: "page",
+          pathRepresentation: undefined,
+          body: "# Stale",
+          frontmatter: {},
+          updatedAt: 1,
+        },
+      ],
+    })
+
+    const response = await POST(buildRequest({ projectId: "project_123" }))
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({ error: "No pending changes to publish" })
+    expect(batchCommitPublishLaneAtExpectedHead).not.toHaveBeenCalled()
+  })
+
   it("creates a new PR when publishMode is create-new", async () => {
     mockPublishQueries({
       pendingOps: [],

@@ -78,6 +78,7 @@ function makeProject(overrides: Partial<ProjectRow> & { _id: string }): ProjectR
 function createCtx({
   repoProjects = [] as ProjectRow[],
   tombstone = null as Partial<ProjectRow> | null,
+  rootScopedStateTables = [] as string[],
   patch = vi.fn(),
   insert = vi.fn().mockResolvedValue("new_project_id"),
 } = {}) {
@@ -97,6 +98,12 @@ function createCtx({
           if (table === "deletedConfigProjects") {
             return {
               first: vi.fn().mockResolvedValue(tombstone),
+            }
+          }
+          if (rootScopedStateTables.includes(table)) {
+            return {
+              collect: vi.fn().mockResolvedValue([]),
+              first: vi.fn().mockResolvedValue({ _id: `${table}_1` }),
             }
           }
           return {
@@ -265,6 +272,36 @@ describe("syncProjectsFromConfig", () => {
       expect(patch).toHaveBeenCalledWith("legacy_proj", expect.objectContaining({ configProjectId: "docs" }))
       expect(result.synced).toContain("legacy_proj")
       expect(result.created).toHaveLength(0)
+    })
+
+    it("rejects an in-place content-root change when path-scoped state exists", async () => {
+      const existing = makeProject({
+        _id: "proj_1",
+        configProjectId: "docs",
+        contentRoot: "content/blog",
+      })
+      const patch = vi.fn()
+      const ctx = createCtx({ repoProjects: [existing], rootScopedStateTables: ["documents"], patch })
+
+      await expect((syncProjectsFromConfig as any).handler(ctx, BASE_ARGS)).rejects.toThrow(
+        "cannot change contentRoot while project content exists",
+      )
+      expect(patch).not.toHaveBeenCalled()
+    })
+
+    it("allows a content-root correction before any path-scoped state exists", async () => {
+      const existing = makeProject({
+        _id: "proj_1",
+        configProjectId: "docs",
+        contentRoot: "content/blog",
+      })
+      const patch = vi.fn()
+      const ctx = createCtx({ repoProjects: [existing], patch })
+
+      const result = await (syncProjectsFromConfig as any).handler(ctx, BASE_ARGS)
+
+      expect(patch).toHaveBeenCalledWith("proj_1", expect.objectContaining({ contentRoot: "content/docs" }))
+      expect(result.synced).toContain("proj_1")
     })
   })
 

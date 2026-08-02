@@ -2,9 +2,9 @@ import { v } from "convex/values"
 import { DOCUMENT_ALLOWED_TRANSITIONS, isPublishableDocumentStatus } from "../lib/document-status"
 import {
   assertContentPath,
-  resolveStoredContentPath,
   type StoredPathRepresentation,
   toRepoPath,
+  tryResolveStoredContentPath,
 } from "../lib/preview/path-policy"
 import { verifyServerQueryToken } from "../lib/project-access-token"
 import { internal } from "./_generated/api"
@@ -1073,13 +1073,14 @@ export const syncTreeTitles = action({
       projectId: args.projectId,
     })
     const existingPaths = new Set(
-      existingDocs.map((document) =>
-        resolveStoredContentPath(
+      existingDocs.flatMap((document) => {
+        const contentPath = tryResolveStoredContentPath(
           project.contentRoot,
           document.filePath,
           document.pathRepresentation as StoredPathRepresentation | undefined,
-        ),
-      ),
+        )
+        return contentPath ? [contentPath] : []
+      }),
     )
 
     const missingFiles = files.filter((f) => !existingPaths.has(f.path))
