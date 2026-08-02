@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils"
 const BOOTSTRAP_PROTOCOL_VERSION = 1 as const
 const BOOTSTRAP_WIRE_LIMIT = 2_048
 const CAPABILITY_PATTERN = /^[A-Za-z0-9_-]{43}$/
+const BOOTSTRAP_RETRY_DELAYS_MS = Object.freeze([250, 750, 1_500] as const)
 const TERMINAL_SANDBOX_REFUSALS = new Set<SandboxRefusalCode>([
   "RATE_LIMIT",
   "MESSAGE_TOO_LARGE",
@@ -146,6 +147,7 @@ type BootstrapEvent = Readonly<{
 
 export type CompatiblePreviewHost = Readonly<{
   start(): void
+  retryBootstrap(): void
   receiveWindowMessage(event: BootstrapEvent): boolean
   dispose(): void
   getSessionState(): SandboxSessionState
@@ -164,6 +166,7 @@ export function createCompatiblePreviewHost(options: {
     snapshotVersion: options.authorityContext.snapshotVersion,
   })
   let capability: string | null = null
+  let offer: BootstrapOffer | null = null
   let port: MessagePort | null = null
   let started = false
   let disposed = false
@@ -185,8 +188,20 @@ export function createCompatiblePreviewHost(options: {
     if (started) options.hostWindow.removeEventListener("message", listener)
     if (capability !== null) invalidateBootstrapCapability(capability)
     capability = null
+    offer = null
     closePort()
     state = invalidateSandboxSession(state)
+  }
+
+  const sendBootstrapOffer = () => {
+    if (disposed || capability === null || offer === null || port !== null) return
+    try {
+      // `"*"` is required because `sandbox="allow-scripts"` gives the child
+      // an opaque origin. Window identity and the capability authenticate it.
+      options.iframeWindow.postMessage(JSON.stringify(offer), "*")
+    } catch {
+      terminate()
+    }
   }
 
   function receiveWindowMessage(event: BootstrapEvent): boolean {
@@ -214,6 +229,7 @@ export function createCompatiblePreviewHost(options: {
     }
 
     capability = null
+    offer = null
     let channel: MessageChannel
     try {
       channel = (options.createMessageChannel ?? (() => new MessageChannel()))()
@@ -282,20 +298,17 @@ export function createCompatiblePreviewHost(options: {
         terminate()
         return
       }
-      const offer: BootstrapOffer = {
+      offer = {
         protocolVersion: BOOTSTRAP_PROTOCOL_VERSION,
         type: "repopress:bootstrap-offer",
         sessionId: state.sessionId,
         snapshotVersion: state.snapshotVersion,
         capability,
       }
-      try {
-        // `"*"` is required because `sandbox="allow-scripts"` gives the child
-        // an opaque origin. Window identity and the capability authenticate it.
-        options.iframeWindow.postMessage(JSON.stringify(offer), "*")
-      } catch {
-        terminate()
-      }
+      sendBootstrapOffer()
+    },
+    retryBootstrap() {
+      sendBootstrapOffer()
     },
     receiveWindowMessage,
     dispose() {
@@ -359,6 +372,7 @@ export function CompatiblePreviewFrame({
   const iframeRef = React.useRef<HTMLIFrameElement>(null)
   const hostRef = React.useRef<CompatiblePreviewHost | null>(null)
   const hasLoadedRef = React.useRef(false)
+  const bootstrapRetryTimersRef = React.useRef<number[]>([])
   const [frameKilled, setFrameKilled] = React.useState(false)
   const sessionId = authorityContext.sessionId
   const snapshotVersion = authorityContext.snapshotVersion
@@ -377,9 +391,13 @@ export function CompatiblePreviewFrame({
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: authority changes must synchronously dispose the prior channel.
   React.useLayoutEffect(() => {
+    for (const timer of bootstrapRetryTimersRef.current) window.clearTimeout(timer)
+    bootstrapRetryTimersRef.current = []
     hasLoadedRef.current = false
     setFrameKilled(false)
     return () => {
+      for (const timer of bootstrapRetryTimersRef.current) window.clearTimeout(timer)
+      bootstrapRetryTimersRef.current = []
       hostRef.current?.dispose()
       hostRef.current = null
     }
@@ -396,6 +414,8 @@ export function CompatiblePreviewFrame({
     : null
 
   const handleLoad = React.useCallback(() => {
+    for (const timer of bootstrapRetryTimersRef.current) window.clearTimeout(timer)
+    bootstrapRetryTimersRef.current = []
     if (hasLoadedRef.current) {
       hostRef.current?.dispose()
       hostRef.current = null
@@ -416,6 +436,9 @@ export function CompatiblePreviewFrame({
     })
     hostRef.current = host
     host.start()
+    bootstrapRetryTimersRef.current = BOOTSTRAP_RETRY_DELAYS_MS.map((delay) =>
+      window.setTimeout(() => host.retryBootstrap(), delay),
+    )
   }, [authorityContext, origin, resolution])
 
   if (frameKilled) {

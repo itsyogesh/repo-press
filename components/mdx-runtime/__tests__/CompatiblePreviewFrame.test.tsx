@@ -149,6 +149,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup()
+  vi.useRealTimers()
   vi.unstubAllEnvs()
   vi.unstubAllGlobals()
 })
@@ -197,6 +198,45 @@ describe("CompatiblePreviewFrame", () => {
     expect(frame).toHaveAttribute("referrerpolicy", "no-referrer")
     expect(frame).toHaveAttribute("src", "https://preview.repopress.test/preview/sandbox")
     expect(frame.getAttribute("src")).not.toMatch(/capability|token|session/i)
+  })
+
+  it("retries the same bootstrap offer when the sandbox listener starts after iframe load", () => {
+    vi.useFakeTimers()
+    vi.stubEnv("NEXT_PUBLIC_PREVIEW_ORIGIN", "https://preview.repopress.test")
+    const channels: FakeMessageChannel[] = []
+    vi.stubGlobal(
+      "MessageChannel",
+      class extends FakeMessageChannel {
+        constructor() {
+          super()
+          channels.push(this)
+        }
+      },
+    )
+    render(<CompatiblePreviewFrame resolution={serverResolution} authorityContext={authorityContext} />)
+    const frame = screen.getByTitle("Compatible component preview") as HTMLIFrameElement
+    const frameWindow = frame.contentWindow as Window
+    const postMessage = vi.spyOn(frameWindow, "postMessage")
+
+    fireEvent.load(frame)
+    expect(postMessage).toHaveBeenCalledOnce()
+    const firstOffer = JSON.parse(postMessage.mock.calls[0][0] as string)
+
+    act(() => vi.advanceTimersByTime(300))
+    expect(postMessage).toHaveBeenCalledTimes(2)
+    expect(JSON.parse(postMessage.mock.calls[1][0] as string)).toEqual(firstOffer)
+
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        source: frameWindow,
+        data: JSON.stringify({ ...firstOffer, type: "repopress:bootstrap-accept" }),
+      }),
+    )
+    expect(channels).toHaveLength(1)
+    expect(postMessage).toHaveBeenCalledTimes(3)
+
+    act(() => vi.advanceTimersByTime(3_000))
+    expect(postMessage).toHaveBeenCalledTimes(3)
   })
 
   it("fails closed in production for missing, invalid, insecure, or same-origin configuration", () => {
