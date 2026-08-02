@@ -15,6 +15,7 @@ interface FrontmatterPanelProps {
   fieldVariants?: FieldVariantMap
   onChangeFrontmatter: (key: string, value: any) => void
   filePath?: string
+  readOnly?: boolean
 }
 
 export function FrontmatterPanel({
@@ -23,6 +24,7 @@ export function FrontmatterPanel({
   fieldVariants,
   onChangeFrontmatter,
   filePath,
+  readOnly = false,
 }: FrontmatterPanelProps) {
   const [isOpen, setIsOpen] = React.useState(true)
   const [showEmptySchema, setShowEmptySchema] = React.useState(false)
@@ -63,6 +65,7 @@ export function FrontmatterPanel({
   // Wrap onChange to "activate" a field the first time it's edited
   const handleFieldChange = React.useCallback(
     (key: string, value: any) => {
+      if (readOnly) return
       setActivatedFields((prev) => {
         if (prev.has(key)) return prev
         const next = new Set(prev)
@@ -71,7 +74,7 @@ export function FrontmatterPanel({
       })
       onChangeFrontmatter(key, value)
     },
-    [onChangeFrontmatter],
+    [onChangeFrontmatter, readOnly],
   )
 
   return (
@@ -99,72 +102,78 @@ export function FrontmatterPanel({
           </Button>
         </CollapsibleTrigger>
       </div>
-      <CollapsibleContent className="px-4 py-3 space-y-4 max-h-[70vh] overflow-y-auto">
-        {fieldsInFile.length > 0 ? (
-          groupMergedFields(fieldsInFile).map((grouped) => (
-            <div key={grouped.group}>
-              <div className="text-xs font-medium text-studio-fg-muted uppercase tracking-wider mb-2 pb-1 border-b border-studio-border">
-                {grouped.groupLabel}
+      <CollapsibleContent asChild>
+        <fieldset
+          disabled={readOnly}
+          aria-label={readOnly ? "Read-only properties" : undefined}
+          className="px-4 py-3 space-y-4 max-h-[70vh] overflow-y-auto"
+        >
+          {fieldsInFile.length > 0 ? (
+            groupMergedFields(fieldsInFile).map((grouped) => (
+              <div key={grouped.group}>
+                <div className="text-xs font-medium text-studio-fg-muted uppercase tracking-wider mb-2 pb-1 border-b border-studio-border">
+                  {grouped.groupLabel}
+                </div>
+                <div className="space-y-4">
+                  {grouped.fields.map((field) => (
+                    <FrontmatterField
+                      key={field.actualFieldName}
+                      field={field}
+                      value={frontmatter[field.actualFieldName]}
+                      onChange={(value) => handleFieldChange(field.actualFieldName, value)}
+                      selectedFilePath={filePath}
+                    />
+                  ))}
+                </div>
               </div>
-              <div className="space-y-4">
-                {grouped.fields.map((field) => (
-                  <FrontmatterField
-                    key={field.actualFieldName}
-                    field={field}
-                    value={frontmatter[field.actualFieldName]}
-                    onChange={(value) => handleFieldChange(field.actualFieldName, value)}
-                    selectedFilePath={filePath}
-                  />
-                ))}
-              </div>
-            </div>
-          ))
-        ) : (
-          <p className="text-xs text-studio-fg-muted text-center py-2">
-            {emptySchemaFields.length > 0
-              ? "No fields with values. Expand fields below to add."
-              : "No frontmatter fields in this file."}
-          </p>
-        )}
+            ))
+          ) : (
+            <p className="text-xs text-studio-fg-muted text-center py-2">
+              {emptySchemaFields.length > 0
+                ? "No fields with values. Expand fields below to add."
+                : "No frontmatter fields in this file."}
+            </p>
+          )}
 
-        {emptySchemaFields.length > 0 && (
-          <div className="border-t border-studio-border pt-3 mt-3">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-xs text-studio-fg-muted p-0 h-auto hover:text-studio-fg"
-              onClick={() => setShowEmptySchema(!showEmptySchema)}
-            >
-              {showEmptySchema ? <ChevronDown className="h-3 w-3 mr-1" /> : <ChevronRight className="h-3 w-3 mr-1" />}
-              Show {emptySchemaFields.length} empty field
-              {emptySchemaFields.length !== 1 ? "s" : ""}
-              <span className="ml-1 text-studio-fg-muted/70 font-normal">
-                ({emptySchemaFields.map((f) => f.name).join(", ")})
-              </span>
-            </Button>
-            {showEmptySchema && (
-              <div className="mt-3 space-y-4">
-                {groupMergedFields(emptySchemaFields).map((grouped) => (
-                  <div key={`empty-${grouped.group}`}>
-                    <div className="text-xs font-medium text-studio-fg-muted uppercase tracking-wider mb-2 pb-1 border-b border-studio-border">
-                      {grouped.groupLabel}
+          {emptySchemaFields.length > 0 && (
+            <div className="border-t border-studio-border pt-3 mt-3">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-xs text-studio-fg-muted p-0 h-auto hover:text-studio-fg"
+                onClick={() => setShowEmptySchema(!showEmptySchema)}
+              >
+                {showEmptySchema ? <ChevronDown className="h-3 w-3 mr-1" /> : <ChevronRight className="h-3 w-3 mr-1" />}
+                Show {emptySchemaFields.length} empty field
+                {emptySchemaFields.length !== 1 ? "s" : ""}
+                <span className="ml-1 text-studio-fg-muted/70 font-normal">
+                  ({emptySchemaFields.map((f) => f.name).join(", ")})
+                </span>
+              </Button>
+              {showEmptySchema && (
+                <div className="mt-3 space-y-4">
+                  {groupMergedFields(emptySchemaFields).map((grouped) => (
+                    <div key={`empty-${grouped.group}`}>
+                      <div className="text-xs font-medium text-studio-fg-muted uppercase tracking-wider mb-2 pb-1 border-b border-studio-border">
+                        {grouped.groupLabel}
+                      </div>
+                      <div className="space-y-4">
+                        {grouped.fields.map((field) => (
+                          <FrontmatterField
+                            key={field.actualFieldName}
+                            field={field}
+                            value={frontmatter[field.actualFieldName]}
+                            onChange={(value) => handleFieldChange(field.actualFieldName, value)}
+                          />
+                        ))}
+                      </div>
                     </div>
-                    <div className="space-y-4">
-                      {grouped.fields.map((field) => (
-                        <FrontmatterField
-                          key={field.actualFieldName}
-                          field={field}
-                          value={frontmatter[field.actualFieldName]}
-                          onChange={(value) => handleFieldChange(field.actualFieldName, value)}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </fieldset>
       </CollapsibleContent>
     </Collapsible>
   )

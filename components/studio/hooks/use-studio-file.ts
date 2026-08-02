@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { parseContentFile } from "@/lib/content-metadata"
+import { type ParsedContentFile, parseContentFile } from "@/lib/content-metadata"
 import { normalizeFrontmatterDates } from "@/lib/framework-adapters"
 import { type FileTreeNode, findTreeNode } from "@/lib/github"
 import { toRepoPath } from "@/lib/preview/path-policy"
@@ -18,6 +18,8 @@ interface CachedFileSnapshot {
   frontmatter: Record<string, unknown>
   sha: string | null
   isDirty: boolean
+  isSourceEditable: boolean
+  sourceDiagnostic?: ParsedContentFile["diagnostic"]
 }
 
 interface PrimeSnapshotInput {
@@ -25,6 +27,8 @@ interface PrimeSnapshotInput {
   frontmatter?: Record<string, unknown>
   sha?: string | null
   isDirty?: boolean
+  isSourceEditable?: boolean
+  sourceDiagnostic?: ParsedContentFile["diagnostic"]
 }
 
 interface GitHubFileResponse {
@@ -41,6 +45,8 @@ function parseFileSnapshot(rawContent: string, sha: string | null, filePath: str
     frontmatter: normalizeFrontmatterDates(parsed.metadata as Record<string, unknown>),
     sha,
     isDirty: false,
+    isSourceEditable: parsed.editable,
+    sourceDiagnostic: parsed.diagnostic,
   }
 }
 
@@ -69,6 +75,8 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
   const [sha, setSha] = React.useState<string | null>(null)
   const [isDirty, setIsDirty] = React.useState(false)
   const [isFileLoading, setIsFileLoading] = React.useState(false)
+  const [isSourceEditable, setIsSourceEditable] = React.useState(true)
+  const [sourceDiagnostic, setSourceDiagnostic] = React.useState<ParsedContentFile["diagnostic"]>()
 
   const fileCacheRef = React.useRef<Map<string, CachedFileSnapshot>>(new Map())
   const fileCacheRevisionRef = React.useRef<Map<string, number>>(new Map())
@@ -130,6 +138,8 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
       setFrontmatter(snapshot.frontmatter)
       setSha(snapshot.sha)
       setIsDirty(snapshot.isDirty)
+      setIsSourceEditable(snapshot.isSourceEditable)
+      setSourceDiagnostic(snapshot.sourceDiagnostic)
     },
     [resolveFileNode],
   )
@@ -143,6 +153,8 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
       setSha(null)
       setIsDirty(false)
       setIsFileLoading(false)
+      setIsSourceEditable(true)
+      setSourceDiagnostic(undefined)
       try {
         localStorage.removeItem(selectedFileStorageKey)
       } catch {
@@ -166,6 +178,8 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
           : {},
         sha: snapshot.sha ?? null,
         isDirty: snapshot.isDirty ?? false,
+        isSourceEditable: snapshot.isSourceEditable ?? true,
+        sourceDiagnostic: snapshot.sourceDiagnostic,
       }
 
       writeCachedSnapshot(filePath, normalizedSnapshot)
@@ -209,6 +223,7 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
         frontmatter: {},
         sha: null,
         isDirty: false,
+        isSourceEditable: true,
       }
 
       // Prevent stale editor data from the previous file while a new file is loading.
@@ -218,6 +233,8 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
       setSha(null)
       setIsDirty(false)
       setIsFileLoading(true)
+      setIsSourceEditable(true)
+      setSourceDiagnostic(undefined)
 
       const applyNewerLocalSnapshot = () => {
         const latestRevision = fileCacheRevisionRef.current.get(filePath) ?? 0
@@ -516,6 +533,7 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
         if (!activePath) return false
 
         const cached = fileCacheRef.current.get(activePath)
+        if (cached?.isSourceEditable === false) return false
         // The editor is interactive before the Convex query necessarily
         // settles. Never let a late saved draft overwrite newer local input.
         if (cached?.isDirty) return true
@@ -541,6 +559,8 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
           frontmatter: nextFrontmatter,
           sha: currentSha,
           isDirty: false,
+          isSourceEditable: cached?.isSourceEditable ?? true,
+          sourceDiagnostic: cached?.sourceDiagnostic,
         })
 
         setIsDirty(false)
@@ -555,6 +575,7 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
 
   const handleContentChange = React.useCallback(
     (newContent: string) => {
+      if (!isSourceEditable) return
       setContent(newContent)
       setIsDirty(true)
       if (selectedFile?.path) {
@@ -563,14 +584,17 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
           frontmatter,
           sha,
           isDirty: true,
+          isSourceEditable,
+          sourceDiagnostic,
         })
       }
     },
-    [selectedFile?.path, frontmatter, sha, writeCachedSnapshot],
+    [selectedFile?.path, frontmatter, sha, isSourceEditable, sourceDiagnostic, writeCachedSnapshot],
   )
 
   const handleFrontmatterChangeKey = React.useCallback(
     (key: string, value: unknown) => {
+      if (!isSourceEditable) return
       setFrontmatter((prev) => {
         const next = { ...prev, [key]: value }
         if (selectedFile?.path) {
@@ -579,17 +603,20 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
             frontmatter: next,
             sha,
             isDirty: true,
+            isSourceEditable,
+            sourceDiagnostic,
           })
         }
         return next
       })
       setIsDirty(true)
     },
-    [selectedFile?.path, content, sha, writeCachedSnapshot],
+    [selectedFile?.path, content, sha, isSourceEditable, sourceDiagnostic, writeCachedSnapshot],
   )
 
   const handleFrontmatterChangeAll = React.useCallback(
     (nextFrontmatter: Record<string, unknown>) => {
+      if (!isSourceEditable) return
       setFrontmatter(nextFrontmatter)
       setIsDirty(true)
       if (selectedFile?.path) {
@@ -598,10 +625,12 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
           frontmatter: nextFrontmatter,
           sha,
           isDirty: true,
+          isSourceEditable,
+          sourceDiagnostic,
         })
       }
     },
-    [selectedFile?.path, content, sha, writeCachedSnapshot],
+    [selectedFile?.path, content, sha, isSourceEditable, sourceDiagnostic, writeCachedSnapshot],
   )
 
   const navigateToFile = React.useCallback(
@@ -621,6 +650,8 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
     sha,
     isDirty,
     isFileLoading,
+    isSourceEditable,
+    sourceDiagnostic,
     navigateToFile,
     clearSelection,
     closeFile,

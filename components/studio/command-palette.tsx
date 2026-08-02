@@ -32,6 +32,7 @@ interface CommandPaletteProps {
   recentFiles?: string[]
   onNavigateToFile: (filePath: string) => void
   onSaveDraft: () => void
+  canSaveDraft?: boolean
 }
 
 type FlatFile = { path: string; name: string; title?: string }
@@ -97,6 +98,7 @@ export function CommandPalette({
   recentFiles = [],
   onNavigateToFile,
   onSaveDraft,
+  canSaveDraft = true,
 }: CommandPaletteProps) {
   const [query, setQuery] = React.useState("")
   const { owner, repo, branch, projectId } = useStudio()
@@ -176,7 +178,7 @@ export function CommandPalette({
 
     switch (action) {
       case "save":
-        onSaveDraft()
+        if (canSaveDraft) onSaveDraft()
         break
       case "show-split":
         setViewMode(viewMode === "split" ? "editor" : "split")
@@ -301,7 +303,7 @@ export function CommandPalette({
               <CommandShortcut>⌘J</CommandShortcut>
             </CommandItem>
           )}
-          <CommandItem onSelect={() => handleSelect("save")}>
+          <CommandItem disabled={!canSaveDraft} onSelect={() => handleSelect("save")}>
             <PaletteIconShell tone="accent">
               <Save className="h-4 w-4" />
             </PaletteIconShell>

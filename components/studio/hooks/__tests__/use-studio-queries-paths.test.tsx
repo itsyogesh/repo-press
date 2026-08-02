@@ -1,8 +1,16 @@
-import { renderHook, waitFor } from "@testing-library/react"
+import { act, renderHook, waitFor } from "@testing-library/react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 const BASE_SHA = "a".repeat(40)
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((settle) => {
+    resolve = settle
+  })
+  return { promise, resolve }
+}
 
 const { studioContextMock, useQueryMock } = vi.hoisted(() => ({
   studioContextMock: {
@@ -64,7 +72,7 @@ describe("useStudioQueries path ingress", () => {
     })
   })
 
-  it("does not cache a failed title sync as success and retries it", async () => {
+  it("waits for a later subscription before retrying a failed title sync", async () => {
     studioContextMock.tree = [{ name: "retry.mdx", path: "content/docs/retry.mdx", sha: "e".repeat(40), type: "file" }]
     useQueryMock
       .mockReturnValueOnce({ _id: "user_1" })
@@ -79,18 +87,26 @@ describe("useStudioQueries path ingress", () => {
       .mockReturnValueOnce([])
       .mockReturnValueOnce([])
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined)
+    const failedResponse = deferred<Response>()
+    const retryResponse = deferred<Response>()
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValueOnce({ ok: false, status: 500 }).mockResolvedValueOnce({ ok: true, status: 200 }),
+      vi.fn().mockReturnValueOnce(failedResponse.promise).mockReturnValueOnce(retryResponse.promise),
     )
 
     const first = renderHook(() => useStudioQueries())
+    await waitFor(() => expect(fetch).toHaveBeenCalledOnce())
+    await act(async () => failedResponse.resolve({ ok: false, status: 500 } as Response))
     await waitFor(() => expect(consoleError).toHaveBeenCalledWith("Failed to sync tree titles:", expect.any(Error)))
     expect(consoleError.mock.calls[0]?.[1]).toMatchObject({ message: "Title sync failed (500)" })
+    await act(async () => Promise.resolve())
+    expect(fetch).toHaveBeenCalledOnce()
+
     first.unmount()
 
     renderHook(() => useStudioQueries())
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
+    await act(async () => retryResponse.resolve({ ok: true, status: 200 } as Response))
     expect(vi.mocked(fetch).mock.calls.every(([url]) => url === "/api/github/sync-titles")).toBe(true)
     consoleError.mockRestore()
   })

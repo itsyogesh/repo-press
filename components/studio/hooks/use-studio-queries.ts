@@ -307,25 +307,27 @@ export function useStudioQueries(
     })
   }, [projectId, owner, repo, branch, baseCommitSha, treeFiles])
 
-  React.useSyncExternalStore(
-    (listener) =>
-      subscribeTitleSync(
-        titleSyncKey,
-        projectId
-          ? {
-              projectId,
-              owner,
-              repo,
-              branch,
-              readRef: baseCommitSha,
-              files: treeFiles,
-            }
-          : null,
-        listener,
-      ),
-    () => getTitleSyncSnapshot(titleSyncKey),
-    () => EMPTY_TITLE_SYNC,
+  const titleSyncPayload = React.useMemo(
+    () =>
+      projectId
+        ? {
+            projectId,
+            owner,
+            repo,
+            branch,
+            readRef: baseCommitSha,
+            files: treeFiles,
+          }
+        : null,
+    [projectId, owner, repo, branch, baseCommitSha, treeFiles],
   )
+  const subscribeToTitleSync = React.useCallback(
+    (listener: () => void) => subscribeTitleSync(titleSyncKey, titleSyncPayload, listener),
+    [titleSyncKey, titleSyncPayload],
+  )
+  const readTitleSyncSnapshot = React.useCallback(() => getTitleSyncSnapshot(titleSyncKey), [titleSyncKey])
+
+  React.useSyncExternalStore(subscribeToTitleSync, readTitleSyncSnapshot, () => EMPTY_TITLE_SYNC)
 
   const titleMap = React.useMemo(() => {
     if (!titleEntries) return {}

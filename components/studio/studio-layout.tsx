@@ -497,6 +497,8 @@ function StudioLayoutInner({
     frontmatter,
     sha,
     isFileLoading,
+    isSourceEditable,
+    sourceDiagnostic,
     navigateToFile,
     closeFile,
     discardFileFromClientState,
@@ -594,7 +596,11 @@ function StudioLayoutInner({
   const searchInputRef = React.useRef<HTMLInputElement>(null)
 
   // 3. Save logic
-  const { isSaving, saveDraft, ensureDocumentRecord } = useStudioSave({
+  const {
+    isSaving,
+    saveDraft: saveDraftUnsafe,
+    ensureDocumentRecord,
+  } = useStudioSave({
     userId,
     projectAccessToken,
     documentId: document?._id,
@@ -604,6 +610,10 @@ function StudioLayoutInner({
     frontmatter,
     sha,
   })
+  const saveDraft = React.useCallback(() => {
+    if (!isSourceEditable) return
+    return saveDraftUnsafe()
+  }, [isSourceEditable, saveDraftUnsafe])
 
   // 4. Publish logic
   const {
@@ -620,7 +630,7 @@ function StudioLayoutInner({
     projectAccessToken,
     documentUpdatedAt: document?.updatedAt,
     ensureDocumentRecord,
-    selectedFile,
+    selectedFile: isSourceEditable ? selectedFile : null,
     content,
     frontmatter,
     defaultPublishMode: publishLaneViewModel.defaultMode,
@@ -857,6 +867,8 @@ function StudioLayoutInner({
           previousSha: sha || undefined,
           isFromPendingCreate: false,
           pendingCreateOpId: undefined as Id<"explorerOps"> | undefined,
+          isSourceEditable,
+          sourceDiagnostic,
         }
       }
 
@@ -877,6 +889,8 @@ function StudioLayoutInner({
           previousSha: undefined,
           isFromPendingCreate: true,
           pendingCreateOpId: pendingCreateOp._id as Id<"explorerOps">,
+          isSourceEditable: true,
+          sourceDiagnostic: undefined,
         }
       }
 
@@ -910,9 +924,23 @@ function StudioLayoutInner({
         previousSha: payload.sha || undefined,
         isFromPendingCreate: false,
         pendingCreateOpId: undefined as Id<"explorerOps"> | undefined,
+        isSourceEditable: true,
+        sourceDiagnostic: undefined,
       }
     },
-    [selectedFile?.path, frontmatter, content, sha, pendingOps, owner, repo, baseCommitSha, contentRoot],
+    [
+      selectedFile?.path,
+      frontmatter,
+      content,
+      sha,
+      pendingOps,
+      owner,
+      repo,
+      baseCommitSha,
+      contentRoot,
+      isSourceEditable,
+      sourceDiagnostic,
+    ],
   )
 
   const stageRelocateFile = React.useCallback(
@@ -986,6 +1014,8 @@ function StudioLayoutInner({
           content: payload.body,
           frontmatter: payload.frontmatter,
           sha: null,
+          isSourceEditable: payload.isSourceEditable,
+          sourceDiagnostic: payload.sourceDiagnostic,
         })
 
         if (selectedFile?.path === oldPath) {
@@ -1220,6 +1250,7 @@ function StudioLayoutInner({
 
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "j") {
         e.preventDefault()
+        if (!isSourceEditable) return
         setInsertComponentModalOpen(true)
         return
       }
@@ -1269,7 +1300,16 @@ function StudioLayoutInner({
 
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [sidebarState, viewMode, setSidebarState, setViewMode, saveDraft, commandPaletteOpen, captureScrollPositions])
+  }, [
+    sidebarState,
+    viewMode,
+    setSidebarState,
+    setViewMode,
+    saveDraft,
+    commandPaletteOpen,
+    captureScrollPositions,
+    isSourceEditable,
+  ])
 
   const isSidebarCollapsed = !isMobile && sidebarState === "collapsed"
   const showPreview = viewMode === "split" && !isMobile
@@ -1376,6 +1416,7 @@ function StudioLayoutInner({
             currentStatus={currentStatus}
             onSave={saveDraft}
             isSaving={isSaving || isFileLoading}
+            canSave={isSourceEditable}
           />
         </div>
 
@@ -1597,6 +1638,8 @@ function StudioLayoutInner({
                         filePath={selectedFile.path}
                         contentRoot={contentRoot}
                         tree={overlayTree}
+                        readOnly={!isSourceEditable}
+                        sourceDiagnostic={sourceDiagnostic}
                       />
                     )
                   ) : shouldShowProjectDataSkeleton ? (
@@ -1847,6 +1890,7 @@ function StudioLayoutInner({
           recentFiles={recentFiles}
           onNavigateToFile={navigateToFile}
           onSaveDraft={saveDraft}
+          canSaveDraft={isSourceEditable}
         />
 
         <AlertDialog

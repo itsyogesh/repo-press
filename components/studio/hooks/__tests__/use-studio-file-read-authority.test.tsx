@@ -112,6 +112,8 @@ describe("useStudioFile immutable read authority", () => {
       keywords: ["Santa", "letters"],
       alternates: { canonical: "https://merrymagicmail.com/blog/templates" },
     })
+    expect(result.current.isSourceEditable).toBe(true)
+    expect(result.current.sourceDiagnostic).toBeUndefined()
   })
 
   it("continues to open YAML frontmatter as body content and properties", async () => {
@@ -130,9 +132,11 @@ describe("useStudioFile immutable read authority", () => {
 
     await waitFor(() => expect(result.current.content).toBe("\n# Body\n"))
     expect(result.current.frontmatter).toEqual({ title: "Guide", tags: ["docs"] })
+    expect(result.current.isSourceEditable).toBe(true)
+    expect(result.current.sourceDiagnostic).toBeUndefined()
   })
 
-  it("preserves unsupported metadata exports byte-for-byte without fabricating properties", async () => {
+  it("keeps unsupported metadata exports read-only and byte-for-byte source-preserved", async () => {
     const source = "export const metadata = { title: makeTitle() }\n\n# Body\n"
     vi.mocked(fetch).mockResolvedValueOnce({
       ok: true,
@@ -149,6 +153,70 @@ describe("useStudioFile immutable read authority", () => {
 
     await waitFor(() => expect(result.current.content).toBe(source))
     expect(result.current.frontmatter).toEqual({})
+    expect(result.current.isSourceEditable).toBe(false)
+    expect(result.current.sourceDiagnostic).toBe("UNSUPPORTED_METADATA_EXPORT")
+
+    act(() => {
+      result.current.setContent("# Destructive edit")
+      result.current.setFrontmatterKey("title", "Fabricated")
+      result.current.setFrontmatter({ title: "Fabricated" })
+    })
+
+    expect(result.current.content).toBe(source)
+    expect(result.current.frontmatter).toEqual({})
+    expect(result.current.isDirty).toBe(false)
+  })
+
+  it("keeps unsupported YAML read-only and byte-for-byte source-preserved", async () => {
+    const source = "---\ntitle: [unterminated\n---\n# Body\n"
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: vi.fn().mockResolvedValue({
+        path: "content/guide.mdx",
+        name: "guide.mdx",
+        sha: "f".repeat(40),
+        content: source,
+      }),
+    } as never)
+    const { result } = renderHook(() => useStudioFile(null, ""))
+
+    act(() => result.current.navigateToFile("content/guide.mdx"))
+
+    await waitFor(() => expect(result.current.content).toBe(source))
+    expect(result.current.frontmatter).toEqual({})
+    expect(result.current.isSourceEditable).toBe(false)
+    expect(result.current.sourceDiagnostic).toBe("UNSUPPORTED_FRONTMATTER")
+
+    act(() => {
+      result.current.setContent("# Destructive edit")
+      result.current.setFrontmatterKey("title", "Fabricated")
+      result.current.setFrontmatter({ title: "Fabricated" })
+    })
+
+    expect(result.current.content).toBe(source)
+    expect(result.current.frontmatter).toEqual({})
+    expect(result.current.isDirty).toBe(false)
+  })
+
+  it("retains source-preservation state in primed cache snapshots", async () => {
+    const source = "export const metadata = { title: makeTitle() }\n\n# Body\n"
+    const { result } = renderHook(() => useStudioFile(null, ""))
+
+    act(() => {
+      result.current.primeFileSnapshot("content/guide.mdx", {
+        content: source,
+        frontmatter: {},
+        sha: "f".repeat(40),
+        isSourceEditable: false,
+        sourceDiagnostic: "UNSUPPORTED_METADATA_EXPORT",
+      })
+      result.current.navigateToFile("content/guide.mdx")
+    })
+
+    await waitFor(() => expect(result.current.content).toBe(source))
+    expect(result.current.isSourceEditable).toBe(false)
+    expect(result.current.sourceDiagnostic).toBe("UNSUPPORTED_METADATA_EXPORT")
+    expect(fetch).not.toHaveBeenCalled()
   })
 
   it("retains parsed metadata values through cache priming and a remote reload", async () => {

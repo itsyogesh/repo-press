@@ -63,4 +63,18 @@ describe("StudioHeader mobile actions", () => {
     expect(await screen.findByRole("menuitem", { name: "Switch project" })).toHaveClass("md:hidden")
     expect(screen.getByRole("menuitem", { name: "Toggle theme" })).toHaveClass("sm:hidden")
   })
+
+  it("disables saving for a read-only source while keeping the file selected", () => {
+    render(
+      <StudioHeader
+        selectedFile={{ name: "unsupported.mdx", path: "content/unsupported.mdx", type: "file", sha: "b".repeat(40) }}
+        currentStatus="draft"
+        onSave={vi.fn()}
+        isSaving={false}
+        canSave={false}
+      />,
+    )
+
+    expect(screen.getByRole("button", { name: "Save unavailable for read-only source" })).toBeDisabled()
+  })
 })

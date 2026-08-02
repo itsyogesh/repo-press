@@ -19,11 +19,13 @@ import {
   thematicBreakPlugin,
   toolbarPlugin,
 } from "@mdxeditor/editor"
+import { TriangleAlert } from "lucide-react"
 import * as React from "react"
 
 import "@mdxeditor/editor/style.css"
 import "./mdxeditor-theme.css"
 
+import type { ParsedContentFile } from "@/lib/content-metadata"
 import type { FieldVariantMap, FrontmatterFieldDef } from "@/lib/framework-adapters"
 import { createCurrentDocumentAuthoringStateCache, discoverMdxComponents } from "@/lib/studio/component-discovery"
 import { getAuthoredImageValue } from "@/lib/studio/image-authoring"
@@ -108,6 +110,8 @@ interface EditorProps {
   filePath?: string
   contentRoot?: string
   tree?: { path: string; type: string }[]
+  readOnly?: boolean
+  sourceDiagnostic?: ParsedContentFile["diagnostic"]
 }
 
 export function Editor({
@@ -133,6 +137,8 @@ export function Editor({
   filePath = "",
   contentRoot = "",
   tree = [],
+  readOnly = false,
+  sourceDiagnostic,
 }: EditorProps) {
   const outerAuthoringState = useStudioAdapter()
   const editorRef = React.useRef<MDXEditorMethods>(null)
@@ -297,9 +303,10 @@ export function Editor({
   // Handle content change from editor
   const handleContentChange = React.useCallback(
     (markdown: string) => {
+      if (readOnly) return
       onChangeContent(markdown)
     },
-    [onChangeContent],
+    [onChangeContent, readOnly],
   )
 
   // Keep editor content lossless: stripping empty code fences breaks "Insert code block".
@@ -313,10 +320,19 @@ export function Editor({
   )
   const applyEditedSource = React.useCallback(
     (source: string) => {
+      if (readOnly) return
       editorRef.current?.setMarkdown(source)
       onChangeContent(source)
     },
-    [onChangeContent],
+    [onChangeContent, readOnly],
+  )
+
+  const handleFrontmatterChange = React.useCallback(
+    (key: string, value: any) => {
+      if (readOnly) return
+      onChangeFrontmatter(key, value)
+    },
+    [onChangeFrontmatter, readOnly],
   )
 
   // Sync content to MDXEditor when content changes externally (file switch)
@@ -339,13 +355,30 @@ export function Editor({
         <div className="h-full flex flex-col">
           <div ref={scrollContainerRef} onScroll={onScroll} className="flex-1 overflow-y-auto">
             <div className="space-y-0">
+              {readOnly ? (
+                <output className="flex gap-3 border-b border-studio-border bg-studio-canvas-inset px-4 py-3 text-studio-fg">
+                  <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-studio-attention" aria-hidden="true" />
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">
+                      {sourceDiagnostic === "UNSUPPORTED_FRONTMATTER"
+                        ? "Frontmatter syntax not supported for visual editing"
+                        : "Metadata syntax not supported for visual editing"}
+                    </p>
+                    <p className="text-xs text-studio-fg-muted">
+                      RepoPress preserved the source exactly. Edit it in GitHub, then reload this file.
+                    </p>
+                  </div>
+                </output>
+              ) : null}
+
               {/* Frontmatter Panel (Phase 6) */}
               <FrontmatterPanel
                 frontmatter={frontmatter}
                 frontmatterSchema={frontmatterSchema}
                 fieldVariants={fieldVariants}
-                onChangeFrontmatter={onChangeFrontmatter}
+                onChangeFrontmatter={handleFrontmatterChange}
                 filePath={filePath}
+                readOnly={readOnly}
               />
 
               {/* MDXEditor */}
@@ -371,6 +404,7 @@ export function Editor({
                     markdown={sanitizedContent}
                     contentEditableClassName="prose prose-neutral dark:prose-invert max-w-none font-sans px-6 py-4 min-h-[500px] focus:outline-none"
                     onChange={handleContentChange}
+                    readOnly={readOnly}
                     plugins={plugins}
                     className="mdxeditor-studio"
                   />
