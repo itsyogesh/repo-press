@@ -48,6 +48,7 @@ const ALLOWED_TAGS = new Set([
   "tr",
   "ul",
 ])
+const VOID_TAGS = new Set(["br", "hr"])
 
 const DROP_CONTENT_TAGS = new Set([
   "audio",
@@ -274,6 +275,7 @@ export function sanitizeCompatibleRenderTree(input: unknown): CompatibleRenderTr
 function renderNode(node: CompatibleRenderNode, key: string): React.ReactNode {
   if (node.kind === "text") return node.value
   if (!ALLOWED_TAGS.has(node.tag)) return null
+  if (VOID_TAGS.has(node.tag)) return React.createElement(node.tag, { ...node.props, key })
   return React.createElement(
     node.tag,
     { ...node.props, key },
