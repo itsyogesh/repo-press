@@ -103,6 +103,17 @@ export type VerifiedCompatiblePreviewResolution = SignedCompatiblePreviewResolut
   readonly [verifiedCompatibleResolutionBrand]: true
 }
 
+export type CompatiblePreviewVerificationFailureReason =
+  | "RESOLUTION_INVALID"
+  | "APPROVAL_EXPIRED"
+  | "CRYPTO_UNAVAILABLE"
+  | "SIGNATURE_INVALID"
+  | "DIGEST_MISMATCH"
+
+export type CompatiblePreviewVerificationResult =
+  | Readonly<{ ok: true; resolution: VerifiedCompatiblePreviewResolution }>
+  | Readonly<{ ok: false; reason: CompatiblePreviewVerificationFailureReason }>
+
 const verifiedCompatibleResolutions = new WeakSet<object>()
 
 const commandFields = {
@@ -462,14 +473,14 @@ function decodeSignature(input: string): Uint8Array | null {
   return decoded
 }
 
-export async function verifySignedCompatiblePreviewResolution(
+export async function verifySignedCompatiblePreviewResolutionDetailed(
   input: unknown,
   options: { publicKey: JsonWebKey; expectedAuthority: CompatiblePreviewAuthorityContext; now?: number },
-): Promise<VerifiedCompatiblePreviewResolution | null> {
+): Promise<CompatiblePreviewVerificationResult> {
   const preflight = preflightCompatibleResolutionWire(input, options.expectedAuthority)
-  if (!preflight) return null
+  if (!preflight) return { ok: false, reason: "RESOLUTION_INVALID" }
   const parsed = signedCompatiblePreviewResolutionSchema.safeParse(preflight)
-  if (!parsed.success) return null
+  if (!parsed.success) return { ok: false, reason: "RESOLUTION_INVALID" }
   const resolution = parsed.data
   const now = options.now ?? Date.now()
   if (
@@ -477,14 +488,14 @@ export async function verifySignedCompatiblePreviewResolution(
     now < 0 ||
     !authorityMatches(resolution.authority, options.expectedAuthority) ||
     resolution.authority.issuedAt > now + 30_000 ||
-    resolution.authority.expiresAt <= now ||
     resolution.authority.expiresAt <= resolution.authority.issuedAt ||
     resolution.authority.expiresAt - resolution.authority.issuedAt > 5 * 60_000
   ) {
-    return null
+    return { ok: false, reason: "RESOLUTION_INVALID" }
   }
   const signature = decodeSignature(resolution.authority.signature)
-  if (!signature || !globalThis.crypto?.subtle) return null
+  if (!signature) return { ok: false, reason: "SIGNATURE_INVALID" }
+  if (!globalThis.crypto?.subtle) return { ok: false, reason: "CRYPTO_UNAVAILABLE" }
   try {
     const key = await globalThis.crypto.subtle.importKey(
       "jwk",
@@ -500,15 +511,29 @@ export async function verifySignedCompatiblePreviewResolution(
       signature as BufferSource,
       createCompatibleApprovalPayload({ authority, artifact: resolution.artifact }) as BufferSource,
     )
-    if (!valid) return null
-    const digest = await computeCompatibleExecutableDigest(parsed.data.artifact)
-    if (digest !== resolution.authority.executableDigest) return null
-    const verified = deepFreeze(resolution) as VerifiedCompatiblePreviewResolution
-    verifiedCompatibleResolutions.add(verified)
-    return verified
+    if (!valid) return { ok: false, reason: "SIGNATURE_INVALID" }
   } catch {
-    return null
+    return { ok: false, reason: "SIGNATURE_INVALID" }
   }
+  let digest: string
+  try {
+    digest = await computeCompatibleExecutableDigest(parsed.data.artifact)
+  } catch {
+    return { ok: false, reason: "CRYPTO_UNAVAILABLE" }
+  }
+  if (digest !== resolution.authority.executableDigest) return { ok: false, reason: "DIGEST_MISMATCH" }
+  if (resolution.authority.expiresAt <= now) return { ok: false, reason: "APPROVAL_EXPIRED" }
+  const verified = deepFreeze(resolution) as VerifiedCompatiblePreviewResolution
+  verifiedCompatibleResolutions.add(verified)
+  return { ok: true, resolution: verified }
+}
+
+export async function verifySignedCompatiblePreviewResolution(
+  input: unknown,
+  options: { publicKey: JsonWebKey; expectedAuthority: CompatiblePreviewAuthorityContext; now?: number },
+): Promise<VerifiedCompatiblePreviewResolution | null> {
+  const result = await verifySignedCompatiblePreviewResolutionDetailed(input, options)
+  return result.ok ? result.resolution : null
 }
 
 export async function verifyCompatibleExecutableDigest(

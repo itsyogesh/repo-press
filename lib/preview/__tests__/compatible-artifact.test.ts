@@ -6,6 +6,7 @@ import {
   serializeSignedCompatiblePreviewResolution,
   signedCompatiblePreviewResolutionSchema,
   verifySignedCompatiblePreviewResolution,
+  verifySignedCompatiblePreviewResolutionDetailed,
 } from "../compatible-artifact"
 import { createSignedCompatibleFixture } from "./compatible-test-fixture"
 
@@ -151,6 +152,52 @@ describe("compatible artifact transport", () => {
         expectedAuthority,
       }),
     ).toBeNull()
+  })
+
+  it("reports fail-closed verification phases without exposing artifact contents", async () => {
+    const trusted = await createSignedCompatibleFixture()
+    const forged = await createSignedCompatibleFixture()
+    const expired = await createSignedCompatibleFixture({
+      issuedAt: Date.now() - 120_000,
+      expiresAt: Date.now() - 60_000,
+    })
+    const swapped = {
+      ...trusted.resolution,
+      artifact: { ...trusted.resolution.artifact, documentSource: "# Changed after approval" },
+    }
+    const tamperedExpired = {
+      ...trusted.resolution,
+      authority: {
+        ...trusted.resolution.authority,
+        issuedAt: Date.now() - 120_000,
+        expiresAt: Date.now() - 60_000,
+      },
+    }
+
+    await expect(
+      verifySignedCompatiblePreviewResolutionDetailed(forged.wire, {
+        publicKey: trusted.publicKey,
+        expectedAuthority,
+      }),
+    ).resolves.toEqual({ ok: false, reason: "SIGNATURE_INVALID" })
+    await expect(
+      verifySignedCompatiblePreviewResolutionDetailed(expired.wire, {
+        publicKey: expired.publicKey,
+        expectedAuthority,
+      }),
+    ).resolves.toEqual({ ok: false, reason: "APPROVAL_EXPIRED" })
+    await expect(
+      verifySignedCompatiblePreviewResolutionDetailed(JSON.stringify(tamperedExpired), {
+        publicKey: trusted.publicKey,
+        expectedAuthority,
+      }),
+    ).resolves.toEqual({ ok: false, reason: "SIGNATURE_INVALID" })
+    await expect(
+      verifySignedCompatiblePreviewResolutionDetailed(JSON.stringify(swapped), {
+        publicKey: trusted.publicKey,
+        expectedAuthority,
+      }),
+    ).resolves.toEqual({ ok: false, reason: "DIGEST_MISMATCH" })
   })
 
   it("rejects the constructed high-S twin of an otherwise valid raw P-256 signature before Web Crypto", async () => {
