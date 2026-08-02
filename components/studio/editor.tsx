@@ -280,6 +280,7 @@ export function Editor({
             userId={userId}
             selectedFilePath={filePath}
             showMarkdownMediaInserts={!hasConfiguredMediaComponent}
+            readOnly={readOnly}
           />
         ),
       }),
@@ -297,6 +298,7 @@ export function Editor({
       userId,
       hasConfiguredMediaComponent,
       filePath,
+      readOnly,
     ],
   )
 
