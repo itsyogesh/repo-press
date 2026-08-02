@@ -2,6 +2,7 @@ import { createClient, type GenericCtx } from "@convex-dev/better-auth"
 import { convex } from "@convex-dev/better-auth/plugins"
 import { betterAuth } from "better-auth/minimal"
 import { v } from "convex/values"
+import { resolveAuthOrigin } from "../lib/auth-origin"
 import { verifyGitHubAccountLookupToken, verifyGitHubIdentityBootstrapToken } from "../lib/project-access-token"
 import { components } from "./_generated/api"
 import type { DataModel } from "./_generated/dataModel"
@@ -11,7 +12,7 @@ import authConfig from "./auth.config"
 // SITE_URL must be the app URL (not Convex site URL) so that OAuth
 // callbacks route through the Next.js proxy at /api/auth/[...all].
 // This ensures cookies are set on the app domain.
-const siteUrl = process.env.SITE_URL!
+const { githubCallbackURL, siteUrl, trustedOrigins } = resolveAuthOrigin(process.env.SITE_URL)
 
 // The component client has methods needed for integrating Convex with Better Auth
 export const authComponent = createClient<DataModel>(components.betterAuth)
@@ -19,11 +20,13 @@ export const authComponent = createClient<DataModel>(components.betterAuth)
 export const createAuth = (ctx: GenericCtx<DataModel>) => {
   return betterAuth({
     baseURL: siteUrl,
+    trustedOrigins,
     database: authComponent.adapter(ctx),
     socialProviders: {
       github: {
         clientId: process.env.GITHUB_CLIENT_ID!,
         clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+        redirectURI: githubCallbackURL,
         scope: ["repo", "user"],
       },
     },

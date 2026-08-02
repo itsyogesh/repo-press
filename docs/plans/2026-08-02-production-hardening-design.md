@@ -24,7 +24,7 @@ Messages remain calm and specific: the workspace could not open, saved GitHub co
 
 Treat `signIn.social` as a result-bearing API. A returned Better Auth error becomes a visible destructive alert, thrown/network failures use a generic retry message, and successful results retain the requested safe in-app callback. Loading state always settles and duplicate submission remains disabled.
 
-Production Convex receives `SITE_URL=https://repo-press-itsyogesh.vercel.app`. The GitHub OAuth callback remains routed through `/api/auth/callback/github` on the application origin so the application domain receives the session cookies.
+Production Convex receives `SITE_URL=https://repo-press-itsyogesh.vercel.app`. Auth startup validates that value as a single application origin and uses it for Better Auth's `baseURL`, explicit `trustedOrigins`, and the GitHub provider's explicit `/api/auth/callback/github` redirect. This keeps both the sign-in request and callback on the application origin so the application domain receives the state and session cookies.
 
 ### Capability configuration
 
@@ -32,7 +32,7 @@ Copy the existing production Convex `REPOPRESS_CAPABILITY_SECRET` into productio
 
 ### Dedicated Compatible preview origin
 
-Add a deployment-role gate controlled by `REPOPRESS_DEPLOYMENT_ROLE=sandbox`. In sandbox mode, only `GET` and `HEAD` requests for `/preview/sandbox`, immutable Next.js bundles, and an exact allowlist of public assets required to render it are reachable; application, dashboard, auth, mutation, and dynamic extension-suffixed routes return 404. Normal Studio deployments are unchanged.
+Add a deployment-role gate controlled by `REPOPRESS_DEPLOYMENT_ROLE=sandbox`. In sandbox mode, only `GET` and `HEAD` requests for `/preview/sandbox`, immutable Next.js bundles, and an exact allowlist of public assets required to render it are reachable; application, dashboard, auth, mutation, and dynamic extension-suffixed routes return 404. A sandbox-only Vercel project route returns 404 for `/_next/image` before the managed optimizer can bypass Next.js Proxy. Normal Studio deployments are unchanged.
 
 Create a dedicated public Vercel sandbox project from the same reviewed commit. Generate one P-256 key pair: the private JWK is server-only in the Studio production environment, while the matching public JWK is browser-readable in both Studio and sandbox builds. The sandbox also receives the public Convex URL and site URL because the shared application build requires them; the role gate prevents those values from exposing application or API routes at runtime. Point `NEXT_PUBLIC_PREVIEW_ORIGIN` at the dedicated sandbox production origin. The sandbox remains public at the network edge because repository code is admitted only through RepoPress's signed approval protocol and executes inside the opaque iframe containment boundary.
 
