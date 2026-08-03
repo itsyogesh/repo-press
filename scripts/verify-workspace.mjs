@@ -33,8 +33,12 @@ function findLockfiles(directory, lockfiles = []) {
 
 const errors = []
 const rootManifest = readManifest(join(repositoryRoot, "package.json"))
+const ciWorkflow = readFileSync(join(repositoryRoot, ".github/workflows/ci.yml"), "utf8")
 
 if (rootManifest.private !== true) errors.push("the root package must be private")
+if (!ciWorkflow.includes("npm run docs:validate")) {
+  errors.push("CI must run npm run docs:validate as an explicit required check")
+}
 
 const workspacePatterns = Array.isArray(rootManifest.workspaces) ? [...rootManifest.workspaces].sort() : []
 if (JSON.stringify(workspacePatterns) !== JSON.stringify(expectedWorkspacePatterns)) {

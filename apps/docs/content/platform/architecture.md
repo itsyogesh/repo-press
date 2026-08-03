@@ -105,10 +105,10 @@ Better Auth is instantiated only inside Convex. Browser clients use the Convex B
 
 ## Code landmarks
 
-- [Project configuration schema](https://github.com/itsyogesh/repo-press/tree/main/apps/web/lib/config-schema.ts)
+- [Project configuration schema](https://github.com/itsyogesh/repo-press/blob/main/apps/web/lib/config-schema.ts)
 - [Framework adapters](https://github.com/itsyogesh/repo-press/tree/main/apps/web/lib/framework-adapters)
-- [Convex schema](https://github.com/itsyogesh/repo-press/tree/main/apps/web/convex/schema.ts)
-- [Publish route](https://github.com/itsyogesh/repo-press/tree/main/apps/web/app/api/github/publish-ops/route.ts)
+- [Convex schema](https://github.com/itsyogesh/repo-press/blob/main/apps/web/convex/schema.ts)
+- [Publish route](https://github.com/itsyogesh/repo-press/blob/main/apps/web/app/api/github/publish-ops/route.ts)
 - [Preview contracts](https://github.com/itsyogesh/repo-press/tree/main/apps/web/lib/preview)
 
 Continue with [Component authoring](/components/authoring) or [Preview security](/platform/preview-security).

@@ -38,9 +38,7 @@ Open the component picker, select a component, review its description and synthe
 
 The preview card is based on declarative metadata and literal/default values. When Compatible authority is available, the selected component may additionally render in the isolated sandbox.
 
-:::note
-The picker currently **does not fetch fixture file contents**. Fixture paths remain canonical repository examples and registry/test inputs; declared defaults provide the immediate picker state.
-:::
+> **Note:** The picker currently **does not fetch fixture file contents**. Fixture paths remain canonical repository examples and registry/test inputs; declared defaults provide the immediate picker state.
 
 ## Edit an existing component
 

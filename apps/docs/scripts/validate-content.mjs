@@ -47,6 +47,18 @@ const markdown = contentFiles
   .map((file) => readFileSync(file, "utf8"))
   .join("\n")
 
+for (const file of contentFiles.filter((candidate) => /\.mdx?$/.test(candidate))) {
+  const source = readFileSync(file, "utf8")
+  if (/^:{3,}\w+/m.test(source)) {
+    failures.push(`Non-portable container directive may render as literal text: ${relative(contentRoot, file)}`)
+  }
+}
+
+const architectureSource = readFileSync(join(contentRoot, "platform/architecture.md"), "utf8")
+if (/github\.com\/itsyogesh\/repo-press\/tree\/main\/[^)\s]+\.[a-z0-9]+\)/i.test(architectureSource)) {
+  failures.push("Architecture file links must use GitHub blob URLs; reserve tree URLs for directories")
+}
+
 if (!markdown.includes("named slots") || !markdown.includes("not currently")) {
   failures.push("The current named-slot authoring limitation is undocumented")
 }

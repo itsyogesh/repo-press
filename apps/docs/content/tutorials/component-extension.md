@@ -126,9 +126,7 @@ Add the name and schema to the correct project:
 
 Complete metadata makes insertion deterministic, labels the picker, and prevents a required prop from being omitted. Defaults supply the selected picker preview.
 
-:::note
-Only the conventional `children` slot is materialized today. Other named slots are accepted in metadata but are not currently emitted by Studio.
-:::
+> **Note:** Only the conventional `children` slot is materialized today. Other named slots are accepted in metadata but are not currently emitted by Studio.
 
 ## 4. Write a fixture
 

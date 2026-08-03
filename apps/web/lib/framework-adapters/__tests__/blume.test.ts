@@ -56,7 +56,7 @@ describe("Blume framework adapter", () => {
     })
   })
 
-  it("detects the conventional apps/docs Blume workspace from its config or package declaration", async () => {
+  it("detects the conventional apps/docs Blume workspace when that content subtree is requested", async () => {
     useRepository({
       files: {
         "package.json": JSON.stringify({ workspaces: ["apps/*"] }),
@@ -66,7 +66,7 @@ describe("Blume framework adapter", () => {
       folders: { "": ["package.json", "apps"] },
     })
 
-    await expect(detectFramework("token", "acme", "monorepo", "main")).resolves.toMatchObject({
+    await expect(detectFramework("token", "acme", "monorepo", "main", "apps/docs/content")).resolves.toMatchObject({
       framework: "blume",
       suggestedContentRoots: ["apps/docs/content"],
     })
@@ -81,9 +81,27 @@ describe("Blume framework adapter", () => {
       folders: { "": ["package.json", "apps"] },
     })
 
-    await expect(detectFramework("token", "acme", "monorepo", "main")).resolves.toMatchObject({
+    await expect(detectFramework("token", "acme", "monorepo", "main", "apps/docs/content")).resolves.toMatchObject({
       framework: "blume",
       suggestedContentRoots: ["apps/docs/content"],
+    })
+  })
+
+  it("does not let a sibling apps/docs Blume project override a requested Astro content subtree", async () => {
+    useRepository({
+      files: {
+        "package.json": JSON.stringify({ workspaces: ["apps/*"], dependencies: { astro: "^5" } }),
+        "apps/docs/package.json": JSON.stringify({ devDependencies: { blume: "^1.3.1" } }),
+        "apps/docs/blume.config.ts": 'import { defineConfig } from "blume"',
+      },
+      folders: {
+        "": ["package.json", "astro.config.mjs", "apps", "src"],
+        "src/content/blog": ["first-post.md"],
+      },
+    })
+
+    await expect(detectFramework("token", "acme", "monorepo", "main", "src/content/blog")).resolves.toMatchObject({
+      framework: "astro",
     })
   })
 

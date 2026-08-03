@@ -31,6 +31,10 @@ async function hasReadableConfig(ctx: DetectionContext, prefix = ""): Promise<bo
   return false
 }
 
+function isWithinProjectRoot(contentRoot: string, projectRoot: string): boolean {
+  return contentRoot === projectRoot || contentRoot.startsWith(`${projectRoot}/`)
+}
+
 export const blumeAdapter: FrameworkAdapter = {
   id: "blume",
   displayName: "Blume",
@@ -57,13 +61,18 @@ export const blumeAdapter: FrameworkAdapter = {
       }
     }
 
-    const nestedConfig = await hasReadableConfig(ctx, "apps/docs/")
-    const nestedPackage = declaresBlume(await readJson(ctx, "apps/docs/package.json"))
-    if (nestedConfig || nestedPackage) {
-      return {
-        score: (nestedConfig ? 80 : 0) + (nestedPackage ? 80 : 0),
-        contentType: "docs",
-        suggestedContentRoots: ["apps/docs/content"],
+    // A nested docs application is authoritative only for a project rooted
+    // inside that application. Probing it for every repository-level request
+    // would let a sibling docs workspace override an unrelated site project.
+    if (isWithinProjectRoot(ctx.contentRoot, "apps/docs")) {
+      const nestedConfig = await hasReadableConfig(ctx, "apps/docs/")
+      const nestedPackage = declaresBlume(await readJson(ctx, "apps/docs/package.json"))
+      if (nestedConfig || nestedPackage) {
+        return {
+          score: (nestedConfig ? 80 : 0) + (nestedPackage ? 80 : 0),
+          contentType: "docs",
+          suggestedContentRoots: ["apps/docs/content"],
+        }
       }
     }
 

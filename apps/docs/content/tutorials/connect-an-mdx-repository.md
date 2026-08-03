@@ -58,9 +58,7 @@ RepoPress has built-in conventions for systems including Blume, Fumadocs, Nextra
 
 Choose **Initialize RepoPress** to create `repopress.config.json` and synchronize it into Convex.
 
-:::warning
-Initialization is a real write to the selected branch. Confirm the branch first. Normal content publishing later uses a dedicated publish lane and pull request.
-:::
+> **Warning:** Initialization is a real write to the selected branch. Confirm the branch first. Normal content publishing later uses a dedicated publish lane and pull request.
 
 ```json
 {

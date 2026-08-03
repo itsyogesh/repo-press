@@ -83,6 +83,26 @@ export const nextConfig = {
         permanent: true,
       },
       {
+        source: "/docs/getting-started",
+        destination: "https://docs.repopress.org/guides/getting-started",
+        permanent: true,
+      },
+      {
+        source: "/docs/how-it-works",
+        destination: "https://docs.repopress.org/guides/how-it-works",
+        permanent: true,
+      },
+      {
+        source: "/docs/connecting-a-repo",
+        destination: "https://docs.repopress.org/guides/connect-repository",
+        permanent: true,
+      },
+      {
+        source: "/docs/studio-editor",
+        destination: "https://docs.repopress.org/studio/editor",
+        permanent: true,
+      },
+      {
         source: "/docs/:path*",
         destination: "https://docs.repopress.org/:path*",
         permanent: true,
