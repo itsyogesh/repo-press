@@ -195,7 +195,7 @@ export class GitHubReadError extends Error {
 }
 
 export type PublishFileReadResult =
-  | { status: "found"; file: { content: string; sha: string; name: string; path: string } }
+  | { status: "found"; file: { content: string; bytes?: Uint8Array; sha: string; name: string; path: string } }
   | { status: "absent" }
 
 /**
@@ -232,13 +232,13 @@ export async function getFileForPublish(
     throw new GitHubReadError(`GitHub read for ${path} returned no blob sha`)
   }
 
-  let content: string
+  let bytes: Uint8Array
   if ("content" in data && data.content) {
-    content = Buffer.from(data.content, "base64").toString("utf-8")
+    bytes = new Uint8Array(Buffer.from(data.content, "base64"))
   } else {
     try {
       const { data: blobData } = await octokit.git.getBlob({ owner, repo, file_sha: data.sha })
-      content = Buffer.from(blobData.content, "base64").toString("utf-8")
+      bytes = new Uint8Array(Buffer.from(blobData.content, "base64"))
     } catch (error: any) {
       throw new GitHubReadError(`GitHub blob read failed for ${path} (status: ${error?.status ?? "unknown"})`, error)
     }
@@ -246,7 +246,7 @@ export async function getFileForPublish(
 
   return {
     status: "found",
-    file: { content, sha: data.sha, name: data.name, path: data.path },
+    file: { content: new TextDecoder().decode(bytes), bytes, sha: data.sha, name: data.name, path: data.path },
   }
 }
 

@@ -1,9 +1,8 @@
 import * as React from "react"
 import { type CompatibleFidelityLossCode, mergeCompatibleFidelityLosses } from "@/lib/preview/compatible-diagnostics"
+import { sanitizeCompatibleImageSource } from "@/lib/preview/image-source-policy"
 import {
-  hasAcceptedPreviewImageHttpsAuthority,
   PREVIEW_IMAGE_ASPECTS,
-  PREVIEW_IMAGE_SOURCE_MAX_BYTES,
   PREVIEW_IMAGE_TEXT_MAX_BYTES,
   type PreviewImageAspect,
 } from "@/lib/preview/preview-capabilities"
@@ -156,11 +155,6 @@ function utf8BytesWithin(value: string, limit: number): number | null {
   return bytes
 }
 
-const URI_SCHEME_PATTERN = /^[A-Za-z][A-Za-z0-9+.-]*:/
-const RELATIVE_TRAVERSAL_PATTERN = /(?:^|\/)\.{1,2}(?:\/|$)/
-const ENCODED_AMBIGUOUS_DELIMITER_PATTERN = /%(?:2f|5c|3f|23|3a|40)/i
-const MAX_IMAGE_SOURCE_DECODE_ROUNDS = 2
-
 function containsControlCharacter(value: string): boolean {
   for (let index = 0; index < value.length; index += 1) {
     const unit = value.charCodeAt(index)
@@ -169,54 +163,7 @@ function containsControlCharacter(value: string): boolean {
   return false
 }
 
-function decodeImageSourceForms(value: string): readonly string[] | null {
-  const forms = [value]
-  let current = value
-  for (let round = 0; round < MAX_IMAGE_SOURCE_DECODE_ROUNDS; round += 1) {
-    if (ENCODED_AMBIGUOUS_DELIMITER_PATTERN.test(current)) return null
-    let decoded: string
-    try {
-      decoded = decodeURIComponent(current)
-    } catch {
-      return null
-    }
-    if (decoded === current) return forms
-    forms.push(decoded)
-    current = decoded
-  }
-  if (ENCODED_AMBIGUOUS_DELIMITER_PATTERN.test(current)) return null
-  try {
-    return decodeURIComponent(current) === current ? forms : null
-  } catch {
-    return null
-  }
-}
-
-function isValidHttpsImageSource(value: string): boolean {
-  return hasAcceptedPreviewImageHttpsAuthority(value)
-}
-
-function isValidRelativeImageSource(value: string): boolean {
-  if (value.startsWith("//") || URI_SCHEME_PATTERN.test(value) || /[?#:\s]/.test(value)) return false
-  const relative = value.startsWith("./") ? value.slice(2) : value.startsWith("/") ? value.slice(1) : value
-  return relative.length > 0 && !relative.includes("//") && !RELATIVE_TRAVERSAL_PATTERN.test(relative)
-}
-
-/** Validates references only. Resolution and all network access remain host-owned. */
-export function sanitizeCompatibleImageSource(input: unknown): string | null {
-  if (typeof input !== "string" || utf8BytesWithin(input, PREVIEW_IMAGE_SOURCE_MAX_BYTES) === null) return null
-  if (input.length === 0 || input.trim() !== input || containsControlCharacter(input) || input.includes("\\")) {
-    return null
-  }
-  const forms = decodeImageSourceForms(input)
-  if (!forms) return null
-  const absolute = URI_SCHEME_PATTERN.test(input)
-  for (const form of forms) {
-    if (containsControlCharacter(form) || form.includes("\\")) return null
-    if (absolute ? !isValidHttpsImageSource(form) : !isValidRelativeImageSource(form)) return null
-  }
-  return input
-}
+export { sanitizeCompatibleImageSource }
 
 function sanitizeImageText(input: unknown, fallback: string): string {
   return typeof input === "string" &&

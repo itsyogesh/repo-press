@@ -9,6 +9,7 @@ describe("deployment role request policy", () => {
     "/dashboard/acme/docs",
     "/api/auth/get-session",
     "/api/github/tree",
+    "/api/preview/asset",
     "/_next/image",
     "/dashboard/acme/repo/blob/private.png",
     "/blog/diagram.svg",

@@ -89,7 +89,7 @@ const projectRecord = {
 }
 
 function imageResponse() {
-  return new Response(Uint8Array.from([1, 2, 3]), {
+  return new Response(Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]), {
     status: 200,
     headers: { "content-type": "image/png" },
   })
@@ -143,9 +143,10 @@ describe("POST /api/media/download-external", () => {
     expect(payload.previewUrl).toBe(
       "/api/media/resolve?projectId=project_123&path=%2Fpublic%2Fimages%2Fblog%2Fcreative-domain-ideas%2Fcreative-domain-ideas.png",
     )
-    expect(fetchSpy).toHaveBeenCalledWith("https://images.example.com/creative-domain-ideas.png", {
-      redirect: "manual",
-    })
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "https://images.example.com/creative-domain-ideas.png",
+      expect.objectContaining({ redirect: "manual" }),
+    )
     expect(convexMutationMock).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
