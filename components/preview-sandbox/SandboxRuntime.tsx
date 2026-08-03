@@ -17,7 +17,14 @@ import {
   type CompatibleFailureCode,
 } from "@/lib/preview/compatible-diagnostics"
 import type { PreviewDiagnostic } from "@/lib/preview/contracts"
-import { serializeSandboxMessage } from "@/lib/preview/sandbox-protocol"
+import {
+  isSandboxAssetDeliveryTransport,
+  parseSandboxAssetDelivery,
+  SANDBOX_MAX_ASSET_ITEMS,
+  SANDBOX_MAX_ASSET_TOTAL_BYTES,
+  type SandboxAssetDelivery,
+  serializeSandboxMessage,
+} from "@/lib/preview/sandbox-protocol"
 import { type CompatibleRenderTree, CompatibleRenderTreeView } from "./compatible-render-tree"
 import {
   CompatibleWorkerPipelineError,
@@ -83,6 +90,7 @@ export type SandboxRuntimeBridge = Readonly<{
   reportDiagnostics(diagnostics: readonly PreviewDiagnostic[]): void
   reportRendered(): void
   reportError(error: { code: string; message: string; recoverable: boolean }): void
+  requestAssets(sources: readonly string[]): void
   dispose(): void
 }>
 
@@ -90,6 +98,7 @@ export function createSandboxRuntimeBridge(options: {
   sandboxWindow: SandboxWindow
   parentWindow: ParentWindow
   onResolution?: (resolution: SignedCompatiblePreviewResolution) => void
+  onAsset?: (delivery: SandboxAssetDelivery) => void
 }): SandboxRuntimeBridge {
   let offer: BootstrapOffer | null = null
   let port: MessagePort | null = null
@@ -106,9 +115,13 @@ export function createSandboxRuntimeBridge(options: {
   } | null = null
   let started = false
   let disposed = false
+  let assetRequestSequence = 0
+  let receivedAssetBytes = 0
+  const assetRequests = new Map<string, string>()
+  const requestedAssetSources = new Set<string>()
 
   const send = (
-    type: "ready" | "status" | "diagnostics" | "rendered" | "error" | "teardown",
+    type: "ready" | "status" | "diagnostics" | "rendered" | "error" | "asset-request" | "teardown",
     payload: Record<string, unknown> = {},
   ) => {
     if (!port || !offer) return
@@ -148,6 +161,29 @@ export function createSandboxRuntimeBridge(options: {
     port = transferredPort
     port.onmessage = (messageEvent) => {
       if (!offer || disposed) return
+      if (isSandboxAssetDeliveryTransport(messageEvent.data)) {
+        for (const [requestId, source] of assetRequests) {
+          const delivery = parseSandboxAssetDelivery(messageEvent.data, {
+            sessionId: offer.sessionId,
+            snapshotVersion: offer.snapshotVersion,
+            requestId,
+            source,
+          })
+          if (!delivery) continue
+          assetRequests.delete(requestId)
+          if (delivery.type === "asset-response") {
+            if (receivedAssetBytes + delivery.bytes.byteLength > SANDBOX_MAX_ASSET_TOTAL_BYTES) return
+            receivedAssetBytes += delivery.bytes.byteLength
+          }
+          try {
+            options.onAsset?.(delivery)
+          } catch {
+            // Rendering callbacks cannot widen the authenticated channel boundary.
+          }
+          return
+        }
+        return
+      }
       commandAttempts += 1
       if (commandAttempts > COMPATIBLE_COMMAND_RATE_BURST) {
         assembly = null
@@ -274,6 +310,17 @@ export function createSandboxRuntimeBridge(options: {
     reportError(error) {
       send("error", error)
     },
+    requestAssets(sources) {
+      if (!port || !offer || disposed) return
+      for (const source of sources) {
+        if (requestedAssetSources.has(source) || requestedAssetSources.size >= SANDBOX_MAX_ASSET_ITEMS) continue
+        requestedAssetSources.add(source)
+        assetRequestSequence += 1
+        const requestId = `asset-${assetRequestSequence}`
+        assetRequests.set(requestId, source)
+        send("asset-request", { requestId, source })
+      }
+    },
     dispose() {
       if (disposed) return
       disposed = true
@@ -285,6 +332,8 @@ export function createSandboxRuntimeBridge(options: {
         port = null
       }
       assembly = null
+      assetRequests.clear()
+      requestedAssetSources.clear()
       offer = null
     },
   })
@@ -355,8 +404,83 @@ class CompatibleRenderErrorBoundary extends React.Component<
   }
 }
 
+export type SandboxAssetUrlRegistry = Readonly<{
+  accept(delivery: Extract<SandboxAssetDelivery, { type: "asset-response" }>): string | null
+  get(source: string): string | undefined
+  clear(): void
+  dispose(): void
+}>
+
+export function createSandboxAssetUrlRegistry(
+  options: { createObjectURL?: (blob: Blob) => string; revokeObjectURL?: (url: string) => void } = {},
+): SandboxAssetUrlRegistry {
+  const createObjectURL = options.createObjectURL ?? ((blob: Blob) => URL.createObjectURL(blob))
+  const revokeObjectURL = options.revokeObjectURL ?? ((url: string) => URL.revokeObjectURL(url))
+  const urls = new Map<string, string>()
+  let totalBytes = 0
+  let disposed = false
+
+  const clear = () => {
+    for (const url of urls.values()) revokeObjectURL(url)
+    urls.clear()
+    totalBytes = 0
+  }
+
+  return Object.freeze({
+    accept(delivery) {
+      if (
+        disposed ||
+        (!urls.has(delivery.source) && urls.size >= SANDBOX_MAX_ASSET_ITEMS) ||
+        totalBytes + delivery.bytes.byteLength > SANDBOX_MAX_ASSET_TOTAL_BYTES
+      ) {
+        return null
+      }
+      let url: string
+      try {
+        url = createObjectURL(new Blob([delivery.bytes], { type: delivery.mimeType }))
+      } catch {
+        return null
+      }
+      const existing = urls.get(delivery.source)
+      if (existing) revokeObjectURL(existing)
+      urls.set(delivery.source, url)
+      totalBytes += delivery.bytes.byteLength
+      return url
+    },
+    get(source) {
+      return urls.get(source)
+    },
+    clear,
+    dispose() {
+      if (disposed) return
+      disposed = true
+      clear()
+    },
+  })
+}
+
+function collectCompatibleImageSources(tree: CompatibleRenderTree): string[] {
+  const sources: string[] = []
+  const seen = new Set<string>()
+  const visit = (nodes: CompatibleRenderTree) => {
+    for (const node of nodes) {
+      if (node.kind === "image") {
+        if (!seen.has(node.source) && sources.length < SANDBOX_MAX_ASSET_ITEMS) {
+          seen.add(node.source)
+          sources.push(node.source)
+        }
+      } else if (node.kind === "element") {
+        visit(node.children)
+      }
+    }
+  }
+  visit(tree)
+  return sources
+}
+
 export function SandboxRuntime() {
   const [renderTree, setRenderTree] = React.useState<CompatibleRenderTree | null>(null)
+  const [assetUrls, setAssetUrls] = React.useState<ReadonlyMap<string, string>>(() => new Map())
   const [renderError, setRenderError] = React.useState<string | null>(null)
   const bridgeRef = React.useRef<SandboxRuntimeBridge | null>(null)
   const reportHostRenderFailure = React.useCallback(() => {
@@ -370,11 +494,24 @@ export function SandboxRuntime() {
     if (window.parent === window) return
     let active = true
     let workerRenderer: ReturnType<typeof createCompatibleWorkerRenderer> | null = null
+    const assetRegistry = createSandboxAssetUrlRegistry()
     let bridge: SandboxRuntimeBridge
     bridge = createSandboxRuntimeBridge({
       sandboxWindow: window,
       parentWindow: window.parent,
+      onAsset: (delivery) => {
+        if (!active || delivery.type !== "asset-response") return
+        const url = assetRegistry.accept(delivery)
+        if (!url) return
+        setAssetUrls((current) => {
+          const next = new Map(current)
+          next.set(delivery.source, url)
+          return next
+        })
+      },
       onResolution: (resolution) => {
+        assetRegistry.clear()
+        setAssetUrls(new Map())
         bridge.reportStatus("loading", COMPATIBLE_RENDERER_PROFILE)
         let phase: "compile" | "worker" = "compile"
         void prepareCompatibleWorkerJob(resolution.artifact)
@@ -406,6 +543,7 @@ export function SandboxRuntime() {
             bridge.reportStatus("rendering", COMPATIBLE_RENDERER_PROFILE)
             setRenderError(null)
             setRenderTree(result.tree)
+            bridge.requestAssets(collectCompatibleImageSources(result.tree))
             bridge.reportStatus("ready", COMPATIBLE_RENDERER_PROFILE)
             bridge.reportRendered()
           })
@@ -424,6 +562,7 @@ export function SandboxRuntime() {
       active = false
       workerRenderer?.dispose()
       bridge.dispose()
+      assetRegistry.dispose()
       bridgeRef.current = null
     }
   }, [])
@@ -432,7 +571,7 @@ export function SandboxRuntime() {
     <main className="min-h-screen bg-background text-foreground">
       {renderTree ? (
         <CompatibleRenderErrorBoundary onError={reportHostRenderFailure}>
-          <CompatibleRenderTreeView tree={renderTree} />
+          <CompatibleRenderTreeView tree={renderTree} assetUrls={assetUrls} />
         </CompatibleRenderErrorBoundary>
       ) : (
         <div

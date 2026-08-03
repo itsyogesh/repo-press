@@ -11,7 +11,13 @@ import {
 } from "@/lib/preview/compatible-artifact"
 import type { PreviewResult } from "@/lib/preview/contracts"
 import { buildGenericRenderModel } from "@/lib/preview/generic-render-model"
-import { SANDBOX_MAX_MESSAGE_BYTES, SANDBOX_RATE_BURST, serializeSandboxMessage } from "@/lib/preview/sandbox-protocol"
+import {
+  parseSandboxAssetDelivery,
+  SANDBOX_MAX_ASSET_ITEMS,
+  SANDBOX_MAX_MESSAGE_BYTES,
+  SANDBOX_RATE_BURST,
+  serializeSandboxMessage,
+} from "@/lib/preview/sandbox-protocol"
 import { createPreviewSandboxHeaders, nextConfig } from "../../../next.config.mjs"
 import {
   CompatiblePreviewFrame,
@@ -29,14 +35,18 @@ class FakePort {
   closed = false
   onmessage: ((event: MessageEvent) => void) | null = null
   sent: string[] = []
+  assetDeliveries: unknown[] = []
+  transfers: Transferable[][] = []
   started = false
 
   close() {
     this.closed = true
   }
 
-  postMessage(message: string) {
-    this.sent.push(message)
+  postMessage(message: unknown, transfer: Transferable[] = []) {
+    if (typeof message === "string") this.sent.push(message)
+    else this.assetDeliveries.push(message)
+    this.transfers.push(transfer)
   }
 
   start() {
@@ -182,6 +192,17 @@ function runtimeWire(sessionId: string, snapshotVersion: number, sequence: numbe
     snapshotVersion,
     sequence,
     payload: {},
+  })
+}
+
+function assetRequestWire(sequence: number, requestId: string, source: string) {
+  return serializeSandboxMessage({
+    protocolVersion: 1,
+    type: "asset-request",
+    sessionId: authorityContext.sessionId,
+    snapshotVersion: authorityContext.snapshotVersion,
+    sequence,
+    payload: { requestId, source },
   })
 }
 
@@ -381,6 +402,112 @@ describe("CompatiblePreviewFrame", () => {
     ])
     expect(commands.map((command) => command.sequence)).toEqual([1, 2, 3])
     expect(channel.port1.sent.every((wire) => !wire.includes("# Isolated"))).toBe(true)
+  })
+
+  it("fetches deduplicated image requests with immutable project authority and transfers accepted bytes", async () => {
+    const hostWindow = { addEventListener: vi.fn(), removeEventListener: vi.fn() }
+    const expectedWindow = { postMessage: vi.fn() }
+    const channel = new FakeMessageChannel()
+    const bytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47]).buffer
+    const fetchAsset = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(bytes, { status: 200, headers: { "Content-Type": "image/png", "Content-Length": "4" } }),
+      )
+    const host = createCompatiblePreviewHost({
+      hostWindow,
+      iframeWindow: expectedWindow,
+      authorityContext,
+      createMessageChannel: () => channel as unknown as MessageChannel,
+      fetchAsset,
+    })
+    host.start()
+    const offer = JSON.parse(expectedWindow.postMessage.mock.calls[0][0])
+    host.receiveWindowMessage({
+      source: expectedWindow,
+      data: JSON.stringify({ ...offer, type: "repopress:bootstrap-accept" }),
+    })
+
+    channel.port1.emit(assetRequestWire(1, "asset-1", "images/cover.png"))
+    channel.port1.emit(assetRequestWire(2, "asset-duplicate", "images/cover.png"))
+
+    await waitFor(() => expect(channel.port1.assetDeliveries).toHaveLength(1))
+    expect(fetchAsset).toHaveBeenCalledOnce()
+    expect(fetchAsset).toHaveBeenCalledWith(
+      "/api/preview/asset",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId: "project-1",
+          filePath: "content/example.mdx",
+          baseCommitSha: "abc123",
+          source: "images/cover.png",
+        }),
+      }),
+    )
+    const parsed = parseSandboxAssetDelivery(channel.port1.assetDeliveries[0], {
+      sessionId: "session-1",
+      snapshotVersion: 1,
+      requestId: "asset-1",
+      source: "images/cover.png",
+    })
+    expect(parsed).toMatchObject({ type: "asset-response", mimeType: "image/png" })
+    expect(parsed?.type).toBe("asset-response")
+    if (parsed?.type !== "asset-response") throw new Error("Expected accepted asset response")
+    expect(channel.port1.transfers.some((items) => items.includes(parsed.bytes))).toBe(true)
+    expect(host.getSessionState().invalidated).toBe(false)
+  })
+
+  it("caps image fetch concurrency and item count while mapping each failure to an asset error", async () => {
+    const hostWindow = { addEventListener: vi.fn(), removeEventListener: vi.fn() }
+    const expectedWindow = { postMessage: vi.fn() }
+    const channel = new FakeMessageChannel()
+    const releases: Array<(response: Response) => void> = []
+    let active = 0
+    let peak = 0
+    const fetchAsset = vi.fn().mockImplementation(
+      () =>
+        new Promise<Response>((resolve) => {
+          active += 1
+          peak = Math.max(peak, active)
+          releases.push((response) => {
+            active -= 1
+            resolve(response)
+          })
+        }),
+    )
+    const host = createCompatiblePreviewHost({
+      hostWindow,
+      iframeWindow: expectedWindow,
+      authorityContext,
+      createMessageChannel: () => channel as unknown as MessageChannel,
+      fetchAsset,
+    })
+    host.start()
+    const offer = JSON.parse(expectedWindow.postMessage.mock.calls[0][0])
+    host.receiveWindowMessage({
+      source: expectedWindow,
+      data: JSON.stringify({ ...offer, type: "repopress:bootstrap-accept" }),
+    })
+    for (let index = 0; index <= SANDBOX_MAX_ASSET_ITEMS; index += 1) {
+      channel.port1.emit(assetRequestWire(index + 1, `asset-${index}`, `images/${index}.png`))
+    }
+
+    expect(fetchAsset).toHaveBeenCalledTimes(3)
+    expect(peak).toBe(3)
+    while (releases.length > 0) {
+      const release = releases.shift()
+      release?.(new Response(null, { status: 404 }))
+      await Promise.resolve()
+      await Promise.resolve()
+    }
+    await waitFor(() => expect(fetchAsset).toHaveBeenCalledTimes(SANDBOX_MAX_ASSET_ITEMS))
+    await waitFor(() => expect(channel.port1.sent).toHaveLength(SANDBOX_MAX_ASSET_ITEMS + 1))
+    expect(peak).toBe(3)
+    expect(channel.port1.sent.slice(1).every((wire) => wire.includes('"type":"repopress:asset-error"'))).toBe(true)
+    expect(host.getSessionState().invalidated).toBe(false)
   })
 
   it("atomically applies serialized teardown before closing the port and invalidating the session", () => {
@@ -830,6 +957,8 @@ describe("preview sandbox response headers", () => {
     expect(value("Content-Security-Policy")).toContain("script-src 'self' 'unsafe-inline' 'unsafe-eval'")
     expect(value("Content-Security-Policy")).toContain("connect-src 'none'")
     expect(value("Content-Security-Policy")).toContain("worker-src blob:")
+    expect(value("Content-Security-Policy")).toContain("img-src blob:")
+    expect(value("Content-Security-Policy")).not.toMatch(/img-src[^;]*https?:/u)
     expect(value("Content-Security-Policy")).not.toContain("worker-src 'self'")
     expect(value("Content-Security-Policy")).toContain("script-src-attr 'none'")
     expect(value("Content-Security-Policy")).toContain("form-action 'none'")

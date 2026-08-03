@@ -348,21 +348,27 @@ export function sanitizeCompatibleRenderTree(input: unknown): CompatibleRenderTr
   return sanitizeCompatibleRenderTreeWithDiagnostics(input)?.tree ?? null
 }
 
-function renderNode(node: CompatibleRenderNode, key: string): React.ReactNode {
+function renderNode(node: CompatibleRenderNode, key: string, assetUrls: ReadonlyMap<string, string>): React.ReactNode {
   if (node.kind === "text") return node.value
   if (node.kind === "image") {
+    const mappedAssetUrl = assetUrls.get(node.source)
+    const assetUrl = mappedAssetUrl?.startsWith("blob:") ? mappedAssetUrl : undefined
     return (
       <figure
         key={key}
         className={`repopress-preview-image repopress-preview-image--${node.aspect}`}
-        role="img"
-        aria-label={node.alt}
+        role={assetUrl ? undefined : "img"}
+        aria-label={assetUrl ? undefined : node.alt}
       >
-        <div className="repopress-preview-image-surface">
-          <span className="repopress-preview-icon repopress-preview-icon--image" aria-hidden="true">
-            ▧
-          </span>
-        </div>
+        {assetUrl ? (
+          <img className="repopress-preview-image-surface" src={assetUrl} alt={node.alt} />
+        ) : (
+          <div className="repopress-preview-image-surface">
+            <span className="repopress-preview-icon repopress-preview-icon--image" aria-hidden="true">
+              ▧
+            </span>
+          </div>
+        )}
         <figcaption>{node.label}</figcaption>
       </figure>
     )
@@ -372,10 +378,16 @@ function renderNode(node: CompatibleRenderNode, key: string): React.ReactNode {
   return React.createElement(
     node.tag,
     { ...node.props, key },
-    node.children.map((child, index) => renderNode(child, `${key}.${index}`)),
+    node.children.map((child, index) => renderNode(child, `${key}.${index}`, assetUrls)),
   )
 }
 
-export function CompatibleRenderTreeView({ tree }: { tree: CompatibleRenderTree }) {
-  return <div data-compatible-preview>{tree.map((node, index) => renderNode(node, String(index)))}</div>
+export function CompatibleRenderTreeView({
+  tree,
+  assetUrls = new Map(),
+}: {
+  tree: CompatibleRenderTree
+  assetUrls?: ReadonlyMap<string, string>
+}) {
+  return <div data-compatible-preview>{tree.map((node, index) => renderNode(node, String(index), assetUrls))}</div>
 }

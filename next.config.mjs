@@ -39,7 +39,8 @@ export function createPreviewSandboxHeaders(studioOriginValue, environment = pro
 				"script-src 'self' 'unsafe-inline' 'unsafe-eval'",
 				"script-src-attr 'none'",
 				"style-src 'self' 'unsafe-inline'",
-				"img-src 'none'",
+				// Image bytes arrive only through the authenticated parent MessagePort.
+				"img-src blob:",
 				"font-src 'none'",
 				"media-src 'none'",
 				"connect-src 'none'",

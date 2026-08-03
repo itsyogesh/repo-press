@@ -10,12 +10,18 @@ import {
   acceptBootstrap,
   advanceSandboxSequence,
   createBootstrapCapability,
+  createSandboxAssetResponse,
   createSandboxSessionState,
   invalidateBootstrapCapability,
   invalidateSandboxSession,
+  SANDBOX_ASSET_MIME_TYPES,
+  SANDBOX_MAX_ASSET_BYTES,
+  SANDBOX_MAX_ASSET_ITEMS,
+  SANDBOX_MAX_ASSET_TOTAL_BYTES,
   type SandboxMessage,
   type SandboxRefusalCode,
   type SandboxSessionState,
+  serializeSandboxAssetError,
   validateSandboxMessage,
 } from "@/lib/preview/sandbox-protocol"
 import { cn } from "@/lib/utils"
@@ -30,6 +36,33 @@ const TERMINAL_SANDBOX_REFUSALS = new Set<SandboxRefusalCode>([
   "MESSAGE_TOO_COMPLEX",
   "INVALID_TRANSPORT",
 ])
+const ASSET_FETCH_CONCURRENCY = 3
+const ALLOWED_ASSET_MIME_TYPES = new Set<string>(SANDBOX_ASSET_MIME_TYPES)
+
+async function readBoundedAssetBytes(response: Response): Promise<ArrayBuffer> {
+  const reader = response.body?.getReader()
+  if (!reader) throw new Error("Asset unavailable")
+  const chunks: Uint8Array[] = []
+  let totalBytes = 0
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    totalBytes += value.byteLength
+    if (totalBytes > SANDBOX_MAX_ASSET_BYTES) {
+      await reader.cancel().catch(() => undefined)
+      throw new Error("Asset unavailable")
+    }
+    chunks.push(value)
+  }
+  if (totalBytes < 1) throw new Error("Asset unavailable")
+  const bytes = new Uint8Array(totalBytes)
+  let offset = 0
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return bytes.buffer
+}
 
 type RuntimeEnvironment = "development" | "production" | "test"
 
@@ -159,6 +192,7 @@ export function createCompatiblePreviewHost(options: {
   authorityContext: CompatiblePreviewAuthorityContext
   resolution?: VerifiedCompatiblePreviewResolution
   createMessageChannel?: () => MessageChannel
+  fetchAsset?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
   onMessage?: (message: SandboxMessage) => void
 }): CompatiblePreviewHost {
   let state = createSandboxSessionState({
@@ -170,8 +204,114 @@ export function createCompatiblePreviewHost(options: {
   let port: MessagePort | null = null
   let started = false
   let disposed = false
+  let activeAssetFetches = 0
+  let transferredAssetBytes = 0
+  const assetQueue: Array<{ requestId: string; source: string }> = []
+  const assetRequestIds = new Set<string>()
+  const assetSources = new Set<string>()
+  const assetAbortControllers = new Set<AbortController>()
+
+  const sendAssetError = (request: { requestId: string; source: string }) => {
+    if (!port || disposed) return
+    try {
+      port.postMessage(
+        serializeSandboxAssetError({
+          sessionId: state.sessionId,
+          snapshotVersion: state.snapshotVersion,
+          requestId: request.requestId,
+          source: request.source,
+          code: "unavailable",
+        }),
+      )
+    } catch {
+      // An unavailable image remains an inert placeholder.
+    }
+  }
+
+  const processAssetQueue = () => {
+    while (!disposed && port && activeAssetFetches < ASSET_FETCH_CONCURRENCY && assetQueue.length > 0) {
+      const request = assetQueue.shift()
+      if (!request) break
+      activeAssetFetches += 1
+      const authenticatedPort = port
+      const controller = new AbortController()
+      assetAbortControllers.add(controller)
+      const fetchAsset = options.fetchAsset ?? fetch
+      void fetchAsset("/api/preview/asset", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId: options.authorityContext.projectId,
+          filePath: options.authorityContext.documentPath,
+          baseCommitSha: options.authorityContext.baseCommit,
+          source: request.source,
+        }),
+        signal: controller.signal,
+      })
+        .then(async (response) => {
+          const declaredLength = response.headers.get("content-length")
+          const mimeType = response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase()
+          if (
+            !response.ok ||
+            !mimeType ||
+            !ALLOWED_ASSET_MIME_TYPES.has(mimeType) ||
+            (declaredLength !== null &&
+              (!/^\d+$/u.test(declaredLength) ||
+                Number(declaredLength) < 1 ||
+                Number(declaredLength) > SANDBOX_MAX_ASSET_BYTES))
+          ) {
+            throw new Error("Asset unavailable")
+          }
+          const bytes = await readBoundedAssetBytes(response)
+          if (
+            bytes.byteLength < 1 ||
+            bytes.byteLength > SANDBOX_MAX_ASSET_BYTES ||
+            transferredAssetBytes + bytes.byteLength > SANDBOX_MAX_ASSET_TOTAL_BYTES
+          ) {
+            throw new Error("Asset unavailable")
+          }
+          if (disposed || port !== authenticatedPort || controller.signal.aborted) return
+          transferredAssetBytes += bytes.byteLength
+          const delivery = createSandboxAssetResponse({
+            sessionId: state.sessionId,
+            snapshotVersion: state.snapshotVersion,
+            requestId: request.requestId,
+            source: request.source,
+            mimeType: mimeType as (typeof SANDBOX_ASSET_MIME_TYPES)[number],
+            bytes,
+          })
+          authenticatedPort.postMessage(delivery, [delivery.bytes])
+        })
+        .catch(() => sendAssetError(request))
+        .finally(() => {
+          assetAbortControllers.delete(controller)
+          activeAssetFetches -= 1
+          processAssetQueue()
+        })
+    }
+  }
+
+  const acceptAssetRequest = (message: Extract<SandboxMessage, { type: "asset-request" }>) => {
+    const request = message.payload
+    if (
+      assetRequestIds.has(request.requestId) ||
+      assetSources.has(request.source) ||
+      assetSources.size >= SANDBOX_MAX_ASSET_ITEMS
+    ) {
+      sendAssetError(request)
+      return
+    }
+    assetRequestIds.add(request.requestId)
+    assetSources.add(request.source)
+    assetQueue.push(request)
+    processAssetQueue()
+  }
 
   const closePort = () => {
+    for (const controller of assetAbortControllers) controller.abort()
+    assetAbortControllers.clear()
+    assetQueue.length = 0
     if (!port) return
     port.onmessage = null
     port.close()
@@ -246,6 +386,7 @@ export function createCompatiblePreviewHost(options: {
         return
       }
       if (validation.message.type === "teardown") terminate()
+      if (validation.message.type === "asset-request") acceptAssetRequest(validation.message)
       try {
         options.onMessage?.(validation.message)
       } catch {
