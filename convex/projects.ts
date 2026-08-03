@@ -1036,6 +1036,8 @@ export const _removeFullBatch = internalMutation({
         "explorerOps",
         "mediaOps",
         "publishBranches",
+        "previewAssetReservations",
+        "previewAssetBudgets",
         "githubActionRateLimits",
       ] as const
 

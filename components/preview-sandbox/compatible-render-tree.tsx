@@ -1,5 +1,11 @@
 import * as React from "react"
 import { type CompatibleFidelityLossCode, mergeCompatibleFidelityLosses } from "@/lib/preview/compatible-diagnostics"
+import { sanitizeCompatibleImageSource } from "@/lib/preview/image-source-policy"
+import {
+  PREVIEW_IMAGE_ASPECTS,
+  PREVIEW_IMAGE_TEXT_MAX_BYTES,
+  type PreviewImageAspect,
+} from "@/lib/preview/preview-capabilities"
 
 export const COMPATIBLE_RENDER_MAX_NODES = 2_048
 export const COMPATIBLE_RENDER_MAX_DEPTH = 32
@@ -104,6 +110,13 @@ const CLASS_TOKEN_PATTERN = /^[A-Za-z0-9_:/.[\]%-]+$/
 export type CompatibleRenderNode =
   | Readonly<{ kind: "text"; value: string }>
   | Readonly<{
+      kind: "image"
+      source: string
+      alt: string
+      label: string
+      aspect: PreviewImageAspect
+    }>
+  | Readonly<{
       kind: "element"
       tag: string
       props: Readonly<Record<string, string | number | boolean>>
@@ -140,6 +153,58 @@ function utf8BytesWithin(value: string, limit: number): number | null {
     if (bytes > limit) return null
   }
   return bytes
+}
+
+function containsControlCharacter(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const unit = value.charCodeAt(index)
+    if (unit <= 0x1f || (unit >= 0x7f && unit <= 0x9f)) return true
+  }
+  return false
+}
+
+export { sanitizeCompatibleImageSource }
+
+function sanitizeImageText(input: unknown, fallback: string): string {
+  return typeof input === "string" &&
+    input.length > 0 &&
+    utf8BytesWithin(input, PREVIEW_IMAGE_TEXT_MAX_BYTES) !== null &&
+    !containsControlCharacter(input)
+    ? input
+    : fallback
+}
+
+function imagePlaceholderInput(alt: string, label: string, aspect: PreviewImageAspect) {
+  return {
+    kind: "element",
+    tag: "figure",
+    props: {
+      className: `repopress-preview-image repopress-preview-image--${aspect}`,
+      role: "img",
+      "aria-label": alt,
+    },
+    children: [
+      {
+        kind: "element",
+        tag: "div",
+        props: { className: "repopress-preview-image-surface" },
+        children: [
+          {
+            kind: "element",
+            tag: "span",
+            props: { className: "repopress-preview-icon repopress-preview-icon--image", "aria-hidden": true },
+            children: [{ kind: "text", value: "▧" }],
+          },
+        ],
+      },
+      {
+        kind: "element",
+        tag: "figcaption",
+        props: {},
+        children: [{ kind: "text", value: label }],
+      },
+    ],
+  }
 }
 
 function sanitizeClassName(value: string): string | null {
@@ -230,6 +295,17 @@ export function sanitizeCompatibleRenderTreeWithDiagnostics(
       budget.textBytes += bytes
       return [{ kind: "text", value: text }]
     }
+    if (kind === "image") {
+      const alt = sanitizeImageText(ownData(value, "alt"), "Image preview")
+      const label = sanitizeImageText(ownData(value, "label"), alt)
+      const rawAspect = ownData(value, "aspect")
+      const aspect = PREVIEW_IMAGE_ASPECTS.includes(rawAspect as PreviewImageAspect)
+        ? (rawAspect as PreviewImageAspect)
+        : "wide"
+      const source = sanitizeCompatibleImageSource(ownData(value, "source"))
+      if (!source) return visit(imagePlaceholderInput(alt, label, aspect), depth)
+      return [{ kind: "image", source, alt, label, aspect }]
+    }
     if (kind !== "element") throw new TypeError("Unknown compatible render node")
     const tagValue = ownData(value, "tag")
     const childValues = ownData(value, "children")
@@ -272,17 +348,76 @@ export function sanitizeCompatibleRenderTree(input: unknown): CompatibleRenderTr
   return sanitizeCompatibleRenderTreeWithDiagnostics(input)?.tree ?? null
 }
 
-function renderNode(node: CompatibleRenderNode, key: string): React.ReactNode {
+export type CompatibleAssetFailureReason = "load-failed" | "decode-failed"
+
+function renderNode(
+  node: CompatibleRenderNode,
+  key: string,
+  assetUrls: ReadonlyMap<string, string>,
+  assetFailures: ReadonlyMap<string, string>,
+  onAssetFailure?: (source: string, assetUrl: string, reason: CompatibleAssetFailureReason) => void,
+): React.ReactNode {
   if (node.kind === "text") return node.value
+  if (node.kind === "image") {
+    const mappedAssetUrl = assetUrls.get(node.source)
+    const failure = assetFailures.get(node.source)
+    const assetUrl = !failure && mappedAssetUrl?.startsWith("blob:") ? mappedAssetUrl : undefined
+    return (
+      <figure
+        key={key}
+        className={`repopress-preview-image repopress-preview-image--${node.aspect}`}
+        role={assetUrl ? undefined : "img"}
+        aria-label={assetUrl ? undefined : failure ? `${node.alt} — image unavailable` : node.alt}
+        data-preview-asset-status={failure ? "failed" : assetUrl ? "ready" : "pending"}
+        data-preview-asset-diagnostic={failure}
+      >
+        {assetUrl ? (
+          <img
+            className="repopress-preview-image-surface"
+            src={assetUrl}
+            alt={node.alt}
+            onError={() => onAssetFailure?.(node.source, assetUrl, "load-failed")}
+            onLoad={(event) => {
+              const image = event.currentTarget
+              if (typeof image.decode !== "function") return
+              void image.decode().catch(() => onAssetFailure?.(node.source, assetUrl, "decode-failed"))
+            }}
+          />
+        ) : (
+          <div className="repopress-preview-image-surface">
+            <span className="repopress-preview-icon repopress-preview-icon--image" aria-hidden="true">
+              ▧
+            </span>
+            {failure ? <span>Image unavailable</span> : null}
+          </div>
+        )}
+        <figcaption>{node.label}</figcaption>
+      </figure>
+    )
+  }
   if (!ALLOWED_TAGS.has(node.tag)) return null
   if (VOID_TAGS.has(node.tag)) return React.createElement(node.tag, { ...node.props, key })
   return React.createElement(
     node.tag,
     { ...node.props, key },
-    node.children.map((child, index) => renderNode(child, `${key}.${index}`)),
+    node.children.map((child, index) => renderNode(child, `${key}.${index}`, assetUrls, assetFailures, onAssetFailure)),
   )
 }
 
-export function CompatibleRenderTreeView({ tree }: { tree: CompatibleRenderTree }) {
-  return <div data-compatible-preview>{tree.map((node, index) => renderNode(node, String(index)))}</div>
+export function CompatibleRenderTreeView({
+  tree,
+  assetUrls = new Map(),
+  assetFailures = new Map(),
+  onAssetFailure,
+}: {
+  tree: CompatibleRenderTree
+  assetUrls?: ReadonlyMap<string, string>
+  assetFailures?: ReadonlyMap<string, string>
+  onAssetFailure?: (source: string, assetUrl: string, reason: CompatibleAssetFailureReason) => void
+}) {
+  return (
+    <div data-compatible-preview>
+      {tree.map((node, index) => renderNode(node, String(index), assetUrls, assetFailures, onAssetFailure))}
+    </div>
+  )
 }

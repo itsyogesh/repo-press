@@ -7,6 +7,18 @@ export const SANDBOX_MAX_STRING_BYTES = 32 * 1024
 export const SANDBOX_MAX_COLLECTION_ITEMS = 64
 export const SANDBOX_MAX_DATA_DEPTH = 12
 export const SANDBOX_MAX_DATA_NODES = 1_024
+export const SANDBOX_MAX_ASSET_ITEMS = 8
+export const SANDBOX_MAX_ASSET_BYTES = 4 * 1024 * 1024
+export const SANDBOX_MAX_ASSET_TOTAL_BYTES = 12 * 1024 * 1024
+export const SANDBOX_MAX_ASSET_SOURCE_BYTES = 2_048
+export const SANDBOX_MAX_ASSET_REQUEST_ID_BYTES = 64
+export const SANDBOX_ASSET_MIME_TYPES = Object.freeze([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+  "image/avif",
+] as const)
 
 /**
  * Fixed-window inbound policy. Every attempted message, valid or invalid,
@@ -25,6 +37,16 @@ type JsonPrimitive = boolean | number | string | null
 export type SandboxData = JsonPrimitive | SandboxData[] | { [key: string]: SandboxData }
 
 const positiveSafeIntegerSchema = z.number().int().positive().safe()
+const assetRequestIdSchema = z
+  .string()
+  .min(1)
+  .max(SANDBOX_MAX_ASSET_REQUEST_ID_BYTES)
+  .regex(/^[A-Za-z0-9_-]+$/u)
+const assetSourceSchema = z
+  .string()
+  .min(1)
+  .refine((value) => boundedUtf8Length(value, SANDBOX_MAX_ASSET_SOURCE_BYTES) !== null)
+const assetMimeTypeSchema = z.enum(SANDBOX_ASSET_MIME_TYPES)
 const baseMessageFields = {
   protocolVersion: z.literal(SANDBOX_PROTOCOL_VERSION),
   sessionId: z.string().min(1),
@@ -70,6 +92,13 @@ export const sandboxMessageSchema = z.discriminatedUnion("type", [
   z
     .object({
       ...baseMessageFields,
+      type: z.literal("asset-request"),
+      payload: z.object({ requestId: assetRequestIdSchema, source: assetSourceSchema }).strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...baseMessageFields,
       type: z.literal("error"),
       payload: z
         .object({
@@ -84,6 +113,53 @@ export const sandboxMessageSchema = z.discriminatedUnion("type", [
 ])
 
 export type SandboxMessage = z.infer<typeof sandboxMessageSchema>
+
+const assetDeliveryBaseFields = {
+  protocolVersion: z.literal(SANDBOX_PROTOCOL_VERSION),
+  sessionId: z.string().min(1).max(256),
+  snapshotVersion: positiveSafeIntegerSchema,
+  requestId: assetRequestIdSchema,
+  source: assetSourceSchema,
+}
+
+const sandboxAssetResponseControlSchema = z
+  .object({
+    ...assetDeliveryBaseFields,
+    type: z.literal("repopress:asset-response"),
+    mimeType: assetMimeTypeSchema,
+    byteLength: positiveSafeIntegerSchema.max(SANDBOX_MAX_ASSET_BYTES),
+  })
+  .strict()
+
+const sandboxAssetErrorControlSchema = z
+  .object({
+    ...assetDeliveryBaseFields,
+    type: z.literal("repopress:asset-error"),
+    code: z.literal("unavailable"),
+  })
+  .strict()
+
+export type SandboxAssetDelivery =
+  | Readonly<{
+      type: "asset-response"
+      requestId: string
+      source: string
+      mimeType: (typeof SANDBOX_ASSET_MIME_TYPES)[number]
+      bytes: ArrayBuffer
+    }>
+  | Readonly<{
+      type: "asset-error"
+      requestId: string
+      source: string
+      code: "unavailable"
+    }>
+
+export type SandboxAssetExpectation = Readonly<{
+  sessionId: string
+  snapshotVersion: number
+  requestId: string
+  source: string
+}>
 
 export type SandboxSessionState = Readonly<{
   sessionId: string
@@ -471,6 +547,143 @@ function deepFreeze<T>(input: T): T {
     Object.freeze(input)
   }
   return input
+}
+
+function serializeAssetControl(input: unknown, schema: typeof sandboxAssetErrorControlSchema): string
+function serializeAssetControl(input: unknown, schema: typeof sandboxAssetResponseControlSchema): string
+function serializeAssetControl(
+  input: unknown,
+  schema: typeof sandboxAssetErrorControlSchema | typeof sandboxAssetResponseControlSchema,
+): string {
+  const parsed = schema.safeParse(input)
+  if (!parsed.success) throw new TypeError("A valid sandbox asset control is required")
+  const wire = JSON.stringify(parsed.data)
+  if (boundedUtf8Length(wire, 4 * 1024) === null) throw new RangeError("Sandbox asset control is too large")
+  return wire
+}
+
+export function createSandboxAssetResponse(
+  input: SandboxAssetExpectation & {
+    mimeType: (typeof SANDBOX_ASSET_MIME_TYPES)[number]
+    bytes: ArrayBuffer
+  },
+): Readonly<{ control: string; bytes: ArrayBuffer }> {
+  if (
+    !(input.bytes instanceof ArrayBuffer) ||
+    input.bytes.byteLength < 1 ||
+    input.bytes.byteLength > SANDBOX_MAX_ASSET_BYTES
+  ) {
+    throw new TypeError("A bounded ArrayBuffer is required")
+  }
+  const control = serializeAssetControl(
+    {
+      protocolVersion: SANDBOX_PROTOCOL_VERSION,
+      type: "repopress:asset-response",
+      sessionId: input.sessionId,
+      snapshotVersion: input.snapshotVersion,
+      requestId: input.requestId,
+      source: input.source,
+      mimeType: input.mimeType,
+      byteLength: input.bytes.byteLength,
+    },
+    sandboxAssetResponseControlSchema,
+  )
+  return Object.freeze({ control, bytes: input.bytes })
+}
+
+export function serializeSandboxAssetError(input: SandboxAssetExpectation & { code: "unavailable" }): string {
+  return serializeAssetControl(
+    {
+      protocolVersion: SANDBOX_PROTOCOL_VERSION,
+      type: "repopress:asset-error",
+      ...input,
+    },
+    sandboxAssetErrorControlSchema,
+  )
+}
+
+function parseAssetControl(input: unknown): Record<string, unknown> | null {
+  if (typeof input !== "string" || boundedUtf8Length(input, 4 * 1024) === null) return null
+  try {
+    const value: unknown = JSON.parse(input)
+    if (typeof value !== "object" || value === null || Array.isArray(value)) return null
+    return value as Record<string, unknown>
+  } catch {
+    return null
+  }
+}
+
+/** Distinguishes bounded asset controls so malformed or unsolicited deliveries are ignored, not treated as artifact commands. */
+export function isSandboxAssetDeliveryTransport(input: unknown): boolean {
+  try {
+    if (typeof input === "string") return sandboxAssetErrorControlSchema.safeParse(parseAssetControl(input)).success
+    if (typeof input !== "object" || input === null || Array.isArray(input)) return false
+    const descriptor = Object.getOwnPropertyDescriptor(input, "control")
+    if (!descriptor || !("value" in descriptor)) return false
+    return sandboxAssetResponseControlSchema.safeParse(parseAssetControl(descriptor.value)).success
+  } catch {
+    return false
+  }
+}
+
+function matchesAssetExpectation(control: Record<string, unknown>, expected: SandboxAssetExpectation): boolean {
+  return (
+    control.sessionId === expected.sessionId &&
+    control.snapshotVersion === expected.snapshotVersion &&
+    control.requestId === expected.requestId &&
+    control.source === expected.source
+  )
+}
+
+/** Parses one host-to-sandbox asset delivery after the caller has proved the request is still pending. */
+export function parseSandboxAssetDelivery(
+  input: unknown,
+  expected: SandboxAssetExpectation,
+): SandboxAssetDelivery | null {
+  try {
+    if (typeof input === "string") {
+      const control = parseAssetControl(input)
+      const parsed = sandboxAssetErrorControlSchema.safeParse(control)
+      if (!parsed.success || !matchesAssetExpectation(parsed.data, expected)) return null
+      return Object.freeze({
+        type: "asset-error" as const,
+        requestId: parsed.data.requestId,
+        source: parsed.data.source,
+        code: parsed.data.code,
+      })
+    }
+    if (typeof input !== "object" || input === null || Array.isArray(input)) return null
+    const prototype = Object.getPrototypeOf(input)
+    if (prototype !== Object.prototype && prototype !== null) return null
+    const keys = Object.keys(input)
+    if (keys.length !== 2 || !keys.includes("control") || !keys.includes("bytes")) return null
+    const controlDescriptor = Object.getOwnPropertyDescriptor(input, "control")
+    const bytesDescriptor = Object.getOwnPropertyDescriptor(input, "bytes")
+    if (!controlDescriptor || !("value" in controlDescriptor) || !bytesDescriptor || !("value" in bytesDescriptor)) {
+      return null
+    }
+    const bytes = bytesDescriptor.value
+    if (!(bytes instanceof ArrayBuffer) || bytes.byteLength < 1 || bytes.byteLength > SANDBOX_MAX_ASSET_BYTES)
+      return null
+    const control = parseAssetControl(controlDescriptor.value)
+    const parsed = sandboxAssetResponseControlSchema.safeParse(control)
+    if (
+      !parsed.success ||
+      !matchesAssetExpectation(parsed.data, expected) ||
+      parsed.data.byteLength !== bytes.byteLength
+    ) {
+      return null
+    }
+    return Object.freeze({
+      type: "asset-response" as const,
+      requestId: parsed.data.requestId,
+      source: parsed.data.source,
+      mimeType: parsed.data.mimeType,
+      bytes,
+    })
+  } catch {
+    return null
+  }
 }
 
 export function serializeSandboxMessage(input: unknown): string {

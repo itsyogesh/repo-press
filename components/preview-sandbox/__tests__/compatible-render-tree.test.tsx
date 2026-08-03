@@ -2,11 +2,55 @@ import { render, screen } from "@testing-library/react"
 import { describe, expect, it } from "vitest"
 import {
   CompatibleRenderTreeView,
+  sanitizeCompatibleImageSource,
   sanitizeCompatibleRenderTree,
   sanitizeCompatibleRenderTreeWithDiagnostics,
 } from "../compatible-render-tree"
 
+const IMAGE_SOURCE_CORPUS = [
+  { id: "relative", source: "images/cover.png", accepted: true },
+  { id: "root-relative", source: "/images/cover.png", accepted: true },
+  { id: "dot-relative", source: "./images/cover.png", accepted: true },
+  { id: "https-query", source: "https://cdn.example/cover.png?width=1200&fit=cover", accepted: true },
+  { id: "https-dns-port", source: "https://sub-1.cdn.example:8443/cover.png?width=1200", accepted: true },
+  { id: "https-ipv4", source: "https://192.0.2.1/cover.png", accepted: true },
+  { id: "https-ipv4-port-query", source: "https://192.0.2.1:443/cover.png?v=1", accepted: true },
+  { id: "ascii-exact", source: "a".repeat(2_048), accepted: true },
+  { id: "utf8-exact", source: "é".repeat(1_024), accepted: true },
+  { id: "ascii-over", source: "a".repeat(2_049), accepted: false },
+  { id: "utf8-over", source: "é".repeat(1_025), accepted: false },
+  { id: "raw-scheme-relative", source: "//evil.test/cover.png", accepted: false },
+  { id: "encoded-scheme-relative", source: "%2f%2fevil.test/cover.png", accepted: false },
+  { id: "double-scheme-relative", source: "%252f%252fevil.test%252fcover.png", accepted: false },
+  { id: "credentials", source: "https://user:secret@cdn.example/cover.png", accepted: false },
+  { id: "percent-host", source: "https://%63dn.example/cover.png", accepted: false },
+  { id: "unicode-host", source: "https://münich.example/cover.png", accepted: false },
+  { id: "empty-userinfo", source: "https://@cdn.example/cover.png", accepted: false },
+  { id: "empty-port", source: "https://cdn.example:/cover.png", accepted: false },
+  { id: "zero-port", source: "https://cdn.example:0/cover.png", accepted: false },
+  { id: "zero-padded-port", source: "https://cdn.example:0443/cover.png", accepted: false },
+  { id: "overlong-port", source: "https://cdn.example:000000443/cover.png", accepted: false },
+  { id: "invalid-port", source: "https://cdn.example:99999/cover.png", accepted: false },
+  { id: "invalid-host", source: "https://-cdn..example/cover.png", accepted: false },
+  { id: "invalid-ipv4", source: "https://999.999.999.999/cover.png", accepted: false },
+  { id: "short-ipv4", source: "https://127.1/cover.png", accepted: false },
+  { id: "hex-ipv4", source: "https://0x7f.0.0.1/cover.png", accepted: false },
+  { id: "ipv6-not-in-policy", source: "https://[2001:db8::1]/cover.png", accepted: false },
+  { id: "raw-control", source: "images/cover.png\u0000.jpg", accepted: false },
+  { id: "encoded-control", source: "images/cover.png%0a.jpg", accepted: false },
+  { id: "raw-traversal", source: "../private/cover.png", accepted: false },
+  { id: "encoded-traversal", source: "%2e%2e/private/cover.png", accepted: false },
+  { id: "double-traversal", source: "%252e%252e%252fprivate/cover.png", accepted: false },
+  { id: "raw-backslash", source: "images\\cover.png", accepted: false },
+  { id: "encoded-backslash", source: "images%5ccover.png", accepted: false },
+  { id: "double-backslash", source: "images%255ccover.png", accepted: false },
+] as const
+
 describe("compatible inert render tree", () => {
+  it.each(IMAGE_SOURCE_CORPUS)("agrees with the bounded image source corpus: $id", ({ source, accepted }) => {
+    expect(sanitizeCompatibleImageSource(source) !== null).toBe(accepted)
+  })
+
   it("strips navigation, network, event, style URL, and active-content output", () => {
     const tree = sanitizeCompatibleRenderTree([
       {
@@ -123,5 +167,75 @@ describe("compatible inert render tree", () => {
     expect(screen.getByRole("img", { name: "Merry cover" })).toBeInTheDocument()
     expect(screen.getByRole("note")).toHaveTextContent("Open letter")
     expect(container.querySelector("a, button, img")).toBeNull()
+  })
+
+  it("retains only bounded inert image references and renders a transport-free placeholder", () => {
+    const tree = sanitizeCompatibleRenderTree([
+      {
+        kind: "image",
+        source: "https://cdn.example/cover.png",
+        alt: "Printable Santa letter templates",
+        label: "Free Santa letter templates",
+        aspect: "wide",
+        src: "https://evil.test/dom-src",
+        className: "attacker-class",
+        style: "background:url(https://evil.test/style)",
+        onLoad: "steal()",
+      },
+    ])
+
+    expect(tree).toEqual([
+      {
+        kind: "image",
+        source: "https://cdn.example/cover.png",
+        alt: "Printable Santa letter templates",
+        label: "Free Santa letter templates",
+        aspect: "wide",
+      },
+    ])
+    expect(Object.isFrozen(tree)).toBe(true)
+    expect(Object.isFrozen(tree?.[0])).toBe(true)
+
+    const { container } = render(<CompatibleRenderTreeView tree={tree ?? []} />)
+    expect(screen.getByRole("img", { name: "Printable Santa letter templates" })).toHaveTextContent(
+      "Free Santa letter templates",
+    )
+    expect(container.querySelector("img")).toBeNull()
+    expect(container.innerHTML).not.toMatch(/cdn\.example|evil\.test|attacker-class|onload|style=/i)
+  })
+
+  it.each([
+    null,
+    42,
+    "https://user:secret@cdn.example/cover.png",
+    "data:image/png;base64,AAAA",
+    "javascript:alert(1)",
+    "file:///tmp/cover.png",
+    "blob:https://app.example/id",
+    "http://cdn.example/cover.png",
+    "//cdn.example/cover.png",
+    "../private/cover.png",
+    "%2e%2e/private/cover.png",
+    "images\\cover.png",
+    "images/cover.png\u0000.jpg",
+    "🖼️".repeat(700),
+    "x".repeat(2_049),
+  ])("replaces a rejected image source with the existing placeholder contract: %s", (source) => {
+    const tree = sanitizeCompatibleRenderTree([
+      {
+        kind: "image",
+        source,
+        alt: "Safe alt",
+        label: "Safe label",
+        aspect: "wide",
+      },
+    ])
+
+    const serialized = JSON.stringify(tree)
+    expect(serialized).not.toContain('"kind":"image"')
+    if (typeof source === "string" && source.length > 0) expect(serialized).not.toContain(source)
+    const { container } = render(<CompatibleRenderTreeView tree={tree ?? []} />)
+    expect(container.querySelector('[role="img"][aria-label="Safe alt"]')).toHaveTextContent("Safe label")
+    expect(container.querySelector("img")).toBeNull()
   })
 })

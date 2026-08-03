@@ -89,7 +89,7 @@ const projectRecord = {
 }
 
 function imageResponse() {
-  return new Response(Uint8Array.from([1, 2, 3]), {
+  return new Response(Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]), {
     status: 200,
     headers: { "content-type": "image/png" },
   })
@@ -143,9 +143,10 @@ describe("POST /api/media/download-external", () => {
     expect(payload.previewUrl).toBe(
       "/api/media/resolve?projectId=project_123&path=%2Fpublic%2Fimages%2Fblog%2Fcreative-domain-ideas%2Fcreative-domain-ideas.png",
     )
-    expect(fetchSpy).toHaveBeenCalledWith("https://images.example.com/creative-domain-ideas.png", {
-      redirect: "manual",
-    })
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "https://images.example.com/creative-domain-ideas.png",
+      expect.objectContaining({ redirect: "manual" }),
+    )
     expect(convexMutationMock).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
@@ -206,6 +207,29 @@ describe("POST /api/media/download-external", () => {
 
     expect(response.status).toBe(400)
     expect(payload.error).toContain("image")
+  })
+
+  it.each([
+    ["image/bmp", "https://images.example.com/legacy.bmp", Uint8Array.from([0x42, 0x4d, 1, 2])],
+    ["image/x-icon", "https://images.example.com/legacy.ico", Uint8Array.from([0, 0, 1, 0])],
+    ["image/heic", "https://images.example.com/legacy.heic", new TextEncoder().encode("legacy-heic")],
+    ["image/jpg", "https://images.example.com/legacy.jpg", Uint8Array.from([0xff, 0xd8, 0xff])],
+    ["image/svg+xml", "https://images.example.com/legacy.svg", new TextEncoder().encode("<svg/>")],
+  ])("preserves staging for the legacy declared %s media contract", async (mimeType, url, bytes) => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer, {
+        status: 200,
+        headers: { "content-type": mimeType },
+      }),
+    )
+
+    const response = await POST(buildRequest({ ...baseBody(), url }))
+
+    expect(response.status).toBe(200)
+    expect(convexMutationMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ mimeType, sourceType: "convex" }),
+    )
   })
 
   it("rejects direct private-network targets before fetching", async () => {

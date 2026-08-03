@@ -152,6 +152,13 @@ function compatibleWorkerMain() {
   const weakSetAdd = uncurryThis(WeakSet.prototype.add)
   const weakSetHas = uncurryThis(WeakSet.prototype.has)
   const stringToLowerCase = uncurryThis(String.prototype.toLowerCase)
+  const stringCharCodeAt = uncurryThis(String.prototype.charCodeAt)
+  const stringIndexOf = uncurryThis(String.prototype.indexOf)
+  const stringLastIndexOf = uncurryThis(String.prototype.lastIndexOf)
+  const stringSlice = uncurryThis(String.prototype.slice)
+  const stringSplit = uncurryThis(String.prototype.split)
+  const stringTrim = uncurryThis(String.prototype.trim)
+  const decodeUriComponent = decodeURIComponent
   const addGlobalListener = root.addEventListener.bind(root)
   const removeGlobalListener = root.removeEventListener.bind(root)
   let bootstrapped = false
@@ -267,10 +274,17 @@ function compatibleWorkerMain() {
   }
 
   const Fragment = Symbol("RepoPress.Fragment")
+  const ownedElements = new WeakSet<object>()
+  const previewImageReferences = new WeakSet<object>()
+  const previewDocumentSelections = new WeakSet<object>()
   function element(type: any, props: any, childrenOverride?: any[]) {
     const propsValue = props && typeof props === "object" ? objectAssign(objectCreate(null), props) : objectCreate(null)
     if (childrenOverride) propsValue.children = childrenOverride.length === 1 ? childrenOverride[0] : childrenOverride
-    return { __repopressElement: 1, type, props: propsValue }
+    const output = objectCreate(null)
+    output.type = type
+    output.props = objectFreeze(propsValue)
+    weakSetAdd(ownedElements, output)
+    return objectFreeze(output)
   }
   function createElement(type: any, props: any, ...children: any[]) {
     return element(type, props, children)
@@ -327,7 +341,7 @@ function compatibleWorkerMain() {
     createContext,
     createElement,
     forwardRef,
-    isValidElement: (value: any) => booleanFrom(value && value.__repopressElement === 1),
+    isValidElement: (value: any) => booleanFrom(value && typeof value === "object" && weakSetHas(ownedElements, value)),
     memo: (component: any) => {
       recordFidelityLoss("STATIC_INERT_UNSUPPORTED_COMPONENT")
       return component
@@ -375,13 +389,172 @@ function compatibleWorkerMain() {
   PREVIEW_OPTIONS.listStyles = frozenOptionSet(["bullet", "check", "ordered", "plain"])
   PREVIEW_OPTIONS.actionTones = frozenOptionSet(["primary", "secondary"])
   PREVIEW_OPTIONS.imageAspects = frozenOptionSet(["wide", "square", "portrait"])
+  PREVIEW_OPTIONS.paperVariants = frozenOptionSet(["letter", "note", "worksheet"])
+  PREVIEW_OPTIONS.paperHeadingLevels = frozenOptionSet(["2", "3", "none"])
+  PREVIEW_OPTIONS.documentLayouts = frozenOptionSet(["article", "wide"])
+  PREVIEW_OPTIONS.documentTones = frozenOptionSet(["default", "warm"])
   PREVIEW_OPTIONS.iconNames = frozenOptionSet(["info", "tip", "warning", "check", "mail", "stamp", "image", "arrow"])
 
   function option(options: any, value: any, fallback: string) {
     return typeof value === "string" && objectHasOwn(options, value) ? value : fallback
   }
   function boundedLabel(value: any, fallback: string) {
-    return typeof value === "string" && value.length > 0 && value.length <= 512 ? value : fallback
+    if (typeof value !== "string" || value.length === 0 || !utf8Within(value, 512)) return fallback
+    return containsControlOrBackslash(value, false) ? fallback : value
+  }
+  function boundedPaperText(value: any, fallback: string) {
+    if (typeof value !== "string") return fallback
+    const normalized = stringTrim(value)
+    if (normalized.length === 0 || !utf8Within(normalized, 512)) return fallback
+    return containsControlOrBackslash(normalized, false) ? fallback : normalized
+  }
+  function optionalBoundedPaperText(value: any) {
+    if (typeof value !== "string") return null
+    const normalized = stringTrim(value)
+    if (normalized.length === 0 || !utf8Within(normalized, 512)) return null
+    return containsControlOrBackslash(normalized, false) ? null : normalized
+  }
+  function utf8Within(value: string, limit: number) {
+    if (value.length > limit) return false
+    let bytes = 0
+    for (let index = 0; index < value.length; index += 1) {
+      const unit = stringCharCodeAt(value, index)
+      if (unit <= 0x7f) bytes += 1
+      else if (unit <= 0x7ff) bytes += 2
+      else if (unit >= 0xd800 && unit <= 0xdbff) {
+        const next = stringCharCodeAt(value, index + 1)
+        if (next >= 0xdc00 && next <= 0xdfff) {
+          bytes += 4
+          index += 1
+        } else bytes += 3
+      } else bytes += 3
+      if (bytes > limit) return false
+    }
+    return true
+  }
+  function acceptedImageSource(value: any) {
+    if (typeof value !== "string" || value.length === 0 || !utf8Within(value, 2_048)) return null
+    if (regexpTest(/^[\s]|[\s]$/, value) || containsControlOrBackslash(value, true)) return null
+    const forms = decodeImageSourceForms(value)
+    if (!forms) return null
+    const absolute = regexpTest(/^[A-Za-z][A-Za-z0-9+.-]*:/, value)
+    for (let index = 0; index < forms.length; index += 1) {
+      const form = forms[index]
+      if (containsControlOrBackslash(form, true)) return null
+      if (absolute ? !isValidHttpsImageSource(form) : !isValidRelativeImageSource(form)) return null
+    }
+    return value
+  }
+  function decodeImageSourceForms(value: string) {
+    const forms = [value]
+    let current = value
+    for (let round = 0; round < 2; round += 1) {
+      if (regexpTest(/%(?:2f|5c|3f|23|3a|40)/i, current)) return null
+      let decoded: string
+      try {
+        decoded = decodeUriComponent(current)
+      } catch {
+        return null
+      }
+      if (decoded === current) return forms
+      arrayPush(forms, decoded)
+      current = decoded
+    }
+    if (regexpTest(/%(?:2f|5c|3f|23|3a|40)/i, current)) return null
+    try {
+      return decodeUriComponent(current) === current ? forms : null
+    } catch {
+      return null
+    }
+  }
+  function isValidImageHostname(hostname: string) {
+    if (hostname.length === 0 || hostname.length > 253) return false
+    const labels = stringSplit(hostname, ".")
+    let ipv4Like = true
+    for (let index = 0; index < labels.length; index += 1) {
+      const label = labels[index]
+      if (!regexpTest(/^[0-9]+$/, label) && !regexpTest(/^0x[0-9a-f]+$/i, label)) ipv4Like = false
+      if (label.length === 0 || label.length > 63 || !regexpTest(/^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/, label)) {
+        return false
+      }
+    }
+    if (!ipv4Like) return true
+    if (labels.length !== 4) return false
+    for (let index = 0; index < labels.length; index += 1) {
+      const label = labels[index]
+      if (!regexpTest(/^[0-9]+$/, label) || (label.length > 1 && stringCharCodeAt(label, 0) === 0x30)) return false
+      let numeric = 0
+      for (let unitIndex = 0; unitIndex < label.length; unitIndex += 1) {
+        numeric = numeric * 10 + stringCharCodeAt(label, unitIndex) - 0x30
+      }
+      if (numeric > 255) return false
+    }
+    return true
+  }
+  function isValidPort(port: string) {
+    if (port.length === 0 || port.length > 5 || stringCharCodeAt(port, 0) === 0x30) return false
+    let numeric = 0
+    for (let index = 0; index < port.length; index += 1) {
+      const unit = stringCharCodeAt(port, index)
+      if (unit < 0x30 || unit > 0x39) return false
+      numeric = numeric * 10 + unit - 0x30
+    }
+    return numeric >= 1 && numeric <= 65_535
+  }
+  function isValidHttpsImageSource(value: string) {
+    if (!regexpTest(/^https:\/\//i, value) || regexpTest(/\s/, value)) return false
+    const authorityStart = 8
+    let authorityEnd = value.length
+    const separators = ["/", "?", "#"]
+    for (let index = 0; index < separators.length; index += 1) {
+      const found = stringIndexOf(value, separators[index], authorityStart)
+      if (found >= 0 && found < authorityEnd) authorityEnd = found
+    }
+    const authority = stringSlice(value, authorityStart, authorityEnd)
+    if (authority.length === 0 || stringIndexOf(authority, "@") >= 0 || stringIndexOf(authority, "%") >= 0) {
+      return false
+    }
+    for (let index = 0; index < authority.length; index += 1) {
+      const unit = stringCharCodeAt(authority, index)
+      if (unit < 0x21 || unit > 0x7e) return false
+    }
+    const colon = stringLastIndexOf(authority, ":")
+    if (colon >= 0 && stringIndexOf(authority, ":") !== colon) return false
+    const hostname = colon >= 0 ? stringSlice(authority, 0, colon) : authority
+    const port = colon >= 0 ? stringSlice(authority, colon + 1) : null
+    return isValidImageHostname(hostname) && (port === null || isValidPort(port))
+  }
+  function isValidRelativeImageSource(value: string) {
+    if (regexpTest(/^\/\//, value) || regexpTest(/^[A-Za-z][A-Za-z0-9+.-]*:/, value) || regexpTest(/[?#:\s]/, value)) {
+      return false
+    }
+    const relative = regexpTest(/^\.\//, value)
+      ? stringSlice(value, 2)
+      : regexpTest(/^\//, value)
+        ? stringSlice(value, 1)
+        : value
+    return relative.length > 0 && !regexpTest(/\/\//, relative) && !regexpTest(/(?:^|\/)\.{1,2}(?:\/|$)/, relative)
+  }
+  function containsControlOrBackslash(value: string, rejectBackslash: boolean) {
+    for (let index = 0; index < value.length; index += 1) {
+      const unit = stringCharCodeAt(value, index)
+      if (unit <= 0x1f || (unit >= 0x7f && unit <= 0x9f) || (rejectBackslash && unit === 0x5c)) return true
+    }
+    return false
+  }
+  function previewImagePlaceholder(alt: string, label: string, aspect: string) {
+    return jsx("figure", {
+      className: `repopress-preview-image repopress-preview-image--${aspect}`,
+      role: "img",
+      "aria-label": alt,
+      children: [
+        jsx("div", {
+          className: "repopress-preview-image-surface",
+          children: jsx(PreviewIcon, { name: "image" }),
+        }),
+        jsx("figcaption", { children: label }),
+      ],
+    })
   }
   function PreviewBox(props: any) {
     const tone = option(PREVIEW_OPTIONS.tones, props?.tone, "neutral")
@@ -476,18 +649,57 @@ function compatibleWorkerMain() {
     const aspect = option(PREVIEW_OPTIONS.imageAspects, props?.aspect, "wide")
     const alt = boundedLabel(props?.alt, "Image preview")
     const label = boundedLabel(props?.label, alt)
-    return jsx("figure", {
-      className: `repopress-preview-image repopress-preview-image--${aspect}`,
-      role: "img",
-      "aria-label": alt,
+    const source = acceptedImageSource(props?.src)
+    if (!source) return previewImagePlaceholder(alt, label, aspect)
+    const reference = objectCreate(null)
+    reference.source = source
+    reference.alt = alt
+    reference.label = label
+    reference.aspect = aspect
+    weakSetAdd(previewImageReferences, reference)
+    return objectFreeze(reference)
+  }
+  function PreviewPaper(props: any) {
+    const variant = option(PREVIEW_OPTIONS.paperVariants, props?.variant, "letter")
+    const title = boundedPaperText(props?.title, "Paper preview")
+    const actionLabel = optionalBoundedPaperText(props?.actionLabel)
+    const titleTag = props?.headingLevel === 3 ? "h3" : props?.headingLevel === "none" ? "p" : "h2"
+    return jsx("article", {
+      className: `repopress-preview-paper repopress-preview-paper--${variant}`,
       children: [
         jsx("div", {
-          className: "repopress-preview-image-surface",
-          children: jsx(PreviewIcon, { name: "image" }),
+          className: "repopress-preview-paper-header",
+          children: [
+            jsx(titleTag, { className: "repopress-preview-paper-title", children: title }),
+            props?.showStamp === true
+              ? jsx("span", {
+                  className: "repopress-preview-paper-stamp",
+                  role: "img",
+                  "aria-label": "Postage stamp",
+                  children: "◈",
+                })
+              : null,
+          ],
         }),
-        jsx("figcaption", { children: label }),
+        jsx("div", { className: "repopress-preview-paper-body", children: props?.children }),
+        actionLabel
+          ? jsx("div", {
+              className: "repopress-preview-paper-footer",
+              children: jsx(PreviewAction, { label: actionLabel, tone: "secondary" }),
+            })
+          : null,
       ],
     })
+  }
+  function PreviewDocument(props: any) {
+    const layout = option(PREVIEW_OPTIONS.documentLayouts, props?.layout, "article")
+    const tone = option(PREVIEW_OPTIONS.documentTones, props?.tone, "default")
+    const selection = objectCreate(null)
+    selection.layout = layout
+    selection.tone = tone
+    selection.children = props?.children
+    weakSetAdd(previewDocumentSelections, selection)
+    return objectFreeze(selection)
   }
   const previewModule: any = objectCreate(null)
   objectAssign(previewModule, {
@@ -498,6 +710,8 @@ function compatibleWorkerMain() {
     PreviewImage,
     PreviewInline,
     PreviewList,
+    PreviewPaper,
+    PreviewDocument,
     PreviewStack,
     PreviewText,
   })
@@ -530,8 +744,39 @@ function compatibleWorkerMain() {
   deepFreezeOwned(jsxRuntime)
   deepFreezeOwned(shimModules)
 
+  function stableOwnData(input: any, key: string) {
+    if ((typeof input !== "object" && typeof input !== "function") || input === null) return undefined
+    try {
+      const first = objectGetOwnPropertyDescriptor(input, key)
+      const second = objectGetOwnPropertyDescriptor(input, key)
+      if (
+        !first ||
+        !second ||
+        !objectHasOwn(first, "value") ||
+        !objectHasOwn(second, "value") ||
+        first.value !== second.value ||
+        first.enumerable !== second.enumerable ||
+        first.configurable !== second.configurable ||
+        first.writable !== second.writable
+      ) {
+        return undefined
+      }
+      return first.value
+    } catch {
+      return undefined
+    }
+  }
+
+  function firstStableAdapterValue(output: any, adapterExport: any, defaultExport: any, key: string) {
+    const named = stableOwnData(output, key)
+    if (named !== undefined) return named
+    const adapterValue = stableOwnData(adapterExport, key)
+    if (adapterValue !== undefined) return adapterValue
+    return stableOwnData(defaultExport, key)
+  }
+
   function evaluateAdapter(code: string | null) {
-    if (!code) return {}
+    if (!code) return objectFreeze(objectCreate(null))
     const exports: any = {}
     const module: any = { exports }
     const requireModule = (name: string) => {
@@ -548,14 +793,54 @@ function compatibleWorkerMain() {
     for (let index = 0; index < blockedNames.length; index += 1) arrayPush(values, undefined)
     reflectApply(execute, undefined, values)
     const output = module.exports || exports
-    return (
-      output.adapter ||
-      output.default || {
-        components: output.components,
-        scope: output.scope,
-        allowImports: output.allowImports,
+    const adapterExport = stableOwnData(output, "adapter")
+    const defaultExport = stableOwnData(output, "default")
+    const snapshot = objectCreate(null)
+    snapshot.components = firstStableAdapterValue(output, adapterExport, defaultExport, "components")
+    snapshot.scope = firstStableAdapterValue(output, adapterExport, defaultExport, "scope")
+    snapshot.allowImports = firstStableAdapterValue(output, adapterExport, defaultExport, "allowImports")
+    const Document = firstStableAdapterValue(output, adapterExport, defaultExport, "Document")
+    snapshot.Document = typeof Document === "function" ? Document : undefined
+    return objectFreeze(snapshot)
+  }
+
+  const documentChildrenToken = objectFreeze(objectCreate(null))
+  const defaultDocumentPresentation = objectFreeze({ layout: "article", tone: "default" })
+
+  function resolveDocumentPresentation(Document: any) {
+    if (typeof Document !== "function") return defaultDocumentPresentation
+    try {
+      const props = objectCreate(null)
+      props.children = documentChildrenToken
+      const output = reflectApply(Document, undefined, [objectFreeze(props)])
+      let selection: any = output
+      if (output && typeof output === "object" && weakSetHas(ownedElements, output)) {
+        const ownedOutput: any = output
+        if (ownedOutput.type !== PreviewDocument) return defaultDocumentPresentation
+        selection = reflectApply(PreviewDocument, undefined, [ownedOutput.props])
       }
-    )
+      if (
+        !selection ||
+        typeof selection !== "object" ||
+        !weakSetHas(previewDocumentSelections, selection) ||
+        selection.children !== documentChildrenToken
+      ) {
+        return defaultDocumentPresentation
+      }
+      return objectFreeze({
+        layout: option(PREVIEW_OPTIONS.documentLayouts, selection.layout, "article"),
+        tone: option(PREVIEW_OPTIONS.documentTones, selection.tone, "default"),
+      })
+    } catch {
+      return defaultDocumentPresentation
+    }
+  }
+
+  function presentDocument(children: any, presentation: any) {
+    return jsx("article", {
+      className: `repopress-preview-document repopress-preview-document--${presentation.layout} repopress-preview-document--${presentation.tone}`,
+      children,
+    })
   }
 
   function evaluateDocument(job: any, adapter: any) {
@@ -796,7 +1081,19 @@ function compatibleWorkerMain() {
         }
         return [{ kind: "text", value: text }]
       }
-      if (!node || node.__repopressElement !== 1) throw new SafeError("Unsupported compatible render value")
+      if (node && typeof node === "object" && weakSetHas(previewImageReferences, node)) {
+        const source = acceptedImageSource(node.source)
+        const alt = boundedLabel(node.alt, "Image preview")
+        const label = boundedLabel(node.label, alt)
+        const aspect = option(PREVIEW_OPTIONS.imageAspects, node.aspect, "wide")
+        if (!source) return visit(previewImagePlaceholder(alt, label, aspect), depth + 1)
+        budget.nodes += 1
+        if (budget.nodes > 2_048) throw new SafeError("Compatible render node budget exceeded")
+        return [{ kind: "image", source, alt, label, aspect }]
+      }
+      if (!node || typeof node !== "object" || !weakSetHas(ownedElements, node)) {
+        throw new SafeError("Unsupported compatible render value")
+      }
       budget.nodes += 1
       if (budget.nodes > 2_048) throw new SafeError("Compatible render node budget exceeded")
       const props = node.props && typeof node.props === "object" ? node.props : {}
@@ -855,9 +1152,11 @@ function compatibleWorkerMain() {
       lockDownRealm()
       try {
         const adapter = evaluateAdapter(job.adapterCode)
+        const presentation = resolveDocumentPresentation(adapter.Document)
         const rendered = evaluateDocument(job, adapter)
+        const document = presentDocument(rendered, presentation)
         try {
-          const tree = renderTree(rendered)
+          const tree = renderTree(document)
           send({
             type: "repopress:rendered-compatible",
             requestId,

@@ -537,8 +537,126 @@
   }
 
   [data-compatible-preview] {
+    min-height: 100vh;
     color: var(--foreground);
     font-family: var(--font-sans);
+  }
+
+  [data-compatible-preview] .repopress-preview-document {
+    width: 100%;
+    min-height: 100vh;
+    margin-inline: auto;
+    padding: clamp(1.5rem, 5vw, 4rem);
+    color: var(--foreground);
+    background: var(--background);
+    font-family: var(--font-sans);
+    font-size: 1rem;
+    line-height: 1.75;
+    overflow-wrap: anywhere;
+  }
+
+  [data-compatible-preview] .repopress-preview-document--article {
+    max-width: 48rem;
+  }
+
+  [data-compatible-preview] .repopress-preview-document--wide {
+    max-width: 80rem;
+  }
+
+  [data-compatible-preview] .repopress-preview-document--warm {
+    background: color-mix(in oklab, var(--card) 82%, var(--background));
+  }
+
+  [data-compatible-preview] .repopress-preview-document > :where(* + *) {
+    margin-block-start: 1.5rem;
+  }
+
+  [data-compatible-preview] .repopress-preview-document :where(h1, h2, h3, h4, h5, h6) {
+    margin-block: 0;
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-weight: 600;
+    letter-spacing: -0.018em;
+  }
+
+  [data-compatible-preview] .repopress-preview-document :where(h1) {
+    font-size: clamp(2rem, 6vw, 3.25rem);
+    line-height: 1.08;
+  }
+
+  [data-compatible-preview] .repopress-preview-document :where(h2) {
+    font-size: 1.625rem;
+    line-height: 1.2;
+  }
+
+  [data-compatible-preview] .repopress-preview-document :where(h3) {
+    font-size: 1.25rem;
+    line-height: 1.3;
+  }
+
+  [data-compatible-preview] .repopress-preview-document :where(h4, h5, h6) {
+    font-size: 1rem;
+    line-height: 1.4;
+  }
+
+  [data-compatible-preview] .repopress-preview-document :where(p, li) {
+    margin-block: 0;
+    line-height: 1.75;
+  }
+
+  [data-compatible-preview] .repopress-preview-document :where(ul, ol) {
+    margin-block: 0;
+    padding-inline-start: 1.5rem;
+  }
+
+  [data-compatible-preview] .repopress-preview-document :where(li + li) {
+    margin-block-start: 0.5rem;
+  }
+
+  [data-compatible-preview] .repopress-preview-document :where(blockquote) {
+    margin-inline: 0;
+    border-inline-start: 2px solid var(--border);
+    padding-inline-start: 1rem;
+    color: var(--muted-foreground);
+  }
+
+  [data-compatible-preview] .repopress-preview-document :where(table) {
+    display: block;
+    width: 100%;
+    overflow-x: auto;
+    border-collapse: collapse;
+  }
+
+  [data-compatible-preview] .repopress-preview-document :where(th, td) {
+    border-block-end: 1px solid var(--border);
+    padding: 0.625rem 0.75rem;
+    text-align: start;
+  }
+
+  [data-compatible-preview] .repopress-preview-document :where(pre) {
+    margin: 0;
+    overflow-x: auto;
+    border-radius: 0.5rem;
+    background: var(--muted);
+    padding: 1rem;
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    line-height: 1.6;
+    white-space: pre;
+  }
+
+  [data-compatible-preview] .repopress-preview-document :where(:not(pre) > code) {
+    border-radius: 0.25rem;
+    background: var(--muted);
+    padding: 0.125em 0.3em;
+    font-family: var(--font-mono);
+    font-size: 0.875em;
+  }
+
+  @media (max-width: 30rem) {
+    [data-compatible-preview] .repopress-preview-document {
+      padding: 1.25rem;
+    }
   }
 
   [data-compatible-preview] .repopress-preview-box {
@@ -686,6 +804,8 @@
   [data-compatible-preview] .repopress-preview-action {
     display: inline-flex;
     width: fit-content;
+    max-width: 100%;
+    min-width: 0;
     align-items: center;
     gap: 0.625rem;
     border: 1px solid transparent;
@@ -693,6 +813,8 @@
     padding: 0.5rem 1rem;
     font-size: 0.8125rem;
     font-weight: 500;
+    overflow-wrap: anywhere;
+    white-space: normal;
   }
 
   [data-compatible-preview] .repopress-preview-action small {
@@ -749,6 +871,134 @@
     font-size: 0.75rem;
     line-height: 1.4;
     text-align: start;
+  }
+
+  [data-compatible-preview] .repopress-preview-paper {
+    overflow: hidden;
+    max-width: 100%;
+    min-width: 0;
+    margin: 0;
+    border: 1px solid var(--border);
+    border-radius: 0.75rem;
+    background: var(--card);
+    color: var(--foreground);
+  }
+
+  [data-compatible-preview] .repopress-preview-paper--note {
+    border-style: dashed;
+  }
+
+  [data-compatible-preview] .repopress-preview-paper--worksheet {
+    border-radius: 0.5rem;
+  }
+
+  [data-compatible-preview] .repopress-preview-paper-header {
+    display: flex;
+    min-width: 0;
+    min-height: 4.5rem;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 1rem;
+    border-block-end: 1px solid var(--border);
+    padding: 0.875rem 1.25rem;
+    background: color-mix(in oklab, var(--muted) 72%, var(--card));
+  }
+
+  [data-compatible-preview] .repopress-preview-paper-title {
+    min-width: 0;
+    flex: 1 1 12rem;
+    margin: 0;
+    color: var(--foreground);
+    font-size: 1rem;
+    font-weight: 600;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+  }
+
+  [data-compatible-preview] .repopress-preview-paper-stamp {
+    display: inline-grid;
+    width: 2.75rem;
+    height: 3.25rem;
+    flex: 0 0 auto;
+    place-items: center;
+    border: 1px dashed var(--primary);
+    border-radius: 0.25rem;
+    color: var(--primary);
+    font-family: var(--font-mono);
+    font-size: 1rem;
+  }
+
+  [data-compatible-preview] .repopress-preview-paper-body {
+    position: relative;
+    min-width: 0;
+    min-height: 10rem;
+    padding: 1.5rem 1.5rem 1.5rem 3.5rem;
+    background-color: var(--background);
+    background-image: repeating-linear-gradient(
+      to bottom,
+      transparent 0,
+      transparent 1.95rem,
+      color-mix(in oklab, var(--border) 58%, transparent) 1.95rem,
+      color-mix(in oklab, var(--border) 58%, transparent) 2rem
+    );
+    line-height: 2rem;
+    overflow-wrap: anywhere;
+  }
+
+  [data-compatible-preview] .repopress-preview-paper-body::before {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 2.5rem;
+    width: 1px;
+    background: color-mix(in oklab, var(--primary) 32%, var(--border));
+    content: "";
+  }
+
+  [data-compatible-preview] .repopress-preview-paper-body > :first-child {
+    margin-block-start: 0;
+  }
+
+  [data-compatible-preview] .repopress-preview-paper-footer {
+    display: flex;
+    min-width: 0;
+    justify-content: center;
+    border-block-start: 1px solid var(--border);
+    padding: 0.75rem 1.25rem;
+    background: color-mix(in oklab, var(--muted) 72%, var(--card));
+  }
+
+  @media (max-width: 30rem) {
+    [data-compatible-preview] .repopress-preview-paper-header {
+      min-height: 0;
+      align-items: flex-start;
+      gap: 0.75rem;
+      padding: 0.75rem 1rem;
+    }
+
+    [data-compatible-preview] .repopress-preview-paper-stamp {
+      width: 2.25rem;
+      height: 2.75rem;
+    }
+
+    [data-compatible-preview] .repopress-preview-paper-body {
+      padding: 1.25rem 1rem 1.25rem 2.5rem;
+    }
+
+    [data-compatible-preview] .repopress-preview-paper-body::before {
+      inset-inline-start: 1.75rem;
+    }
+
+    [data-compatible-preview] .repopress-preview-paper-footer {
+      justify-content: stretch;
+      padding: 0.75rem 1rem;
+    }
+
+    [data-compatible-preview] .repopress-preview-paper-footer .repopress-preview-action {
+      width: 100%;
+      justify-content: center;
+      text-align: center;
+    }
   }
 
   [data-compatible-preview] .repopress-preview-icon {

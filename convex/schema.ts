@@ -358,6 +358,33 @@ export default defineSchema({
     .index("by_scope_user_action", ["scopeKey", "userId", "action"])
     .index("by_projectId", ["projectId"]),
 
+  // ─── Preview Asset Budgets ──────────────────────────────────
+  previewAssetBudgets: defineTable({
+    projectId: v.id("projects"),
+    userId: v.string(),
+    windowStartedAt: v.number(),
+    attempts: v.number(),
+    consumedBytes: v.number(),
+    consumedDecodedPixels: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_projectId_and_userId", ["projectId", "userId"])
+    .index("by_projectId", ["projectId"]),
+
+  previewAssetReservations: defineTable({
+    budgetId: v.id("previewAssetBudgets"),
+    projectId: v.id("projects"),
+    userId: v.string(),
+    reservedBytes: v.number(),
+    reservedDecodedPixels: v.optional(v.number()),
+    expiresAt: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_budgetId", ["budgetId"])
+    .index("by_projectId", ["projectId"]),
+
   // ─── Deleted Config Projects (tombstone for config-driven project deletion) ─
   deletedConfigProjects: defineTable({
     configProjectId: v.string(), // The id field from repopress.config.json

@@ -1,7 +1,7 @@
 "use client"
 
-import matter from "gray-matter"
 import * as React from "react"
+import { type ParsedContentFile, parseContentFile } from "@/lib/content-metadata"
 import { normalizeFrontmatterDates } from "@/lib/framework-adapters"
 import { type FileTreeNode, findTreeNode } from "@/lib/github"
 import { toRepoPath } from "@/lib/preview/path-policy"
@@ -18,6 +18,8 @@ interface CachedFileSnapshot {
   frontmatter: Record<string, unknown>
   sha: string | null
   isDirty: boolean
+  sourceAuthority: SourceAuthority
+  sourceDiagnostic?: ParsedContentFile["diagnostic"]
 }
 
 interface PrimeSnapshotInput {
@@ -25,6 +27,8 @@ interface PrimeSnapshotInput {
   frontmatter?: Record<string, unknown>
   sha?: string | null
   isDirty?: boolean
+  isSourceEditable?: boolean
+  sourceDiagnostic?: ParsedContentFile["diagnostic"]
 }
 
 interface GitHubFileResponse {
@@ -34,24 +38,23 @@ interface GitHubFileResponse {
   content: string
 }
 
-function parseFileSnapshot(rawContent: string, sha: string | null): CachedFileSnapshot {
-  try {
-    const { data, content } = matter(rawContent)
-    return {
-      content,
-      frontmatter: normalizeFrontmatterDates(data) as Record<string, unknown>,
-      sha,
-      isDirty: false,
-    }
-  } catch {
-    // Attempt to strip frontmatter even if gray-matter fails
-    const stripped = rawContent.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "")
-    return {
-      content: stripped,
-      frontmatter: {},
-      sha,
-      isDirty: false,
-    }
+interface PendingDocumentHydration {
+  requestVersion: number
+  body: string | null
+  frontmatter: Record<string, unknown> | null
+}
+
+export type SourceAuthority = "unknown" | "editable" | "read-only"
+
+function parseFileSnapshot(rawContent: string, sha: string | null, filePath: string): CachedFileSnapshot {
+  const parsed = parseContentFile(rawContent, filePath)
+  return {
+    content: parsed.body,
+    frontmatter: normalizeFrontmatterDates(parsed.metadata as Record<string, unknown>),
+    sha,
+    isDirty: false,
+    sourceAuthority: parsed.editable ? "editable" : "read-only",
+    sourceDiagnostic: parsed.diagnostic,
   }
 }
 
@@ -80,10 +83,15 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
   const [sha, setSha] = React.useState<string | null>(null)
   const [isDirty, setIsDirty] = React.useState(false)
   const [isFileLoading, setIsFileLoading] = React.useState(false)
+  const [sourceAuthority, setSourceAuthority] = React.useState<SourceAuthority>("unknown")
+  const isSourceEditable = sourceAuthority === "editable"
+  const [sourceDiagnostic, setSourceDiagnostic] = React.useState<ParsedContentFile["diagnostic"]>()
 
   const fileCacheRef = React.useRef<Map<string, CachedFileSnapshot>>(new Map())
   const fileCacheRevisionRef = React.useRef<Map<string, number>>(new Map())
   const requestVersionRef = React.useRef(0)
+  const remoteReadVersionRef = React.useRef<Map<string, number>>(new Map())
+  const pendingDocumentHydrationRef = React.useRef<Map<string, PendingDocumentHydration>>(new Map())
 
   const writeCachedSnapshot = React.useCallback((filePath: string, snapshot: CachedFileSnapshot) => {
     fileCacheRef.current.set(filePath, snapshot)
@@ -141,6 +149,8 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
       setFrontmatter(snapshot.frontmatter)
       setSha(snapshot.sha)
       setIsDirty(snapshot.isDirty)
+      setSourceAuthority(snapshot.sourceAuthority)
+      setSourceDiagnostic(snapshot.sourceDiagnostic)
     },
     [resolveFileNode],
   )
@@ -154,6 +164,8 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
       setSha(null)
       setIsDirty(false)
       setIsFileLoading(false)
+      setSourceAuthority("unknown")
+      setSourceDiagnostic(undefined)
       try {
         localStorage.removeItem(selectedFileStorageKey)
       } catch {
@@ -177,6 +189,8 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
           : {},
         sha: snapshot.sha ?? null,
         isDirty: snapshot.isDirty ?? false,
+        sourceAuthority: snapshot.isSourceEditable === false ? "read-only" : "editable",
+        sourceDiagnostic: snapshot.sourceDiagnostic,
       }
 
       writeCachedSnapshot(filePath, normalizedSnapshot)
@@ -220,15 +234,43 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
         frontmatter: {},
         sha: null,
         isDirty: false,
+        sourceAuthority: "editable",
       }
 
-      // Prevent stale editor data from the previous file while a new file is loading.
-      setSelectedFile(resolvedNode)
-      setContent("")
-      setFrontmatter({})
-      setSha(null)
-      setIsDirty(false)
+      // A cached snapshot has already established source authority, so keep
+      // it visible and writable while validating the remote path. A cold
+      // existing-file read stays non-writable until its bytes are parsed.
+      if (requestStartCached) {
+        applySnapshot(filePath, requestStartCached)
+      } else {
+        setSelectedFile(resolvedNode)
+        setContent("")
+        setFrontmatter({})
+        setSha(null)
+        setIsDirty(false)
+        setSourceAuthority("unknown")
+        setSourceDiagnostic(undefined)
+      }
       setIsFileLoading(true)
+      remoteReadVersionRef.current.set(filePath, requestVersion)
+
+      const takePendingDocumentHydration = () => {
+        const pending = pendingDocumentHydrationRef.current.get(filePath)
+        if (pending?.requestVersion !== requestVersion) return null
+        pendingDocumentHydrationRef.current.delete(filePath)
+        return pending
+      }
+
+      const applyDocumentHydration = (snapshot: CachedFileSnapshot, pending: PendingDocumentHydration) => {
+        const hydratedSnapshot: CachedFileSnapshot = {
+          ...snapshot,
+          content: pending.body ?? snapshot.content,
+          frontmatter: pending.frontmatter ?? snapshot.frontmatter,
+          sha: null,
+        }
+        writeCachedSnapshot(filePath, hydratedSnapshot)
+        applySnapshot(filePath, hydratedSnapshot)
+      }
 
       const applyNewerLocalSnapshot = () => {
         const latestRevision = fileCacheRevisionRef.current.get(filePath) ?? 0
@@ -238,6 +280,7 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
         return true
       }
 
+      let remotePathAbsent = false
       try {
         const params = new URLSearchParams({
           owner,
@@ -252,29 +295,74 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
         })
 
         if (!response.ok) {
+          remotePathAbsent = response.status === 404
           throw new Error(`Failed to fetch file (${response.status})`)
         }
 
         const file = (await response.json()) as GitHubFileResponse
         if (requestVersionRef.current !== requestVersion) return
-        if (applyNewerLocalSnapshot()) return
 
-        const snapshot = parseFileSnapshot(file.content, file.sha)
+        const snapshot = parseFileSnapshot(file.content, file.sha, filePath)
+        const pendingHydration = takePendingDocumentHydration()
+        if (snapshot.sourceAuthority === "read-only") {
+          writeCachedSnapshot(filePath, snapshot)
+          applySnapshot(filePath, snapshot)
+          return
+        }
+        if (applyNewerLocalSnapshot()) return
+        if (pendingHydration) {
+          applyDocumentHydration(snapshot, pendingHydration)
+          return
+        }
+        if (requestStartCached?.sourceAuthority === "unknown" && requestStartCached.sha === null) {
+          const resolvedDraft = {
+            ...requestStartCached,
+            sourceAuthority: "editable" as const,
+            sourceDiagnostic: undefined,
+          }
+          writeCachedSnapshot(filePath, resolvedDraft)
+          applySnapshot(filePath, resolvedDraft)
+          return
+        }
         writeCachedSnapshot(filePath, snapshot)
         applySnapshot(filePath, snapshot)
       } catch (error) {
         if (requestVersionRef.current === requestVersion) {
           console.error("Failed to open file", error)
+          const pendingHydration = takePendingDocumentHydration()
           if (applyNewerLocalSnapshot()) {
             return
           }
+          if (pendingHydration) {
+            if (remotePathAbsent) {
+              applyDocumentHydration(requestStartCached ?? emptySnapshot, pendingHydration)
+            } else {
+              applyDocumentHydration(
+                requestStartCached ?? { ...emptySnapshot, sourceAuthority: "unknown" },
+                pendingHydration,
+              )
+            }
+            return
+          }
           if (requestStartCached && requestStartHasLocalSnapshot) {
-            applySnapshot(filePath, requestStartCached)
-          } else {
+            if (remotePathAbsent && requestStartCached.sourceAuthority === "unknown") {
+              const resolvedDraft = { ...requestStartCached, sourceAuthority: "editable" as const }
+              writeCachedSnapshot(filePath, resolvedDraft)
+              applySnapshot(filePath, resolvedDraft)
+            } else {
+              applySnapshot(filePath, requestStartCached)
+            }
+          } else if (remotePathAbsent) {
             applySnapshot(filePath, emptySnapshot)
           }
         }
       } finally {
+        if (remoteReadVersionRef.current.get(filePath) === requestVersion) {
+          remoteReadVersionRef.current.delete(filePath)
+        }
+        if (pendingDocumentHydrationRef.current.get(filePath)?.requestVersion === requestVersion) {
+          pendingDocumentHydrationRef.current.delete(filePath)
+        }
         if (requestVersionRef.current === requestVersion) {
           setIsFileLoading(false)
         }
@@ -377,7 +465,7 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
 
   React.useEffect(() => {
     if (initialFile) {
-      const snapshot = parseFileSnapshot(initialFile.content, initialFile.sha)
+      const snapshot = parseFileSnapshot(initialFile.content, initialFile.sha, initialFile.path)
       writeCachedSnapshot(initialFile.path, snapshot)
       applySnapshot(initialFile.path, snapshot)
       syncBrowserUrl(initialFile.path, "replace")
@@ -527,6 +615,7 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
         if (!activePath) return false
 
         const cached = fileCacheRef.current.get(activePath)
+        if (cached?.sourceAuthority === "read-only") return false
         // The editor is interactive before the Convex query necessarily
         // settles. Never let a late saved draft overwrite newer local input.
         if (cached?.isDirty) return true
@@ -547,11 +636,24 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
           setFrontmatter(nextFrontmatter)
         }
 
+        const remoteReadVersion = remoteReadVersionRef.current.get(activePath)
+        if (remoteReadVersion !== undefined) {
+          pendingDocumentHydrationRef.current.set(activePath, {
+            requestVersion: remoteReadVersion,
+            body: draftBody,
+            frontmatter: draftFrontmatter === null ? null : nextFrontmatter,
+          })
+          setIsDirty(false)
+          return true
+        }
+
         writeCachedSnapshot(activePath, {
           content: nextContent,
           frontmatter: nextFrontmatter,
           sha: currentSha,
           isDirty: false,
+          sourceAuthority: cached?.sourceAuthority ?? sourceAuthority,
+          sourceDiagnostic: cached?.sourceDiagnostic,
         })
 
         setIsDirty(false)
@@ -561,11 +663,12 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
         return false
       }
     },
-    [selectedFile?.path, writeCachedSnapshot],
+    [selectedFile?.path, sourceAuthority, writeCachedSnapshot],
   )
 
   const handleContentChange = React.useCallback(
     (newContent: string) => {
+      if (!isSourceEditable) return
       setContent(newContent)
       setIsDirty(true)
       if (selectedFile?.path) {
@@ -574,14 +677,17 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
           frontmatter,
           sha,
           isDirty: true,
+          sourceAuthority,
+          sourceDiagnostic,
         })
       }
     },
-    [selectedFile?.path, frontmatter, sha, writeCachedSnapshot],
+    [selectedFile?.path, frontmatter, sha, isSourceEditable, sourceAuthority, sourceDiagnostic, writeCachedSnapshot],
   )
 
   const handleFrontmatterChangeKey = React.useCallback(
     (key: string, value: unknown) => {
+      if (!isSourceEditable) return
       setFrontmatter((prev) => {
         const next = { ...prev, [key]: value }
         if (selectedFile?.path) {
@@ -590,17 +696,20 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
             frontmatter: next,
             sha,
             isDirty: true,
+            sourceAuthority,
+            sourceDiagnostic,
           })
         }
         return next
       })
       setIsDirty(true)
     },
-    [selectedFile?.path, content, sha, writeCachedSnapshot],
+    [selectedFile?.path, content, sha, isSourceEditable, sourceAuthority, sourceDiagnostic, writeCachedSnapshot],
   )
 
   const handleFrontmatterChangeAll = React.useCallback(
     (nextFrontmatter: Record<string, unknown>) => {
+      if (!isSourceEditable) return
       setFrontmatter(nextFrontmatter)
       setIsDirty(true)
       if (selectedFile?.path) {
@@ -609,10 +718,12 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
           frontmatter: nextFrontmatter,
           sha,
           isDirty: true,
+          sourceAuthority,
+          sourceDiagnostic,
         })
       }
     },
-    [selectedFile?.path, content, sha, writeCachedSnapshot],
+    [selectedFile?.path, content, sha, isSourceEditable, sourceAuthority, sourceDiagnostic, writeCachedSnapshot],
   )
 
   const navigateToFile = React.useCallback(
@@ -632,6 +743,9 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
     sha,
     isDirty,
     isFileLoading,
+    sourceAuthority,
+    isSourceEditable,
+    sourceDiagnostic,
     navigateToFile,
     clearSelection,
     closeFile,

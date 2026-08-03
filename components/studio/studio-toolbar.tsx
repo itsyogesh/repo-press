@@ -26,6 +26,7 @@ interface StudioToolbarProps {
   userId?: string
   selectedFilePath?: string
   showMarkdownMediaInserts?: boolean
+  readOnly?: boolean
 }
 
 export function StudioToolbar({
@@ -36,6 +37,7 @@ export function StudioToolbar({
   userId,
   selectedFilePath,
   showMarkdownMediaInserts = true,
+  readOnly = false,
 }: StudioToolbarProps) {
   return (
     <DiffSourceToggleWrapper options={["rich-text", "source"]}>
@@ -48,6 +50,7 @@ export function StudioToolbar({
             projectId={projectId}
             userId={userId}
             selectedFilePath={selectedFilePath}
+            readOnly={readOnly}
           />
         </ToolbarCluster>
 

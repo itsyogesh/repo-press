@@ -250,6 +250,106 @@ export async function getFileForPublish(
   }
 }
 
+export type PublishFileBytesReadResult =
+  | { status: "found"; file: { bytes: Uint8Array; sha: string; name: string; path: string } }
+  | { status: "absent" }
+
+function assertBoundedGitSize(value: unknown, maxBytes: number, label: string): number {
+  if (!Number.isSafeInteger(value) || (value as number) < 0 || (value as number) > maxBytes) {
+    throw new GitHubReadError(`${label} returned an invalid or oversized byte count`)
+  }
+  return value as number
+}
+
+function decodeBoundedGitBase64(value: unknown, expectedBytes: number, maxBytes: number, label: string): Uint8Array {
+  if (typeof value !== "string") throw new GitHubReadError(`${label} returned no base64 content`)
+  const maximumEncodedChars = 4 * Math.ceil(expectedBytes / 3)
+  const maximumTransportChars = maximumEncodedChars + 2 * Math.ceil(maximumEncodedChars / 76) + 16
+  if (value.length > maximumTransportChars) throw new GitHubReadError(`${label} returned oversized base64 content`)
+  const normalized = value.replace(/[\t\n\r ]/gu, "")
+  if (
+    normalized.length > maximumEncodedChars ||
+    normalized.length % 4 !== 0 ||
+    !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(normalized)
+  ) {
+    throw new GitHubReadError(`${label} returned malformed base64 content`)
+  }
+  const bytes = new Uint8Array(Buffer.from(normalized, "base64"))
+  if (bytes.byteLength !== expectedBytes || bytes.byteLength > maxBytes) {
+    throw new GitHubReadError(`${label} byte count did not match its declaration`)
+  }
+  return bytes
+}
+
+/**
+ * Typed, byte-preserving GitHub read for bounded binary preview assets.
+ * Both Contents and blob size declarations are validated before decoding;
+ * only a Contents API 404 means absent.
+ */
+export async function getFileBytesForPublish(
+  accessToken: string,
+  owner: string,
+  repo: string,
+  path: string,
+  ref: string,
+  maxBytes: number,
+): Promise<PublishFileBytesReadResult> {
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) throw new GitHubReadError("Invalid binary read limit")
+  const octokit = createGitHubClient(accessToken)
+  let data: Awaited<ReturnType<typeof octokit.repos.getContent>>["data"]
+  try {
+    ;({ data } = await octokit.repos.getContent({ owner, repo, path, ref }))
+  } catch (error: any) {
+    if (error?.status === 404) return { status: "absent" }
+    throw new GitHubReadError(`GitHub binary read failed for ${path} at ${ref}`, error)
+  }
+  if (Array.isArray(data)) throw new GitHubReadError(`GitHub binary read for ${path} resolved to a directory`)
+  if (!("sha" in data) || typeof data.sha !== "string" || !data.sha) {
+    throw new GitHubReadError(`GitHub binary read for ${path} returned no blob sha`)
+  }
+  if (!("name" in data) || typeof data.name !== "string" || !("path" in data) || typeof data.path !== "string") {
+    throw new GitHubReadError(`GitHub binary read for ${path} returned malformed file metadata`)
+  }
+
+  const contentsSize = assertBoundedGitSize("size" in data ? data.size : undefined, maxBytes, "GitHub Contents")
+  const encoding = "encoding" in data ? data.encoding : undefined
+  const inlineContent = "content" in data ? data.content : undefined
+  if (encoding === "base64") {
+    return {
+      status: "found",
+      file: {
+        bytes: decodeBoundedGitBase64(inlineContent, contentsSize, maxBytes, "GitHub Contents"),
+        sha: data.sha,
+        name: data.name,
+        path: data.path,
+      },
+    }
+  }
+  if (encoding !== "none" || (typeof inlineContent === "string" && inlineContent.length > 0)) {
+    throw new GitHubReadError(`GitHub Contents returned an unsupported binary encoding for ${path}`)
+  }
+
+  let blobData: Awaited<ReturnType<typeof octokit.git.getBlob>>["data"]
+  try {
+    ;({ data: blobData } = await octokit.git.getBlob({ owner, repo, file_sha: data.sha }))
+  } catch (error: any) {
+    throw new GitHubReadError(`GitHub blob read failed for ${path} (status: ${error?.status ?? "unknown"})`, error)
+  }
+  const blobSize = assertBoundedGitSize(blobData.size, maxBytes, "GitHub blob")
+  if (blobSize !== contentsSize || blobData.encoding !== "base64") {
+    throw new GitHubReadError(`GitHub blob metadata did not match Contents for ${path}`)
+  }
+  return {
+    status: "found",
+    file: {
+      bytes: decodeBoundedGitBase64(blobData.content, blobSize, maxBytes, "GitHub blob"),
+      sha: data.sha,
+      name: data.name,
+      path: data.path,
+    },
+  }
+}
+
 const CONTENT_EXTENSIONS = [".md", ".mdx", ".markdown"]
 
 /**

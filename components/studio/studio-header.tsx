@@ -46,6 +46,7 @@ interface StudioHeaderProps {
   currentStatus: DocumentStatus
   onSave: () => void
   isSaving: boolean
+  canSave?: boolean
 }
 
 export function StudioHeader({
@@ -55,6 +56,7 @@ export function StudioHeader({
   currentStatus,
   onSave,
   isSaving,
+  canSave = true,
 }: StudioHeaderProps) {
   const { owner, repo, branch, baseCommitSha, projectId } = useStudio()
   const { viewMode, setViewMode, sidebarState, setSidebarState } = useViewMode()
@@ -185,8 +187,8 @@ export function StudioHeader({
           size="sm"
           className="h-9 w-9 gap-2 rounded-md bg-studio-accent px-0 text-studio-accent-fg hover:bg-studio-accent/90 sm:w-auto sm:px-3"
           onClick={onSave}
-          disabled={!selectedFile || isSaving}
-          aria-label={isSaving ? "Saving draft" : "Save draft"}
+          disabled={!selectedFile || isSaving || !canSave}
+          aria-label={isSaving ? "Saving draft" : canSave ? "Save draft" : "Save unavailable for read-only source"}
         >
           {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
           <span className="hidden sm:inline">{isSaving ? "Saving…" : "Save draft"}</span>

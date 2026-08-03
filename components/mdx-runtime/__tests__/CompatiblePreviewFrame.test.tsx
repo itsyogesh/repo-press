@@ -11,7 +11,15 @@ import {
 } from "@/lib/preview/compatible-artifact"
 import type { PreviewResult } from "@/lib/preview/contracts"
 import { buildGenericRenderModel } from "@/lib/preview/generic-render-model"
-import { SANDBOX_MAX_MESSAGE_BYTES, SANDBOX_RATE_BURST, serializeSandboxMessage } from "@/lib/preview/sandbox-protocol"
+import {
+  parseSandboxAssetDelivery,
+  SANDBOX_MAX_ASSET_BYTES,
+  SANDBOX_MAX_ASSET_ITEMS,
+  SANDBOX_MAX_ASSET_TOTAL_BYTES,
+  SANDBOX_MAX_MESSAGE_BYTES,
+  SANDBOX_RATE_BURST,
+  serializeSandboxMessage,
+} from "@/lib/preview/sandbox-protocol"
 import { createPreviewSandboxHeaders, nextConfig } from "../../../next.config.mjs"
 import {
   CompatiblePreviewFrame,
@@ -29,14 +37,23 @@ class FakePort {
   closed = false
   onmessage: ((event: MessageEvent) => void) | null = null
   sent: string[] = []
+  assetDeliveries: unknown[] = []
+  transfers: Transferable[][] = []
   started = false
+  throwNextAssetDelivery = false
 
   close() {
     this.closed = true
   }
 
-  postMessage(message: string) {
-    this.sent.push(message)
+  postMessage(message: unknown, transfer: Transferable[] = []) {
+    if (typeof message !== "string" && this.throwNextAssetDelivery) {
+      this.throwNextAssetDelivery = false
+      throw new DOMException("Transfer failed", "DataCloneError")
+    }
+    if (typeof message === "string") this.sent.push(message)
+    else this.assetDeliveries.push(message)
+    this.transfers.push(transfer)
   }
 
   start() {
@@ -185,6 +202,17 @@ function runtimeWire(sessionId: string, snapshotVersion: number, sequence: numbe
   })
 }
 
+function assetRequestWire(sequence: number, requestId: string, source: string) {
+  return serializeSandboxMessage({
+    protocolVersion: 1,
+    type: "asset-request",
+    sessionId: authorityContext.sessionId,
+    snapshotVersion: authorityContext.snapshotVersion,
+    sequence,
+    payload: { requestId, source },
+  })
+}
+
 describe("CompatiblePreviewFrame", () => {
   it("uses only the script sandbox capability and keeps the bootstrap capability out of its URL", () => {
     vi.stubEnv("NEXT_PUBLIC_PREVIEW_ORIGIN", "https://preview.repopress.test")
@@ -198,6 +226,8 @@ describe("CompatiblePreviewFrame", () => {
     expect(frame).toHaveAttribute("referrerpolicy", "no-referrer")
     expect(frame).toHaveAttribute("src", "https://preview.repopress.test/preview/sandbox")
     expect(frame.getAttribute("src")).not.toMatch(/capability|token|session/i)
+    expect(frame).toHaveClass("h-full", "w-full", "min-h-0", "border-0", "rounded-none")
+    expect(frame).not.toHaveClass("min-h-80", "rounded-lg", "border-border")
   })
 
   it("retries the same bootstrap offer when the sandbox listener starts after iframe load", () => {
@@ -379,6 +409,262 @@ describe("CompatiblePreviewFrame", () => {
     ])
     expect(commands.map((command) => command.sequence)).toEqual([1, 2, 3])
     expect(channel.port1.sent.every((wire) => !wire.includes("# Isolated"))).toBe(true)
+  })
+
+  it("fetches deduplicated image requests with immutable project authority and transfers accepted bytes", async () => {
+    const hostWindow = { addEventListener: vi.fn(), removeEventListener: vi.fn() }
+    const expectedWindow = { postMessage: vi.fn() }
+    const channel = new FakeMessageChannel()
+    const bytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47]).buffer
+    const fetchAsset = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(bytes, { status: 200, headers: { "Content-Type": "image/png", "Content-Length": "4" } }),
+      )
+    const host = createCompatiblePreviewHost({
+      hostWindow,
+      iframeWindow: expectedWindow,
+      authorityContext,
+      createMessageChannel: () => channel as unknown as MessageChannel,
+      fetchAsset,
+    })
+    host.start()
+    const offer = JSON.parse(expectedWindow.postMessage.mock.calls[0][0])
+    host.receiveWindowMessage({
+      source: expectedWindow,
+      data: JSON.stringify({ ...offer, type: "repopress:bootstrap-accept" }),
+    })
+
+    channel.port1.emit(assetRequestWire(1, "asset-1", "images/cover.png"))
+    channel.port1.emit(assetRequestWire(2, "asset-duplicate", "images/cover.png"))
+
+    await waitFor(() => expect(channel.port1.assetDeliveries).toHaveLength(1))
+    expect(fetchAsset).toHaveBeenCalledOnce()
+    expect(fetchAsset).toHaveBeenCalledWith(
+      "/api/preview/asset",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId: "project-1",
+          filePath: "content/example.mdx",
+          baseCommitSha: "abc123",
+          source: "images/cover.png",
+        }),
+      }),
+    )
+    const parsed = parseSandboxAssetDelivery(channel.port1.assetDeliveries[0], {
+      sessionId: "session-1",
+      snapshotVersion: 1,
+      requestId: "asset-1",
+      source: "images/cover.png",
+    })
+    expect(parsed).toMatchObject({ type: "asset-response", mimeType: "image/png" })
+    expect(parsed?.type).toBe("asset-response")
+    if (parsed?.type !== "asset-response") throw new Error("Expected accepted asset response")
+    expect(channel.port1.transfers.some((items) => items.includes(parsed.bytes))).toBe(true)
+    expect(host.getSessionState().invalidated).toBe(false)
+  })
+
+  it("caps image fetch concurrency and item count while mapping each failure to an asset error", async () => {
+    const hostWindow = { addEventListener: vi.fn(), removeEventListener: vi.fn() }
+    const expectedWindow = { postMessage: vi.fn() }
+    const channel = new FakeMessageChannel()
+    const releases: Array<(response: Response) => void> = []
+    let active = 0
+    let peak = 0
+    const fetchAsset = vi.fn().mockImplementation(
+      () =>
+        new Promise<Response>((resolve) => {
+          active += 1
+          peak = Math.max(peak, active)
+          releases.push((response) => {
+            active -= 1
+            resolve(response)
+          })
+        }),
+    )
+    const host = createCompatiblePreviewHost({
+      hostWindow,
+      iframeWindow: expectedWindow,
+      authorityContext,
+      createMessageChannel: () => channel as unknown as MessageChannel,
+      fetchAsset,
+    })
+    host.start()
+    const offer = JSON.parse(expectedWindow.postMessage.mock.calls[0][0])
+    host.receiveWindowMessage({
+      source: expectedWindow,
+      data: JSON.stringify({ ...offer, type: "repopress:bootstrap-accept" }),
+    })
+    for (let index = 0; index <= SANDBOX_MAX_ASSET_ITEMS; index += 1) {
+      channel.port1.emit(assetRequestWire(index + 1, `asset-${index}`, `images/${index}.png`))
+    }
+
+    expect(fetchAsset).toHaveBeenCalledTimes(3)
+    expect(peak).toBe(3)
+    while (releases.length > 0) {
+      const release = releases.shift()
+      release?.(new Response(null, { status: 404 }))
+      await Promise.resolve()
+      await Promise.resolve()
+    }
+    await waitFor(() => expect(fetchAsset).toHaveBeenCalledTimes(SANDBOX_MAX_ASSET_ITEMS))
+    await waitFor(() => expect(channel.port1.sent).toHaveLength(SANDBOX_MAX_ASSET_ITEMS + 1))
+    expect(peak).toBe(3)
+    expect(channel.port1.sent.slice(1).every((wire) => wire.includes('"type":"repopress:asset-error"'))).toBe(true)
+    expect(host.getSessionState().invalidated).toBe(false)
+  })
+
+  it("cancels and refuses a streamed image as soon as it crosses four MiB", async () => {
+    const hostWindow = { addEventListener: vi.fn(), removeEventListener: vi.fn() }
+    const expectedWindow = { postMessage: vi.fn() }
+    const channel = new FakeMessageChannel()
+    const cancel = vi.fn()
+    const fetchAsset = vi.fn().mockResolvedValue(
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new Uint8Array(SANDBOX_MAX_ASSET_BYTES))
+            controller.enqueue(Uint8Array.from([1]))
+          },
+          cancel,
+        }),
+        { status: 200, headers: { "Content-Type": "image/png" } },
+      ),
+    )
+    const host = createCompatiblePreviewHost({
+      hostWindow,
+      iframeWindow: expectedWindow,
+      authorityContext,
+      createMessageChannel: () => channel as unknown as MessageChannel,
+      fetchAsset,
+    })
+    host.start()
+    const offer = JSON.parse(expectedWindow.postMessage.mock.calls[0][0])
+    host.receiveWindowMessage({
+      source: expectedWindow,
+      data: JSON.stringify({ ...offer, type: "repopress:bootstrap-accept" }),
+    })
+
+    channel.port1.emit(assetRequestWire(1, "asset-large", "images/large.png"))
+    await waitFor(() => expect(channel.port1.sent).toHaveLength(1))
+    expect(cancel).toHaveBeenCalledOnce()
+    expect(channel.port1.assetDeliveries).toEqual([])
+    expect(channel.port1.sent[0]).toContain('"type":"repopress:asset-error"')
+  })
+
+  it("caps successful transfers at twelve MiB across otherwise valid images", async () => {
+    const hostWindow = { addEventListener: vi.fn(), removeEventListener: vi.fn() }
+    const expectedWindow = { postMessage: vi.fn() }
+    const channel = new FakeMessageChannel()
+    const fetchAsset = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        new Response(new Uint8Array(SANDBOX_MAX_ASSET_BYTES), {
+          status: 200,
+          headers: { "Content-Type": "image/png", "Content-Length": String(SANDBOX_MAX_ASSET_BYTES) },
+        }),
+      ),
+    )
+    const host = createCompatiblePreviewHost({
+      hostWindow,
+      iframeWindow: expectedWindow,
+      authorityContext,
+      createMessageChannel: () => channel as unknown as MessageChannel,
+      fetchAsset,
+    })
+    host.start()
+    const offer = JSON.parse(expectedWindow.postMessage.mock.calls[0][0])
+    host.receiveWindowMessage({
+      source: expectedWindow,
+      data: JSON.stringify({ ...offer, type: "repopress:bootstrap-accept" }),
+    })
+    for (let index = 0; index < 4; index += 1) {
+      channel.port1.emit(assetRequestWire(index + 1, `asset-total-${index}`, `images/total-${index}.png`))
+    }
+
+    await waitFor(() => expect(channel.port1.assetDeliveries).toHaveLength(3))
+    await waitFor(() => expect(channel.port1.sent).toHaveLength(1))
+    expect(
+      channel.port1.transfers.flat().reduce<number>((total, item) => total + (item as ArrayBuffer).byteLength, 0),
+    ).toBe(SANDBOX_MAX_ASSET_TOTAL_BYTES)
+    expect(channel.port1.sent[0]).toContain('"type":"repopress:asset-error"')
+  })
+
+  it("aborts in-flight image reads on dispose and ignores their stale completion", async () => {
+    const hostWindow = { addEventListener: vi.fn(), removeEventListener: vi.fn() }
+    const expectedWindow = { postMessage: vi.fn() }
+    const channel = new FakeMessageChannel()
+    let resolveFetch: (response: Response) => void = () => {}
+    let requestSignal: AbortSignal | undefined
+    const fetchAsset = vi.fn().mockImplementation(
+      (_input: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((resolve) => {
+          resolveFetch = resolve
+          requestSignal = init?.signal ?? undefined
+        }),
+    )
+    const host = createCompatiblePreviewHost({
+      hostWindow,
+      iframeWindow: expectedWindow,
+      authorityContext,
+      createMessageChannel: () => channel as unknown as MessageChannel,
+      fetchAsset,
+    })
+    host.start()
+    const offer = JSON.parse(expectedWindow.postMessage.mock.calls[0][0])
+    host.receiveWindowMessage({
+      source: expectedWindow,
+      data: JSON.stringify({ ...offer, type: "repopress:bootstrap-accept" }),
+    })
+    channel.port1.emit(assetRequestWire(1, "asset-stale", "images/stale.png"))
+    expect(requestSignal?.aborted).toBe(false)
+
+    host.dispose()
+    expect(requestSignal?.aborted).toBe(true)
+    resolveFetch(new Response(Uint8Array.from([1]), { status: 200, headers: { "Content-Type": "image/png" } }))
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(channel.port1.assetDeliveries).toEqual([])
+    expect(channel.port1.sent).toEqual([])
+    expect(channel.port1.closed).toBe(true)
+  })
+
+  it("rolls back transfer accounting when postMessage fails so later images retain the full budget", async () => {
+    const hostWindow = { addEventListener: vi.fn(), removeEventListener: vi.fn() }
+    const expectedWindow = { postMessage: vi.fn() }
+    const channel = new FakeMessageChannel()
+    channel.port1.throwNextAssetDelivery = true
+    const fetchAsset = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        new Response(new Uint8Array(SANDBOX_MAX_ASSET_BYTES), {
+          status: 200,
+          headers: { "Content-Type": "image/png", "Content-Length": String(SANDBOX_MAX_ASSET_BYTES) },
+        }),
+      ),
+    )
+    const host = createCompatiblePreviewHost({
+      hostWindow,
+      iframeWindow: expectedWindow,
+      authorityContext,
+      createMessageChannel: () => channel as unknown as MessageChannel,
+      fetchAsset,
+    })
+    host.start()
+    const offer = JSON.parse(expectedWindow.postMessage.mock.calls[0][0])
+    host.receiveWindowMessage({
+      source: expectedWindow,
+      data: JSON.stringify({ ...offer, type: "repopress:bootstrap-accept" }),
+    })
+    for (let index = 0; index < 4; index += 1) {
+      channel.port1.emit(assetRequestWire(index + 1, `asset-post-${index}`, `images/post-${index}.png`))
+    }
+
+    await waitFor(() => expect(channel.port1.assetDeliveries).toHaveLength(3))
+    expect(channel.port1.sent).toHaveLength(1)
+    expect(channel.port1.sent[0]).toContain('"type":"repopress:asset-error"')
+    expect(host.getSessionState().invalidated).toBe(false)
   })
 
   it("atomically applies serialized teardown before closing the port and invalidating the session", () => {
@@ -660,7 +946,7 @@ describe("CompatiblePreviewFrame", () => {
     const { rerender } = render(<Preview previewResult={fallbackResult} frontmatter={{ title: "Safe" }} />)
 
     expect(screen.queryByTitle("Compatible component preview")).not.toBeInTheDocument()
-    expect(screen.getAllByRole("heading", { name: "Safe" })).toHaveLength(2)
+    expect(screen.getAllByRole("heading", { name: "Safe" })).toHaveLength(1)
 
     rerender(
       <Preview
@@ -670,7 +956,7 @@ describe("CompatiblePreviewFrame", () => {
       />,
     )
     expect(screen.queryByTitle("Compatible component preview")).not.toBeInTheDocument()
-    expect(screen.getAllByRole("heading", { name: "Safe" })).toHaveLength(2)
+    expect(screen.getAllByRole("heading", { name: "Safe" })).toHaveLength(1)
 
     rerender(
       <Preview
@@ -682,7 +968,7 @@ describe("CompatiblePreviewFrame", () => {
       />,
     )
     await waitFor(() => expect(screen.queryByTitle("Compatible component preview")).not.toBeInTheDocument())
-    expect(screen.getAllByRole("heading", { name: "Safe" })).toHaveLength(2)
+    expect(screen.getAllByRole("heading", { name: "Safe" })).toHaveLength(1)
 
     for (const mismatch of [
       { tenantId: "tenant-2" },
@@ -814,7 +1100,7 @@ describe("CompatiblePreviewFrame", () => {
     )
 
     await waitFor(() => expect(screen.queryByTitle("Compatible component preview")).not.toBeInTheDocument())
-    expect(screen.getAllByRole("heading", { name: "Safe" })).toHaveLength(2)
+    expect(screen.getAllByRole("heading", { name: "Safe" })).toHaveLength(1)
   })
 })
 
@@ -828,6 +1114,8 @@ describe("preview sandbox response headers", () => {
     expect(value("Content-Security-Policy")).toContain("script-src 'self' 'unsafe-inline' 'unsafe-eval'")
     expect(value("Content-Security-Policy")).toContain("connect-src 'none'")
     expect(value("Content-Security-Policy")).toContain("worker-src blob:")
+    expect(value("Content-Security-Policy")).toContain("img-src blob:")
+    expect(value("Content-Security-Policy")).not.toMatch(/img-src[^;]*https?:/u)
     expect(value("Content-Security-Policy")).not.toContain("worker-src 'self'")
     expect(value("Content-Security-Policy")).toContain("script-src-attr 'none'")
     expect(value("Content-Security-Policy")).toContain("form-action 'none'")

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { parseContentFile } from "@/lib/content-metadata"
 import { bodyEmbedsMetadataExport, detectMetadataSource, serializePublishContent } from "@/lib/publish-content"
 
 describe("detectMetadataSource", () => {
@@ -13,6 +14,12 @@ describe("detectMetadataSource", () => {
 
   it("detects export const metadata in MDX files", () => {
     const source = 'export const metadata = {\n  title: "Hi",\n}\n\n# Body\n'
+    expect(detectMetadataSource(source, "docs/a.mdx")).toBe("metadata-export")
+  })
+
+  it("detects metadata exports after a leading comment and import preamble", () => {
+    const source =
+      '// Keep this preamble\nimport type { Metadata } from "next"\n\nexport const metadata = { title: "Hi" }\n\n# Body\n'
     expect(detectMetadataSource(source, "docs/a.mdx")).toBe("metadata-export")
   })
 
@@ -90,6 +97,160 @@ describe("bodyEmbedsMetadataExport", () => {
 })
 
 describe("serializePublishContent", () => {
+  it("round-trips parsed metadata without losing or duplicating unrelated ESM", () => {
+    const source =
+      'import { site } from "./config"\n\nexport const metadata = { title: "Hello" }\nexport const revalidate = 3600\n\n# Body\n'
+    const parsed = parseContentFile(source, "docs/a.mdx")
+
+    const result = serializePublishContent({
+      filePath: "docs/a.mdx",
+      body: parsed.body,
+      frontmatter: { ...parsed.metadata },
+      metadataSource: parsed.metadataSource,
+      existingContent: source,
+    })
+
+    expect(result).toEqual({
+      ok: true,
+      content:
+        'import { site } from "./config"\n\nexport const metadata = {\n  "title": "Hello"\n}\nexport const revalidate = 3600\n\n# Body\n',
+    })
+    if (result.ok) {
+      expect(result.content.match(/export const metadata/g)).toHaveLength(1)
+      expect(result.content.match(/import \{ site \}/g)).toHaveLength(1)
+      expect(result.content.match(/export const revalidate/g)).toHaveLength(1)
+    }
+  })
+
+  it("recovers the full pinned ESM preamble when edited non-empty metadata accompanies a stripped Markdown body", () => {
+    const source =
+      '\uFEFF// module preamble\r\nimport type { Metadata } from "next"\r\nexport const runtime = "edge"\r\n\r\nexport const metadata = { title: "Original" } /* keep metadata trivia */\r\nexport const revalidate = 3600\r\n\r\n# Old\r\n'
+
+    const result = serializePublishContent({
+      filePath: "docs/a.mdx",
+      body: "# Edited\n",
+      frontmatter: { title: "Edited" },
+      metadataSource: "metadata-export",
+      existingContent: source,
+    })
+
+    expect(result).toEqual({
+      ok: true,
+      content:
+        '\uFEFF// module preamble\r\nimport type { Metadata } from "next"\r\nexport const runtime = "edge"\r\n\r\nexport const metadata = {\n  "title": "Edited"\n} /* keep metadata trivia */\r\nexport const revalidate = 3600\r\n\r\n# Edited\n',
+    })
+    if (result.ok) {
+      expect(result.content.match(/import type \{ Metadata \}/g)).toHaveLength(1)
+      expect(result.content.match(/export const runtime/g)).toHaveLength(1)
+      expect(result.content.match(/export const revalidate/g)).toHaveLength(1)
+      expect(result.content.match(/keep metadata trivia/g)).toHaveLength(1)
+      expect(result.content.match(/# Edited/g)).toHaveLength(1)
+    }
+  })
+
+  it.each([
+    [
+      "an inline comment",
+      'export const metadata = { title: "Original" } // keep inline\nexport const revalidate = 3600\n\n# Old\n',
+      'export const metadata = {\n  "title": "Edited"\n} // keep inline\nexport const revalidate = 3600\n\n# Edited\n',
+    ],
+    [
+      "a next-line comment",
+      'export const metadata = { title: "Original" }\r\n// keep next line\r\nexport const revalidate = 3600\r\n\r\n# Old\r\n',
+      'export const metadata = {\n  "title": "Edited"\n}\r\n// keep next line\r\nexport const revalidate = 3600\r\n\r\n# Edited\n',
+    ],
+  ])("recovers trailing ESM after metadata-first sources with %s and a stripped body", (_name, source, content) => {
+    const result = serializePublishContent({
+      filePath: "docs/a.mdx",
+      body: "# Edited\n",
+      frontmatter: { title: "Edited" },
+      metadataSource: "metadata-export",
+      existingContent: source,
+    })
+
+    expect(result).toEqual({ ok: true, content })
+    if (result.ok) {
+      expect(result.content.match(/export const revalidate/g)).toHaveLength(1)
+      expect(result.content.match(/keep (?:inline|next line)/g)).toHaveLength(1)
+      expect(result.content.match(/# Edited/g)).toHaveLength(1)
+    }
+  })
+
+  it("does not duplicate preserved ESM when parsed export metadata is empty", () => {
+    const source =
+      'import { site } from "./config"\n\nexport const metadata = {}\nexport const revalidate = 3600\n\n# Body\n'
+    const parsed = parseContentFile(source, "docs/a.mdx")
+
+    const result = serializePublishContent({
+      filePath: "docs/a.mdx",
+      body: parsed.body,
+      frontmatter: {},
+      metadataSource: parsed.metadataSource,
+      existingContent: source,
+    })
+
+    expect(result).toEqual({
+      ok: true,
+      content:
+        'export const metadata = {}\n\nimport { site } from "./config"\n\nexport const revalidate = 3600\n\n# Body\n',
+    })
+  })
+
+  it.each([
+    "// keep",
+    "/* keep */",
+  ])("round-trips an empty metadata export without losing or duplicating its trailing comment: %s", (comment) => {
+    const source = `export const metadata = {} ${comment}\n\n# Body\n`
+    const parsed = parseContentFile(source, "docs/a.mdx")
+
+    expect(
+      serializePublishContent({
+        filePath: "docs/a.mdx",
+        body: parsed.body,
+        frontmatter: {},
+        metadataSource: parsed.metadataSource,
+        existingContent: source,
+      }),
+    ).toEqual({ ok: true, content: source })
+  })
+
+  it.each([
+    ["line", "// keep"],
+    ["block", "/* keep */"],
+  ])("keeps an inline %s comment as JS trivia when non-empty metadata is unchanged or edited", (_name, comment) => {
+    const source = `export const metadata = {\n  "title": "Hello"\n} ${comment}\n\n# Body\n`
+    const parsed = parseContentFile(source, "docs/a.mdx")
+
+    for (const title of ["Hello", "Edited"]) {
+      const expected = source.replace('"Hello"', JSON.stringify(title))
+      const result = serializePublishContent({
+        filePath: "docs/a.mdx",
+        body: parsed.body,
+        frontmatter: { title },
+        metadataSource: parsed.metadataSource,
+        existingContent: source,
+      })
+
+      expect(result).toEqual({ ok: true, content: expected })
+      if (result.ok) expect(result.content.match(new RegExp(comment.replace(/[/*]/g, "\\$&"), "g"))).toHaveLength(1)
+    }
+  })
+
+  it("round-trips a next-line comment with its original CRLF separator", () => {
+    const source = "\uFEFFexport const metadata = {}\r\n// keep\r\n# Body\r\n"
+    const parsed = parseContentFile(source, "docs/a.mdx")
+
+    expect(
+      serializePublishContent({
+        filePath: "docs/a.mdx",
+        body: parsed.body,
+        frontmatter: {},
+        metadataSource: parsed.metadataSource,
+        existingContent: source,
+      }),
+    ).toEqual({ ok: true, content: source })
+  })
+
   it("round-trips a YAML frontmatter document", () => {
     const result = serializePublishContent({
       filePath: "docs/a.mdx",

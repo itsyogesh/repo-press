@@ -1,6 +1,6 @@
 "use client"
 
-import { Eye, Maximize2, Minimize2 } from "lucide-react"
+import { Maximize2, Minimize2 } from "lucide-react"
 import * as React from "react"
 import { CompatiblePreviewFrame } from "@/components/mdx-runtime/CompatiblePreviewFrame"
 import { GenericPreview } from "@/components/mdx-runtime/GenericPreview"
@@ -8,7 +8,6 @@ import { PreviewStatus } from "@/components/mdx-runtime/PreviewStatus"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import type { FieldVariantMap } from "@/lib/framework-adapters"
-import { resolveFieldValue } from "@/lib/framework-adapters"
 import {
   COMPATIBLE_RENDERER_PROFILE,
   type CompatiblePreviewAuthorityContext,
@@ -172,8 +171,6 @@ function isExactConfiguredSandboxTarget(url: string): boolean {
 export function Preview({
   previewResult,
   fallbackResult,
-  frontmatter,
-  fieldVariants,
   projectId,
   userId,
   filePath,
@@ -283,6 +280,16 @@ export function Preview({
     !compatibleDowngraded
       ? "Compatible"
       : "Generic"
+  const fidelityLabel = (
+    <>
+      <Badge variant="outline" className="rounded-full border-studio-border/70 px-2 py-0.5 text-[10px]">
+        {displayedFidelity} fidelity
+      </Badge>
+      {displayedFidelity === "Compatible" ? (
+        <span className="font-mono text-[10px] text-studio-fg-muted">{COMPATIBLE_RENDERER_PROFILE}</span>
+      ) : null}
+    </>
+  )
   const compatibleDiagnostics = compatibleDowngraded ? downgradedAttempt.diagnostics : []
   const downgradeDiagnostics = React.useMemo(() => {
     if (!activePreviewResult) return ["Preview state could not be validated; using the safe Generic renderer."]
@@ -353,34 +360,7 @@ export function Preview({
 
   React.useEffect(() => () => compileStatusForwarder.cancel(), [compileStatusForwarder])
 
-  const title = resolveFieldValue(frontmatter, "title", fieldVariants) as string | undefined
-  const date = resolveFieldValue(frontmatter, "date", fieldVariants) as string | undefined
-  const rawImage = resolveFieldValue(frontmatter, "image", fieldVariants) as string | undefined
-  const description = resolveFieldValue(frontmatter, "description", fieldVariants) as string | undefined
-  const tags = resolveFieldValue(frontmatter, "tags", fieldVariants) as string[] | undefined
-  const author = resolveFieldValue(frontmatter, "author", fieldVariants) as string | undefined
-
-  const image = rawImage
-    ? resolveStudioAssetUrl(rawImage, projectId, userId, filePath, undefined, contentRoot)
-    : undefined
-  const [imageError, setImageError] = React.useState(false)
   const fileName = filePath?.split("/").pop() || "Untitled"
-  const formattedDate = React.useMemo(() => {
-    if (!date) return null
-    const value = new Date(date)
-    if (Number.isNaN(value.getTime())) return null
-    return value.toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    })
-  }, [date])
-
-  // Reset image error when image URL changes
-  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional reset-on-change pattern
-  React.useEffect(() => {
-    setImageError(false)
-  }, [image])
 
   // Resolve repository-relative media without changing the serializable model.
   const resolveAssetUrl = React.useMemo(() => {
@@ -401,105 +381,45 @@ export function Preview({
   }, [isFullScreen])
 
   const previewContent = (
-    <article className="mx-auto flex w-full max-w-[980px] flex-col gap-6 px-4 py-5 md:px-6 md:py-6">
-      <div className="overflow-hidden rounded-lg border border-studio-border/80 bg-studio-canvas">
-        <div className="border-b border-studio-border/70 px-5 py-5 md:px-7">
-          <div className="mb-3 flex flex-wrap items-center gap-2 text-[10px] font-medium uppercase tracking-[0.18em] text-studio-fg-muted">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-studio-border/60 bg-studio-canvas-inset/45 px-2.5 py-1">
-              <Eye className="h-3 w-3" />
-              Published view
-            </span>
-            <span className="rounded-full border border-studio-border/60 bg-studio-canvas-inset/45 px-2.5 py-1 normal-case tracking-normal">
-              {fileName}
-            </span>
-          </div>
-
-          <div className="space-y-3">
-            <div className="space-y-2">
-              <h1 className="text-2xl font-semibold tracking-tight text-studio-fg md:text-3xl">
-                {title || inferPreviewTitle(fileName)}
-              </h1>
-              {description ? <p className="max-w-2xl text-sm leading-6 text-studio-fg-muted">{description}</p> : null}
-            </div>
-
-            {(formattedDate || author || (tags && tags.length > 0)) && (
-              <div className="flex flex-wrap items-center gap-2">
-                {formattedDate ? (
-                  <Badge variant="outline" className="rounded-full border-studio-border/70 px-2.5 py-1 text-[11px]">
-                    {formattedDate}
-                  </Badge>
-                ) : null}
-                {author ? (
-                  <Badge variant="outline" className="rounded-full border-studio-border/70 px-2.5 py-1 text-[11px]">
-                    by {author}
-                  </Badge>
-                ) : null}
-                {tags?.map((tag) => (
-                  <Badge
-                    key={tag}
-                    variant="secondary"
-                    className="rounded-full bg-studio-accent-muted px-2.5 py-1 text-[11px] text-studio-accent"
-                  >
-                    {tag}
-                  </Badge>
-                ))}
-              </div>
+    <section data-studio-preview-surface="edge-to-edge" className="h-full w-full bg-studio-canvas">
+      {activePreviewResult?.fidelity === "compatible" &&
+      compatibleContractMatches &&
+      verifiedCompatibleResolution &&
+      compatibleAuthority &&
+      activeCompatibleAttemptKey &&
+      !compatibleDowngraded ? (
+        <CompatiblePreviewFrame
+          key={activeCompatibleAttemptKey}
+          resolution={verifiedCompatibleResolution}
+          authorityContext={compatibleAuthority}
+          className="h-full min-h-0 w-full rounded-none border-0"
+          onMessage={handleCompatibleMessage}
+          onUnavailable={handleCompatibleUnavailable}
+        />
+      ) : (
+        <div className="min-h-full w-full bg-studio-canvas">
+          {visibleDowngradeDiagnostics.length > 0 ? (
+            <output className="mx-auto mb-4 block w-full max-w-[720px] border-b border-studio-attention/25 bg-studio-attention-muted/70 px-5 py-3 text-sm text-studio-attention md:px-8">
+              <p className="font-medium">Previewing with safe Generic fidelity.</p>
+              {visibleDowngradeDiagnostics.map((diagnostic) => (
+                <p key={diagnostic} className="mt-1 text-xs">
+                  {diagnostic}
+                </p>
+              ))}
+            </output>
+          ) : null}
+          <div
+            data-scroll-sync-root="preview"
+            className={cn(
+              "typeset typeset-preview mx-auto w-full max-w-[720px] px-5 py-6 md:px-8 md:py-10",
+              "[&_h1]:scroll-mt-4 [&_h2]:scroll-mt-4",
             )}
+          >
+            <GenericPreview model={genericRenderModel} resolveAssetUrl={resolveAssetUrl} />
           </div>
         </div>
-
-        {image && !imageError && (
-          <div className="border-b border-studio-border/70 px-4 py-4 md:px-7">
-            <img
-              src={image}
-              alt={title || fileName}
-              className="aspect-video w-full rounded-md border border-studio-border/60 object-cover"
-              loading="lazy"
-              onError={() => setImageError(true)}
-            />
-          </div>
-        )}
-
-        {activePreviewResult?.fidelity === "compatible" &&
-        compatibleContractMatches &&
-        verifiedCompatibleResolution &&
-        compatibleAuthority &&
-        activeCompatibleAttemptKey &&
-        !compatibleDowngraded ? (
-          <div className="min-h-96 p-4 md:p-6">
-            <p className="mb-3 font-mono text-xs text-studio-fg-muted">
-              {COMPATIBLE_RENDERER_PROFILE} · static, inert rendering
-            </p>
-            <CompatiblePreviewFrame
-              key={activeCompatibleAttemptKey}
-              resolution={verifiedCompatibleResolution}
-              authorityContext={compatibleAuthority}
-              onMessage={handleCompatibleMessage}
-              onUnavailable={handleCompatibleUnavailable}
-            />
-          </div>
-        ) : (
-          <div className="px-5 py-6 md:px-7 md:py-8">
-            {visibleDowngradeDiagnostics.length > 0 ? (
-              <output className="mb-4 rounded-lg border border-studio-attention/25 bg-studio-attention-muted/70 p-3 text-sm text-studio-attention">
-                <p className="font-medium">Previewing with safe Generic fidelity.</p>
-                {visibleDowngradeDiagnostics.map((diagnostic) => (
-                  <p key={diagnostic} className="mt-1 text-xs">
-                    {diagnostic}
-                  </p>
-                ))}
-              </output>
-            ) : null}
-            <div
-              data-scroll-sync-root="preview"
-              className={cn("typeset typeset-preview max-w-none", "[&_h1]:scroll-mt-4 [&_h2]:scroll-mt-4")}
-            >
-              <GenericPreview model={genericRenderModel} resolveAssetUrl={resolveAssetUrl} />
-            </div>
-          </div>
-        )}
-      </div>
-    </article>
+      )}
+    </section>
   )
 
   if (isFullScreen) {
@@ -512,9 +432,7 @@ export function Preview({
               <span className="truncate rounded-full border border-studio-border/60 bg-studio-canvas-inset/45 px-2 py-0.5 text-[11px] text-studio-fg">
                 {fileName}
               </span>
-              <Badge variant="outline" className="rounded-full border-studio-border/70 px-2 py-0.5 text-[10px]">
-                {displayedFidelity} fidelity
-              </Badge>
+              {fidelityLabel}
             </div>
             <p className="text-sm text-studio-fg-muted">See the polished reading experience while you edit.</p>
           </div>
@@ -532,7 +450,7 @@ export function Preview({
             </Button>
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto bg-studio-canvas-inset/30">
+        <div className="min-h-0 flex-1 overflow-y-auto bg-studio-canvas-inset/30">
           <DeviceFrame viewport={viewport}>{previewContent}</DeviceFrame>
         </div>
       </div>
@@ -548,9 +466,7 @@ export function Preview({
             <span className="truncate rounded-full border border-studio-border/60 bg-studio-canvas-inset/45 px-2 py-0.5 text-[11px] text-studio-fg">
               {fileName}
             </span>
-            <Badge variant="outline" className="rounded-full border-studio-border/70 px-2 py-0.5 text-[10px]">
-              {displayedFidelity} fidelity
-            </Badge>
+            {fidelityLabel}
           </div>
           <p className="text-sm text-studio-fg-muted">Live rendering with device-aware framing.</p>
         </div>
@@ -568,13 +484,13 @@ export function Preview({
           </Button>
         </div>
       </div>
-      <div ref={scrollContainerRef} onScroll={onScroll} className="flex-1 overflow-y-auto bg-studio-canvas-inset/30">
+      <div
+        ref={scrollContainerRef}
+        onScroll={onScroll}
+        className="min-h-0 flex-1 overflow-y-auto bg-studio-canvas-inset/30"
+      >
         <DeviceFrame viewport={viewport}>{previewContent}</DeviceFrame>
       </div>
     </div>
   )
-}
-
-function inferPreviewTitle(fileName: string) {
-  return fileName.replace(/\.(mdx?|markdown)$/i, "") || "Untitled draft"
 }

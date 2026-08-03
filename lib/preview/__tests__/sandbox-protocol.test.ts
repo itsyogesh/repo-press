@@ -3,13 +3,18 @@ import {
   acceptBootstrap,
   advanceSandboxSequence,
   createBootstrapCapability,
+  createSandboxAssetResponse,
   createSandboxSessionState,
   invalidateBootstrapCapability,
   invalidateSandboxSession,
+  parseSandboxAssetDelivery,
   rotateSandboxSnapshot,
   SANDBOX_BOOTSTRAP_TTL_MS,
   SANDBOX_CAPABILITY_COLLISION_ATTEMPTS,
   SANDBOX_MAX_ACTIVE_CAPABILITIES,
+  SANDBOX_MAX_ASSET_BYTES,
+  SANDBOX_MAX_ASSET_ITEMS,
+  SANDBOX_MAX_ASSET_SOURCE_BYTES,
   SANDBOX_MAX_COLLECTION_ITEMS,
   SANDBOX_MAX_DATA_DEPTH,
   SANDBOX_MAX_DATA_NODES,
@@ -17,6 +22,7 @@ import {
   SANDBOX_MAX_STRING_BYTES,
   SANDBOX_RATE_BURST,
   SANDBOX_RATE_WINDOW_MS,
+  serializeSandboxAssetError,
   serializeSandboxMessage,
   validateSandboxMessage,
 } from "../sandbox-protocol"
@@ -337,6 +343,10 @@ describe("serialized allocation boundary", () => {
       serializedMessage({ type: "resize", payload: { width: 1280, height: 720 } }),
       serializedMessage({ type: "diagnostics", payload: { diagnostics: [] } }),
       serializedMessage({ type: "rendered", payload: {} }),
+      serializedMessage({
+        type: "asset-request",
+        payload: { requestId: "asset-1", source: "images/cover.png" },
+      }),
       serializedMessage({ type: "error", payload: { code: "RENDER_FAILED", message: "Failed", recoverable: true } }),
       serializedMessage({ type: "teardown", payload: {} }),
     ]
@@ -412,6 +422,93 @@ describe("serialized allocation boundary", () => {
     for (const payload of [tooDeep, tooManyNodes, tooManyItems, tooLongString]) {
       expect(validateSandboxMessage(rawMessage({ payload }), session()).accepted).toBe(false)
     }
+  })
+})
+
+describe("authenticated asset delivery", () => {
+  const expected = {
+    sessionId: "session-1",
+    snapshotVersion: 2,
+    requestId: "asset-1",
+    source: "images/cover.png",
+  }
+
+  it("keeps request controls bounded by item, id, and source limits", () => {
+    expect(SANDBOX_MAX_ASSET_ITEMS).toBe(8)
+    expect(
+      validateSandboxMessage(
+        serializedMessage({ type: "asset-request", payload: { requestId: "asset-1", source: "images/cover.png" } }),
+        session(),
+      ).accepted,
+    ).toBe(true)
+    expect(() =>
+      serializeSandboxMessage(
+        message({ type: "asset-request", payload: { requestId: "x".repeat(65), source: "images/cover.png" } }),
+      ),
+    ).toThrow()
+    expect(() =>
+      serializeSandboxMessage(
+        message({
+          type: "asset-request",
+          payload: { requestId: "asset-1", source: "x".repeat(SANDBOX_MAX_ASSET_SOURCE_BYTES + 1) },
+        }),
+      ),
+    ).toThrow()
+  })
+
+  it("accepts only a matching bounded MIME-typed ArrayBuffer response", () => {
+    const bytes = Uint8Array.from([1, 2, 3]).buffer
+    const delivery = createSandboxAssetResponse({ ...expected, mimeType: "image/png", bytes })
+
+    expect(parseSandboxAssetDelivery(delivery, expected)).toEqual({
+      type: "asset-response",
+      requestId: "asset-1",
+      source: "images/cover.png",
+      mimeType: "image/png",
+      bytes,
+    })
+    expect(() =>
+      createSandboxAssetResponse({
+        ...expected,
+        mimeType: "image/svg+xml" as never,
+        bytes,
+      }),
+    ).toThrow()
+    expect(() =>
+      createSandboxAssetResponse({
+        ...expected,
+        mimeType: "image/png",
+        bytes: new ArrayBuffer(SANDBOX_MAX_ASSET_BYTES + 1),
+      }),
+    ).toThrow()
+  })
+
+  it("rejects stale authority, unsolicited identity, and malformed transferables", () => {
+    const delivery = createSandboxAssetResponse({
+      ...expected,
+      mimeType: "image/webp",
+      bytes: Uint8Array.from([1]).buffer,
+    })
+    expect(parseSandboxAssetDelivery(delivery, { ...expected, sessionId: "stale" })).toBeNull()
+    expect(parseSandboxAssetDelivery(delivery, { ...expected, snapshotVersion: 3 })).toBeNull()
+    expect(parseSandboxAssetDelivery(delivery, { ...expected, requestId: "unsolicited" })).toBeNull()
+    expect(parseSandboxAssetDelivery(delivery, { ...expected, source: "images/other.png" })).toBeNull()
+    expect(parseSandboxAssetDelivery({ control: delivery.control, bytes: new Uint8Array([1]) }, expected)).toBeNull()
+    expect(
+      parseSandboxAssetDelivery({ control: delivery.control, bytes: Uint8Array.from([1, 2]).buffer }, expected),
+    ).toBeNull()
+    expect(parseSandboxAssetDelivery({ ...delivery, extra: true }, expected)).toBeNull()
+  })
+
+  it("carries an opaque matching error without bytes", () => {
+    const wire = serializeSandboxAssetError({ ...expected, code: "unavailable" })
+    expect(parseSandboxAssetDelivery(wire, expected)).toEqual({
+      type: "asset-error",
+      requestId: "asset-1",
+      source: "images/cover.png",
+      code: "unavailable",
+    })
+    expect(parseSandboxAssetDelivery({ control: wire, bytes: new ArrayBuffer(0) }, expected)).toBeNull()
   })
 })
 

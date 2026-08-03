@@ -1,7 +1,6 @@
 "use client"
 
 import { useMutation } from "convex/react"
-import matter from "gray-matter"
 import { Command, FileText, FolderOpen, History, Loader2, Search, Settings, X } from "lucide-react"
 import Link from "next/link"
 import * as React from "react"
@@ -25,6 +24,7 @@ import { StatusBadge } from "@/components/ui/status-badge"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
+import { parseContentFile } from "@/lib/content-metadata"
 import { type DocumentStatus, isPublishableDocumentStatus } from "@/lib/document-status"
 import { getFrameworkAdapter } from "@/lib/framework-adapters"
 import { type FileTreeNode, findTreeNode } from "@/lib/github"
@@ -47,6 +47,7 @@ import { useStudioFile } from "./hooks/use-studio-file"
 import { useStudioPublish } from "./hooks/use-studio-publish"
 import { useStudioQueries } from "./hooks/use-studio-queries"
 import { useStudioSave } from "./hooks/use-studio-save"
+import { InsertComponentModalProvider } from "./insert-component-modal-context"
 import { getPendingChangeSummary, hasDiscardableChanges } from "./pending-change-summary"
 import { Preview } from "./preview"
 import { PublishDialog } from "./publish-dialog"
@@ -64,24 +65,8 @@ import { StudioProvider, useStudio } from "./studio-context"
 import { StudioFooter } from "./studio-footer"
 import { StudioHeader } from "./studio-header"
 import { resolveStudioPreviewPanelMode } from "./studio-preview-panel-mode"
+import { handleStudioSaveShortcut } from "./studio-save-shortcut"
 import { useViewMode, ViewModeProvider } from "./view-mode-context"
-
-// ── Insert Component Modal Context ──────────────────────────────────────
-// Bridges studio-layout (keyboard shortcut) → insert-jsx-button (modal)
-// without prop-drilling through editor.tsx / studio-toolbar.tsx.
-
-type InsertComponentModalContextValue = {
-  open: boolean
-  setOpen: (open: boolean) => void
-}
-
-const InsertComponentModalContext = React.createContext<InsertComponentModalContextValue | null>(null)
-
-export function useInsertComponentModal() {
-  return React.useContext(InsertComponentModalContext)
-}
-
-// ─────────────────────────────────────────────────────────────────────────
 
 export interface StudioLayoutProps {
   tree: FileTreeNode[]
@@ -497,6 +482,9 @@ function StudioLayoutInner({
     frontmatter,
     sha,
     isFileLoading,
+    sourceAuthority,
+    isSourceEditable,
+    sourceDiagnostic,
     navigateToFile,
     closeFile,
     discardFileFromClientState,
@@ -506,6 +494,7 @@ function StudioLayoutInner({
     setFrontmatterKey,
     hydrateFromDocument,
   } = studioFile
+  const canEditSource = sourceAuthority === "editable"
 
   // Destructure studioQueries
   const {
@@ -594,7 +583,11 @@ function StudioLayoutInner({
   const searchInputRef = React.useRef<HTMLInputElement>(null)
 
   // 3. Save logic
-  const { isSaving, saveDraft, ensureDocumentRecord } = useStudioSave({
+  const {
+    isSaving,
+    saveDraft: saveDraftUnsafe,
+    ensureDocumentRecord,
+  } = useStudioSave({
     userId,
     projectAccessToken,
     documentId: document?._id,
@@ -604,6 +597,10 @@ function StudioLayoutInner({
     frontmatter,
     sha,
   })
+  const saveDraft = React.useCallback(() => {
+    if (!canEditSource) return
+    return saveDraftUnsafe()
+  }, [canEditSource, saveDraftUnsafe])
 
   // 4. Publish logic
   const {
@@ -620,7 +617,7 @@ function StudioLayoutInner({
     projectAccessToken,
     documentUpdatedAt: document?.updatedAt,
     ensureDocumentRecord,
-    selectedFile,
+    selectedFile: canEditSource ? selectedFile : null,
     content,
     frontmatter,
     defaultPublishMode: publishLaneViewModel.defaultMode,
@@ -857,6 +854,8 @@ function StudioLayoutInner({
           previousSha: sha || undefined,
           isFromPendingCreate: false,
           pendingCreateOpId: undefined as Id<"explorerOps"> | undefined,
+          isSourceEditable,
+          sourceDiagnostic,
         }
       }
 
@@ -877,6 +876,8 @@ function StudioLayoutInner({
           previousSha: undefined,
           isFromPendingCreate: true,
           pendingCreateOpId: pendingCreateOp._id as Id<"explorerOps">,
+          isSourceEditable: true,
+          sourceDiagnostic: undefined,
         }
       }
 
@@ -896,23 +897,37 @@ function StudioLayoutInner({
         content: string
         sha: string
       }
-      const parsed = matter(payload.content || "")
-      const parsedFrontmatter = (parsed.data || {}) as Record<string, unknown>
+      const parsed = parseContentFile(payload.content || "", oldPath)
+      const parsedFrontmatter = parsed.metadata as Record<string, unknown>
       const title =
         typeof parsedFrontmatter.title === "string" && parsedFrontmatter.title.trim().length > 0
           ? parsedFrontmatter.title
           : inferTitleFromPath(oldPath)
 
       return {
-        body: parsed.content || "",
+        body: parsed.body,
         frontmatter: parsedFrontmatter,
         title,
         previousSha: payload.sha || undefined,
         isFromPendingCreate: false,
         pendingCreateOpId: undefined as Id<"explorerOps"> | undefined,
+        isSourceEditable: parsed.editable,
+        sourceDiagnostic: parsed.diagnostic,
       }
     },
-    [selectedFile?.path, frontmatter, content, sha, pendingOps, owner, repo, baseCommitSha, contentRoot],
+    [
+      selectedFile?.path,
+      frontmatter,
+      content,
+      sha,
+      pendingOps,
+      owner,
+      repo,
+      baseCommitSha,
+      contentRoot,
+      isSourceEditable,
+      sourceDiagnostic,
+    ],
   )
 
   const stageRelocateFile = React.useCallback(
@@ -986,6 +1001,8 @@ function StudioLayoutInner({
           content: payload.body,
           frontmatter: payload.frontmatter,
           sha: null,
+          isSourceEditable: payload.isSourceEditable,
+          sourceDiagnostic: payload.sourceDiagnostic,
         })
 
         if (selectedFile?.path === oldPath) {
@@ -1220,6 +1237,7 @@ function StudioLayoutInner({
 
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "j") {
         e.preventDefault()
+        if (!canEditSource) return
         setInsertComponentModalOpen(true)
         return
       }
@@ -1249,11 +1267,7 @@ function StudioLayoutInner({
         return
       }
 
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
-        e.preventDefault()
-        saveDraft()
-        return
-      }
+      if (handleStudioSaveShortcut(e, canEditSource, saveDraft)) return
 
       if (isEditableTarget) return
 
@@ -1269,7 +1283,16 @@ function StudioLayoutInner({
 
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [sidebarState, viewMode, setSidebarState, setViewMode, saveDraft, commandPaletteOpen, captureScrollPositions])
+  }, [
+    sidebarState,
+    viewMode,
+    setSidebarState,
+    setViewMode,
+    saveDraft,
+    commandPaletteOpen,
+    captureScrollPositions,
+    canEditSource,
+  ])
 
   const isSidebarCollapsed = !isMobile && sidebarState === "collapsed"
   const showPreview = viewMode === "split" && !isMobile
@@ -1353,13 +1376,12 @@ function StudioLayoutInner({
   const canPublish = isPublishableDocumentStatus(currentStatus)
   const historyHref = buildHistoryHref({ owner, repo, branch, projectId })
 
-  const insertComponentModalCtx = React.useMemo(
-    () => ({ open: insertComponentModalOpen, setOpen: setInsertComponentModalOpen }),
-    [insertComponentModalOpen],
-  )
-
   return (
-    <InsertComponentModalContext.Provider value={insertComponentModalCtx}>
+    <InsertComponentModalProvider
+      open={insertComponentModalOpen}
+      canInsert={canEditSource}
+      onOpenChange={setInsertComponentModalOpen}
+    >
       <div
         className="h-full w-full flex flex-col overflow-hidden bg-studio-canvas text-studio-fg"
         role="application"
@@ -1376,6 +1398,7 @@ function StudioLayoutInner({
             currentStatus={currentStatus}
             onSave={saveDraft}
             isSaving={isSaving || isFileLoading}
+            canSave={canEditSource}
           />
         </div>
 
@@ -1424,6 +1447,7 @@ function StudioLayoutInner({
                             }}
                             selectedPath={selectedFile?.path}
                             titleMap={titleMap}
+                            detectedFramework={studioQueries.project?.detectedFramework as string | undefined}
                             onCreateFile={projectId ? handleCreateFile : undefined}
                             onDeleteFile={projectId ? handleDeleteFile : undefined}
                             onUndoDelete={projectId ? handleUndoDelete : undefined}
@@ -1597,6 +1621,8 @@ function StudioLayoutInner({
                         filePath={selectedFile.path}
                         contentRoot={contentRoot}
                         tree={overlayTree}
+                        readOnly={!canEditSource}
+                        sourceDiagnostic={sourceDiagnostic}
                       />
                     )
                   ) : shouldShowProjectDataSkeleton ? (
@@ -1847,6 +1873,8 @@ function StudioLayoutInner({
           recentFiles={recentFiles}
           onNavigateToFile={navigateToFile}
           onSaveDraft={saveDraft}
+          canSaveDraft={canEditSource}
+          canInsertComponent={canEditSource}
         />
 
         <AlertDialog
@@ -1886,7 +1914,7 @@ function StudioLayoutInner({
           </AlertDialogContent>
         </AlertDialog>
       </div>
-    </InsertComponentModalContext.Provider>
+    </InsertComponentModalProvider>
   )
 }
 

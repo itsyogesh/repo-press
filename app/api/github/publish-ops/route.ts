@@ -2,6 +2,7 @@ import { ConvexHttpClient } from "convex/browser"
 import { NextResponse } from "next/server"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
+import { parseContentFile } from "@/lib/content-metadata"
 import { canonicalGitPathFromUrlPath } from "@/lib/git-path-policy"
 import type { BatchOperation } from "@/lib/github"
 import {
@@ -38,6 +39,12 @@ import { isStudioMediaResolveUrl } from "@/lib/studio/media-resolve"
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
 const ACTIVE_PUBLISH_BRANCH_CONFLICT_MESSAGE = "Active publish branch already exists for project"
+
+function unsupportedSourceConflictReason(diagnostic?: "UNSUPPORTED_FRONTMATTER" | "UNSUPPORTED_METADATA_EXPORT") {
+  return diagnostic === "UNSUPPORTED_FRONTMATTER"
+    ? "Unsupported YAML frontmatter source cannot be safely edited or published"
+    : "Unsupported metadata export source cannot be safely edited or published"
+}
 
 export async function POST(request: Request) {
   try {
@@ -308,6 +315,17 @@ export async function POST(request: Request) {
       contentVersion: number
       expectedUpdatedAt: number
     }> = []
+    // Rename/move is encoded as a staged delete plus create. Permit a
+    // read-only source only when one concrete delete in this same plan has
+    // a SHA-verified pinned snapshot with exactly the planned create bytes.
+    const unsupportedRelocationSources = resolvedPendingOps.flatMap(({ source: op, repoPath }) => {
+      if (op.opType !== "delete" || !op.previousSha) return []
+      const existing = prefetchResults.get(`content:${repoPath}`)
+      if (existing?.status !== "found" || existing.file.sha !== op.previousSha) return []
+      if (parseContentFile(existing.file.content, repoPath).editable) return []
+      return [{ repoPath, content: existing.file.content }]
+    })
+    const claimedRelocationSources = new Set<string>()
 
     for (const { source: op, repoPath } of resolvedPendingOps) {
       if (op.opType === "create") {
@@ -332,6 +350,20 @@ export async function POST(request: Request) {
         if (!serialized.ok) {
           conflicts.push({ path: repoPath, reason: serialized.reason })
           continue
+        }
+        const plannedSource = parseContentFile(serialized.content, repoPath)
+        if (!plannedSource.editable) {
+          const relocationMatches = unsupportedRelocationSources.filter(
+            (source) =>
+              source.repoPath !== repoPath &&
+              !claimedRelocationSources.has(source.repoPath) &&
+              source.content === serialized.content,
+          )
+          if (relocationMatches.length !== 1) {
+            conflicts.push({ path: repoPath, reason: unsupportedSourceConflictReason(plannedSource.diagnostic) })
+            continue
+          }
+          claimedRelocationSources.add(relocationMatches[0].repoPath)
         }
         serializedContentByRepoPath.set(repoPath, serialized.content)
 
@@ -396,18 +428,48 @@ export async function POST(request: Request) {
       // Preserve the repository's metadata format: the existing file is the
       // provenance authority; an absent file yields "none" (YAML only when
       // frontmatter fields actually exist).
+      const existingSource =
+        existing?.status === "found" ? parseContentFile(existing.file.content, repoPath) : undefined
+      const rewrittenFrontmatter = rewriteProxyUrls(doc.frontmatter || {})
+      if (existing?.status === "found" && existingSource && !existingSource.editable) {
+        const rawDraft = Object.keys(rewrittenFrontmatter).length === 0 ? doc.body || "" : null
+        if (rawDraft === existing.file.content) {
+          serializedContentByRepoPath.set(repoPath, existing.file.content)
+          redundantSynchronizations.push({
+            documentId: doc._id,
+            githubSha: existing.file.sha,
+            contentRevision: sha256Hex(existing.file.content),
+            contentVersion: doc.contentVersion ?? 0,
+            expectedUpdatedAt: doc.updatedAt,
+          })
+        } else {
+          conflicts.push({
+            path: repoPath,
+            reason: unsupportedSourceConflictReason(existingSource.diagnostic),
+          })
+        }
+        continue
+      }
+
       const metadataSource =
         existing?.status === "found" ? detectMetadataSource(existing.file.content, repoPath) : "none"
       const serialized = serializePublishContent({
         filePath: repoPath,
         body: doc.body || "",
-        frontmatter: rewriteProxyUrls(doc.frontmatter || {}),
+        frontmatter: rewrittenFrontmatter,
         metadataSource,
         existingContent: existing?.status === "found" ? existing.file.content : undefined,
       })
       if (!serialized.ok) {
         conflicts.push({ path: repoPath, reason: serialized.reason })
         continue
+      }
+      if (existing?.status !== "found") {
+        const plannedSource = parseContentFile(serialized.content, repoPath)
+        if (!plannedSource.editable && plannedSource.diagnostic) {
+          conflicts.push({ path: repoPath, reason: unsupportedSourceConflictReason(plannedSource.diagnostic) })
+          continue
+        }
       }
       serializedContentByRepoPath.set(repoPath, serialized.content)
       // Redundancy guard: when the serialized content is byte-identical to

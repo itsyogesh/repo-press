@@ -19,9 +19,8 @@ import {
 import type { FileTreeNode } from "@/lib/github"
 import { buildHistoryHref } from "@/lib/studio/history-link"
 import { cn } from "@/lib/utils"
-
+import { useInsertComponentModal } from "./insert-component-modal-context"
 import { useStudio } from "./studio-context"
-import { useInsertComponentModal } from "./studio-layout"
 import { useViewMode } from "./view-mode-context"
 
 interface CommandPaletteProps {
@@ -32,6 +31,8 @@ interface CommandPaletteProps {
   recentFiles?: string[]
   onNavigateToFile: (filePath: string) => void
   onSaveDraft: () => void
+  canSaveDraft?: boolean
+  canInsertComponent?: boolean
 }
 
 type FlatFile = { path: string; name: string; title?: string }
@@ -97,11 +98,14 @@ export function CommandPalette({
   recentFiles = [],
   onNavigateToFile,
   onSaveDraft,
+  canSaveDraft = true,
+  canInsertComponent = true,
 }: CommandPaletteProps) {
   const [query, setQuery] = React.useState("")
   const { owner, repo, branch, projectId } = useStudio()
   const { viewMode, setViewMode, sidebarState, setSidebarState } = useViewMode()
   const insertComponentModal = useInsertComponentModal()
+  const canInsert = canInsertComponent && (insertComponentModal?.canInsert ?? true)
   const { theme, setTheme } = useTheme()
   const router = useRouter()
 
@@ -176,7 +180,7 @@ export function CommandPalette({
 
     switch (action) {
       case "save":
-        onSaveDraft()
+        if (canSaveDraft) onSaveDraft()
         break
       case "show-split":
         setViewMode(viewMode === "split" ? "editor" : "split")
@@ -286,7 +290,10 @@ export function CommandPalette({
         <CommandGroup heading="Actions">
           {insertComponentModal && (
             <CommandItem
+              disabled={!canInsert}
+              aria-label={canInsert ? "Insert component" : "Insert unavailable for read-only source"}
               onSelect={() => {
+                if (!canInsert) return
                 insertComponentModal.setOpen(true)
                 onOpenChange(false)
               }}
@@ -301,7 +308,7 @@ export function CommandPalette({
               <CommandShortcut>⌘J</CommandShortcut>
             </CommandItem>
           )}
-          <CommandItem onSelect={() => handleSelect("save")}>
+          <CommandItem disabled={!canSaveDraft} onSelect={() => handleSelect("save")}>
             <PaletteIconShell tone="accent">
               <Save className="h-4 w-4" />
             </PaletteIconShell>

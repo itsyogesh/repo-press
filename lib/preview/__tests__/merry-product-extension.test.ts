@@ -92,13 +92,75 @@ describe("Merry product extension pilot", () => {
       "Pro Tip",
       "Write a warm greeting",
       "Classic Letter",
-      "North Pole Express stamp",
+      "Postage stamp",
+      "Want Santa to reply? Write your letter now!",
       "Send your letter to Santa",
       "Start writing",
     ]) {
       expect(output).toContain(text)
     }
-    expect(output).not.toMatch(/href|src|utm_source|template=preview/u)
+    for (const className of [
+      "repopress-preview-box--tip",
+      "repopress-preview-list--check",
+      "repopress-preview-paper--letter",
+      "repopress-preview-action--primary",
+    ]) {
+      expect(output).toContain(className)
+    }
+    const tree = (
+      sent[0] as { tree: Array<{ kind: string; tag?: string; props?: { className?: string }; children?: unknown[] }> }
+    ).tree
+    expect(tree).toHaveLength(1)
+    expect(tree[0]).toMatchObject({
+      kind: "element",
+      tag: "article",
+      props: {
+        className: "repopress-preview-document repopress-preview-document--article repopress-preview-document--warm",
+      },
+      children: expect.arrayContaining([expect.objectContaining({ kind: "element", tag: "h1" })]),
+    })
+    const documentChildren = tree[0].children as Array<{
+      kind: string
+      tag?: string
+      props?: { className?: string }
+      children?: unknown[]
+    }>
+    expect(documentChildren).toEqual(
+      expect.arrayContaining([
+        {
+          kind: "image",
+          source:
+            "https://soxgiykgxzadvzcy.public.blob.vercel-storage.com/blog/templates-cover-Pduq3obFhtWzBzwmfWzVwloNZurTBC.png",
+          alt: "A collection of printable Santa letter templates",
+          label: "Free Santa letter templates",
+          aspect: "wide",
+        },
+      ]),
+    )
+    const paper = documentChildren.find((node) => node.props?.className?.includes("repopress-preview-paper--letter"))
+    expect(paper).toMatchObject({
+      kind: "element",
+      tag: "article",
+      children: [
+        {
+          kind: "element",
+          tag: "div",
+          children: [
+            expect.objectContaining({
+              kind: "element",
+              tag: "p",
+              props: { className: "repopress-preview-paper-title" },
+            }),
+            expect.anything(),
+          ],
+        },
+        expect.anything(),
+        expect.anything(),
+      ],
+    })
+    expect(MERRY_ADAPTER_SOURCE).toContain('headingLevel="none"')
+    expect(MERRY_ADAPTER_SOURCE).not.toContain("templateText ?")
+    expect(output).not.toMatch(/href|"src"|utm_source|template=preview/u)
   })
 
   it("retains all five Generic placeholders when compatible execution is unavailable", () => {
