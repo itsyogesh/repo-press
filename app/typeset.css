@@ -751,6 +751,97 @@
     text-align: start;
   }
 
+  [data-compatible-preview] .repopress-preview-paper {
+    overflow: hidden;
+    margin: 0;
+    border: 1px solid var(--border);
+    border-radius: 0.75rem;
+    background: var(--card);
+    color: var(--foreground);
+  }
+
+  [data-compatible-preview] .repopress-preview-paper--note {
+    border-style: dashed;
+  }
+
+  [data-compatible-preview] .repopress-preview-paper--worksheet {
+    border-radius: 0.5rem;
+  }
+
+  [data-compatible-preview] .repopress-preview-paper-header {
+    display: flex;
+    min-height: 4.5rem;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    border-block-end: 1px solid var(--border);
+    padding: 0.875rem 1.25rem;
+    background: color-mix(in oklab, var(--muted) 72%, var(--card));
+  }
+
+  [data-compatible-preview] .repopress-preview-paper-title {
+    margin: 0;
+    color: var(--foreground);
+    font-size: 1rem;
+    font-weight: 600;
+    line-height: 1.4;
+  }
+
+  [data-compatible-preview] .repopress-preview-paper-stamp {
+    display: inline-grid;
+    width: 2.75rem;
+    height: 3.25rem;
+    flex: 0 0 auto;
+    place-items: center;
+    border: 1px dashed var(--primary);
+    border-radius: 0.25rem;
+    color: var(--primary);
+    font-family: var(--font-mono);
+    font-size: 1rem;
+  }
+
+  [data-compatible-preview] .repopress-preview-paper-body {
+    position: relative;
+    min-height: 10rem;
+    padding: 1.5rem 1.5rem 1.5rem 3.5rem;
+    background-color: var(--background);
+    background-image: repeating-linear-gradient(
+      to bottom,
+      transparent 0,
+      transparent 1.95rem,
+      color-mix(in oklab, var(--border) 58%, transparent) 1.95rem,
+      color-mix(in oklab, var(--border) 58%, transparent) 2rem
+    );
+    line-height: 2rem;
+  }
+
+  [data-compatible-preview] .repopress-preview-paper-body::before {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 2.5rem;
+    width: 1px;
+    background: color-mix(in oklab, var(--primary) 32%, var(--border));
+    content: "";
+  }
+
+  [data-compatible-preview] .repopress-preview-paper-body > :first-child {
+    margin-block-start: 0;
+  }
+
+  [data-compatible-preview] .repopress-preview-paper-footer {
+    display: flex;
+    justify-content: center;
+    border-block-start: 1px solid var(--border);
+    padding: 0.75rem 1.25rem;
+    background: color-mix(in oklab, var(--muted) 72%, var(--card));
+  }
+
+  [data-compatible-preview] .repopress-preview-paper-action {
+    color: var(--primary);
+    font-size: 0.8125rem;
+    font-weight: 500;
+  }
+
   [data-compatible-preview] .repopress-preview-icon {
     display: inline-grid;
     width: 1.5rem;

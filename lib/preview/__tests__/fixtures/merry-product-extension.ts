@@ -116,15 +116,22 @@ import {
   PreviewImage,
   PreviewInline,
   PreviewList,
+  PreviewPaper,
   PreviewStack,
   PreviewText,
 } from "@repopress/preview"
 
 type ChildrenProps = { children?: ReactNode }
 
+const coverPresets = {
+  templates: "https://soxgiykgxzadvzcy.public.blob.vercel-storage.com/blog/templates-cover-Pduq3obFhtWzBzwmfWzVwloNZurTBC.png",
+  perfectLetter: "https://soxgiykgxzadvzcy.public.blob.vercel-storage.com/blog/perfect-letter-cover-az71619y7SxQI9IipkpKkVDziJR14w.png",
+}
+
 function CoverImage({ src, alt }: { src?: string; alt?: string }) {
   const preset = src === "templates" ? "Free Santa letter templates" : src === "perfectLetter" ? "The perfect Santa letter" : src
-  return <PreviewImage src={src} alt={alt || "Merry Magic Mail cover"} label={preset || alt} aspect="wide" />
+  const imageSource = src === "templates" || src === "perfectLetter" ? coverPresets[src] : src
+  return <PreviewImage src={imageSource} alt={alt || "Merry Magic Mail cover"} label={preset || alt} aspect="wide" />
 }
 
 function InfoBox({ children, type = "info" }: ChildrenProps & { type?: "info" | "tip" | "warning" }) {
@@ -162,17 +169,14 @@ function CTABox({ title, description, buttonText, buttonHref }: { title?: string
 
 function LetterPaper({ children, title = "Letter to Santa", showStamp = true, templateText }: ChildrenProps & { title?: string; showStamp?: boolean; templateText?: string }) {
   return (
-    <PreviewBox tone="tip">
-      <PreviewStack gap="default">
-        <PreviewInline align="start" gap="default" wrap>
-          <PreviewIcon name="mail" label="North Pole letter" />
-          <PreviewText as="h3" size="lead" weight="semibold">{title}</PreviewText>
-          {showStamp ? <PreviewIcon name="stamp" label="North Pole Express stamp" /> : null}
-        </PreviewInline>
-        {children}
-        {templateText ? <PreviewAction label="Use this prefilled letter template" href="/letters-to-santa?template=preview" tone="secondary" /> : null}
-      </PreviewStack>
-    </PreviewBox>
+    <PreviewPaper
+      variant="letter"
+      title={title}
+      showStamp={showStamp}
+      actionLabel={templateText ? "Want Santa to reply? Write your letter now!" : undefined}
+    >
+      {children}
+    </PreviewPaper>
   )
 }
 

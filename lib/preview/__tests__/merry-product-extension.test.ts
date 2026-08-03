@@ -87,18 +87,39 @@ describe("Merry product extension pilot", () => {
     expect(sent).toHaveLength(1)
     expect(sent[0]).toMatchObject({ type: "repopress:rendered-compatible", fidelityLosses: [] })
     const output = JSON.stringify(sent[0])
+    expect(sent[0]).toMatchObject({
+      tree: expect.arrayContaining([
+        {
+          kind: "image",
+          source:
+            "https://soxgiykgxzadvzcy.public.blob.vercel-storage.com/blog/templates-cover-Pduq3obFhtWzBzwmfWzVwloNZurTBC.png",
+          alt: "A collection of printable Santa letter templates",
+          label: "Free Santa letter templates",
+          aspect: "wide",
+        },
+      ]),
+    })
     for (const text of [
       "Free Santa letter templates",
       "Pro Tip",
       "Write a warm greeting",
       "Classic Letter",
-      "North Pole Express stamp",
+      "Postage stamp",
+      "Want Santa to reply? Write your letter now!",
       "Send your letter to Santa",
       "Start writing",
     ]) {
       expect(output).toContain(text)
     }
-    expect(output).not.toMatch(/href|src|utm_source|template=preview/u)
+    for (const className of [
+      "repopress-preview-box--tip",
+      "repopress-preview-list--check",
+      "repopress-preview-paper--letter",
+      "repopress-preview-action--primary",
+    ]) {
+      expect(output).toContain(className)
+    }
+    expect(output).not.toMatch(/href|"src"|utm_source|template=preview/u)
   })
 
   it("retains all five Generic placeholders when compatible execution is unavailable", () => {

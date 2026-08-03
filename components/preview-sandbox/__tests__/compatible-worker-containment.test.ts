@@ -113,6 +113,7 @@ describe("compatible worker containment", () => {
               PreviewImage,
               PreviewInline,
               PreviewList,
+              PreviewPaper,
               PreviewStack,
               PreviewText,
             } from "@repopress/preview"
@@ -125,6 +126,7 @@ describe("compatible worker containment", () => {
                 && Object.getPrototypeOf(PREVIEW_OPTIONS.tones) === null
                 && Object.isFrozen(PREVIEW_OPTIONS)
                 && Object.isFrozen(PREVIEW_OPTIONS.tones)
+                && Object.isFrozen(PREVIEW_OPTIONS.paperVariants)
                 && PREVIEW_OPTIONS.tones.info === true
                 && !("extra" in Preview.PreviewBox)
               return <PreviewBox tone="unsupported" arbitrary="ignored">
@@ -143,6 +145,17 @@ describe("compatible worker containment", () => {
                     style={{ backgroundImage: "url(https://evil.test/style)" }}
                     onLoad={() => { throw new Error("must never cross") }}
                   />
+                  <PreviewPaper
+                    variant="not-a-variant"
+                    title={"x".repeat(513)}
+                    showStamp
+                    actionLabel="Open the stationery"
+                    className="attacker-paper"
+                    style={{ backgroundImage: "url(https://evil.test/paper)" }}
+                    onClick={() => { throw new Error("must never cross") }}
+                  >
+                    Portable paper body
+                  </PreviewPaper>
                   <PreviewAction
                     label="Open letter"
                     href="https://evil.test/leave"
@@ -190,6 +203,11 @@ describe("compatible worker containment", () => {
     expect(serialized).toContain("First item")
     expect(serialized).toContain("Printable Santa letter templates")
     expect(serialized).toContain("Open letter")
+    expect(serialized).toContain("Paper preview")
+    expect(serialized).toContain("Portable paper body")
+    expect(serialized).toContain("Open the stationery")
+    expect(serialized).toContain("repopress-preview-paper--letter")
+    expect(serialized).toContain("repopress-preview-paper-stamp")
     expect(serialized).toContain("repopress-preview-box--neutral")
     expect(sent[0]).toMatchObject({
       tree: expect.arrayContaining([
@@ -213,7 +231,7 @@ describe("compatible worker containment", () => {
       ]),
     })
     expect(serialized).toContain("https://cdn.example/cover.png")
-    expect(serialized).not.toMatch(/evil\.test|href|"src"|onClick|onLoad|style|attacker-class/)
+    expect(serialized).not.toMatch(/evil\.test|href|"src"|onClick|onLoad|style|attacker-class|attacker-paper/)
   })
 
   it("keeps rejected PreviewImage sources as inert labelled placeholders", async () => {

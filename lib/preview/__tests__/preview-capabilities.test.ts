@@ -13,6 +13,8 @@ import {
   PREVIEW_IMAGE_SOURCE_MAX_BYTES,
   PREVIEW_IMAGE_TEXT_MAX_BYTES,
   PREVIEW_LIST_STYLES,
+  PREVIEW_PAPER_TEXT_MAX_BYTES,
+  PREVIEW_PAPER_VARIANTS,
   PREVIEW_TEXT_SIZES,
   PREVIEW_TEXT_TONES,
   PREVIEW_TEXT_WEIGHTS,
@@ -28,6 +30,7 @@ describe("portable preview capability contract", () => {
       "PreviewList",
       "PreviewAction",
       "PreviewImage",
+      "PreviewPaper",
       "PreviewIcon",
     ])
     for (const options of [
@@ -38,6 +41,7 @@ describe("portable preview capability contract", () => {
       PREVIEW_ICON_NAMES,
       PREVIEW_IMAGE_ASPECTS,
       PREVIEW_LIST_STYLES,
+      PREVIEW_PAPER_VARIANTS,
       PREVIEW_TEXT_SIZES,
       PREVIEW_TEXT_TONES,
       PREVIEW_TEXT_WEIGHTS,
@@ -57,6 +61,7 @@ describe("portable preview capability contract", () => {
       "repopress-preview-list",
       "repopress-preview-action",
       "repopress-preview-image",
+      "repopress-preview-paper",
       "repopress-preview-icon",
     ]) {
       expect(css).toContain(`.${className}`)
@@ -67,6 +72,12 @@ describe("portable preview capability contract", () => {
   it("publishes the bounded inert image reference budgets", () => {
     expect(PREVIEW_IMAGE_SOURCE_MAX_BYTES).toBe(2_048)
     expect(PREVIEW_IMAGE_TEXT_MAX_BYTES).toBe(512)
+  })
+
+  it("publishes a small immutable paper vocabulary and text budget", () => {
+    expect(PREVIEW_PAPER_VARIANTS).toEqual(["letter", "note", "worksheet"])
+    expect(Object.isFrozen(PREVIEW_PAPER_VARIANTS)).toBe(true)
+    expect(PREVIEW_PAPER_TEXT_MAX_BYTES).toBe(512)
   })
 
   it("publishes the raw fail-closed HTTPS authority policy", () => {

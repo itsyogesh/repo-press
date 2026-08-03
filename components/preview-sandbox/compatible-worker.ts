@@ -387,6 +387,7 @@ function compatibleWorkerMain() {
   PREVIEW_OPTIONS.listStyles = frozenOptionSet(["bullet", "check", "ordered", "plain"])
   PREVIEW_OPTIONS.actionTones = frozenOptionSet(["primary", "secondary"])
   PREVIEW_OPTIONS.imageAspects = frozenOptionSet(["wide", "square", "portrait"])
+  PREVIEW_OPTIONS.paperVariants = frozenOptionSet(["letter", "note", "worksheet"])
   PREVIEW_OPTIONS.iconNames = frozenOptionSet(["info", "tip", "warning", "check", "mail", "stamp", "image", "arrow"])
 
   function option(options: any, value: any, fallback: string) {
@@ -395,6 +396,10 @@ function compatibleWorkerMain() {
   function boundedLabel(value: any, fallback: string) {
     if (typeof value !== "string" || value.length === 0 || !utf8Within(value, 512)) return fallback
     return containsControlOrBackslash(value, false) ? fallback : value
+  }
+  function optionalBoundedLabel(value: any) {
+    if (typeof value !== "string" || value.length === 0 || !utf8Within(value, 512)) return null
+    return containsControlOrBackslash(value, false) ? null : value
   }
   function utf8Within(value: string, limit: number) {
     if (value.length > limit) return false
@@ -641,6 +646,42 @@ function compatibleWorkerMain() {
     weakSetAdd(previewImageReferences, reference)
     return objectFreeze(reference)
   }
+  function PreviewPaper(props: any) {
+    const variant = option(PREVIEW_OPTIONS.paperVariants, props?.variant, "letter")
+    const title = boundedLabel(props?.title, "Paper preview")
+    const actionLabel = optionalBoundedLabel(props?.actionLabel)
+    return jsx("article", {
+      className: `repopress-preview-paper repopress-preview-paper--${variant}`,
+      children: [
+        jsx("div", {
+          className: "repopress-preview-paper-header",
+          children: [
+            jsx("h3", { className: "repopress-preview-paper-title", children: title }),
+            props?.showStamp === true
+              ? jsx("span", {
+                  className: "repopress-preview-paper-stamp",
+                  role: "img",
+                  "aria-label": "Postage stamp",
+                  children: "◈",
+                })
+              : null,
+          ],
+        }),
+        jsx("div", { className: "repopress-preview-paper-body", children: props?.children }),
+        actionLabel
+          ? jsx("div", {
+              className: "repopress-preview-paper-footer",
+              children: jsx("span", {
+                className: "repopress-preview-paper-action",
+                role: "note",
+                "aria-label": `Inert preview action: ${actionLabel}`,
+                children: actionLabel,
+              }),
+            })
+          : null,
+      ],
+    })
+  }
   const previewModule: any = objectCreate(null)
   objectAssign(previewModule, {
     PREVIEW_OPTIONS,
@@ -650,6 +691,7 @@ function compatibleWorkerMain() {
     PreviewImage,
     PreviewInline,
     PreviewList,
+    PreviewPaper,
     PreviewStack,
     PreviewText,
   })
