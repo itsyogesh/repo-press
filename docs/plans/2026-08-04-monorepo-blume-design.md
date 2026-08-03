@@ -55,7 +55,7 @@ The current Next.js `/docs` implementation is retired. `repopress.org/docs` and 
 
 ### Blume configuration
 
-The first docs release uses Blume's filesystem content source and static build output. It enables the framework's built-in navigation, search, code rendering, generated `llms.txt`, and MCP-friendly documentation surface where supported without extra credentials. It does not add AI chat or another hosted service in the first slice.
+The first docs release pins `blume@1.3.1` and uses its filesystem content source with static build output. It enables built-in navigation, keyless Orama search, code rendering, generated `llms.txt`/`llms-full.txt`, raw Markdown mirrors, and agent-readability metadata. Hosted MCP and Ask AI remain disabled: Blume requires a server output and adapter for MCP, which would change the deployment and security boundary.
 
 Content stays ordinary Markdown or MDX. Blume-specific presentation components may improve a page, but core documentation must remain readable outside Blume and editable through RepoPress.
 

@@ -32,11 +32,12 @@ RepoPress connects to your GitHub repositories and gives you a Notion-like editi
 
 ## Documentation
 
-- [Platform architecture](docs/platform/architecture.md) -- Git, Convex, Next.js, draft, publish, and extension authority
-- [Component authoring](docs/platform/component-authoring.md) -- schemas, slots, fixtures, registry metadata, and product adapters
-- [Preview security](docs/platform/preview-security.md) -- Generic/Compatible fidelity, isolation, images, and controlled actions
-- [Connect an MDX repository](docs/tutorials/connect-an-mdx-repository.md) -- setup through first pull-request publish
-- [Build a component extension](docs/tutorials/build-a-component-extension.md) -- production binding, authoring props, fixture, Compatible mapping, and tests
+- [Documentation](https://docs.repopress.org) -- guides, Studio workflows, architecture, and extension tutorials
+- [Platform architecture](https://docs.repopress.org/platform/architecture) -- Git, Convex, Next.js, draft, publish, and extension authority
+- [Component authoring](https://docs.repopress.org/components/authoring) -- schemas, slots, fixtures, registry metadata, and product adapters
+- [Preview security](https://docs.repopress.org/platform/preview-security) -- Generic/Compatible fidelity, isolation, images, and controlled actions
+- [Connect an MDX repository](https://docs.repopress.org/guides/connect-repository) -- setup through first pull-request publish
+- [Build a component extension](https://docs.repopress.org/tutorials/component-extension) -- production binding, authoring props, fixture, Compatible mapping, and tests
 - [Production deployment](docs/production-deployment-guide.md) -- environment and deployment configuration
 
 ---

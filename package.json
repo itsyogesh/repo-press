@@ -10,6 +10,8 @@
   "scripts": {
     "dev:web": "npm run dev --workspace @repopress/web --",
     "dev:docs": "npm run dev --workspace @repopress/docs --",
+    "docs:validate": "npm run validate --workspace @repopress/docs",
+    "docs:doctor": "npm run doctor --workspace @repopress/docs",
     "lint": "npm run lint --workspaces --if-present",
     "lint:fix": "npm run lint:fix --workspaces --if-present",
     "format": "npm run format --workspaces --if-present",
