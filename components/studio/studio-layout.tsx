@@ -489,6 +489,7 @@ function StudioLayoutInner({
     content,
     frontmatter,
     sha,
+    isDirty,
     isFileLoading,
     sourceAuthority,
     isSourceEditable,
@@ -1395,6 +1396,15 @@ function StudioLayoutInner({
         className="h-full w-full flex flex-col overflow-hidden bg-studio-canvas text-studio-fg"
         role="application"
         aria-label="RepoPress Studio"
+        data-studio-source-authority={sourceAuthority}
+        data-studio-editor-dirty={isDirty ? "true" : "false"}
+        data-studio-draft-available={
+          document && (typeof document.body === "string" || document.frontmatter !== undefined) ? "true" : "false"
+        }
+        data-studio-draft-version={document?.contentVersion ?? "none"}
+        data-studio-draft-hydrated={
+          hydratedDocumentKey.current === getDocumentHydrationKey(document, selectedFile?.path) ? "true" : "false"
+        }
       >
         <div aria-live="polite" aria-atomic="true" className="sr-only">
           {document ? `Editing ${selectedFile?.name || "file"}, status: ${currentStatus}` : "No file selected"}
