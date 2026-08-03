@@ -1447,6 +1447,7 @@ function StudioLayoutInner({
                             }}
                             selectedPath={selectedFile?.path}
                             titleMap={titleMap}
+                            detectedFramework={studioQueries.project?.detectedFramework as string | undefined}
                             onCreateFile={projectId ? handleCreateFile : undefined}
                             onDeleteFile={projectId ? handleDeleteFile : undefined}
                             onUndoDelete={projectId ? handleUndoDelete : undefined}

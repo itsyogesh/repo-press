@@ -55,9 +55,11 @@ export function FileContextMenu({
         {type === "file" && (
           <>
             <ContextMenuItem onClick={onOpen}>Open</ContextMenuItem>
-            <ContextMenuItem onClick={onRename}>
-              Rename <span className="ml-auto text-xs text-muted-foreground">F2</span>
-            </ContextMenuItem>
+            {onRename && (
+              <ContextMenuItem onClick={onRename}>
+                Rename <span className="ml-auto text-xs text-muted-foreground">F2</span>
+              </ContextMenuItem>
+            )}
             <ContextMenuItem onClick={onDelete} className="text-studio-danger focus:text-studio-danger">
               Delete...
             </ContextMenuItem>

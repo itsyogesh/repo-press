@@ -22,6 +22,7 @@ import { filterTree } from "@/lib/explorer-tree-overlay"
 import { getFolderContext } from "@/lib/framework-adapters/folder-context"
 import type { FrameworkAdapter } from "@/lib/framework-adapters/types"
 import type { FileTreeNode } from "@/lib/github"
+import { buildRouteDocumentTree, type RouteDocumentTreeItem } from "@/lib/studio/route-document-tree"
 import { FileContextMenu } from "./file-context-menu"
 import { TreeItem } from "./file-tree-item"
 
@@ -30,6 +31,7 @@ interface FileTreeProps {
   onSelect: (node: FileTreeNode) => void
   selectedPath?: string
   titleMap?: Record<string, string>
+  detectedFramework?: string
   onCreateFile?: (parentPath: string) => void
   onDeleteFile?: (filePath: string, sha: string) => void
   onUndoDelete?: (filePath: string) => void
@@ -44,7 +46,7 @@ interface FileTreeProps {
 }
 
 type VisibleTreeItem = {
-  node: FileTreeNode
+  item: RouteDocumentTreeItem
   depth: number
   parentPath: string | null
 }
@@ -75,18 +77,43 @@ function collectDirPaths(nodes: FileTreeNode[], result = new Set<string>()): Set
 }
 
 function flattenVisibleNodes(
-  nodes: FileTreeNode[],
+  items: RouteDocumentTreeItem[],
   expandedDirs: Set<string>,
   searchActive: boolean,
   depth = 0,
   parentPath: string | null = null,
   result: VisibleTreeItem[] = [],
 ): VisibleTreeItem[] {
-  for (const node of nodes) {
-    result.push({ node, depth, parentPath })
-    if (node.type === "dir" && node.children && (searchActive || expandedDirs.has(node.path))) {
-      flattenVisibleNodes(node.children, expandedDirs, searchActive, depth + 1, node.path, result)
+  for (const item of items) {
+    const node = item.source
+    result.push({ item, depth, parentPath })
+    if (item.kind === "node" && node.type === "dir" && item.children && (searchActive || expandedDirs.has(node.path))) {
+      flattenVisibleNodes(item.children, expandedDirs, searchActive, depth + 1, node.path, result)
     }
+  }
+  return result
+}
+
+function collectTreePaths(nodes: FileTreeNode[], result = new Set<string>()): Set<string> {
+  for (const node of nodes) {
+    result.add(node.path)
+    if (node.children) collectTreePaths(node.children, result)
+  }
+  return result
+}
+
+function filterRouteDocumentTree(
+  items: RouteDocumentTreeItem[],
+  visiblePaths: ReadonlySet<string>,
+): RouteDocumentTreeItem[] {
+  const result: RouteDocumentTreeItem[] = []
+  for (const item of items) {
+    if (item.kind === "route-document") {
+      if (visiblePaths.has(item.routePath) || visiblePaths.has(item.source.path)) result.push(item)
+      continue
+    }
+    if (!visiblePaths.has(item.source.path)) continue
+    result.push(item.children ? { ...item, children: filterRouteDocumentTree(item.children, visiblePaths) } : item)
   }
   return result
 }
@@ -96,6 +123,7 @@ export function FileTree({
   onSelect,
   selectedPath,
   titleMap,
+  detectedFramework,
   onCreateFile,
   onDeleteFile,
   onUndoDelete,
@@ -114,10 +142,18 @@ export function FileTree({
   const treeRootRef = React.useRef<HTMLDivElement>(null)
   const searchInputRef = React.useRef<HTMLInputElement>(null)
 
-  const displayTree = React.useMemo(
+  const filteredTree = React.useMemo(
     () => (searchQuery ? filterTree(tree as OverlayTreeNode[], searchQuery, titleMap) : tree),
     [tree, searchQuery, titleMap],
   )
+  const routeDocumentTree = React.useMemo(
+    () => buildRouteDocumentTree(tree, { detectedFramework, titleMap }),
+    [tree, detectedFramework, titleMap],
+  )
+  const displayTree = React.useMemo(() => {
+    if (!searchQuery) return routeDocumentTree
+    return filterRouteDocumentTree(routeDocumentTree, collectTreePaths(filteredTree))
+  }, [filteredTree, routeDocumentTree, searchQuery])
   const searchActive = searchQuery.trim().length > 0
 
   React.useEffect(() => {
@@ -148,8 +184,8 @@ export function FileTree({
       setFocusedPath(null)
       return
     }
-    if (!focusedPath || !visibleItems.some((item) => item.node.path === focusedPath)) {
-      setFocusedPath(visibleItems[0]?.node.path ?? null)
+    if (!focusedPath || !visibleItems.some(({ item }) => item.source.path === focusedPath)) {
+      setFocusedPath(visibleItems[0]?.item.source.path ?? null)
     }
   }, [visibleItems, focusedPath])
 
@@ -171,7 +207,7 @@ export function FileTree({
 
   // Keyboard navigation
   React.useEffect(() => {
-    const getFocusedIndex = () => visibleItems.findIndex((item) => item.node.path === focusedPath)
+    const getFocusedIndex = () => visibleItems.findIndex(({ item }) => item.source.path === focusedPath)
     const getFocusedItem = () => {
       const index = getFocusedIndex()
       if (index < 0) return null
@@ -222,47 +258,51 @@ export function FileTree({
         const nextIndex = Math.min(visibleItems.length - 1, Math.max(0, getFocusedIndex() + 1))
         const nextItem = visibleItems[nextIndex]
         if (nextItem) {
-          setFocusedPath(nextItem.node.path)
+          setFocusedPath(nextItem.item.source.path)
         }
       } else if (e.key === "ArrowUp") {
         e.preventDefault()
         const nextIndex = Math.max(0, getFocusedIndex() - 1)
         const nextItem = visibleItems[nextIndex]
         if (nextItem) {
-          setFocusedPath(nextItem.node.path)
+          setFocusedPath(nextItem.item.source.path)
         }
       } else if (e.key === "Enter") {
         const focused = getFocusedItem()
         if (!focused) return
         e.preventDefault()
-        if (focused.item.node.type === "file") {
-          onSelect(focused.item.node)
+        if (focused.item.item.source.type === "file") {
+          onSelect(focused.item.item.source)
         } else {
-          toggleDir(focused.item.node.path)
+          toggleDir(focused.item.item.source.path)
         }
       } else if (e.key === "ArrowRight") {
         const focused = getFocusedItem()
-        if (!focused || focused.item.node.type !== "dir") return
+        if (!focused || focused.item.item.source.type !== "dir") return
         e.preventDefault()
 
-        const isExpanded = searchActive || expandedDirs.has(focused.item.node.path)
+        const isExpanded = searchActive || expandedDirs.has(focused.item.item.source.path)
         if (!isExpanded) {
-          setExpandedDirs((prev) => new Set(prev).add(focused.item.node.path))
+          setExpandedDirs((prev) => new Set(prev).add(focused.item.item.source.path))
           return
         }
 
         const nextItem = visibleItems[focused.index + 1]
-        if (nextItem && nextItem.parentPath === focused.item.node.path) {
-          setFocusedPath(nextItem.node.path)
+        if (nextItem && nextItem.parentPath === focused.item.item.source.path) {
+          setFocusedPath(nextItem.item.source.path)
         }
       } else if (e.key === "ArrowLeft") {
         const focused = getFocusedItem()
         if (!focused) return
         e.preventDefault()
-        if (focused.item.node.type === "dir" && expandedDirs.has(focused.item.node.path) && !searchActive) {
+        if (
+          focused.item.item.source.type === "dir" &&
+          expandedDirs.has(focused.item.item.source.path) &&
+          !searchActive
+        ) {
           setExpandedDirs((prev) => {
             const next = new Set(prev)
-            next.delete(focused.item.node.path)
+            next.delete(focused.item.item.source.path)
             return next
           })
           return
@@ -272,14 +312,20 @@ export function FileTree({
         }
       } else if (e.key === "F2") {
         const focused = getFocusedItem()
-        if (!focused || focused.item.node.type !== "file" || !onRenameFile) return
+        if (
+          !focused ||
+          focused.item.item.kind === "route-document" ||
+          focused.item.item.source.type !== "file" ||
+          !onRenameFile
+        )
+          return
         e.preventDefault()
-        setRenamingPath(focused.item.node.path)
+        setRenamingPath(focused.item.item.source.path)
       } else if (e.key === "Delete") {
         const focused = getFocusedItem()
-        if (!focused || focused.item.node.type !== "file" || !onDeleteFile) return
+        if (!focused || focused.item.item.source.type !== "file" || !onDeleteFile) return
         e.preventDefault()
-        onDeleteFile(focused.item.node.path, focused.item.node.sha)
+        onDeleteFile(focused.item.item.source.path, focused.item.item.source.sha)
       }
     }
 
@@ -469,10 +515,10 @@ export function FileTree({
             >
               <FileContextMenu type="background" onNewFile={handleCreateRootFile} onCollapseAll={collapseAll}>
                 <div className="min-h-[200px]">
-                  {displayTree.map((node) => (
+                  {displayTree.map((item) => (
                     <TreeItem
-                      key={node.path}
-                      node={node}
+                      key={item.source.path}
+                      item={item}
                       depth={0}
                       onSelect={onSelect}
                       selectedPath={selectedPath}

@@ -7,6 +7,7 @@ import * as React from "react"
 import { Badge } from "@/components/ui/badge"
 import type { OverlayTreeNode } from "@/lib/explorer-tree-overlay"
 import type { FileTreeNode } from "@/lib/github"
+import type { RouteDocumentTreeItem } from "@/lib/studio/route-document-tree"
 import { cn } from "@/lib/utils"
 import { FileContextMenu } from "./file-context-menu"
 import { FileRenameInput } from "./file-rename-input"
@@ -16,7 +17,7 @@ const TREE_BASE_OFFSET_PX = 4
 const TREE_GUIDE_OFFSET_PX = 9
 
 export interface TreeItemProps {
-  node: FileTreeNode
+  item: RouteDocumentTreeItem
   depth: number
   expandedDirs: Set<string>
   focusedPath?: string | null
@@ -40,7 +41,7 @@ export interface TreeItemProps {
 }
 
 export function TreeItem({
-  node,
+  item,
   depth,
   expandedDirs,
   focusedPath,
@@ -61,14 +62,17 @@ export function TreeItem({
   repo,
   dirtyPaths,
 }: TreeItemProps) {
+  const node = item.source
+  const isRouteDocument = item.kind === "route-document"
   const overlay = node as OverlayTreeNode
   const isNew = overlay.isNew
   const isDeleted = overlay.isDeleted
   const isModified = !isNew && !isDeleted && node.type === "file" && !!dirtyPaths?.has(node.path)
   const isOpen = node.type === "dir" ? expandedDirs.has(node.path) : false
-  const isRenaming = renamingPath === node.path
+  const isRenaming = !isRouteDocument && renamingPath === node.path
 
-  const displayTitle = titleMap?.[node.path]
+  const displayTitle = isRouteDocument ? item.label : titleMap?.[node.path]
+  const secondaryLabel = isRouteDocument ? item.secondaryLabel : displayTitle ? node.name : undefined
 
   // Drag and Drop (Files only, Folders can be dropped into)
   const isDraggable = node.type === "file" && !isDeleted
@@ -96,21 +100,23 @@ export function TreeItem({
     transform: CSS.Translate.toString(transform),
   }
   const draggableProps = isDraggable ? { ...attributes, ...listeners } : {}
+  const draggableWrapperProps = isRouteDocument ? {} : draggableProps
+  const draggableButtonProps = isRouteDocument ? draggableProps : {}
 
   const handleRenameSubmit = React.useCallback(
     (newName: string) => {
       onCancelRename()
-      if (!onRenameFile || newName === node.name) return
+      if (isRouteDocument || !onRenameFile || newName === node.name) return
       const parentPath = node.path.split("/").slice(0, -1).join("/")
       const newPath = parentPath ? `${parentPath}/${newName}` : newName
       onRenameFile(node.path, newPath)
     },
-    [onCancelRename, onRenameFile, node.path, node.name],
+    [isRouteDocument, onCancelRename, onRenameFile, node.path, node.name],
   )
 
   // Context menu handlers
   const handleOpen = () => onSelect(node)
-  const handleRename = () => onStartRename(node.path)
+  const handleRename = isRouteDocument ? undefined : () => onStartRename(node.path)
   const handleDelete = () => onDeleteFile?.(node.path, node.sha)
   const handleUndoDelete = () => onUndoDelete?.(node.path)
   const handleNewFile = () =>
@@ -208,12 +214,12 @@ export function TreeItem({
             )}
           </div>
         </FileContextMenu>
-        {isOpen && node.children && (
+        {isOpen && item.kind === "node" && item.children && (
           <div>
-            {node.children.map((child) => (
+            {item.children.map((child) => (
               <TreeItem
-                key={child.path}
-                node={child}
+                key={child.source.path}
+                item={child}
                 depth={depth + 1}
                 onSelect={onSelect}
                 selectedPath={selectedPath}
@@ -248,7 +254,7 @@ export function TreeItem({
     <div
       ref={setDraggableRef}
       style={style}
-      {...draggableProps}
+      {...draggableWrapperProps}
       className={cn("relative outline-none", isDragging && "opacity-50 z-50 pointer-events-none")}
     >
       <FileContextMenu
@@ -263,6 +269,8 @@ export function TreeItem({
         <div className="group relative">
           <button
             type="button"
+            {...draggableButtonProps}
+            aria-label={isRouteDocument ? `${item.label} ${item.secondaryLabel}` : undefined}
             className={cn(
               "relative flex w-full select-none items-center justify-start gap-1 rounded-md p-1 pr-12 font-normal text-studio-fg transition-[background-color,box-shadow,color] duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-studio-accent/60",
               displayTitle ? "h-auto min-h-[32px] py-1" : "h-8",
@@ -293,11 +301,11 @@ export function TreeItem({
             }}
             onDoubleClick={(e) => {
               e.stopPropagation()
-              if (!isDeleted && onRenameFile) {
+              if (!isRouteDocument && !isDeleted && onRenameFile) {
                 onStartRename(node.path)
               }
             }}
-            title={node.name}
+            title={isRouteDocument ? item.label : node.name}
           >
             {/* Active item accent line */}
             {isSelected && <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-studio-accent" />}
@@ -339,14 +347,14 @@ export function TreeItem({
                   >
                     {displayTitle || node.name}
                   </span>
-                  {displayTitle && (
+                  {secondaryLabel && (
                     <span
                       className={cn(
                         "w-full truncate text-left font-mono text-[10px] text-studio-fg-muted",
                         isDeleted && "line-through",
                       )}
                     >
-                      {node.name}
+                      {secondaryLabel}
                     </span>
                   )}
                 </div>
