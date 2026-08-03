@@ -794,6 +794,30 @@ describe("useStudioFile immutable read authority", () => {
     expect(result.current.isDirty).toBe(true)
   })
 
+  it("does not replay the initial GitHub snapshot over a hydrated saved draft when the tree updates", async () => {
+    const initialFile = {
+      path: "content/guide.mdx",
+      sha: "f".repeat(40),
+      content: "---\ndescription: Remote description\n---\n# Remote body",
+    }
+    const { result, rerender } = renderHook(() => useStudioFile(initialFile, "content/guide.mdx"))
+
+    await waitFor(() => expect(result.current.frontmatter).toEqual({ description: "Remote description" }))
+    act(() => {
+      result.current.hydrateFromDocument({
+        body: "# Saved draft body",
+        frontmatter: { description: "Saved draft description" },
+      })
+    })
+    expect(result.current.frontmatter).toEqual({ description: "Saved draft description" })
+
+    studioContext.tree = [...studioContext.tree]
+    rerender()
+
+    expect(result.current.content).toBe("# Saved draft body")
+    expect(result.current.frontmatter).toEqual({ description: "Saved draft description" })
+  })
+
   it("resolves pathname popstate links relative to contentRoot while leaving query paths repository-relative", async () => {
     studioContext.tree = []
     const { result } = renderHook(() => useStudioFile(null, ""))
