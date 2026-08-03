@@ -315,6 +315,17 @@ export async function POST(request: Request) {
       contentVersion: number
       expectedUpdatedAt: number
     }> = []
+    // Rename/move is encoded as a staged delete plus create. Permit a
+    // read-only source only when one concrete delete in this same plan has
+    // a SHA-verified pinned snapshot with exactly the planned create bytes.
+    const unsupportedRelocationSources = resolvedPendingOps.flatMap(({ source: op, repoPath }) => {
+      if (op.opType !== "delete" || !op.previousSha) return []
+      const existing = prefetchResults.get(`content:${repoPath}`)
+      if (existing?.status !== "found" || existing.file.sha !== op.previousSha) return []
+      if (parseContentFile(existing.file.content, repoPath).editable) return []
+      return [{ repoPath, content: existing.file.content }]
+    })
+    const claimedRelocationSources = new Set<string>()
 
     for (const { source: op, repoPath } of resolvedPendingOps) {
       if (op.opType === "create") {
@@ -341,9 +352,18 @@ export async function POST(request: Request) {
           continue
         }
         const plannedSource = parseContentFile(serialized.content, repoPath)
-        if (!plannedSource.editable && plannedSource.diagnostic) {
-          conflicts.push({ path: repoPath, reason: unsupportedSourceConflictReason(plannedSource.diagnostic) })
-          continue
+        if (!plannedSource.editable) {
+          const relocationMatches = unsupportedRelocationSources.filter(
+            (source) =>
+              source.repoPath !== repoPath &&
+              !claimedRelocationSources.has(source.repoPath) &&
+              source.content === serialized.content,
+          )
+          if (relocationMatches.length !== 1) {
+            conflicts.push({ path: repoPath, reason: unsupportedSourceConflictReason(plannedSource.diagnostic) })
+            continue
+          }
+          claimedRelocationSources.add(relocationMatches[0].repoPath)
         }
         serializedContentByRepoPath.set(repoPath, serialized.content)
 

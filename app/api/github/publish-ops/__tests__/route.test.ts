@@ -1594,6 +1594,136 @@ describe("POST /api/github/publish-ops", () => {
     })
 
     it.each([
+      ["unsupported metadata export", "export const metadata = { title: makeTitle() }\n\n# Existing\n"],
+      ["malformed YAML", "---\ntitle: [unterminated\n---\n# Existing\n"],
+    ])("publishes an exact byte-preserving relocation of %s", async (_label, source) => {
+      mockPublishQueries({
+        pendingOps: [
+          {
+            _id: "op_delete_old",
+            opType: "delete",
+            filePath: "posts/old.mdx",
+            previousSha: "sha-old",
+          },
+          {
+            _id: "op_create_new",
+            opType: "create",
+            filePath: "posts/new.mdx",
+            initialBody: source,
+            initialFrontmatter: {},
+          },
+        ],
+        dirtyDocs: [],
+      })
+      vi.mocked(getFileForPublish).mockImplementation(async (...callArgs: unknown[]) => {
+        const path = String(callArgs[3])
+        return path === "content/posts/old.mdx"
+          ? {
+              status: "found",
+              file: { content: source, sha: "sha-old", name: "old.mdx", path },
+            }
+          : { status: "absent" }
+      })
+
+      const response = await POST(buildRequest({ projectId: "project_123" }))
+
+      expect(response.status).toBe(200)
+      expect(batchCommitPublishLaneAtExpectedHead).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+        expect.arrayContaining([
+          expect.objectContaining({ path: "content/posts/old.mdx", action: "delete" }),
+          expect.objectContaining({ path: "content/posts/new.mdx", action: "create", content: source }),
+        ]),
+        expect.anything(),
+      )
+    })
+
+    it("rejects a changed-byte paired relocation before an attempt or commit", async () => {
+      const source = "export const metadata = { title: makeTitle() }\n\n# Existing\n"
+      mockPublishQueries({
+        pendingOps: [
+          {
+            _id: "op_delete_old",
+            opType: "delete",
+            filePath: "posts/old.mdx",
+            previousSha: "sha-old",
+          },
+          {
+            _id: "op_create_new",
+            opType: "create",
+            filePath: "posts/new.mdx",
+            initialBody: `${source}# Changed\n`,
+            initialFrontmatter: {},
+          },
+        ],
+        dirtyDocs: [],
+      })
+      vi.mocked(getFileForPublish).mockImplementation(async (...callArgs: unknown[]) => {
+        const path = String(callArgs[3])
+        return path === "content/posts/old.mdx"
+          ? {
+              status: "found",
+              file: { content: source, sha: "sha-old", name: "old.mdx", path },
+            }
+          : { status: "absent" }
+      })
+
+      const response = await POST(buildRequest({ projectId: "project_123" }))
+      const payload = await response.json()
+
+      expect(response.status).toBe(409)
+      expect(payload.conflicts).toEqual([
+        expect.objectContaining({ path: "content/posts/new.mdx", reason: expect.stringMatching(/unsupported/i) }),
+      ])
+      expect(batchCommitPublishLaneAtExpectedHead).not.toHaveBeenCalled()
+      expect(
+        convexMutationMock.mock.calls.some(([, args]) => args && typeof args === "object" && "planDigest" in args),
+      ).toBe(false)
+    })
+
+    it("rejects an ambiguous byte-preserving relocation with multiple matching staged deletes", async () => {
+      const source = "export const metadata = { title: makeTitle() }\n\n# Existing\n"
+      mockPublishQueries({
+        pendingOps: [
+          { _id: "op_delete_a", opType: "delete", filePath: "posts/a.mdx", previousSha: "sha-a" },
+          { _id: "op_delete_b", opType: "delete", filePath: "posts/b.mdx", previousSha: "sha-b" },
+          {
+            _id: "op_create_new",
+            opType: "create",
+            filePath: "posts/new.mdx",
+            initialBody: source,
+            initialFrontmatter: {},
+          },
+        ],
+        dirtyDocs: [],
+      })
+      vi.mocked(getFileForPublish).mockImplementation(async (...callArgs: unknown[]) => {
+        const path = String(callArgs[3])
+        if (path === "content/posts/new.mdx") return { status: "absent" }
+        return {
+          status: "found",
+          file: {
+            content: source,
+            sha: path.endsWith("a.mdx") ? "sha-a" : "sha-b",
+            name: path.split("/").at(-1) || "",
+            path,
+          },
+        }
+      })
+
+      const response = await POST(buildRequest({ projectId: "project_123" }))
+
+      expect(response.status).toBe(409)
+      expect(batchCommitPublishLaneAtExpectedHead).not.toHaveBeenCalled()
+      expect(
+        convexMutationMock.mock.calls.some(([, args]) => args && typeof args === "object" && "planDigest" in args),
+      ).toBe(false)
+    })
+
+    it.each([
       ["unsupported metadata export", "export const metadata = { title: makeTitle() }\n\n# New\n"],
       ["malformed YAML", "---\ntitle: [unterminated\n---\n# New\n"],
     ])("rejects a new file with %s before an attempt or commit", async (_label, initialBody) => {
