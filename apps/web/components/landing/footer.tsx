@@ -5,7 +5,7 @@ import { Logo } from "@/components/brand/logo"
 const productLinks = [
   { href: "/#features", label: "Features" },
   { href: "/dashboard", label: "Dashboard" },
-  { href: "/docs", label: "Docs" },
+  { href: "https://docs.repopress.org", label: "Docs", external: true },
   { href: "/blog", label: "Blog" },
 ]
 
@@ -50,12 +50,23 @@ export default function Footer() {
             <ul className="flex flex-col gap-3">
               {productLinks.map((link) => (
                 <li key={link.href + link.label}>
-                  <Link
-                    href={link.href}
-                    className="text-sm text-muted-foreground transition-colors hover:text-foreground"
-                  >
-                    {link.label}
-                  </Link>
+                  {link.external ? (
+                    <a
+                      href={link.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                      {link.label}
+                    </a>
+                  ) : (
+                    <Link
+                      href={link.href}
+                      className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                      {link.label}
+                    </Link>
+                  )}
                 </li>
               ))}
             </ul>

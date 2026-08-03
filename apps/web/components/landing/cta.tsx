@@ -48,7 +48,9 @@ export default function CTA() {
               className="border-background/15 bg-background/5 text-background hover:bg-background/10 hover:text-background"
               asChild
             >
-              <Link href="/docs">Read the docs</Link>
+              <a href="https://docs.repopress.org" target="_blank" rel="noopener noreferrer">
+                Read the docs
+              </a>
             </Button>
           </div>
         </div>

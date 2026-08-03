@@ -247,7 +247,7 @@ export function StudioHeader({
               </Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
-              <a href="https://repopress.dev/docs" target="_blank" rel="noopener noreferrer">
+              <a href="https://docs.repopress.org" target="_blank" rel="noopener noreferrer">
                 <HelpCircle className="h-4 w-4 mr-2" />
                 Help
               </a>

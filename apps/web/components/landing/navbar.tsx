@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils"
 const navLinks = [
   { href: "/#features", label: "Features", external: false },
   { href: "/#demo", label: "Demo", external: false },
-  { href: "/docs", label: "Docs", external: false },
+  { href: "https://docs.repopress.org", label: "Docs", external: true },
   { href: "/blog", label: "Blog", external: false },
   { href: "https://github.com/itsyogesh/repo-press", label: "GitHub", external: true },
 ]

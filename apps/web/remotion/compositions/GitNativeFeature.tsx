@@ -136,7 +136,7 @@ const RenderedPage: React.FC = () => {
         <div style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: "#ef4444" }} />
         <div style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: "#eab308" }} />
         <div style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: "#22c55e" }} />
-        <span style={{ color: MUTED, fontSize: 11, marginLeft: 6 }}>localhost:3001/docs/getting-started</span>
+        <span style={{ color: MUTED, fontSize: 11, marginLeft: 6 }}>docs.repopress.org/getting-started</span>
       </div>
       <div style={{ padding: "18px 20px" }}>
         <div style={{ color: FG, fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Getting Started</div>

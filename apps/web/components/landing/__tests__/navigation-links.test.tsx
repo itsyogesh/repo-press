@@ -11,7 +11,9 @@ vi.mock("next/link", () => ({
 }))
 
 vi.mock("@/components/ui/button", () => ({
-  Button: ({ children, ...props }: { children: React.ReactNode }) => <button {...props}>{children}</button>,
+  Button: ({ children, asChild: _asChild, ...props }: { children: React.ReactNode; asChild?: boolean }) => (
+    <button {...props}>{children}</button>
+  ),
 }))
 
 vi.mock("@/components/ui/sheet", () => ({
@@ -23,6 +25,7 @@ vi.mock("@/components/ui/sheet", () => ({
   SheetTrigger: ({ children }: { children: React.ReactNode }) => <div data-slot="sheet-trigger">{children}</div>,
 }))
 
+import CTA from "../cta"
 import Footer from "../footer"
 import Navbar from "../navbar"
 
@@ -49,5 +52,16 @@ describe("landing navigation links", () => {
 
     expect(navbarHtml).toContain("Navigation menu")
     expect(navbarHtml).toContain("Browse RepoPress pages and sign in options.")
+  })
+
+  it("links every landing-page docs action to the canonical documentation origin", () => {
+    const navbarHtml = renderToStaticMarkup(<Navbar />)
+    const footerHtml = renderToStaticMarkup(<Footer />)
+    const ctaHtml = renderToStaticMarkup(<CTA />)
+
+    for (const html of [navbarHtml, footerHtml, ctaHtml]) {
+      expect(html).toContain('href="https://docs.repopress.org"')
+      expect(html).not.toContain('href="/docs"')
+    }
   })
 })

@@ -77,4 +77,19 @@ describe("StudioHeader mobile actions", () => {
 
     expect(screen.getByRole("button", { name: "Save unavailable for read-only source" })).toBeDisabled()
   })
+
+  it("opens Help on the canonical documentation site", async () => {
+    render(
+      <StudioHeader
+        selectedFile={{ name: "hello.mdx", path: "content/hello.mdx", type: "file", sha: "b".repeat(40) }}
+        currentStatus="draft"
+        onSave={vi.fn()}
+        isSaving={false}
+      />,
+    )
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: "More options" }))
+
+    expect(await screen.findByRole("menuitem", { name: "Help" })).toHaveAttribute("href", "https://docs.repopress.org")
+  })
 })

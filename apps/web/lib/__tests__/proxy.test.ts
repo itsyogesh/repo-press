@@ -75,6 +75,13 @@ describe("proxy.ts", () => {
     expect(response.headers.get("x-middleware-next")).toBe("1")
   })
 
+  it("does not send documentation routes through an auth redirect", () => {
+    const response = proxy(new NextRequest("https://repopress.org/docs/platform/architecture"))
+
+    expect(response.headers.get("location")).toBeNull()
+    expect(response.headers.get("x-middleware-next")).toBe("1")
+  })
+
   it("returns 404 for application and API routes in a sandbox-only deployment", () => {
     process.env.REPOPRESS_DEPLOYMENT_ROLE = "sandbox"
 

@@ -75,6 +75,20 @@ export const nextConfig = {
   turbopack: {
     root: monorepoRoot,
   },
+  async redirects() {
+    return [
+      {
+        source: "/docs",
+        destination: "https://docs.repopress.org",
+        permanent: true,
+      },
+      {
+        source: "/docs/:path*",
+        destination: "https://docs.repopress.org/:path*",
+        permanent: true,
+      },
+    ]
+  },
   async headers() {
     return [
       {
