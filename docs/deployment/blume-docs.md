@@ -9,7 +9,7 @@ The RepoPress documentation site is a separate static Vercel project backed by `
 | Git repository | `itsyogesh/repo-press` |
 | Root Directory | `apps/docs` |
 | Framework Preset | Other |
-| Node.js | 22.x (`>=22.12.0`) |
+| Node.js | 24.x on Vercel (workspace minimum: `>=22.12.0`) |
 | Install Command | `npm ci` (resolved from the repository workspace root) |
 | Build Command | `npm run build` |
 | Output Directory | `dist` |
@@ -45,9 +45,10 @@ Before attaching the production domain:
 ## Domain cutover
 
 1. Attach `docs.repopress.org` to the docs project.
-2. Confirm Vercel provisions TLS and the hostname returns the Blume site.
-3. Confirm `https://repopress.org/docs` and a nested legacy `/docs/*` path permanently redirect to the matching docs-domain path.
-4. Verify canonical URLs, sitemap URLs, and raw Markdown/LLM endpoints use the production hostname.
+2. In Namecheap Advanced DNS, add `A docs 76.76.21.21`. The repository currently keeps the authoritative `registrar-servers.com` nameservers, so attaching the hostname in Vercel alone is not enough.
+3. Confirm Vercel verifies the domain, provisions TLS, and the hostname returns the Blume site.
+4. Confirm `https://repopress.org/docs` and a nested legacy `/docs/*` path permanently redirect to the matching docs-domain path.
+5. Verify canonical URLs, sitemap URLs, and raw Markdown/LLM endpoints use the production hostname.
 
 ## Dogfood acceptance
 
