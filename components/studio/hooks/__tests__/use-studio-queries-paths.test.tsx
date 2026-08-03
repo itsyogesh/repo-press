@@ -194,6 +194,53 @@ describe("useStudioQueries path ingress", () => {
     expect(result!.titleMap).toEqual({ "content/docs/guides/start.mdx": "Start" })
   })
 
+  it("prefers a saved legacy draft over a canonical title-only placeholder", () => {
+    useQueryMock
+      .mockReturnValueOnce({ _id: "user_1" })
+      .mockReturnValueOnce({ _id: "project_123" })
+      .mockReturnValueOnce({
+        _id: "doc_placeholder",
+        filePath: "guides/start.mdx",
+        pathRepresentation: "content_relative_v1",
+        title: "Start",
+        status: "draft",
+        updatedAt: 1,
+      })
+      .mockReturnValueOnce({
+        _id: "doc_saved_draft",
+        filePath: "content/docs/guides/start.mdx",
+        title: "Draft title",
+        status: "draft",
+        body: "# Saved draft",
+        frontmatter: { title: "Draft title" },
+        updatedAt: 2,
+      })
+      .mockReturnValueOnce([])
+      .mockReturnValueOnce([])
+      .mockReturnValueOnce([])
+      .mockReturnValueOnce(null)
+      .mockReturnValueOnce(null)
+      .mockReturnValueOnce([])
+      .mockReturnValueOnce([])
+
+    let result: ReturnType<typeof useStudioQueries> | null = null
+    function Harness() {
+      result = useStudioQueries("content/docs/guides/start.mdx")
+      return null
+    }
+
+    renderToStaticMarkup(<Harness />)
+
+    expect(result!.document).toEqual(
+      expect.objectContaining({
+        _id: "doc_saved_draft",
+        filePath: "guides/start.mdx",
+        body: "# Saved draft",
+        frontmatter: { title: "Draft title" },
+      }),
+    )
+  })
+
   it("looks up untagged legacy documents when the content root is empty", () => {
     studioContextMock.contentRoot = ""
     useQueryMock

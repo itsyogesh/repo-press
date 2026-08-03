@@ -266,7 +266,11 @@ export function useStudioQueries(
   const document = React.useMemo(() => {
     if (canonicalDocument === undefined) return undefined
     if (!canonicalDocument && shouldLookupLegacyDocument && legacyDocument === undefined) return undefined
-    const storedDocument = canonicalDocument ?? legacyDocument
+    const canonicalHasDraft =
+      canonicalDocument && (typeof canonicalDocument.body === "string" || canonicalDocument.frontmatter !== undefined)
+    const legacyHasDraft =
+      legacyDocument && (typeof legacyDocument.body === "string" || legacyDocument.frontmatter !== undefined)
+    const storedDocument = !canonicalHasDraft && legacyHasDraft ? legacyDocument : (canonicalDocument ?? legacyDocument)
     if (!storedDocument) return storedDocument
     return {
       ...storedDocument,
