@@ -818,6 +818,23 @@ describe("useStudioFile immutable read authority", () => {
     expect(result.current.frontmatter).toEqual({ description: "Saved draft description" })
   })
 
+  it("does not mark editor initialization callbacks dirty when content and frontmatter are unchanged", async () => {
+    const initialFile = {
+      path: "content/guide.mdx",
+      sha: "f".repeat(40),
+      content: "---\ndescription: Remote description\n---\n# Remote body",
+    }
+    const { result } = renderHook(() => useStudioFile(initialFile, "content/guide.mdx"))
+
+    act(() => {
+      result.current.setContent("# Remote body")
+      result.current.setFrontmatterKey("description", "Remote description")
+      result.current.setFrontmatter({ description: "Remote description" })
+    })
+
+    expect(result.current.isDirty).toBe(false)
+  })
+
   it("resolves pathname popstate links relative to contentRoot while leaving query paths repository-relative", async () => {
     studioContext.tree = []
     const { result } = renderHook(() => useStudioFile(null, ""))
