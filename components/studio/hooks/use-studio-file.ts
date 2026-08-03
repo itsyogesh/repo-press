@@ -60,6 +60,30 @@ function parseFileSnapshot(rawContent: string, sha: string | null, filePath: str
 
 export function useStudioFile(initialFile: InitialFile | null | undefined, currentPath: string) {
   const { owner, repo, branch, baseCommitSha, projectId, contentRoot, tree } = useStudio()
+  const initialStateRef = React.useRef<
+    | {
+        file: InitialFile
+        node: FileTreeNode
+        snapshot: CachedFileSnapshot
+      }
+    | null
+    | undefined
+  >(undefined)
+  if (initialStateRef.current === undefined) {
+    initialStateRef.current = initialFile
+      ? {
+          file: initialFile,
+          node: findTreeNode(tree, initialFile.path) ?? {
+            name: initialFile.path.split("/").pop() || initialFile.path,
+            path: initialFile.path,
+            sha: initialFile.sha,
+            type: "file",
+          },
+          snapshot: parseFileSnapshot(initialFile.content, initialFile.sha, initialFile.path),
+        }
+      : null
+  }
+  const initialState = initialStateRef.current
   const openFilesStorageKey = React.useMemo(
     () => `studio:openFiles:${owner}:${repo}:${branch}:${projectId || "none"}`,
     [owner, repo, branch, projectId],
@@ -73,26 +97,38 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
     [owner, repo, branch, projectId],
   )
 
-  const [selectedFile, setSelectedFile] = React.useState<FileTreeNode | null>(null)
+  const [selectedFile, setSelectedFile] = React.useState<FileTreeNode | null>(initialState?.node ?? null)
   const [openFiles, setOpenFiles] = React.useState<string[]>([])
   const [openFilesHydrated, setOpenFilesHydrated] = React.useState(false)
   const [recentFiles, setRecentFiles] = React.useState<string[]>([])
   const [recentFilesHydrated, setRecentFilesHydrated] = React.useState(false)
-  const [content, setContent] = React.useState("")
-  const [frontmatter, setFrontmatter] = React.useState<Record<string, unknown>>({})
-  const [sha, setSha] = React.useState<string | null>(null)
+  const [content, setContent] = React.useState(initialState?.snapshot.content ?? "")
+  const [frontmatter, setFrontmatter] = React.useState<Record<string, unknown>>(
+    initialState?.snapshot.frontmatter ?? {},
+  )
+  const [sha, setSha] = React.useState<string | null>(initialState?.snapshot.sha ?? null)
   const [isDirty, setIsDirty] = React.useState(false)
   const [isFileLoading, setIsFileLoading] = React.useState(false)
-  const [sourceAuthority, setSourceAuthority] = React.useState<SourceAuthority>("unknown")
+  const [sourceAuthority, setSourceAuthority] = React.useState<SourceAuthority>(
+    initialState?.snapshot.sourceAuthority ?? "unknown",
+  )
   const isSourceEditable = sourceAuthority === "editable"
-  const [sourceDiagnostic, setSourceDiagnostic] = React.useState<ParsedContentFile["diagnostic"]>()
+  const [sourceDiagnostic, setSourceDiagnostic] = React.useState<ParsedContentFile["diagnostic"]>(
+    initialState?.snapshot.sourceDiagnostic,
+  )
 
-  const fileCacheRef = React.useRef<Map<string, CachedFileSnapshot>>(new Map())
-  const fileCacheRevisionRef = React.useRef<Map<string, number>>(new Map())
+  const fileCacheRef = React.useRef<Map<string, CachedFileSnapshot>>(
+    initialState ? new Map([[initialState.file.path, initialState.snapshot]]) : new Map(),
+  )
+  const fileCacheRevisionRef = React.useRef<Map<string, number>>(
+    initialState ? new Map([[initialState.file.path, 1]]) : new Map(),
+  )
   const requestVersionRef = React.useRef(0)
   const remoteReadVersionRef = React.useRef<Map<string, number>>(new Map())
   const pendingDocumentHydrationRef = React.useRef<Map<string, PendingDocumentHydration>>(new Map())
-  const initialFileAppliedKeyRef = React.useRef<string | null>(null)
+  const initialFileAppliedKeyRef = React.useRef<string | null>(
+    initialState ? `${initialState.file.path}:${initialState.file.sha}` : null,
+  )
 
   const writeCachedSnapshot = React.useCallback((filePath: string, snapshot: CachedFileSnapshot) => {
     fileCacheRef.current.set(filePath, snapshot)
