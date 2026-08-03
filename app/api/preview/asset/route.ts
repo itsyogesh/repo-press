@@ -3,7 +3,7 @@ import { ConvexHttpClient } from "convex/browser"
 import { z } from "zod"
 import { api } from "@/convex/_generated/api"
 import type { Id } from "@/convex/_generated/dataModel"
-import { GitHubReadError, getBranchHeadSha, getFileForPublish } from "@/lib/github"
+import { GitHubReadError, getBranchHeadSha, getFileBytesForPublish } from "@/lib/github"
 import { sanitizeCompatibleImageSource } from "@/lib/preview/image-source-policy"
 import { compatiblePreviewSourcePathSchema } from "@/lib/preview/product-extension"
 import { mintServerQueryToken } from "@/lib/project-access-token"
@@ -128,7 +128,7 @@ export async function POST(request: Request) {
         url: source,
         maxBytes: MAX_IMAGE_BYTES,
         timeoutMs: IMAGE_TIMEOUT_MS,
-        allowedMimeTypes: ALLOWED_IMAGE_MIME_TYPES,
+        mimePolicy: { kind: "strict", allowedMimeTypes: ALLOWED_IMAGE_MIME_TYPES },
       })
       if (
         image.bytes.byteLength > MAX_IMAGE_BYTES ||
@@ -141,12 +141,13 @@ export async function POST(request: Request) {
     }
 
     const repoPath = resolveRepositoryPath(input.filePath, source)
-    const read = await getFileForPublish(
+    const read = await getFileBytesForPublish(
       auth.githubToken,
       project.repoOwner,
       project.repoName,
       repoPath,
       input.baseCommitSha,
+      MAX_IMAGE_BYTES,
     )
     if (read.status === "absent") throw new PreviewAssetRouteError(404)
     const bytes = read.file.bytes

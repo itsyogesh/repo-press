@@ -18,7 +18,22 @@ function download(
   url = "https://images.example.test/cover.png",
   overrides: Partial<Parameters<typeof fetchBoundedExternalImage>[0]> = {},
 ) {
-  return fetchBoundedExternalImage({ url, maxBytes: 64, timeoutMs: 1_000, allowedMimeTypes: ALLOWED, ...overrides })
+  return fetchBoundedExternalImage({
+    url,
+    maxBytes: 64,
+    timeoutMs: 1_000,
+    mimePolicy: { kind: "strict", allowedMimeTypes: ALLOWED },
+    ...overrides,
+  })
+}
+
+function legacyDownload(url = "https://images.example.test/cover.bin") {
+  return fetchBoundedExternalImage({
+    url,
+    maxBytes: 64,
+    timeoutMs: 1_000,
+    mimePolicy: { kind: "legacy-image" },
+  })
 }
 
 describe("fetchBoundedExternalImage", () => {
@@ -39,14 +54,25 @@ describe("fetchBoundedExternalImage", () => {
     "http://0177.0.0.1/image.png",
     "http://0x7f000001/image.png",
     "http://10.0.0.1/image.png",
+    "http://172.16.0.1/image.png",
     "http://100.64.0.1/image.png",
     "http://169.254.169.254/image.png",
+    "http://192.168.0.1/image.png",
     "http://192.0.2.1/image.png",
+    "http://192.88.99.1/image.png",
+    "http://198.51.100.1/image.png",
+    "http://203.0.113.1/image.png",
     "http://224.0.0.1/image.png",
+    "http://240.0.0.1/image.png",
     "http://[::1]/image.png",
     "http://[::ffff:127.0.0.1]/image.png",
     "http://[64:ff9b::7f00:1]/image.png",
     "http://[2001:db8::1]/image.png",
+    "http://[fec0::1]/image.png",
+    "http://[3fff::1]/image.png",
+    "http://[5f00::1]/image.png",
+    "http://[2002::1]/image.png",
+    "http://[::ffff:8.8.8.8]/image.png",
     "http://[fc00::1]/image.png",
   ])("rejects direct private, non-canonical, and reserved IP target %s", async (url) => {
     const fetchSpy = vi.spyOn(globalThis, "fetch")
@@ -71,6 +97,27 @@ describe("fetchBoundedExternalImage", () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch")
     await expect(download()).rejects.toMatchObject({ code: "unsafe-url" })
     expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    "fec0::1",
+    "3fff::1",
+    "5f00::1",
+    "2001:db8::1",
+    "2002::1",
+    "64:ff9b::808:808",
+    "::ffff:8.8.8.8",
+  ])("rejects a DNS answer from a non-global IPv6 range: %s", async (address) => {
+    dnsLookupMock.mockResolvedValue([{ address, family: 6 }])
+    const fetchSpy = vi.spyOn(globalThis, "fetch")
+    await expect(download()).rejects.toMatchObject({ code: "unsafe-url" })
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it("accepts a globally reachable IPv6 DNS answer", async () => {
+    dnsLookupMock.mockResolvedValue([{ address: "2606:4700:4700::1111", family: 6 }])
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(imageResponse())
+    await expect(download()).resolves.toMatchObject({ mimeType: "image/png" })
   })
 
   it("pins a validated DNS answer into the fetch dispatcher for each hop", async () => {
@@ -209,6 +256,24 @@ describe("fetchBoundedExternalImage", () => {
       }),
     )
     await expect(download()).rejects.toMatchObject({ code: "unsupported-media" })
+  })
+
+  it.each([
+    ["image/bmp", Uint8Array.from([0x42, 0x4d, 1, 2])],
+    ["image/x-icon", Uint8Array.from([0, 0, 1, 0])],
+    ["image/heic", new TextEncoder().encode("not-sniffed-heic")],
+    ["image/jpg", Uint8Array.from([0xff, 0xd8, 0xff])],
+    ["image/svg+xml", new TextEncoder().encode("<svg><script>legacy</script></svg>")],
+  ])("preserves the legacy media downloader's declared %s contract", async (mimeType, bytes) => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer, {
+        status: 200,
+        headers: { "content-type": mimeType },
+      }),
+    )
+    const result = await legacyDownload()
+    expect(result.mimeType).toBe(mimeType)
+    expect(Array.from(result.bytes)).toEqual(Array.from(bytes))
   })
 
   it("returns bounded PNG bytes and a canonical MIME type", async () => {

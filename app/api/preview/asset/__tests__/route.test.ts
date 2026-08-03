@@ -22,7 +22,7 @@ vi.mock("@/lib/route-auth", () => ({
 vi.mock("@/lib/github", () => ({
   GitHubReadError: class GitHubReadError extends Error {},
   getBranchHeadSha: vi.fn(),
-  getFileForPublish: vi.fn(),
+  getFileBytesForPublish: vi.fn(),
 }))
 vi.mock("@/lib/server/external-image", () => ({
   detectImageMimeType: vi.fn().mockReturnValue("image/png"),
@@ -39,7 +39,7 @@ vi.mock("@/lib/server/external-image", () => ({
 
 process.env.NEXT_PUBLIC_CONVEX_URL ||= "https://example.convex.cloud"
 
-import { GitHubReadError, getBranchHeadSha, getFileForPublish } from "@/lib/github"
+import { GitHubReadError, getBranchHeadSha, getFileBytesForPublish } from "@/lib/github"
 import { RouteAuthError, resolveRouteAuth } from "@/lib/route-auth"
 import { ExternalImageError, fetchBoundedExternalImage } from "@/lib/server/external-image"
 import { POST } from "../route"
@@ -80,9 +80,9 @@ describe("POST /api/preview/asset", () => {
     })
     vi.mocked(getBranchHeadSha).mockResolvedValue(BASE_SHA)
     vi.mocked(fetchBoundedExternalImage).mockResolvedValue({ bytes: PNG, mimeType: "image/png" })
-    vi.mocked(getFileForPublish).mockResolvedValue({
+    vi.mocked(getFileBytesForPublish).mockResolvedValue({
       status: "found",
-      file: { content: "binary-placeholder", bytes: PNG, sha: "b".repeat(40), name: "cover.png", path: "cover.png" },
+      file: { bytes: PNG, sha: "b".repeat(40), name: "cover.png", path: "cover.png" },
     } as never)
   })
 
@@ -102,7 +102,7 @@ describe("POST /api/preview/asset", () => {
     const response = await POST(request())
     expect(response.status).toBe(409)
     expect(fetchBoundedExternalImage).not.toHaveBeenCalled()
-    expect(getFileForPublish).not.toHaveBeenCalled()
+    expect(getFileBytesForPublish).not.toHaveBeenCalled()
   })
 
   it("returns bounded external bytes with only private non-sniffable response metadata", async () => {
@@ -123,7 +123,10 @@ describe("POST /api/preview/asset", () => {
       url: "https://images.example.test/cover.png",
       maxBytes: 4 * 1024 * 1024,
       timeoutMs: 5_000,
-      allowedMimeTypes: new Set(["image/png", "image/jpeg", "image/webp", "image/gif", "image/avif"]),
+      mimePolicy: {
+        kind: "strict",
+        allowedMimeTypes: new Set(["image/png", "image/jpeg", "image/webp", "image/gif", "image/avif"]),
+      },
     })
   })
 
@@ -134,23 +137,30 @@ describe("POST /api/preview/asset", () => {
   ])("reads repository source %s at the exact pinned commit", async (source, repoPath) => {
     const response = await POST(request({ source }))
     expect(response.status).toBe(200)
-    expect(getFileForPublish).toHaveBeenCalledWith("gh-token", "merry", "magic-mail", repoPath, BASE_SHA)
+    expect(getFileBytesForPublish).toHaveBeenCalledWith(
+      "gh-token",
+      "merry",
+      "magic-mail",
+      repoPath,
+      BASE_SHA,
+      4 * 1024 * 1024,
+    )
     expect(fetchBoundedExternalImage).not.toHaveBeenCalled()
     expect(new Uint8Array(await response.arrayBuffer())).toEqual(PNG)
   })
 
   it("returns an opaque 404 when a repository image is absent", async () => {
-    vi.mocked(getFileForPublish).mockResolvedValue({ status: "absent" })
+    vi.mocked(getFileBytesForPublish).mockResolvedValue({ status: "absent" })
     const response = await POST(request({ source: "/public/images/missing.png" }))
     expect(response.status).toBe(404)
     expect(await response.json()).toEqual({ error: "Preview asset unavailable" })
   })
 
   it("fails closed when a typed repository read does not expose raw bytes", async () => {
-    vi.mocked(getFileForPublish).mockResolvedValue({
+    vi.mocked(getFileBytesForPublish).mockResolvedValue({
       status: "found",
-      file: { content: "decoded-only", sha: "b".repeat(40), name: "cover.png", path: "public/cover.png" },
-    })
+      file: { bytes: undefined, sha: "b".repeat(40), name: "cover.png", path: "public/cover.png" },
+    } as never)
     const response = await POST(request({ source: "/public/cover.png" }))
     expect(response.status).toBe(502)
     expect(await response.json()).toEqual({ error: "Preview asset unavailable" })
@@ -177,7 +187,7 @@ describe("POST /api/preview/asset", () => {
     expect(body).toBe('{"error":"Preview asset unavailable"}')
     expect(body).not.toContain("private.example")
 
-    vi.mocked(getFileForPublish).mockRejectedValue(new GitHubReadError("secret/repository/path.png"))
+    vi.mocked(getFileBytesForPublish).mockRejectedValue(new GitHubReadError("secret/repository/path.png"))
     const repoResponse = await POST(request({ source: "/secret/repository/path.png" }))
     expect(repoResponse.status).toBe(502)
     expect(await repoResponse.text()).not.toContain("secret/repository")
@@ -199,6 +209,6 @@ describe("POST /api/preview/asset", () => {
       ).status,
     ).toBe(415)
     expect(fetchBoundedExternalImage).not.toHaveBeenCalled()
-    expect(getFileForPublish).not.toHaveBeenCalled()
+    expect(getFileBytesForPublish).not.toHaveBeenCalled()
   })
 })

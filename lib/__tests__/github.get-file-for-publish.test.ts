@@ -39,13 +39,7 @@ describe("getFileForPublish", () => {
     const result = await getFileForPublish("token", "acme", "docs-site", "docs/hello.md", "main")
     expect(result).toEqual({
       status: "found",
-      file: {
-        content: "# Hello",
-        bytes: new Uint8Array(Buffer.from("# Hello")),
-        sha: "sha-1",
-        name: "hello.md",
-        path: "docs/hello.md",
-      },
+      file: { content: "# Hello", sha: "sha-1", name: "hello.md", path: "docs/hello.md" },
     })
   })
 
@@ -91,13 +85,7 @@ describe("getFileForPublish", () => {
     const result = await getFileForPublish("token", "acme", "docs-site", "docs/big.md", "main")
     expect(result).toEqual({
       status: "found",
-      file: {
-        content: "# Big",
-        bytes: new Uint8Array(Buffer.from("# Big")),
-        sha: "blob-sha",
-        name: "big.md",
-        path: "docs/big.md",
-      },
+      file: { content: "# Big", sha: "blob-sha", name: "big.md", path: "docs/big.md" },
     })
     expect(mockOctokit.git.getBlob).toHaveBeenCalledWith(expect.objectContaining({ file_sha: "blob-sha" }))
   })

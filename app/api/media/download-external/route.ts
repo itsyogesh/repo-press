@@ -19,14 +19,6 @@ export const runtime = "nodejs"
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
 const MAX_EXTERNAL_IMAGE_BYTES = 10 * 1024 * 1024
-const MEDIA_IMAGE_MIME_TYPES = new Set([
-  "image/png",
-  "image/jpeg",
-  "image/webp",
-  "image/gif",
-  "image/avif",
-  "image/svg+xml",
-])
 
 interface DownloadExternalRequest {
   projectId?: string
@@ -115,7 +107,7 @@ export async function POST(request: Request) {
         url,
         maxBytes: MAX_EXTERNAL_IMAGE_BYTES,
         timeoutMs: 15_000,
-        allowedMimeTypes: MEDIA_IMAGE_MIME_TYPES,
+        mimePolicy: { kind: "legacy-image" },
       })
     } catch (error) {
       if (error instanceof ExternalImageError) {

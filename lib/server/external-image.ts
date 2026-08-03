@@ -6,6 +6,7 @@ import { Agent } from "undici"
 const MAX_REDIRECTS = 5
 const BLOCKED_IPV4_RANGES = new BlockList()
 const BLOCKED_IPV6_RANGES = new BlockList()
+const GLOBALLY_REACHABLE_IPV6_RANGES = new BlockList()
 
 for (const [address, prefix] of [
   ["0.0.0.0", 8],
@@ -41,6 +42,11 @@ for (const [address, prefix] of [
 ] as const) {
   BLOCKED_IPV6_RANGES.addSubnet(address, prefix, "ipv6")
 }
+// Public IPv6 allocations come from global unicast space. Special-purpose
+// subnets inside it remain denied below, and everything outside it is denied
+// by default rather than relying on an inevitably incomplete blocklist.
+GLOBALLY_REACHABLE_IPV6_RANGES.addSubnet("2000::", 3, "ipv6")
+BLOCKED_IPV6_RANGES.addSubnet("3fff::", 20, "ipv6")
 BLOCKED_IPV6_RANGES.addAddress("::", "ipv6")
 BLOCKED_IPV6_RANGES.addAddress("::1", "ipv6")
 
@@ -71,7 +77,9 @@ function isBlockedAddress(address: string) {
   const normalized = normalizedHostname(address)
   const family = isIP(normalized)
   if (family === 4) return BLOCKED_IPV4_RANGES.check(normalized, "ipv4")
-  if (family === 6) return BLOCKED_IPV6_RANGES.check(normalized, "ipv6")
+  if (family === 6) {
+    return !GLOBALLY_REACHABLE_IPV6_RANGES.check(normalized, "ipv6") || BLOCKED_IPV6_RANGES.check(normalized, "ipv6")
+  }
   return true
 }
 
@@ -223,7 +231,7 @@ export async function fetchBoundedExternalImage(input: {
   url: string
   maxBytes: number
   timeoutMs: number
-  allowedMimeTypes: ReadonlySet<string>
+  mimePolicy: Readonly<{ kind: "legacy-image" }> | Readonly<{ kind: "strict"; allowedMimeTypes: ReadonlySet<string> }>
 }): Promise<{ bytes: Uint8Array; mimeType: string }> {
   if (
     !Number.isSafeInteger(input.maxBytes) ||
@@ -281,11 +289,18 @@ export async function fetchBoundedExternalImage(input: {
 
       try {
         const declaredMimeType = canonicalContentType(response.headers.get("content-type"))
-        if (!input.allowedMimeTypes.has(declaredMimeType)) throw new ExternalImageError("unsupported-media")
+        if (
+          input.mimePolicy.kind === "legacy-image"
+            ? !declaredMimeType.startsWith("image/")
+            : !input.mimePolicy.allowedMimeTypes.has(declaredMimeType)
+        ) {
+          throw new ExternalImageError("unsupported-media")
+        }
         const bytes = await readBoundedBody(response, input.maxBytes)
-        const detectedMimeType = detectImageMimeType(bytes)
-        if (detectedMimeType !== declaredMimeType) throw new ExternalImageError("unsupported-media")
-        return { bytes, mimeType: detectedMimeType }
+        if (input.mimePolicy.kind === "strict" && detectImageMimeType(bytes) !== declaredMimeType) {
+          throw new ExternalImageError("unsupported-media")
+        }
+        return { bytes, mimeType: declaredMimeType }
       } finally {
         await dispatcher.close().catch(() => undefined)
       }
