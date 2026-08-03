@@ -117,6 +117,8 @@ describe("installed registry authoring in production Studio", () => {
       </StudioProvider>,
     )
     fireEvent.click(screen.getByRole("button", { name: /Callout/i }))
+    expect(screen.getByRole("complementary", { name: "Selected component details" })).toHaveTextContent("Callout")
+    fireEvent.click(screen.getByRole("button", { name: "Configure selected component" }))
     expect(await screen.findByRole("combobox", { name: "Variant" })).toHaveTextContent("default")
     expect(screen.getByRole("textbox", { name: "Children" })).toBeRequired()
   })
