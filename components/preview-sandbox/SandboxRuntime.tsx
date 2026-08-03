@@ -407,6 +407,7 @@ class CompatibleRenderErrorBoundary extends React.Component<
 export type SandboxAssetUrlRegistry = Readonly<{
   accept(delivery: Extract<SandboxAssetDelivery, { type: "asset-response" }>): string | null
   get(source: string): string | undefined
+  release(source: string): void
   clear(): void
   dispose(): void
 }>
@@ -416,39 +417,44 @@ export function createSandboxAssetUrlRegistry(
 ): SandboxAssetUrlRegistry {
   const createObjectURL = options.createObjectURL ?? ((blob: Blob) => URL.createObjectURL(blob))
   const revokeObjectURL = options.revokeObjectURL ?? ((url: string) => URL.revokeObjectURL(url))
-  const urls = new Map<string, string>()
+  const entries = new Map<string, { url: string; byteLength: number }>()
   let totalBytes = 0
   let disposed = false
 
   const clear = () => {
-    for (const url of urls.values()) revokeObjectURL(url)
-    urls.clear()
+    for (const entry of entries.values()) revokeObjectURL(entry.url)
+    entries.clear()
     totalBytes = 0
   }
 
   return Object.freeze({
     accept(delivery) {
-      if (
-        disposed ||
-        (!urls.has(delivery.source) && urls.size >= SANDBOX_MAX_ASSET_ITEMS) ||
-        totalBytes + delivery.bytes.byteLength > SANDBOX_MAX_ASSET_TOTAL_BYTES
-      ) {
+      if (disposed || (!entries.has(delivery.source) && entries.size >= SANDBOX_MAX_ASSET_ITEMS)) {
         return null
       }
+      const existing = entries.get(delivery.source)
+      const nextTotalBytes = totalBytes - (existing?.byteLength ?? 0) + delivery.bytes.byteLength
+      if (nextTotalBytes > SANDBOX_MAX_ASSET_TOTAL_BYTES) return null
       let url: string
       try {
         url = createObjectURL(new Blob([delivery.bytes], { type: delivery.mimeType }))
       } catch {
         return null
       }
-      const existing = urls.get(delivery.source)
-      if (existing) revokeObjectURL(existing)
-      urls.set(delivery.source, url)
-      totalBytes += delivery.bytes.byteLength
+      if (existing) revokeObjectURL(existing.url)
+      entries.set(delivery.source, { url, byteLength: delivery.bytes.byteLength })
+      totalBytes = nextTotalBytes
       return url
     },
     get(source) {
-      return urls.get(source)
+      return entries.get(source)?.url
+    },
+    release(source) {
+      const existing = entries.get(source)
+      if (!existing) return
+      revokeObjectURL(existing.url)
+      entries.delete(source)
+      totalBytes -= existing.byteLength
     },
     clear,
     dispose() {
@@ -457,6 +463,53 @@ export function createSandboxAssetUrlRegistry(
       clear()
     },
   })
+}
+
+export type SandboxAssetPresentationState = Readonly<{
+  urls: ReadonlyMap<string, string>
+  failures: ReadonlyMap<string, string>
+}>
+
+export function createSandboxAssetPresentationState(): SandboxAssetPresentationState {
+  return Object.freeze({ urls: new Map(), failures: new Map() })
+}
+
+export function applySandboxAssetDelivery(
+  current: SandboxAssetPresentationState,
+  delivery: SandboxAssetDelivery,
+  registry: SandboxAssetUrlRegistry,
+): SandboxAssetPresentationState {
+  const urls = new Map(current.urls)
+  const failures = new Map(current.failures)
+  if (delivery.type === "asset-error") {
+    registry.release(delivery.source)
+    urls.delete(delivery.source)
+    failures.set(delivery.source, "Image bytes were unavailable from the preview host.")
+    return Object.freeze({ urls, failures })
+  }
+  const url = registry.accept(delivery)
+  if (!url) {
+    failures.set(delivery.source, "Image bytes exceeded the sandbox display budget.")
+    return Object.freeze({ urls, failures })
+  }
+  urls.set(delivery.source, url)
+  failures.delete(delivery.source)
+  return Object.freeze({ urls, failures })
+}
+
+export function failSandboxAssetPresentation(
+  current: SandboxAssetPresentationState,
+  source: string,
+  assetUrl: string,
+  registry: SandboxAssetUrlRegistry,
+): SandboxAssetPresentationState {
+  if (current.urls.get(source) !== assetUrl) return current
+  registry.release(source)
+  const urls = new Map(current.urls)
+  const failures = new Map(current.failures)
+  urls.delete(source)
+  failures.set(source, "Image bytes could not be displayed.")
+  return Object.freeze({ urls, failures })
 }
 
 function collectCompatibleImageSources(tree: CompatibleRenderTree): string[] {
@@ -480,9 +533,24 @@ function collectCompatibleImageSources(tree: CompatibleRenderTree): string[] {
 
 export function SandboxRuntime() {
   const [renderTree, setRenderTree] = React.useState<CompatibleRenderTree | null>(null)
-  const [assetUrls, setAssetUrls] = React.useState<ReadonlyMap<string, string>>(() => new Map())
+  const [assetPresentation, setAssetPresentation] = React.useState<SandboxAssetPresentationState>(() =>
+    createSandboxAssetPresentationState(),
+  )
   const [renderError, setRenderError] = React.useState<string | null>(null)
   const bridgeRef = React.useRef<SandboxRuntimeBridge | null>(null)
+  const assetRegistryRef = React.useRef<SandboxAssetUrlRegistry | null>(null)
+  const assetPresentationRef = React.useRef<SandboxAssetPresentationState>(createSandboxAssetPresentationState())
+  const reportAssetFailure = React.useCallback(
+    (source: string, assetUrl: string, _reason: "load-failed" | "decode-failed") => {
+      const registry = assetRegistryRef.current
+      if (!registry) return
+      const next = failSandboxAssetPresentation(assetPresentationRef.current, source, assetUrl, registry)
+      if (next === assetPresentationRef.current) return
+      assetPresentationRef.current = next
+      setAssetPresentation(next)
+    },
+    [],
+  )
   const reportHostRenderFailure = React.useCallback(() => {
     const code = "COMPATIBLE_HOST_RENDER_FAILED"
     setRenderTree(null)
@@ -495,23 +563,22 @@ export function SandboxRuntime() {
     let active = true
     let workerRenderer: ReturnType<typeof createCompatibleWorkerRenderer> | null = null
     const assetRegistry = createSandboxAssetUrlRegistry()
+    assetRegistryRef.current = assetRegistry
     let bridge: SandboxRuntimeBridge
     bridge = createSandboxRuntimeBridge({
       sandboxWindow: window,
       parentWindow: window.parent,
       onAsset: (delivery) => {
-        if (!active || delivery.type !== "asset-response") return
-        const url = assetRegistry.accept(delivery)
-        if (!url) return
-        setAssetUrls((current) => {
-          const next = new Map(current)
-          next.set(delivery.source, url)
-          return next
-        })
+        if (!active) return
+        const next = applySandboxAssetDelivery(assetPresentationRef.current, delivery, assetRegistry)
+        assetPresentationRef.current = next
+        setAssetPresentation(next)
       },
       onResolution: (resolution) => {
         assetRegistry.clear()
-        setAssetUrls(new Map())
+        const emptyPresentation = createSandboxAssetPresentationState()
+        assetPresentationRef.current = emptyPresentation
+        setAssetPresentation(emptyPresentation)
         bridge.reportStatus("loading", COMPATIBLE_RENDERER_PROFILE)
         let phase: "compile" | "worker" = "compile"
         void prepareCompatibleWorkerJob(resolution.artifact)
@@ -563,6 +630,8 @@ export function SandboxRuntime() {
       workerRenderer?.dispose()
       bridge.dispose()
       assetRegistry.dispose()
+      assetRegistryRef.current = null
+      assetPresentationRef.current = createSandboxAssetPresentationState()
       bridgeRef.current = null
     }
   }, [])
@@ -571,7 +640,12 @@ export function SandboxRuntime() {
     <main className="min-h-screen bg-background text-foreground">
       {renderTree ? (
         <CompatibleRenderErrorBoundary onError={reportHostRenderFailure}>
-          <CompatibleRenderTreeView tree={renderTree} assetUrls={assetUrls} />
+          <CompatibleRenderTreeView
+            tree={renderTree}
+            assetUrls={assetPresentation.urls}
+            assetFailures={assetPresentation.failures}
+            onAssetFailure={reportAssetFailure}
+          />
         </CompatibleRenderErrorBoundary>
       ) : (
         <div

@@ -348,25 +348,47 @@ export function sanitizeCompatibleRenderTree(input: unknown): CompatibleRenderTr
   return sanitizeCompatibleRenderTreeWithDiagnostics(input)?.tree ?? null
 }
 
-function renderNode(node: CompatibleRenderNode, key: string, assetUrls: ReadonlyMap<string, string>): React.ReactNode {
+export type CompatibleAssetFailureReason = "load-failed" | "decode-failed"
+
+function renderNode(
+  node: CompatibleRenderNode,
+  key: string,
+  assetUrls: ReadonlyMap<string, string>,
+  assetFailures: ReadonlyMap<string, string>,
+  onAssetFailure?: (source: string, assetUrl: string, reason: CompatibleAssetFailureReason) => void,
+): React.ReactNode {
   if (node.kind === "text") return node.value
   if (node.kind === "image") {
     const mappedAssetUrl = assetUrls.get(node.source)
-    const assetUrl = mappedAssetUrl?.startsWith("blob:") ? mappedAssetUrl : undefined
+    const failure = assetFailures.get(node.source)
+    const assetUrl = !failure && mappedAssetUrl?.startsWith("blob:") ? mappedAssetUrl : undefined
     return (
       <figure
         key={key}
         className={`repopress-preview-image repopress-preview-image--${node.aspect}`}
         role={assetUrl ? undefined : "img"}
-        aria-label={assetUrl ? undefined : node.alt}
+        aria-label={assetUrl ? undefined : failure ? `${node.alt} — image unavailable` : node.alt}
+        data-preview-asset-status={failure ? "failed" : assetUrl ? "ready" : "pending"}
+        data-preview-asset-diagnostic={failure}
       >
         {assetUrl ? (
-          <img className="repopress-preview-image-surface" src={assetUrl} alt={node.alt} />
+          <img
+            className="repopress-preview-image-surface"
+            src={assetUrl}
+            alt={node.alt}
+            onError={() => onAssetFailure?.(node.source, assetUrl, "load-failed")}
+            onLoad={(event) => {
+              const image = event.currentTarget
+              if (typeof image.decode !== "function") return
+              void image.decode().catch(() => onAssetFailure?.(node.source, assetUrl, "decode-failed"))
+            }}
+          />
         ) : (
           <div className="repopress-preview-image-surface">
             <span className="repopress-preview-icon repopress-preview-icon--image" aria-hidden="true">
               ▧
             </span>
+            {failure ? <span>Image unavailable</span> : null}
           </div>
         )}
         <figcaption>{node.label}</figcaption>
@@ -378,16 +400,24 @@ function renderNode(node: CompatibleRenderNode, key: string, assetUrls: Readonly
   return React.createElement(
     node.tag,
     { ...node.props, key },
-    node.children.map((child, index) => renderNode(child, `${key}.${index}`, assetUrls)),
+    node.children.map((child, index) => renderNode(child, `${key}.${index}`, assetUrls, assetFailures, onAssetFailure)),
   )
 }
 
 export function CompatibleRenderTreeView({
   tree,
   assetUrls = new Map(),
+  assetFailures = new Map(),
+  onAssetFailure,
 }: {
   tree: CompatibleRenderTree
   assetUrls?: ReadonlyMap<string, string>
+  assetFailures?: ReadonlyMap<string, string>
+  onAssetFailure?: (source: string, assetUrl: string, reason: CompatibleAssetFailureReason) => void
 }) {
-  return <div data-compatible-preview>{tree.map((node, index) => renderNode(node, String(index), assetUrls))}</div>
+  return (
+    <div data-compatible-preview>
+      {tree.map((node, index) => renderNode(node, String(index), assetUrls, assetFailures, onAssetFailure))}
+    </div>
+  )
 }

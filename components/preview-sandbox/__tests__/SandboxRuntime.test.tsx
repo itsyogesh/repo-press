@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeAll, describe, expect, it, vi } from "vitest"
 import { createSignedCompatibleFixture } from "@/lib/preview/__tests__/compatible-test-fixture"
 import {
@@ -18,7 +18,14 @@ import {
   validateSandboxMessage,
 } from "@/lib/preview/sandbox-protocol"
 import { type CompatibleRenderTree, CompatibleRenderTreeView } from "../compatible-render-tree"
-import { createSandboxAssetUrlRegistry, createSandboxRuntimeBridge, SandboxRuntime } from "../SandboxRuntime"
+import {
+  applySandboxAssetDelivery,
+  createSandboxAssetPresentationState,
+  createSandboxAssetUrlRegistry,
+  createSandboxRuntimeBridge,
+  failSandboxAssetPresentation,
+  SandboxRuntime,
+} from "../SandboxRuntime"
 
 class FakePort {
   closed = false
@@ -369,6 +376,113 @@ describe("SandboxRuntime", () => {
     registry.dispose()
     unmount()
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:null/cover-2")
+  })
+
+  it("accounts replacements by live bytes instead of accumulating revoked blobs", () => {
+    const createObjectURL = vi
+      .fn()
+      .mockReturnValueOnce("blob:null/a-1")
+      .mockReturnValueOnce("blob:null/a-2")
+      .mockReturnValueOnce("blob:null/b")
+      .mockReturnValueOnce("blob:null/c")
+    const revokeObjectURL = vi.fn()
+    const registry = createSandboxAssetUrlRegistry({ createObjectURL, revokeObjectURL })
+    const delivery = (source: string, bytes: number) => ({
+      type: "asset-response" as const,
+      requestId: `asset-${source}`,
+      source,
+      mimeType: "image/png" as const,
+      bytes: new ArrayBuffer(bytes),
+    })
+
+    expect(registry.accept(delivery("a", SANDBOX_MAX_ASSET_BYTES))).toBe("blob:null/a-1")
+    expect(registry.accept(delivery("a", 1))).toBe("blob:null/a-2")
+    expect(registry.accept(delivery("b", SANDBOX_MAX_ASSET_BYTES))).toBe("blob:null/b")
+    expect(registry.accept(delivery("c", SANDBOX_MAX_ASSET_BYTES))).toBe("blob:null/c")
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:null/a-1")
+  })
+
+  it("keeps asset failures local, labelled, and recoverable without a document downgrade", async () => {
+    const source = "images/cover.png"
+    const tree: CompatibleRenderTree = [
+      { kind: "image", source, alt: "Santa cover", label: "Printable letter", aspect: "wide" },
+    ]
+    const onAssetFailure = vi.fn()
+    const { container, rerender } = render(
+      <CompatibleRenderTreeView
+        tree={tree}
+        assetUrls={new Map([[source, "blob:null/cover"]])}
+        assetFailures={new Map()}
+        onAssetFailure={onAssetFailure}
+      />,
+    )
+    const image = screen.getByRole("img", { name: "Santa cover" }) as HTMLImageElement
+    Object.defineProperty(image, "decode", { value: vi.fn().mockRejectedValue(new Error("decode failed")) })
+    fireEvent.load(image)
+    await waitFor(() => expect(onAssetFailure).toHaveBeenCalledWith(source, "blob:null/cover", "decode-failed"))
+    fireEvent.error(image)
+    expect(onAssetFailure).toHaveBeenCalledWith(source, "blob:null/cover", "load-failed")
+
+    rerender(
+      <CompatibleRenderTreeView
+        tree={tree}
+        assetUrls={new Map()}
+        assetFailures={new Map([[source, "Image bytes could not be displayed."]])}
+        onAssetFailure={onAssetFailure}
+      />,
+    )
+    expect(container.querySelector("img")).toBeNull()
+    expect(screen.getByRole("img", { name: "Santa cover — image unavailable" })).toHaveAttribute(
+      "data-preview-asset-status",
+      "failed",
+    )
+    expect(screen.getByText("Image unavailable")).toBeInTheDocument()
+    expect(container.querySelector("[data-compatible-preview]")).toBeInTheDocument()
+
+    rerender(
+      <CompatibleRenderTreeView
+        tree={tree}
+        assetUrls={new Map([[source, "blob:null/recovered"]])}
+        assetFailures={new Map()}
+        onAssetFailure={onAssetFailure}
+      />,
+    )
+    expect(screen.getByRole("img", { name: "Santa cover" })).toHaveAttribute("src", "blob:null/recovered")
+    expect(screen.queryByText("Image unavailable")).not.toBeInTheDocument()
+  })
+
+  it("records host errors per source and clears them only after a successful replacement", () => {
+    const source = "images/cover.png"
+    const registry = createSandboxAssetUrlRegistry({
+      createObjectURL: vi.fn().mockReturnValue("blob:null/recovered"),
+      revokeObjectURL: vi.fn(),
+    })
+    let state = createSandboxAssetPresentationState()
+    state = applySandboxAssetDelivery(
+      state,
+      { type: "asset-error", requestId: "asset-1", source, code: "unavailable" },
+      registry,
+    )
+    expect(state.urls.has(source)).toBe(false)
+    expect(state.failures.get(source)).toMatch(/unavailable/i)
+
+    state = applySandboxAssetDelivery(
+      state,
+      {
+        type: "asset-response",
+        requestId: "asset-2",
+        source,
+        mimeType: "image/png",
+        bytes: Uint8Array.from([1, 2]).buffer,
+      },
+      registry,
+    )
+    expect(state.urls.get(source)).toBe("blob:null/recovered")
+    expect(state.failures.has(source)).toBe(false)
+
+    state = failSandboxAssetPresentation(state, source, "blob:null/recovered", registry)
+    expect(state.urls.has(source)).toBe(false)
+    expect(state.failures.get(source)).toMatch(/displayed/i)
   })
 
   it("invalidates partial assembly on sequence gaps and closes command floods", async () => {

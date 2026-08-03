@@ -13,7 +13,9 @@ import type { PreviewResult } from "@/lib/preview/contracts"
 import { buildGenericRenderModel } from "@/lib/preview/generic-render-model"
 import {
   parseSandboxAssetDelivery,
+  SANDBOX_MAX_ASSET_BYTES,
   SANDBOX_MAX_ASSET_ITEMS,
+  SANDBOX_MAX_ASSET_TOTAL_BYTES,
   SANDBOX_MAX_MESSAGE_BYTES,
   SANDBOX_RATE_BURST,
   serializeSandboxMessage,
@@ -38,12 +40,17 @@ class FakePort {
   assetDeliveries: unknown[] = []
   transfers: Transferable[][] = []
   started = false
+  throwNextAssetDelivery = false
 
   close() {
     this.closed = true
   }
 
   postMessage(message: unknown, transfer: Transferable[] = []) {
+    if (typeof message !== "string" && this.throwNextAssetDelivery) {
+      this.throwNextAssetDelivery = false
+      throw new DOMException("Transfer failed", "DataCloneError")
+    }
     if (typeof message === "string") this.sent.push(message)
     else this.assetDeliveries.push(message)
     this.transfers.push(transfer)
@@ -507,6 +514,156 @@ describe("CompatiblePreviewFrame", () => {
     await waitFor(() => expect(channel.port1.sent).toHaveLength(SANDBOX_MAX_ASSET_ITEMS + 1))
     expect(peak).toBe(3)
     expect(channel.port1.sent.slice(1).every((wire) => wire.includes('"type":"repopress:asset-error"'))).toBe(true)
+    expect(host.getSessionState().invalidated).toBe(false)
+  })
+
+  it("cancels and refuses a streamed image as soon as it crosses four MiB", async () => {
+    const hostWindow = { addEventListener: vi.fn(), removeEventListener: vi.fn() }
+    const expectedWindow = { postMessage: vi.fn() }
+    const channel = new FakeMessageChannel()
+    const cancel = vi.fn()
+    const fetchAsset = vi.fn().mockResolvedValue(
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new Uint8Array(SANDBOX_MAX_ASSET_BYTES))
+            controller.enqueue(Uint8Array.from([1]))
+          },
+          cancel,
+        }),
+        { status: 200, headers: { "Content-Type": "image/png" } },
+      ),
+    )
+    const host = createCompatiblePreviewHost({
+      hostWindow,
+      iframeWindow: expectedWindow,
+      authorityContext,
+      createMessageChannel: () => channel as unknown as MessageChannel,
+      fetchAsset,
+    })
+    host.start()
+    const offer = JSON.parse(expectedWindow.postMessage.mock.calls[0][0])
+    host.receiveWindowMessage({
+      source: expectedWindow,
+      data: JSON.stringify({ ...offer, type: "repopress:bootstrap-accept" }),
+    })
+
+    channel.port1.emit(assetRequestWire(1, "asset-large", "images/large.png"))
+    await waitFor(() => expect(channel.port1.sent).toHaveLength(1))
+    expect(cancel).toHaveBeenCalledOnce()
+    expect(channel.port1.assetDeliveries).toEqual([])
+    expect(channel.port1.sent[0]).toContain('"type":"repopress:asset-error"')
+  })
+
+  it("caps successful transfers at twelve MiB across otherwise valid images", async () => {
+    const hostWindow = { addEventListener: vi.fn(), removeEventListener: vi.fn() }
+    const expectedWindow = { postMessage: vi.fn() }
+    const channel = new FakeMessageChannel()
+    const fetchAsset = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        new Response(new Uint8Array(SANDBOX_MAX_ASSET_BYTES), {
+          status: 200,
+          headers: { "Content-Type": "image/png", "Content-Length": String(SANDBOX_MAX_ASSET_BYTES) },
+        }),
+      ),
+    )
+    const host = createCompatiblePreviewHost({
+      hostWindow,
+      iframeWindow: expectedWindow,
+      authorityContext,
+      createMessageChannel: () => channel as unknown as MessageChannel,
+      fetchAsset,
+    })
+    host.start()
+    const offer = JSON.parse(expectedWindow.postMessage.mock.calls[0][0])
+    host.receiveWindowMessage({
+      source: expectedWindow,
+      data: JSON.stringify({ ...offer, type: "repopress:bootstrap-accept" }),
+    })
+    for (let index = 0; index < 4; index += 1) {
+      channel.port1.emit(assetRequestWire(index + 1, `asset-total-${index}`, `images/total-${index}.png`))
+    }
+
+    await waitFor(() => expect(channel.port1.assetDeliveries).toHaveLength(3))
+    await waitFor(() => expect(channel.port1.sent).toHaveLength(1))
+    expect(
+      channel.port1.transfers.flat().reduce<number>((total, item) => total + (item as ArrayBuffer).byteLength, 0),
+    ).toBe(SANDBOX_MAX_ASSET_TOTAL_BYTES)
+    expect(channel.port1.sent[0]).toContain('"type":"repopress:asset-error"')
+  })
+
+  it("aborts in-flight image reads on dispose and ignores their stale completion", async () => {
+    const hostWindow = { addEventListener: vi.fn(), removeEventListener: vi.fn() }
+    const expectedWindow = { postMessage: vi.fn() }
+    const channel = new FakeMessageChannel()
+    let resolveFetch: (response: Response) => void = () => {}
+    let requestSignal: AbortSignal | undefined
+    const fetchAsset = vi.fn().mockImplementation(
+      (_input: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((resolve) => {
+          resolveFetch = resolve
+          requestSignal = init?.signal ?? undefined
+        }),
+    )
+    const host = createCompatiblePreviewHost({
+      hostWindow,
+      iframeWindow: expectedWindow,
+      authorityContext,
+      createMessageChannel: () => channel as unknown as MessageChannel,
+      fetchAsset,
+    })
+    host.start()
+    const offer = JSON.parse(expectedWindow.postMessage.mock.calls[0][0])
+    host.receiveWindowMessage({
+      source: expectedWindow,
+      data: JSON.stringify({ ...offer, type: "repopress:bootstrap-accept" }),
+    })
+    channel.port1.emit(assetRequestWire(1, "asset-stale", "images/stale.png"))
+    expect(requestSignal?.aborted).toBe(false)
+
+    host.dispose()
+    expect(requestSignal?.aborted).toBe(true)
+    resolveFetch(new Response(Uint8Array.from([1]), { status: 200, headers: { "Content-Type": "image/png" } }))
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(channel.port1.assetDeliveries).toEqual([])
+    expect(channel.port1.sent).toEqual([])
+    expect(channel.port1.closed).toBe(true)
+  })
+
+  it("rolls back transfer accounting when postMessage fails so later images retain the full budget", async () => {
+    const hostWindow = { addEventListener: vi.fn(), removeEventListener: vi.fn() }
+    const expectedWindow = { postMessage: vi.fn() }
+    const channel = new FakeMessageChannel()
+    channel.port1.throwNextAssetDelivery = true
+    const fetchAsset = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        new Response(new Uint8Array(SANDBOX_MAX_ASSET_BYTES), {
+          status: 200,
+          headers: { "Content-Type": "image/png", "Content-Length": String(SANDBOX_MAX_ASSET_BYTES) },
+        }),
+      ),
+    )
+    const host = createCompatiblePreviewHost({
+      hostWindow,
+      iframeWindow: expectedWindow,
+      authorityContext,
+      createMessageChannel: () => channel as unknown as MessageChannel,
+      fetchAsset,
+    })
+    host.start()
+    const offer = JSON.parse(expectedWindow.postMessage.mock.calls[0][0])
+    host.receiveWindowMessage({
+      source: expectedWindow,
+      data: JSON.stringify({ ...offer, type: "repopress:bootstrap-accept" }),
+    })
+    for (let index = 0; index < 4; index += 1) {
+      channel.port1.emit(assetRequestWire(index + 1, `asset-post-${index}`, `images/post-${index}.png`))
+    }
+
+    await waitFor(() => expect(channel.port1.assetDeliveries).toHaveLength(3))
+    expect(channel.port1.sent).toHaveLength(1)
+    expect(channel.port1.sent[0]).toContain('"type":"repopress:asset-error"')
     expect(host.getSessionState().invalidated).toBe(false)
   })
 

@@ -272,7 +272,7 @@ export function createCompatiblePreviewHost(options: {
             throw new Error("Asset unavailable")
           }
           if (disposed || port !== authenticatedPort || controller.signal.aborted) return
-          transferredAssetBytes += bytes.byteLength
+          const byteLength = bytes.byteLength
           const delivery = createSandboxAssetResponse({
             sessionId: state.sessionId,
             snapshotVersion: state.snapshotVersion,
@@ -282,6 +282,7 @@ export function createCompatiblePreviewHost(options: {
             bytes,
           })
           authenticatedPort.postMessage(delivery, [delivery.bytes])
+          transferredAssetBytes += byteLength
         })
         .catch(() => sendAssetError(request))
         .finally(() => {
