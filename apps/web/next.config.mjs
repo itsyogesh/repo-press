@@ -1,4 +1,7 @@
 import { withSentryConfig } from "@sentry/nextjs"
+import path from "node:path"
+
+const monorepoRoot = path.resolve(import.meta.dirname, "../..")
 
 function normalizeConfiguredOrigin(value, environment) {
 	if (!value) return null
@@ -67,10 +70,10 @@ export function createPreviewSandboxHeaders(studioOriginValue, environment = pro
 
 /** @type {import('next').NextConfig} */
 export const nextConfig = {
-  // Pin the workspace root to this project — a stray pnpm-lock.yaml in the
-  // home dir was otherwise inferred as the Turbopack root.
+  // Dependencies and the sole lockfile live at the npm workspace root.
+  outputFileTracingRoot: monorepoRoot,
   turbopack: {
-    root: import.meta.dirname,
+    root: monorepoRoot,
   },
   async headers() {
     return [

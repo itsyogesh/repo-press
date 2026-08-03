@@ -1,6 +1,6 @@
 "use client"
 
-import { Callout, DocsImage, DocsVideo } from "@/components/docs/doc-media"
+import { Callout, DocsImage, DocsVideo } from "@/apps/web/components/docs/doc-media"
 
 export const adapter = {
   components: {
@@ -13,6 +13,6 @@ export const adapter = {
     DOCS_SETUP_MEDIA: {},
   },
   allowImports: {
-    "@/components/docs/doc-media": { DocsImage, Callout, DocsVideo },
+    "@/apps/web/components/docs/doc-media": { DocsImage, Callout, DocsVideo },
   },
 }

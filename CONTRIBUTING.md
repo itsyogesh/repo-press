@@ -8,8 +8,8 @@ Before diving in, please read the [README](./README.md) for an overview of the p
 
 ### Prerequisites
 
-- **Node.js 22+**
-- **npm** or **pnpm**
+- **Node.js 22.12+**
+- **npm 11+**
 
 ### Getting Started
 
@@ -29,13 +29,13 @@ Before diving in, please read the [README](./README.md) for an overview of the p
 3. **Start the Convex dev server** (creates `.env.local` automatically):
 
    ```bash
-   npx convex dev
+   npm exec --workspace @repopress/web -- convex dev
    ```
 
 4. **Start the Next.js dev server** (in a separate terminal):
 
    ```bash
-   npx next dev --port 3001
+   npm run dev:web -- --port 3001
    ```
 
 > **Note:** You need both servers running concurrently for the app to work.
@@ -46,9 +46,9 @@ The Convex CLI sets up most variables automatically. You only need to add a few 
 
 | Variable | How to set |
 |---|---|
-| `NEXT_PUBLIC_CONVEX_URL` | Auto-set by `npx convex dev` |
-| `NEXT_PUBLIC_CONVEX_SITE_URL` | Auto-set by `npx convex dev` |
-| `CONVEX_DEPLOYMENT` | Auto-set by `npx convex dev` |
+| `NEXT_PUBLIC_CONVEX_URL` | Auto-set by the Convex dev command |
+| `NEXT_PUBLIC_CONVEX_SITE_URL` | Auto-set by the Convex dev command |
+| `CONVEX_DEPLOYMENT` | Auto-set by the Convex dev command |
 | `GITHUB_CLIENT_ID` | Set in the Convex dashboard - needed for GitHub OAuth login |
 | `GITHUB_CLIENT_SECRET` | Set in the Convex dashboard - needed for GitHub OAuth login |
 | `BETTER_AUTH_SECRET` | A random string for session encryption - set in the Convex dashboard |
@@ -84,11 +84,13 @@ npm run build       # Production build
 
 RepoPress uses a three-layer architecture:
 
+The product source lives in `apps/web`; root npm commands orchestrate the workspaces.
+
 - **Next.js 16 (App Router)** - Frontend pages, server components, and route handlers.
 - **Convex** - Backend database for all persistent state (projects, documents, drafts, history, taxonomy, auth sessions).
 - **Better Auth** - GitHub OAuth authentication. Runs **inside Convex functions**, not in Next.js. Never create a `betterAuth()` instance outside of `convex/auth.ts`.
 - **GitHub API (Octokit)** - Reads repo contents and commits published files back to GitHub.
-- **Tailwind CSS v4 + shadcn/ui** - Styling and component library. Config lives in `app/globals.css` via `@theme inline {}` (no `tailwind.config.js`).
+- **Tailwind CSS v4 + shadcn/ui** - Styling and component library. Config lives in `apps/web/app/globals.css` via `@theme inline {}` (no `tailwind.config.js`).
 
 ## Key Conventions
 
@@ -97,7 +99,7 @@ RepoPress uses a three-layer architecture:
 - **Indexed queries** - Use `.withIndex()` in Convex queries. Never scan entire tables.
 - **Design tokens** - Use semantic tokens (`bg-background`, `text-foreground`, `bg-muted`, etc.). Never use hardcoded colors like `bg-white` or `text-black`.
 - **Async params (Next.js 16)** - Always `await` params, searchParams, headers, and cookies. They are async in Next.js 16.
-- **GitHub token safety** - Use `createGitHubClient()` from `lib/github.ts` for all GitHub API calls. It sanitizes tokens by stripping non-ASCII characters.
+- **GitHub token safety** - Use `createGitHubClient()` from `apps/web/lib/github.ts` for all GitHub API calls. It sanitizes tokens by stripping non-ASCII characters.
 
 ## Testing
 

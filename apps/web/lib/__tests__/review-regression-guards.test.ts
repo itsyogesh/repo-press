@@ -10,6 +10,7 @@ import {
 } from "../host-execution-guard"
 
 const ROOT = process.cwd()
+const REPOSITORY_ROOT = path.resolve(ROOT, "../..")
 
 const clientFiles = [
   "components/studio/studio-context.tsx",
@@ -913,7 +914,8 @@ describe("review regression guards", () => {
   })
 
   it("documents the Next.js 16 proxy convention in CLAUDE.md", () => {
-    const claude = read("CLAUDE.md")
+    const claude = fs.readFileSync(path.join(REPOSITORY_ROOT, "CLAUDE.md"), "utf8")
+    expect(claude).toContain("apps/web")
     expect(claude).toContain("proxy.ts")
     expect(claude).not.toContain("middleware.ts")
   })

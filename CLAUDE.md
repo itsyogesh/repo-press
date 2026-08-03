@@ -29,8 +29,8 @@ Next.js 16 (App Router) <-> Convex (database + auth) <-> GitHub API (content rea
 
 ### Development
 ```bash
-npx next dev --port 3001
-npx convex dev
+npm run dev:web -- --port 3001
+npm exec --workspace @repopress/web -- convex dev
 ```
 
 Run both servers concurrently in separate terminals.
@@ -38,8 +38,8 @@ Run both servers concurrently in separate terminals.
 ### Testing
 ```bash
 npm run test
-npm run test:watch
-vitest run <path>
+npm run test:watch --workspace @repopress/web
+npm exec --workspace @repopress/web -- vitest run <path>
 ```
 
 Tests live in `__tests__/` directories (for example, `app/api/github/__tests__/route.test.ts`) and use Vitest.
@@ -56,7 +56,7 @@ Biome handles formatting and linting. Special rules for `components/ui/` relax a
 ### Building
 ```bash
 npm run build
-npm run start
+npm run start --workspace @repopress/web
 ```
 
 ### Critical: Auth Architecture
@@ -87,6 +87,9 @@ app/api/auth/[...all]/   -- Next.js route that proxies auth requests to Convex
 | Content | gray-matter, react-markdown, remark-gfm | Latest |
 
 ## Project Structure
+
+The Next.js and Convex paths below are relative to `apps/web/`. Repository guides, internal docs, and workspace
+orchestration stay at the repository root.
 
 ```
 app/                              # Next.js App Router
@@ -326,8 +329,8 @@ Never read `.env.local`, `.env`, or other secrets files directly. If a task need
 
 ### Local Development Setup
 ```bash
-npx convex dev
-npx next dev --port 3001
+npm exec --workspace @repopress/web -- convex dev
+npm run dev:web -- --port 3001
 ```
 
 Keep the GitHub OAuth variables and `BETTER_AUTH_SECRET` in Convex. Add only the shared RepoPress capability secret to the Next.js `.env.local` file:
@@ -390,4 +393,4 @@ REPOPRESS_CAPABILITY_SECRET=<same-value-configured-in-convex>
 - `AGENTS.md` and `CLAUDE.md` remain concise companion references for RepoPress-specific guidance.
 - `.github/plans/` is for draft plans only; do not commit files there.
 - `README.md` covers the user-facing overview and setup.
-- `convex/README.md` covers Convex-specific patterns and query reference.
+- `apps/web/convex/README.md` covers Convex-specific patterns and query reference.

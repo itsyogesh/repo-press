@@ -8,9 +8,11 @@
   },
   "workspaces": ["apps/*", "packages/*"],
   "scripts": {
-    "dev:web": "npm run dev --workspace @repopress/web",
-    "dev:docs": "npm run dev --workspace @repopress/docs",
+    "dev:web": "npm run dev --workspace @repopress/web --",
+    "dev:docs": "npm run dev --workspace @repopress/docs --",
     "lint": "npm run lint --workspaces --if-present",
+    "lint:fix": "npm run lint:fix --workspaces --if-present",
+    "format": "npm run format --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "build": "npm run build --workspaces --if-present",

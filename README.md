@@ -59,43 +59,18 @@ RepoPress connects to your GitHub repositories and gives you a Notion-like editi
 
 ```
 /
-├── app/                          # Next.js App Router pages
-│   ├── api/
-│   │   ├── auth/[...all]/        # Better Auth API proxy
-│   │   └── github/save/          # GitHub file save endpoint
-│   ├── dashboard/                # Dashboard (repo list)
-│   │   └── [owner]/[repo]/
-│   │       ├── blob/[...path]/   # File viewer
-│   │       ├── setup/            # Project setup wizard
-│   │       └── studio/[[...path]]/ # MDX Studio editor
-│   ├── login/                    # Login page (OAuth + PAT)
-│   └── page.tsx                  # Landing page
-├── components/
-│   ├── landing/                  # Landing page sections (hero, features, FAQ, CTA, navbar)
-│   ├── studio/                   # Studio layout, file tree, editor, preview
-│   ├── providers.tsx             # Convex + Better Auth provider wrapper
-│   └── ui/                       # shadcn/ui components
-├── convex/                       # Convex backend
-│   ├── schema.ts                 # Full database schema (25 tables)
-│   ├── auth.ts                   # Better Auth instance (runs inside Convex)
-│   ├── auth.config.ts            # Convex auth config
-│   ├── convex.config.ts          # Convex app config
-│   ├── http.ts                   # HTTP router for auth endpoints
-│   ├── projects.ts               # Project CRUD queries/mutations
-│   ├── documents.ts              # Document CRUD + status management
-│   ├── documentHistory.ts        # Version history queries
-│   ├── authors.ts, tags.ts, categories.ts  # Taxonomy management
-│   ├── collections.ts            # Content collection definitions
-│   ├── mediaAssets.ts            # Media/asset tracking
-│   ├── webhooks.ts               # Webhook management + triggering
-│   └── folderMeta.ts             # Folder meta (sidebar ordering)
-├── lib/
-│   ├── auth-client.ts            # Better Auth client (browser-side)
-│   ├── auth-server.ts            # Better Auth server helpers (Next.js)
-│   ├── framework-detector.ts     # Auto-detect framework from repo contents
-│   ├── github.ts                 # GitHub API utilities (Octokit)
-│   └── utils.ts                  # General utilities (cn, etc.)
-└── proxy.ts                      # Auth guard for /dashboard routes
+├── apps/
+│   ├── web/                      # Next.js + Convex product workspace
+│   │   ├── app/                  # App Router pages and route handlers
+│   │   ├── components/           # Landing, Studio, and shadcn UI
+│   │   ├── convex/               # Backend, auth, and persistent state
+│   │   ├── lib/                  # GitHub, preview, publish, and auth logic
+│   │   └── proxy.ts              # Auth guard for dashboard routes
+│   └── docs/                     # Standalone documentation workspace
+├── packages/                     # Reserved for shared packages
+├── docs/                         # Internal plans, reviews, and runbooks
+├── package.json                  # npm workspace orchestration
+└── package-lock.json             # Sole dependency lockfile
 ```
 
 ---
@@ -223,10 +198,10 @@ npm install
 ### 3. Set up Convex
 
 ```bash
-npx convex dev
+npm exec --workspace @repopress/web -- convex dev
 ```
 
-This will prompt you to create a Convex project and populate your `.env.local` with the required Convex URLs.
+This will prompt you to create a Convex project and populate `apps/web/.env.local` with the required Convex URLs.
 
 ### 4. Set up environment variables
 
@@ -234,14 +209,14 @@ Configure the GitHub OAuth variables and `BETTER_AUTH_SECRET` in the Convex dash
 
 ```bash
 openssl rand -base64 32
-npx convex env set REPOPRESS_CAPABILITY_SECRET <generated-value>
+npm exec --workspace @repopress/web -- convex env set REPOPRESS_CAPABILITY_SECRET <generated-value>
 ```
 
-The command above configures the development deployment selected by
-`npx convex dev`. For production, target the production deployment explicitly:
+The command above configures the development deployment selected by Convex. For production, target the production
+deployment explicitly:
 
 ```bash
-npx convex env set --prod REPOPRESS_CAPABILITY_SECRET <generated-value>
+npm exec --workspace @repopress/web -- convex env set --prod REPOPRESS_CAPABILITY_SECRET <generated-value>
 ```
 
 ```dotenv
@@ -254,12 +229,12 @@ You need to run both the Next.js and Convex dev servers concurrently in separate
 
 **Terminal 1 - Convex:**
 ```bash
-npx convex dev
+npm exec --workspace @repopress/web -- convex dev
 ```
 
 **Terminal 2 - Next.js:**
 ```bash
-npx next dev --port 3001
+npm run dev:web -- --port 3001
 ```
 
 Open [http://localhost:3001](http://localhost:3001) to see the app.

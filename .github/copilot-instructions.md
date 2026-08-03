@@ -47,8 +47,8 @@ RepoPress is a Git-native headless CMS for GitHub repositories. It provides visu
 
 ### Development
 ```bash
-npx next dev --port 3001       # Start Next.js dev server (port 3001)
-npx convex dev                 # Start Convex dev server (watches schema changes)
+npm run dev:web -- --port 3001                         # Start Next.js dev server
+npm exec --workspace @repopress/web -- convex dev      # Start Convex dev server
 ```
 
 Run both servers concurrently in separate terminals.
@@ -56,11 +56,11 @@ Run both servers concurrently in separate terminals.
 ### Testing
 ```bash
 npm run test            # Run all tests once
-npm run test:watch     # Run tests in watch mode
-vitest run <path>      # Run single test file
+npm run test:watch --workspace @repopress/web          # Run tests in watch mode
+npm exec --workspace @repopress/web -- vitest run <path> # Run one test file
 ```
 
-Tests located in `__tests__/` directories (e.g., `app/api/github/__tests__/route.test.ts`). Configured in `vitest.config.ts`.
+Web tests live in `apps/web/**/__tests__/` and are configured in `apps/web/vitest.config.ts`.
 
 ### Linting & Formatting
 ```bash
@@ -69,15 +69,17 @@ npm run lint:fix      # Auto-fix issues
 npm run format        # Format code (Biome, 2-space indent, 120-char width)
 ```
 
-Configured via `biome.json`. Special rules for `components/ui/` relax a11y constraints (shadcn/ui).
+Configured via the root `biome.json`. Special rules for `components/ui/` relax a11y constraints (shadcn/ui).
 
 ### Building
 ```bash
 npm run build         # Next.js production build (.next/)
-npm run start         # Run production-built app
+npm run start --workspace @repopress/web # Run the production-built web app
 ```
 
 ## Architecture Overview
+
+All App Router, Convex, library, and component paths below are relative to the `apps/web/` workspace.
 
 ### Three-Layer Design
 1. **Next.js 16 (App Router)** – Frontend, server components, async route handlers
@@ -318,15 +320,15 @@ Example: "I need `NEXT_PUBLIC_CONVEX_URL` to complete this task. Please provide 
 ### Local Development Setup
 ```bash
 # 1. Initialize Convex (creates .env.local with CONVEX_* vars)
-npx convex dev
+npm exec --workspace @repopress/web -- convex dev
 
 # 2. Configure GitHub OAuth and BETTER_AUTH_SECRET in Convex.
 # Add only the shared RepoPress capability secret to .env.local:
 # REPOPRESS_CAPABILITY_SECRET=<same-value-configured-in-convex>
 
 # 3. Start dev servers
-npx next dev --port 3001
-npx convex dev  # in another terminal
+npm run dev:web -- --port 3001
+npm exec --workspace @repopress/web -- convex dev  # in another terminal
 ```
 
 ### Troubleshooting
@@ -432,7 +434,7 @@ if (err.status === 429) setRateLimited(true)          // Rate limit hit
 - **Why comments** – Inline comments explain "why", not "what". Code should be self-explanatory.
 
 ### Where to Document
-- `convex/README.md` – Convex-specific patterns and query reference
+- `apps/web/convex/README.md` – Convex-specific patterns and query reference
 - `CLAUDE.md` / `AGENTS.md` – Comprehensive architecture and function reference
 - `README.md` – Feature overview, setup instructions, supported frameworks
 - `copilot-instructions.md` – This file; update with new patterns as they emerge
@@ -461,4 +463,4 @@ Full architecture and implementation details:
 - `CLAUDE.md` – Complete Convex patterns, tables, and function reference
 - `AGENTS.md` – Same as CLAUDE.md (alternate reference for agents)
 - `README.md` – Feature overview, setup, supported frameworks
-- `convex/README.md` – Convex-specific patterns
+- `apps/web/convex/README.md` – Convex-specific patterns
