@@ -1,10 +1,11 @@
 import sharp from "sharp"
+import { MAX_PREVIEW_ASSET_DECODED_PIXELS } from "@/lib/preview/asset-budget-policy"
 
 export const MAX_PREVIEW_IMAGE_WIDTH = 8_192
 export const MAX_PREVIEW_IMAGE_HEIGHT = 8_192
-export const MAX_PREVIEW_IMAGE_FRAME_PIXELS = 24_000_000
+export const MAX_PREVIEW_IMAGE_FRAME_PIXELS = 12_000_000
 export const MAX_PREVIEW_IMAGE_PAGES = 16
-export const MAX_PREVIEW_IMAGE_AGGREGATE_PIXELS = 32_000_000
+export const MAX_PREVIEW_IMAGE_AGGREGATE_PIXELS = MAX_PREVIEW_ASSET_DECODED_PIXELS
 
 const FORMAT_MIME_TYPES = {
   avif: "image/avif",
@@ -25,7 +26,7 @@ function positiveInteger(value: number | undefined) {
   return Number.isSafeInteger(value) && (value ?? 0) > 0
 }
 
-export async function assertSafePreviewImageWorkload(bytes: Uint8Array, expectedMimeType: string): Promise<void> {
+export async function assertSafePreviewImageWorkload(bytes: Uint8Array, expectedMimeType: string): Promise<number> {
   let metadata: Awaited<ReturnType<ReturnType<typeof sharp>["metadata"]>>
   try {
     metadata = await sharp(bytes, {
@@ -66,4 +67,5 @@ export async function assertSafePreviewImageWorkload(bytes: Uint8Array, expected
   ) {
     throw new PreviewImageWorkloadError("too-large")
   }
+  return aggregatePixels
 }

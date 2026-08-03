@@ -3,7 +3,9 @@ import {
   MAX_PREVIEW_ASSET_ATTEMPTS,
   MAX_PREVIEW_ASSET_BYTES,
   MAX_PREVIEW_ASSET_CONCURRENCY,
+  MAX_PREVIEW_ASSET_DECODED_PIXELS,
   MAX_PREVIEW_ASSET_WINDOW_BYTES,
+  MAX_PREVIEW_ASSET_WINDOW_DECODED_PIXELS,
   PREVIEW_ASSET_RESERVATION_TTL_MS,
   PREVIEW_ASSET_WINDOW_MS,
 } from "../lib/preview/asset-budget-policy"
@@ -17,7 +19,12 @@ const beginResult = v.union(
   v.object({ reserved: v.literal(true), reservationId: v.id("previewAssetReservations") }),
   v.object({
     reserved: v.literal(false),
-    reason: v.union(v.literal("attempt-limit"), v.literal("concurrency-limit"), v.literal("byte-limit")),
+    reason: v.union(
+      v.literal("attempt-limit"),
+      v.literal("concurrency-limit"),
+      v.literal("byte-limit"),
+      v.literal("decoded-pixel-limit"),
+    ),
   }),
 )
 
@@ -68,6 +75,7 @@ export const begin = mutation({
         windowStartedAt: now,
         attempts: 0,
         consumedBytes: 0,
+        consumedDecodedPixels: 0,
         createdAt: now,
         updatedAt: now,
       })
@@ -89,9 +97,17 @@ export const begin = mutation({
         windowStartedAt: now,
         attempts: 0,
         consumedBytes: 0,
+        consumedDecodedPixels: 0,
         updatedAt: now,
       })
-      budget = { ...budgetRow, windowStartedAt: now, attempts: 0, consumedBytes: 0, updatedAt: now }
+      budget = {
+        ...budgetRow,
+        windowStartedAt: now,
+        attempts: 0,
+        consumedBytes: 0,
+        consumedDecodedPixels: 0,
+        updatedAt: now,
+      }
     }
 
     const activeReservations = []
@@ -110,12 +126,25 @@ export const begin = mutation({
     if (budget.consumedBytes + reservedBytes + MAX_PREVIEW_ASSET_BYTES > MAX_PREVIEW_ASSET_WINDOW_BYTES) {
       return { reserved: false as const, reason: "byte-limit" as const }
     }
+    const consumedDecodedPixels =
+      budget.consumedDecodedPixels ?? (budget.attempts > 0 ? MAX_PREVIEW_ASSET_WINDOW_DECODED_PIXELS : 0)
+    const reservedDecodedPixels = activeReservations.reduce(
+      (total, reservation) => total + (reservation.reservedDecodedPixels ?? MAX_PREVIEW_ASSET_DECODED_PIXELS),
+      0,
+    )
+    if (
+      consumedDecodedPixels + reservedDecodedPixels + MAX_PREVIEW_ASSET_DECODED_PIXELS >
+      MAX_PREVIEW_ASSET_WINDOW_DECODED_PIXELS
+    ) {
+      return { reserved: false as const, reason: "decoded-pixel-limit" as const }
+    }
 
     const reservationId = await ctx.db.insert("previewAssetReservations", {
       budgetId: budget._id,
       projectId: args.projectId,
       userId: args.actingUserId,
       reservedBytes: MAX_PREVIEW_ASSET_BYTES,
+      reservedDecodedPixels: MAX_PREVIEW_ASSET_DECODED_PIXELS,
       expiresAt: now + PREVIEW_ASSET_RESERVATION_TTL_MS,
       createdAt: now,
       updatedAt: now,
@@ -123,7 +152,11 @@ export const begin = mutation({
     await ctx.scheduler.runAfter(PREVIEW_ASSET_RESERVATION_TTL_MS, internal.previewAssetBudgets.expireReservation, {
       reservationId,
     })
-    await ctx.db.patch(budget._id, { attempts: budget.attempts + 1, updatedAt: now })
+    await ctx.db.patch(budget._id, {
+      attempts: budget.attempts + 1,
+      consumedDecodedPixels,
+      updatedAt: now,
+    })
     return { reserved: true as const, reservationId }
   },
 })
@@ -134,6 +167,7 @@ export const settle = mutation({
     actingUserId: v.string(),
     reservationId: v.id("previewAssetReservations"),
     actualBytes: v.number(),
+    decodedPixels: v.number(),
     serverQueryToken: v.string(),
   },
   returns: settleResult,
@@ -146,7 +180,10 @@ export const settle = mutation({
       reservation.userId !== args.actingUserId ||
       !Number.isSafeInteger(args.actualBytes) ||
       args.actualBytes <= 0 ||
-      args.actualBytes > MAX_PREVIEW_ASSET_BYTES
+      args.actualBytes > MAX_PREVIEW_ASSET_BYTES ||
+      !Number.isSafeInteger(args.decodedPixels) ||
+      args.decodedPixels <= 0 ||
+      args.decodedPixels > MAX_PREVIEW_ASSET_DECODED_PIXELS
     ) {
       return { settled: false as const, reason: "missing-or-expired" as const }
     }
@@ -157,9 +194,12 @@ export const settle = mutation({
       budget.projectId !== args.projectId ||
       budget.userId !== args.actingUserId ||
       reservation.expiresAt <= now ||
+      reservation.reservedDecodedPixels === undefined ||
+      budget.consumedDecodedPixels === undefined ||
       now < budget.windowStartedAt ||
       now - budget.windowStartedAt >= PREVIEW_ASSET_WINDOW_MS ||
-      budget.consumedBytes + args.actualBytes > MAX_PREVIEW_ASSET_WINDOW_BYTES
+      budget.consumedBytes + args.actualBytes > MAX_PREVIEW_ASSET_WINDOW_BYTES ||
+      budget.consumedDecodedPixels + args.decodedPixels > MAX_PREVIEW_ASSET_WINDOW_DECODED_PIXELS
     ) {
       if (budget?.projectId === args.projectId && budget.userId === args.actingUserId) {
         await ctx.db.delete(reservation._id)
@@ -167,7 +207,11 @@ export const settle = mutation({
       return { settled: false as const, reason: "missing-or-expired" as const }
     }
 
-    await ctx.db.patch(budget._id, { consumedBytes: budget.consumedBytes + args.actualBytes, updatedAt: now })
+    await ctx.db.patch(budget._id, {
+      consumedBytes: budget.consumedBytes + args.actualBytes,
+      consumedDecodedPixels: budget.consumedDecodedPixels + args.decodedPixels,
+      updatedAt: now,
+    })
     await ctx.db.delete(reservation._id)
     return { settled: true as const }
   },

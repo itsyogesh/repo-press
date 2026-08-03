@@ -85,6 +85,7 @@ const args = {
   actingUserId: "editor_1",
   serverQueryToken: "server-token",
 }
+const MAX_DECODED_PIXELS = 16_000_000
 
 describe("durable preview asset budgets", () => {
   beforeEach(() => {
@@ -103,7 +104,7 @@ describe("durable preview asset budgets", () => {
   })
 
   it("atomically rejects a fourth active reservation", async () => {
-    const { ctx } = createCtx()
+    const { ctx, tables } = createCtx()
     const reservations = []
     for (let index = 0; index < 3; index += 1) reservations.push(await (begin as any).handler(ctx, args))
 
@@ -112,6 +113,11 @@ describe("durable preview asset budgets", () => {
       reason: "concurrency-limit",
     })
     expect(reservations.every((reservation) => reservation.reserved)).toBe(true)
+    expect(tables.get("previewAssetReservations")?.map((reservation) => reservation.reservedDecodedPixels)).toEqual([
+      MAX_DECODED_PIXELS,
+      MAX_DECODED_PIXELS,
+      MAX_DECODED_PIXELS,
+    ])
     expect(ctx.scheduler.runAfter).toHaveBeenCalledTimes(3)
     expect(ctx.scheduler.runAfter).toHaveBeenCalledWith(
       PREVIEW_ASSET_RESERVATION_TTL_MS,
@@ -139,10 +145,61 @@ describe("durable preview asset budgets", () => {
         ...args,
         reservationId: reservation.reservationId,
         actualBytes: MAX_PREVIEW_ASSET_BYTES,
+        decodedPixels: 1,
       })
     }
 
     await expect((begin as any).handler(ctx, args)).resolves.toEqual({ reserved: false, reason: "byte-limit" })
+  })
+
+  it("rejects compressed-image calls when actual decoded work exhausts the per-window pixel budget", async () => {
+    const { ctx } = createCtx()
+    for (let index = 0; index < 3; index += 1) {
+      const reservation = await (begin as any).handler(ctx, args)
+      await (settle as any).handler(ctx, {
+        ...args,
+        reservationId: reservation.reservationId,
+        actualBytes: 1,
+        decodedPixels: MAX_DECODED_PIXELS,
+      })
+    }
+
+    await expect((begin as any).handler(ctx, args)).resolves.toEqual({
+      reserved: false,
+      reason: "decoded-pixel-limit",
+    })
+  })
+
+  it("replaces the full decoded-work reservation with actual pixels so unused capacity is released", async () => {
+    const { ctx, tables } = createCtx()
+    const first = await (begin as any).handler(ctx, args)
+    await (settle as any).handler(ctx, {
+      ...args,
+      reservationId: first.reservationId,
+      actualBytes: 1,
+      decodedPixels: 1,
+    })
+
+    await expect((begin as any).handler(ctx, args)).resolves.toMatchObject({ reserved: true })
+    await expect((begin as any).handler(ctx, args)).resolves.toMatchObject({ reserved: true })
+    expect(tables.get("previewAssetBudgets")?.[0]).toMatchObject({ consumedDecodedPixels: 1 })
+  })
+
+  it("resets consumed decoded work with the one-minute window", async () => {
+    const { ctx, tables } = createCtx()
+    for (let index = 0; index < 3; index += 1) {
+      const reservation = await (begin as any).handler(ctx, args)
+      await (settle as any).handler(ctx, {
+        ...args,
+        reservationId: reservation.reservationId,
+        actualBytes: 1,
+        decodedPixels: MAX_DECODED_PIXELS,
+      })
+    }
+    vi.spyOn(Date, "now").mockReturnValue(61_001)
+
+    await expect((begin as any).handler(ctx, args)).resolves.toMatchObject({ reserved: true })
+    expect(tables.get("previewAssetBudgets")?.[0]).toMatchObject({ consumedDecodedPixels: 0 })
   })
 
   it("releases concurrency and reserved bytes after an upstream failure so a retry can begin", async () => {
@@ -168,6 +225,7 @@ describe("durable preview asset budgets", () => {
         ...args,
         reservationId: abandoned.reservationId,
         actualBytes: 1,
+        decodedPixels: 1,
       }),
     ).resolves.toEqual({ settled: false, reason: "missing-or-expired" })
   })
@@ -195,6 +253,7 @@ describe("durable preview asset budgets", () => {
         actingUserId: "other_user",
         reservationId: reservation.reservationId,
         actualBytes: 1,
+        decodedPixels: 1,
       }),
     ).resolves.toEqual({ settled: false, reason: "missing-or-expired" })
   })

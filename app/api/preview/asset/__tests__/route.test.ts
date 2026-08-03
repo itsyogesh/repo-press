@@ -176,6 +176,7 @@ describe("POST /api/preview/asset", () => {
     "attempt-limit",
     "concurrency-limit",
     "byte-limit",
+    "decoded-pixel-limit",
   ] as const)("rejects a direct authenticated request when the durable budget reports %s", async (reason) => {
     convexMutationMock.mockResolvedValueOnce({ reserved: false, reason })
 
@@ -206,6 +207,19 @@ describe("POST /api/preview/asset", () => {
     expect(await response.json()).toEqual({ error: "Preview asset unavailable" })
   })
 
+  it("does not return image bytes when decoded-work settlement is rejected", async () => {
+    convexMutationMock
+      .mockResolvedValueOnce({ reserved: true, reservationId: "reservation-1" })
+      .mockResolvedValueOnce({ settled: false, reason: "missing-or-expired" })
+      .mockResolvedValueOnce({ aborted: false })
+
+    const response = await POST(request())
+
+    expect(response.status).toBe(503)
+    expect(response.headers.get("content-type")).toContain("application/json")
+    expect(await response.json()).toEqual({ error: "Preview asset unavailable" })
+  })
+
   it("returns bounded external bytes with only private non-sniffable response metadata", async () => {
     const response = await POST(request())
     expect(response.status).toBe(200)
@@ -229,6 +243,7 @@ describe("POST /api/preview/asset", () => {
         allowedMimeTypes: new Set(["image/png", "image/jpeg", "image/webp", "image/gif", "image/avif"]),
       },
     })
+    expect(convexMutationMock.mock.calls[1]?.[1]).toMatchObject({ actualBytes: PNG.byteLength, decodedPixels: 1 })
   })
 
   it.each([
@@ -290,6 +305,30 @@ describe("POST /api/preview/asset", () => {
     expect(await response.json()).toEqual({ error: "Preview asset unavailable" })
   })
 
+  it("rejects a static image above the per-frame decoded-pixel bound", async () => {
+    vi.mocked(fetchBoundedExternalImage).mockResolvedValue({
+      bytes: pngWithDimensions(4_000, 4_000),
+      mimeType: "image/png",
+    })
+
+    const response = await POST(request())
+
+    expect(response.status).toBe(413)
+  })
+
+  it("settles an accepted static image with its exact decoded-pixel count", async () => {
+    const bytes = pngWithDimensions(4_000, 3_000)
+    vi.mocked(fetchBoundedExternalImage).mockResolvedValue({ bytes, mimeType: "image/png" })
+
+    const response = await POST(request())
+
+    expect(response.status).toBe(200)
+    expect(convexMutationMock.mock.calls[1]?.[1]).toMatchObject({
+      actualBytes: bytes.byteLength,
+      decodedPixels: 12_000_000,
+    })
+  })
+
   it.each([
     ["webp", "image/webp"],
     ["avif", "image/avif"],
@@ -323,10 +362,11 @@ describe("POST /api/preview/asset", () => {
     const response = await POST(request())
 
     expect(response.status).toBe(200)
+    expect(convexMutationMock.mock.calls[1]?.[1]).toMatchObject({ decodedPixels: 2 })
   })
 
   it("rejects an animation whose aggregate decoded pixels exceed the workload bound", async () => {
-    const bytes = animatedGif(2, 5_000, 4_000)
+    const bytes = animatedGif(2, 3_000, 3_000)
     vi.mocked(detectImageMimeType).mockReturnValue("image/gif")
     vi.mocked(fetchBoundedExternalImage).mockResolvedValue({ bytes, mimeType: "image/gif" })
 

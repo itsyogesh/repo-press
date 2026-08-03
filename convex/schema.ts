@@ -365,6 +365,7 @@ export default defineSchema({
     windowStartedAt: v.number(),
     attempts: v.number(),
     consumedBytes: v.number(),
+    consumedDecodedPixels: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -376,6 +377,7 @@ export default defineSchema({
     projectId: v.id("projects"),
     userId: v.string(),
     reservedBytes: v.number(),
+    reservedDecodedPixels: v.optional(v.number()),
     expiresAt: v.number(),
     createdAt: v.number(),
     updatedAt: v.number(),

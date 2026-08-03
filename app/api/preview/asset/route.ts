@@ -118,6 +118,7 @@ async function settlePreviewAssetBudget(
   actingUserId: string,
   reservationId: Id<"previewAssetReservations">,
   actualBytes: number,
+  decodedPixels: number,
   serverQueryToken: string,
 ) {
   try {
@@ -126,6 +127,7 @@ async function settlePreviewAssetBudget(
       actingUserId,
       reservationId,
       actualBytes,
+      decodedPixels,
       serverQueryToken,
     })
     if (!result.settled) throw new PreviewAssetRouteError(503)
@@ -222,12 +224,13 @@ export async function POST(request: Request) {
         mimeType = detectedMimeType
       }
 
-      await assertSafePreviewImageWorkload(bytes, mimeType)
+      const decodedPixels = await assertSafePreviewImageWorkload(bytes, mimeType)
       await settlePreviewAssetBudget(
         projectId,
         auth.actingUserId,
         activeReservationId,
         bytes.byteLength,
+        decodedPixels,
         serverQueryToken,
       )
       reservationId = undefined
