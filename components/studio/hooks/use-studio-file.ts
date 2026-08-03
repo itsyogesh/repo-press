@@ -92,6 +92,7 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
   const requestVersionRef = React.useRef(0)
   const remoteReadVersionRef = React.useRef<Map<string, number>>(new Map())
   const pendingDocumentHydrationRef = React.useRef<Map<string, PendingDocumentHydration>>(new Map())
+  const initialFileAppliedKeyRef = React.useRef<string | null>(null)
 
   const writeCachedSnapshot = React.useCallback((filePath: string, snapshot: CachedFileSnapshot) => {
     fileCacheRef.current.set(filePath, snapshot)
@@ -465,10 +466,14 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
 
   React.useEffect(() => {
     if (initialFile) {
-      const snapshot = parseFileSnapshot(initialFile.content, initialFile.sha, initialFile.path)
-      writeCachedSnapshot(initialFile.path, snapshot)
-      applySnapshot(initialFile.path, snapshot)
-      syncBrowserUrl(initialFile.path, "replace")
+      const initialFileKey = `${initialFile.path}:${initialFile.sha}`
+      if (initialFileAppliedKeyRef.current !== initialFileKey) {
+        initialFileAppliedKeyRef.current = initialFileKey
+        const snapshot = parseFileSnapshot(initialFile.content, initialFile.sha, initialFile.path)
+        writeCachedSnapshot(initialFile.path, snapshot)
+        applySnapshot(initialFile.path, snapshot)
+        syncBrowserUrl(initialFile.path, "replace")
+      }
       return
     }
 
