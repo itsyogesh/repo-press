@@ -450,27 +450,38 @@ function compatibleWorkerMain() {
     }
   }
   function isValidImageHostname(hostname: string) {
-    if (hostname.length === 0 || hostname.length > 253 || regexpTest(/^\[/, hostname) || regexpTest(/\]$/, hostname)) {
-      return false
-    }
+    if (hostname.length === 0 || hostname.length > 253) return false
     const labels = stringSplit(hostname, ".")
+    let ipv4Like = true
     for (let index = 0; index < labels.length; index += 1) {
       const label = labels[index]
+      if (!regexpTest(/^[0-9]+$/, label) && !regexpTest(/^0x[0-9a-f]+$/i, label)) ipv4Like = false
       if (label.length === 0 || label.length > 63 || !regexpTest(/^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/, label)) {
         return false
       }
     }
+    if (!ipv4Like) return true
+    if (labels.length !== 4) return false
+    for (let index = 0; index < labels.length; index += 1) {
+      const label = labels[index]
+      if (!regexpTest(/^[0-9]+$/, label) || (label.length > 1 && stringCharCodeAt(label, 0) === 0x30)) return false
+      let numeric = 0
+      for (let unitIndex = 0; unitIndex < label.length; unitIndex += 1) {
+        numeric = numeric * 10 + stringCharCodeAt(label, unitIndex) - 0x30
+      }
+      if (numeric > 255) return false
+    }
     return true
   }
   function isValidPort(port: string) {
-    if (port.length === 0 || port.length > 5) return false
+    if (port.length === 0 || port.length > 5 || stringCharCodeAt(port, 0) === 0x30) return false
     let numeric = 0
     for (let index = 0; index < port.length; index += 1) {
       const unit = stringCharCodeAt(port, index)
       if (unit < 0x30 || unit > 0x39) return false
       numeric = numeric * 10 + unit - 0x30
     }
-    return numeric <= 65_535
+    return numeric >= 1 && numeric <= 65_535
   }
   function isValidHttpsImageSource(value: string) {
     if (!regexpTest(/^https:\/\//i, value) || regexpTest(/\s/, value)) return false
@@ -482,7 +493,13 @@ function compatibleWorkerMain() {
       if (found >= 0 && found < authorityEnd) authorityEnd = found
     }
     const authority = stringSlice(value, authorityStart, authorityEnd)
-    if (authority.length === 0 || stringIndexOf(authority, "@") >= 0) return false
+    if (authority.length === 0 || stringIndexOf(authority, "@") >= 0 || stringIndexOf(authority, "%") >= 0) {
+      return false
+    }
+    for (let index = 0; index < authority.length; index += 1) {
+      const unit = stringCharCodeAt(authority, index)
+      if (unit < 0x21 || unit > 0x7e) return false
+    }
     const colon = stringLastIndexOf(authority, ":")
     if (colon >= 0 && stringIndexOf(authority, ":") !== colon) return false
     const hostname = colon >= 0 ? stringSlice(authority, 0, colon) : authority

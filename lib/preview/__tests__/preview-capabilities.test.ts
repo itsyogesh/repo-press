@@ -2,12 +2,14 @@ import fs from "node:fs"
 import path from "node:path"
 import { describe, expect, it } from "vitest"
 import {
+  hasAcceptedPreviewImageHttpsAuthority,
   PREVIEW_ACTION_TONES,
   PREVIEW_BOX_TONES,
   PREVIEW_CAPABILITY_NAMES,
   PREVIEW_GAPS,
   PREVIEW_ICON_NAMES,
   PREVIEW_IMAGE_ASPECTS,
+  PREVIEW_IMAGE_HTTPS_AUTHORITY_POLICY,
   PREVIEW_IMAGE_SOURCE_MAX_BYTES,
   PREVIEW_IMAGE_TEXT_MAX_BYTES,
   PREVIEW_LIST_STYLES,
@@ -65,5 +67,18 @@ describe("portable preview capability contract", () => {
   it("publishes the bounded inert image reference budgets", () => {
     expect(PREVIEW_IMAGE_SOURCE_MAX_BYTES).toBe(2_048)
     expect(PREVIEW_IMAGE_TEXT_MAX_BYTES).toBe(512)
+  })
+
+  it("publishes the raw fail-closed HTTPS authority policy", () => {
+    expect(PREVIEW_IMAGE_HTTPS_AUTHORITY_POLICY).toEqual({
+      host: "ascii-dns-or-canonical-ipv4",
+      port: "canonical-decimal-1-65535",
+      userinfo: "forbidden",
+      ipv6: "forbidden",
+      encodedAuthority: "forbidden",
+    })
+    expect(Object.isFrozen(PREVIEW_IMAGE_HTTPS_AUTHORITY_POLICY)).toBe(true)
+    expect(hasAcceptedPreviewImageHttpsAuthority("https://cdn.example:8443/cover.png?width=1200")).toBe(true)
+    expect(hasAcceptedPreviewImageHttpsAuthority("https://999.999.999.999/cover.png")).toBe(false)
   })
 })

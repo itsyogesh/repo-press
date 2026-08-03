@@ -1,6 +1,7 @@
 import * as React from "react"
 import { type CompatibleFidelityLossCode, mergeCompatibleFidelityLosses } from "@/lib/preview/compatible-diagnostics"
 import {
+  hasAcceptedPreviewImageHttpsAuthority,
   PREVIEW_IMAGE_ASPECTS,
   PREVIEW_IMAGE_SOURCE_MAX_BYTES,
   PREVIEW_IMAGE_TEXT_MAX_BYTES,
@@ -191,28 +192,8 @@ function decodeImageSourceForms(value: string): readonly string[] | null {
   }
 }
 
-function isValidImageHostname(hostname: string): boolean {
-  if (hostname.length === 0 || hostname.length > 253 || hostname.startsWith("[") || hostname.endsWith("]")) return false
-  const labels = hostname.split(".")
-  return labels.every(
-    (label) => label.length > 0 && label.length <= 63 && /^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/.test(label),
-  )
-}
-
 function isValidHttpsImageSource(value: string): boolean {
-  if (!/^https:\/\//i.test(value) || /\s/.test(value)) return false
-  let parsed: URL
-  try {
-    parsed = new URL(value)
-  } catch {
-    return false
-  }
-  return (
-    parsed.protocol === "https:" &&
-    parsed.username.length === 0 &&
-    parsed.password.length === 0 &&
-    isValidImageHostname(parsed.hostname)
-  )
+  return hasAcceptedPreviewImageHttpsAuthority(value)
 }
 
 function isValidRelativeImageSource(value: string): boolean {
