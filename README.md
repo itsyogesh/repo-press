@@ -30,6 +30,17 @@ RepoPress connects to your GitHub repositories and gives you a Notion-like editi
 
 ---
 
+## Documentation
+
+- [Platform architecture](docs/platform/architecture.md) -- Git, Convex, Next.js, draft, publish, and extension authority
+- [Component authoring](docs/platform/component-authoring.md) -- schemas, slots, fixtures, registry metadata, and product adapters
+- [Preview security](docs/platform/preview-security.md) -- Generic/Compatible fidelity, isolation, images, and controlled actions
+- [Connect an MDX repository](docs/tutorials/connect-an-mdx-repository.md) -- setup through first pull-request publish
+- [Build a component extension](docs/tutorials/build-a-component-extension.md) -- production binding, authoring props, fixture, Compatible mapping, and tests
+- [Production deployment](docs/production-deployment-guide.md) -- environment and deployment configuration
+
+---
+
 ## Tech Stack
 
 | Layer | Technology |
@@ -65,7 +76,7 @@ RepoPress connects to your GitHub repositories and gives you a Notion-like editi
 │   ├── providers.tsx             # Convex + Better Auth provider wrapper
 │   └── ui/                       # shadcn/ui components
 ├── convex/                       # Convex backend
-│   ├── schema.ts                 # Full database schema (11 tables)
+│   ├── schema.ts                 # Full database schema (25 tables)
 │   ├── auth.ts                   # Better Auth instance (runs inside Convex)
 │   ├── auth.config.ts            # Convex auth config
 │   ├── convex.config.ts          # Convex app config
@@ -91,7 +102,7 @@ RepoPress connects to your GitHub repositories and gives you a Notion-like editi
 
 ## Database Schema
 
-RepoPress uses Convex with 11 interconnected tables:
+RepoPress uses Convex for auth, drafts, project metadata, publishing operations, preview budgets, and recovery. Core tables include:
 
 | Table | Purpose |
 |---|---|
@@ -264,7 +275,7 @@ Open [http://localhost:3001](http://localhost:3001) to see the app.
 5. **Open the Studio** to visually edit MDX files with live preview
 6. **Save drafts** to Convex (no Git commit until you publish)
 7. **Move through workflows** - draft → in review → approved → published
-8. **Publish** commits the content directly to your GitHub branch
+8. **Publish** commits the content to a dedicated GitHub publish branch and opens or updates a pull request
 9. **Track history** of every edit with version snapshots and the ability to revert
 
 ---
