@@ -46,6 +46,32 @@ interface PendingDocumentHydration {
 
 export type SourceAuthority = "unknown" | "editable" | "read-only"
 
+function areFrontmatterValuesEqual(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return (
+      Array.isArray(left) &&
+      Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((value, index) => areFrontmatterValuesEqual(value, right[index]))
+    )
+  }
+  if (!left || !right || typeof left !== "object" || typeof right !== "object") return false
+
+  const leftRecord = left as Record<string, unknown>
+  const rightRecord = right as Record<string, unknown>
+  const leftKeys = Object.keys(leftRecord)
+  const rightKeys = Object.keys(rightRecord)
+  return (
+    leftKeys.length === rightKeys.length &&
+    leftKeys.every(
+      (key) =>
+        Object.getOwnPropertyDescriptor(rightRecord, key) !== undefined &&
+        areFrontmatterValuesEqual(leftRecord[key], rightRecord[key]),
+    )
+  )
+}
+
 function parseFileSnapshot(rawContent: string, sha: string | null, filePath: string): CachedFileSnapshot {
   const parsed = parseContentFile(rawContent, filePath)
   return {
@@ -710,6 +736,8 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
   const handleContentChange = React.useCallback(
     (newContent: string) => {
       if (!isSourceEditable) return
+      const activeContent = selectedFile?.path ? fileCacheRef.current.get(selectedFile.path)?.content : content
+      if (newContent === activeContent) return
       setContent(newContent)
       setIsDirty(true)
       if (selectedFile?.path) {
@@ -723,12 +751,25 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
         })
       }
     },
-    [selectedFile?.path, frontmatter, sha, isSourceEditable, sourceAuthority, sourceDiagnostic, writeCachedSnapshot],
+    [
+      selectedFile?.path,
+      content,
+      frontmatter,
+      sha,
+      isSourceEditable,
+      sourceAuthority,
+      sourceDiagnostic,
+      writeCachedSnapshot,
+    ],
   )
 
   const handleFrontmatterChangeKey = React.useCallback(
     (key: string, value: unknown) => {
       if (!isSourceEditable) return
+      const activeFrontmatter = selectedFile?.path
+        ? (fileCacheRef.current.get(selectedFile.path)?.frontmatter ?? frontmatter)
+        : frontmatter
+      if (areFrontmatterValuesEqual(activeFrontmatter[key], value)) return
       setFrontmatter((prev) => {
         const next = { ...prev, [key]: value }
         if (selectedFile?.path) {
@@ -745,12 +786,25 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
       })
       setIsDirty(true)
     },
-    [selectedFile?.path, content, sha, isSourceEditable, sourceAuthority, sourceDiagnostic, writeCachedSnapshot],
+    [
+      selectedFile?.path,
+      content,
+      frontmatter,
+      sha,
+      isSourceEditable,
+      sourceAuthority,
+      sourceDiagnostic,
+      writeCachedSnapshot,
+    ],
   )
 
   const handleFrontmatterChangeAll = React.useCallback(
     (nextFrontmatter: Record<string, unknown>) => {
       if (!isSourceEditable) return
+      const activeFrontmatter = selectedFile?.path
+        ? (fileCacheRef.current.get(selectedFile.path)?.frontmatter ?? frontmatter)
+        : frontmatter
+      if (areFrontmatterValuesEqual(activeFrontmatter, nextFrontmatter)) return
       setFrontmatter(nextFrontmatter)
       setIsDirty(true)
       if (selectedFile?.path) {
@@ -764,7 +818,16 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
         })
       }
     },
-    [selectedFile?.path, content, sha, isSourceEditable, sourceAuthority, sourceDiagnostic, writeCachedSnapshot],
+    [
+      selectedFile?.path,
+      content,
+      frontmatter,
+      sha,
+      isSourceEditable,
+      sourceAuthority,
+      sourceDiagnostic,
+      writeCachedSnapshot,
+    ],
   )
 
   const navigateToFile = React.useCallback(
