@@ -48,6 +48,25 @@ const IMAGE_SOURCE_CORPUS = [
   { id: "double-backslash", source: "images%255ccover.png", accepted: false },
 ] as const
 
+type RenderNode = {
+  kind: string
+  tag?: string
+  props?: { className?: string }
+  children?: RenderNode[]
+}
+
+function defaultDocumentChildren(response: { tree: RenderNode[] }): RenderNode[] {
+  expect(response.tree).toHaveLength(1)
+  expect(response.tree[0]).toMatchObject({
+    kind: "element",
+    tag: "article",
+    props: {
+      className: "repopress-preview-document repopress-preview-document--article repopress-preview-document--default",
+    },
+  })
+  return response.tree[0].children ?? []
+}
+
 describe("compatible worker containment", () => {
   it("agrees with the iframe sanitizer's bounded image source corpus", async () => {
     const job = await prepareCompatibleWorkerJob({
@@ -91,10 +110,11 @@ describe("compatible worker containment", () => {
     })
 
     expect(sent).toHaveLength(1)
-    const response = sent[0] as { type: string; tree: Array<{ kind: string }> }
+    const response = sent[0] as { type: string; tree: RenderNode[] }
     expect(response.type).toBe("repopress:rendered-compatible")
-    expect(response.tree).toHaveLength(IMAGE_SOURCE_CORPUS.length)
-    expect(response.tree.map((node) => node.kind === "image")).toEqual(IMAGE_SOURCE_CORPUS.map((item) => item.accepted))
+    const children = defaultDocumentChildren(response)
+    expect(children).toHaveLength(IMAGE_SOURCE_CORPUS.length)
+    expect(children.map((node) => node.kind === "image")).toEqual(IMAGE_SOURCE_CORPUS.map((item) => item.accepted))
   })
 
   it("renders frozen framework-neutral named and namespace preview capabilities", async () => {
@@ -114,6 +134,7 @@ describe("compatible worker containment", () => {
               PreviewInline,
               PreviewList,
               PreviewPaper,
+              PreviewDocument,
               PreviewStack,
               PreviewText,
             } from "@repopress/preview"
@@ -122,12 +143,18 @@ describe("compatible worker containment", () => {
             function CapabilityProbe() {
               try { PREVIEW_OPTIONS.tones.info = "mutated" } catch {}
               try { Preview.PreviewBox.extra = "mutated" } catch {}
+              try { Preview.PreviewDocument = null } catch {}
               const sealed = Object.getPrototypeOf(PREVIEW_OPTIONS) === null
                 && Object.getPrototypeOf(PREVIEW_OPTIONS.tones) === null
                 && Object.isFrozen(PREVIEW_OPTIONS)
                 && Object.isFrozen(PREVIEW_OPTIONS.tones)
                 && Object.isFrozen(PREVIEW_OPTIONS.paperVariants)
+                && Object.isFrozen(PREVIEW_OPTIONS.documentLayouts)
+                && Object.isFrozen(PREVIEW_OPTIONS.documentTones)
                 && PREVIEW_OPTIONS.tones.info === true
+                && Object.isFrozen(PreviewDocument)
+                && typeof PreviewDocument === "function"
+                && typeof Preview.PreviewDocument === "function"
                 && !("extra" in Preview.PreviewBox)
               return <PreviewBox tone="unsupported" arbitrary="ignored">
                 <PreviewStack gap="spacious">
@@ -209,8 +236,8 @@ describe("compatible worker containment", () => {
     expect(serialized).toContain("repopress-preview-paper--letter")
     expect(serialized).toContain("repopress-preview-paper-stamp")
     expect(serialized).toContain("repopress-preview-box--neutral")
-    expect(sent[0]).toMatchObject({
-      tree: expect.arrayContaining([
+    expect(defaultDocumentChildren(sent[0] as { tree: RenderNode[] })).toEqual(
+      expect.arrayContaining([
         expect.objectContaining({
           kind: "element",
           children: expect.arrayContaining([
@@ -229,7 +256,7 @@ describe("compatible worker containment", () => {
           ]),
         }),
       ]),
-    })
+    )
     expect(serialized).toContain("https://cdn.example/cover.png")
     expect(serialized).not.toMatch(/evil\.test|href|"src"|onClick|onLoad|style|attacker-class|attacker-paper/)
   })
@@ -281,7 +308,7 @@ describe("compatible worker containment", () => {
 
     expect(sent).toHaveLength(1)
     expect(sent[0]).toMatchObject({ type: "repopress:rendered-compatible", fidelityLosses: [] })
-    const tree = (sent[0] as { tree: Array<Record<string, unknown>> }).tree
+    const tree = defaultDocumentChildren(sent[0] as { tree: RenderNode[] })
     expect(tree).toHaveLength(4)
     expect(tree[0]).toMatchObject({
       tag: "article",
@@ -397,11 +424,12 @@ describe("compatible worker containment", () => {
 
     expect(sent).toHaveLength(1)
     expect(sent[0]).toMatchObject({ type: "repopress:rendered-compatible" })
-    const response = sent[0] as { tree: Array<{ kind: string; tag?: string }> }
-    expect(JSON.stringify(response.tree)).not.toMatch(/"kind":"image"|user:secret|data:image|javascript:|file:|blob:/)
-    expect(JSON.stringify(response.tree)).toContain("Placeholder 0")
-    expect(response.tree).toHaveLength(rejectedSources.length)
-    expect(response.tree.every((node) => node.kind === "element" && node.tag === "figure")).toBe(true)
+    const response = sent[0] as { tree: RenderNode[] }
+    const children = defaultDocumentChildren(response)
+    expect(JSON.stringify(children)).not.toMatch(/"kind":"image"|user:secret|data:image|javascript:|file:|blob:/)
+    expect(JSON.stringify(children)).toContain("Placeholder 0")
+    expect(children).toHaveLength(rejectedSources.length)
+    expect(children.every((node) => node.kind === "element" && node.tag === "figure")).toBe(true)
   })
 
   it("does not recognize repository-forged image-shaped objects", async () => {
@@ -806,8 +834,146 @@ describe("compatible worker containment", () => {
     expect(sent[0]).toMatchObject({
       type: "repopress:rendered-compatible",
       fidelityLosses: [],
-      tree: expect.arrayContaining([expect.objectContaining({ kind: "element", tag: "h1" })]),
+      tree: [
+        expect.objectContaining({
+          kind: "element",
+          tag: "article",
+          props: {
+            className:
+              "repopress-preview-document repopress-preview-document--article repopress-preview-document--default",
+          },
+          children: expect.arrayContaining([expect.objectContaining({ kind: "element", tag: "h1" })]),
+        }),
+      ],
     })
+  })
+
+  it("carries a named adapter Document through the fallback and bounds its PreviewDocument props", async () => {
+    const job = await prepareCompatibleWorkerJob({
+      artifactId: "artifact-document-fallback",
+      documentSource: "# Wrapped title\n\nA composed paragraph.",
+      adapter: {
+        entryPath: "mdx-preview.tsx",
+        sources: {
+          "mdx-preview.tsx": `
+            import { PreviewDocument } from "@repopress/preview"
+            export function Document({ children }) {
+              return <PreviewDocument layout="unsupported" tone="unsafe" data-secret="must-not-cross">
+                {children}
+              </PreviewDocument>
+            }
+            export const components = {}
+          `,
+        },
+      },
+    })
+    const sent: unknown[] = []
+    const listeners: Array<(event: { data?: unknown; ports?: unknown[] }) => void | Promise<void>> = []
+    const port = {
+      onmessage: null as ((event: { data: unknown }) => void) | null,
+      close() {},
+      postMessage(message: unknown) {
+        sent.push(message)
+      },
+      start() {},
+    }
+    const context = vm.createContext({
+      addEventListener: (_type: string, listener: (event: { data?: unknown; ports?: unknown[] }) => void) =>
+        listeners.push(listener),
+      removeEventListener() {},
+    })
+    vm.runInContext(createCompatibleWorkerSource(), context, { timeout: 1_000 })
+    await listeners[0]({ ports: [port] })
+    port.onmessage?.({
+      data: { type: "repopress:render-compatible", requestId: "D".repeat(43), job },
+    })
+
+    expect(sent).toHaveLength(1)
+    expect(sent[0]).toMatchObject({
+      type: "repopress:rendered-compatible",
+      fidelityLosses: [],
+      tree: [
+        {
+          kind: "element",
+          tag: "article",
+          props: {
+            className:
+              "repopress-preview-document repopress-preview-document--article repopress-preview-document--default",
+          },
+          children: expect.arrayContaining([expect.objectContaining({ kind: "element", tag: "h1" })]),
+        },
+      ],
+    })
+    expect(JSON.stringify(sent[0])).not.toContain("must-not-cross")
+  })
+
+  it("sanitizes malicious adapter Document output through the ordinary inert tree", async () => {
+    const job = await prepareCompatibleWorkerJob({
+      artifactId: "artifact-malicious-document",
+      documentSource: "# Safe document body",
+      adapter: {
+        entryPath: "mdx-preview.tsx",
+        sources: {
+          "mdx-preview.tsx": `
+            import { PreviewDocument } from "@repopress/preview"
+            function Document({ children }) {
+              return <PreviewDocument tone="warm">
+                <script src="https://evil.test/script.js">STOLEN</script>
+                <a href="https://evil.test/leave">Unsafe link text</a>
+                <div style={{ backgroundImage: "url(https://evil.test/pixel)" }} onClick={() => {}}>
+                  {children}
+                </div>
+              </PreviewDocument>
+            }
+            export default { Document }
+          `,
+        },
+      },
+    })
+    const sent: unknown[] = []
+    const listeners: Array<(event: { data?: unknown; ports?: unknown[] }) => void | Promise<void>> = []
+    const port = {
+      onmessage: null as ((event: { data: unknown }) => void) | null,
+      close() {},
+      postMessage(message: unknown) {
+        sent.push(message)
+      },
+      start() {},
+    }
+    const context = vm.createContext({
+      addEventListener: (_type: string, listener: (event: { data?: unknown; ports?: unknown[] }) => void) =>
+        listeners.push(listener),
+      removeEventListener() {},
+    })
+    vm.runInContext(createCompatibleWorkerSource(), context, { timeout: 1_000 })
+    await listeners[0]({ ports: [port] })
+    port.onmessage?.({
+      data: { type: "repopress:render-compatible", requestId: "Z".repeat(43), job },
+    })
+
+    expect(sent).toHaveLength(1)
+    expect(sent[0]).toMatchObject({
+      type: "repopress:rendered-compatible",
+      fidelityLosses: expect.arrayContaining([
+        "STATIC_INERT_ACTIVE_CONTENT",
+        "STATIC_INERT_LINK",
+        "STATIC_INERT_STYLE",
+        "STATIC_INERT_EVENT",
+      ]),
+      tree: [
+        expect.objectContaining({
+          tag: "article",
+          props: expect.objectContaining({
+            className:
+              "repopress-preview-document repopress-preview-document--article repopress-preview-document--warm",
+          }),
+        }),
+      ],
+    })
+    const serialized = JSON.stringify(sent[0])
+    expect(serialized).toContain("Safe document body")
+    expect(serialized).toContain("Unsafe link text")
+    expect(serialized).not.toMatch(/evil\.test|script|src|href|style|onClick|STOLEN/u)
   })
 
   it("preserves signed fidelity accounting when repository code poisons intrinsics and hook properties", async () => {

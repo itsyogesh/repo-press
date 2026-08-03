@@ -112,6 +112,7 @@ export const MERRY_ADAPTER_SOURCE = `import type { ReactNode } from "react"
 import {
   PreviewAction,
   PreviewBox,
+  PreviewDocument,
   PreviewIcon,
   PreviewImage,
   PreviewInline,
@@ -122,6 +123,10 @@ import {
 } from "@repopress/preview"
 
 type ChildrenProps = { children?: ReactNode }
+
+function Document({ children }: ChildrenProps) {
+  return <PreviewDocument layout="article" tone="warm">{children}</PreviewDocument>
+}
 
 const coverPresets = {
   templates: "https://soxgiykgxzadvzcy.public.blob.vercel-storage.com/blog/templates-cover-Pduq3obFhtWzBzwmfWzVwloNZurTBC.png",
@@ -181,7 +186,7 @@ function LetterPaper({ children, title = "Letter to Santa", showStamp = true, te
   )
 }
 
-export const adapter = { components: { CoverImage, InfoBox, Checklist, CTABox, LetterPaper } }
+export const adapter = { Document, components: { CoverImage, InfoBox, Checklist, CTABox, LetterPaper } }
 `
 
 export const MERRY_DOCUMENT_SOURCE = `# A letter from the North Pole

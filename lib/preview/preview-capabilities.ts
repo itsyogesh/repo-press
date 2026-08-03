@@ -9,6 +9,7 @@ export const PREVIEW_CAPABILITY_NAMES = Object.freeze([
   "PreviewAction",
   "PreviewImage",
   "PreviewPaper",
+  "PreviewDocument",
   "PreviewIcon",
 ] as const)
 export const PREVIEW_BOX_TONES = Object.freeze(["neutral", "info", "tip", "warning", "accent"] as const)
@@ -23,6 +24,8 @@ export const PREVIEW_IMAGE_SOURCE_MAX_BYTES = 2_048
 export const PREVIEW_IMAGE_TEXT_MAX_BYTES = 512
 export const PREVIEW_PAPER_VARIANTS = Object.freeze(["letter", "note", "worksheet"] as const)
 export const PREVIEW_PAPER_HEADING_LEVELS = Object.freeze([2, 3, "none"] as const)
+export const PREVIEW_DOCUMENT_LAYOUTS = Object.freeze(["article", "wide"] as const)
+export const PREVIEW_DOCUMENT_TONES = Object.freeze(["default", "warm"] as const)
 /** Title and action labels are trimmed before this UTF-8 byte budget is applied. */
 export const PREVIEW_PAPER_TEXT_MAX_BYTES = 512
 export const PREVIEW_IMAGE_HTTPS_AUTHORITY_POLICY = Object.freeze({
@@ -53,6 +56,8 @@ export type PreviewActionTone = (typeof PREVIEW_ACTION_TONES)[number]
 export type PreviewImageAspect = (typeof PREVIEW_IMAGE_ASPECTS)[number]
 export type PreviewPaperVariant = (typeof PREVIEW_PAPER_VARIANTS)[number]
 export type PreviewPaperHeadingLevel = (typeof PREVIEW_PAPER_HEADING_LEVELS)[number]
+export type PreviewDocumentLayout = (typeof PREVIEW_DOCUMENT_LAYOUTS)[number]
+export type PreviewDocumentTone = (typeof PREVIEW_DOCUMENT_TONES)[number]
 export type PreviewIconName = (typeof PREVIEW_ICON_NAMES)[number]
 
 export type PreviewBoxProps = Readonly<{ children?: ReactNode; tone?: PreviewBoxTone }>
@@ -94,6 +99,11 @@ export type PreviewPaperProps = Readonly<{
   showStamp?: boolean
   title?: string
   variant?: PreviewPaperVariant
+}>
+export type PreviewDocumentProps = Readonly<{
+  children?: ReactNode
+  layout?: PreviewDocumentLayout
+  tone?: PreviewDocumentTone
 }>
 export type PreviewIconProps = Readonly<{ label?: string; name: PreviewIconName }>
 
@@ -160,4 +170,5 @@ export declare function PreviewList(props: PreviewListProps): ReactElement
 export declare function PreviewAction(props: PreviewActionProps): ReactElement
 export declare function PreviewImage(props: PreviewImageProps): ReactElement
 export declare function PreviewPaper(props: PreviewPaperProps): ReactElement
+export declare function PreviewDocument(props: PreviewDocumentProps): ReactElement
 export declare function PreviewIcon(props: PreviewIconProps): ReactElement

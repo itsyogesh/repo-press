@@ -390,6 +390,8 @@ function compatibleWorkerMain() {
   PREVIEW_OPTIONS.imageAspects = frozenOptionSet(["wide", "square", "portrait"])
   PREVIEW_OPTIONS.paperVariants = frozenOptionSet(["letter", "note", "worksheet"])
   PREVIEW_OPTIONS.paperHeadingLevels = frozenOptionSet(["2", "3", "none"])
+  PREVIEW_OPTIONS.documentLayouts = frozenOptionSet(["article", "wide"])
+  PREVIEW_OPTIONS.documentTones = frozenOptionSet(["default", "warm"])
   PREVIEW_OPTIONS.iconNames = frozenOptionSet(["info", "tip", "warning", "check", "mail", "stamp", "image", "arrow"])
 
   function option(options: any, value: any, fallback: string) {
@@ -688,6 +690,14 @@ function compatibleWorkerMain() {
       ],
     })
   }
+  function PreviewDocument(props: any) {
+    const layout = option(PREVIEW_OPTIONS.documentLayouts, props?.layout, "article")
+    const tone = option(PREVIEW_OPTIONS.documentTones, props?.tone, "default")
+    return jsx("article", {
+      className: `repopress-preview-document repopress-preview-document--${layout} repopress-preview-document--${tone}`,
+      children: props?.children,
+    })
+  }
   const previewModule: any = objectCreate(null)
   objectAssign(previewModule, {
     PREVIEW_OPTIONS,
@@ -698,6 +708,7 @@ function compatibleWorkerMain() {
     PreviewInline,
     PreviewList,
     PreviewPaper,
+    PreviewDocument,
     PreviewStack,
     PreviewText,
   })
@@ -754,6 +765,7 @@ function compatibleWorkerMain() {
         components: output.components,
         scope: output.scope,
         allowImports: output.allowImports,
+        Document: output.Document,
       }
     )
   }
@@ -1068,8 +1080,10 @@ function compatibleWorkerMain() {
       try {
         const adapter = evaluateAdapter(job.adapterCode)
         const rendered = evaluateDocument(job, adapter)
+        const Document = typeof adapter.Document === "function" ? adapter.Document : PreviewDocument
+        const document = jsx(Document, { children: rendered })
         try {
-          const tree = renderTree(rendered)
+          const tree = renderTree(document)
           send({
             type: "repopress:rendered-compatible",
             requestId,

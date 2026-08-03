@@ -87,18 +87,6 @@ describe("Merry product extension pilot", () => {
     expect(sent).toHaveLength(1)
     expect(sent[0]).toMatchObject({ type: "repopress:rendered-compatible", fidelityLosses: [] })
     const output = JSON.stringify(sent[0])
-    expect(sent[0]).toMatchObject({
-      tree: expect.arrayContaining([
-        {
-          kind: "image",
-          source:
-            "https://soxgiykgxzadvzcy.public.blob.vercel-storage.com/blog/templates-cover-Pduq3obFhtWzBzwmfWzVwloNZurTBC.png",
-          alt: "A collection of printable Santa letter templates",
-          label: "Free Santa letter templates",
-          aspect: "wide",
-        },
-      ]),
-    })
     for (const text of [
       "Free Santa letter templates",
       "Pro Tip",
@@ -122,8 +110,34 @@ describe("Merry product extension pilot", () => {
     const tree = (
       sent[0] as { tree: Array<{ kind: string; tag?: string; props?: { className?: string }; children?: unknown[] }> }
     ).tree
-    expect(tree[0]).toMatchObject({ kind: "element", tag: "h1" })
-    const paper = tree.find((node) => node.props?.className?.includes("repopress-preview-paper--letter"))
+    expect(tree).toHaveLength(1)
+    expect(tree[0]).toMatchObject({
+      kind: "element",
+      tag: "article",
+      props: {
+        className: "repopress-preview-document repopress-preview-document--article repopress-preview-document--warm",
+      },
+      children: expect.arrayContaining([expect.objectContaining({ kind: "element", tag: "h1" })]),
+    })
+    const documentChildren = tree[0].children as Array<{
+      kind: string
+      tag?: string
+      props?: { className?: string }
+      children?: unknown[]
+    }>
+    expect(documentChildren).toEqual(
+      expect.arrayContaining([
+        {
+          kind: "image",
+          source:
+            "https://soxgiykgxzadvzcy.public.blob.vercel-storage.com/blog/templates-cover-Pduq3obFhtWzBzwmfWzVwloNZurTBC.png",
+          alt: "A collection of printable Santa letter templates",
+          label: "Free Santa letter templates",
+          aspect: "wide",
+        },
+      ]),
+    )
+    const paper = documentChildren.find((node) => node.props?.className?.includes("repopress-preview-paper--letter"))
     expect(paper).toMatchObject({
       kind: "element",
       tag: "article",
