@@ -19,5 +19,8 @@
     "test": "npm run test --workspaces --if-present",
     "build": "npm run build --workspaces --if-present",
     "verify:workspace": "node scripts/verify-workspace.mjs"
+  },
+  "devDependencies": {
+    "zod": "4.4.3"
   }
 }
