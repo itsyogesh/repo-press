@@ -8,6 +8,8 @@ import {
   PREVIEW_GAPS,
   PREVIEW_ICON_NAMES,
   PREVIEW_IMAGE_ASPECTS,
+  PREVIEW_IMAGE_SOURCE_MAX_BYTES,
+  PREVIEW_IMAGE_TEXT_MAX_BYTES,
   PREVIEW_LIST_STYLES,
   PREVIEW_TEXT_SIZES,
   PREVIEW_TEXT_TONES,
@@ -58,5 +60,10 @@ describe("portable preview capability contract", () => {
       expect(css).toContain(`.${className}`)
     }
     expect(css).not.toMatch(/\.repopress-preview-[^{]+\{[\s\S]*?url\(/)
+  })
+
+  it("publishes the bounded inert image reference budgets", () => {
+    expect(PREVIEW_IMAGE_SOURCE_MAX_BYTES).toBe(2_048)
+    expect(PREVIEW_IMAGE_TEXT_MAX_BYTES).toBe(512)
   })
 })

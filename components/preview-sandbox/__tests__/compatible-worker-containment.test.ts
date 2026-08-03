@@ -47,7 +47,15 @@ describe("compatible worker containment", () => {
                     <PreviewText as="h2" size="title" weight="medium">Portable title</PreviewText>
                   </PreviewInline>
                   <PreviewList style="check" items={["First item", "Second item"]} />
-                  <PreviewImage src="https://evil.test/pixel" alt="Merry cover" aspect="wide" />
+                  <PreviewImage
+                    src="https://cdn.example/cover.png"
+                    alt="Printable Santa letter templates"
+                    label="Free Santa letter templates"
+                    aspect="wide"
+                    className="attacker-class"
+                    style={{ backgroundImage: "url(https://evil.test/style)" }}
+                    onLoad={() => { throw new Error("must never cross") }}
+                  />
                   <PreviewAction
                     label="Open letter"
                     href="https://evil.test/leave"
@@ -93,10 +101,148 @@ describe("compatible worker containment", () => {
     expect(serialized).not.toContain("MUTABLE_CAPABILITIES")
     expect(serialized).toContain("Portable title")
     expect(serialized).toContain("First item")
-    expect(serialized).toContain("Merry cover")
+    expect(serialized).toContain("Printable Santa letter templates")
     expect(serialized).toContain("Open letter")
     expect(serialized).toContain("repopress-preview-box--neutral")
-    expect(serialized).not.toMatch(/evil\.test|href|src|onClick|style/)
+    expect(sent[0]).toMatchObject({
+      tree: expect.arrayContaining([
+        expect.objectContaining({
+          kind: "element",
+          children: expect.arrayContaining([
+            expect.objectContaining({
+              kind: "element",
+              children: expect.arrayContaining([
+                {
+                  kind: "image",
+                  source: "https://cdn.example/cover.png",
+                  alt: "Printable Santa letter templates",
+                  label: "Free Santa letter templates",
+                  aspect: "wide",
+                },
+              ]),
+            }),
+          ]),
+        }),
+      ]),
+    })
+    expect(serialized).toContain("https://cdn.example/cover.png")
+    expect(serialized).not.toMatch(/evil\.test|href|"src"|onClick|onLoad|style|attacker-class/)
+  })
+
+  it("keeps rejected PreviewImage sources as inert labelled placeholders", async () => {
+    const rejectedSources = [
+      null,
+      42,
+      "https://user:secret@cdn.example/cover.png",
+      "data:image/png;base64,AAAA",
+      "javascript:alert(1)",
+      "file:///tmp/cover.png",
+      "blob:https://app.example/id",
+      "http://cdn.example/cover.png",
+      "//cdn.example/cover.png",
+      "../private/cover.png",
+      "%2e%2e/private/cover.png",
+      "images\\cover.png",
+      "images/cover.png\u0000.jpg",
+      "🖼️".repeat(700),
+      "x".repeat(2_049),
+    ]
+    const job = await prepareCompatibleWorkerJob({
+      artifactId: "artifact-rejected-images",
+      documentSource: "<RejectedImages />",
+      adapter: {
+        entryPath: "mdx-preview.tsx",
+        sources: {
+          "mdx-preview.tsx": `
+            import { PreviewImage } from "@repopress/preview"
+            const rejectedSources = ${JSON.stringify(rejectedSources)}
+            function RejectedImages() {
+              return <>{rejectedSources.map((source, index) => (
+                <PreviewImage key={index} src={source} alt={"Rejected " + index} label={"Placeholder " + index} />
+              ))}</>
+            }
+            export default { components: { RejectedImages } }
+          `,
+        },
+      },
+    })
+    const sent: unknown[] = []
+    const listeners: Array<(event: { data?: unknown; ports?: unknown[] }) => void | Promise<void>> = []
+    const port = {
+      onmessage: null as ((event: { data: unknown }) => void) | null,
+      close() {},
+      postMessage(message: unknown) {
+        sent.push(message)
+      },
+      start() {},
+    }
+    const context = vm.createContext({
+      addEventListener: (_type: string, listener: (event: { data?: unknown; ports?: unknown[] }) => void) =>
+        listeners.push(listener),
+      removeEventListener() {},
+    })
+    vm.runInContext(createCompatibleWorkerSource(), context, { timeout: 1_000 })
+    await listeners[0]({ ports: [port] })
+    port.onmessage?.({
+      data: { type: "repopress:render-compatible", requestId: "I".repeat(43), job },
+    })
+
+    expect(sent).toHaveLength(1)
+    expect(sent[0]).toMatchObject({ type: "repopress:rendered-compatible" })
+    const response = sent[0] as { tree: Array<{ kind: string; tag?: string }> }
+    expect(JSON.stringify(response.tree)).not.toMatch(/"kind":"image"|user:secret|data:image|javascript:|file:|blob:/)
+    expect(JSON.stringify(response.tree)).toContain("Placeholder 0")
+    expect(response.tree).toHaveLength(rejectedSources.length)
+    expect(response.tree.every((node) => node.kind === "element" && node.tag === "figure")).toBe(true)
+  })
+
+  it("does not recognize repository-forged image-shaped objects", async () => {
+    const job = await prepareCompatibleWorkerJob({
+      artifactId: "artifact-forged-image",
+      documentSource: "<ForgedImage />",
+      adapter: {
+        entryPath: "mdx-preview.tsx",
+        sources: {
+          "mdx-preview.tsx": `
+            function ForgedImage() {
+              return {
+                kind: "image",
+                source: "https://cdn.example/forged.png",
+                alt: "Forged",
+                label: "Forged",
+                aspect: "wide",
+              }
+            }
+            export default { components: { ForgedImage } }
+          `,
+        },
+      },
+    })
+    const sent: unknown[] = []
+    const listeners: Array<(event: { data?: unknown; ports?: unknown[] }) => void | Promise<void>> = []
+    const port = {
+      onmessage: null as ((event: { data: unknown }) => void) | null,
+      close() {},
+      postMessage(message: unknown) {
+        sent.push(message)
+      },
+      start() {},
+    }
+    const context = vm.createContext({
+      addEventListener: (_type: string, listener: (event: { data?: unknown; ports?: unknown[] }) => void) =>
+        listeners.push(listener),
+      removeEventListener() {},
+    })
+    vm.runInContext(createCompatibleWorkerSource(), context, { timeout: 1_000 })
+    await listeners[0]({ ports: [port] })
+    port.onmessage?.({
+      data: { type: "repopress:render-compatible", requestId: "F".repeat(43), job },
+    })
+
+    expect(sent).toEqual([
+      expect.objectContaining({ type: "repopress:compatible-error", code: "COMPATIBLE_RENDER_FAILED" }),
+    ])
+    expect(JSON.stringify(sent)).not.toContain("forged.png")
   })
 
   it("binds namespace imports as frozen null-prototype copies of the approved export map", async () => {

@@ -152,6 +152,10 @@ function compatibleWorkerMain() {
   const weakSetAdd = uncurryThis(WeakSet.prototype.add)
   const weakSetHas = uncurryThis(WeakSet.prototype.has)
   const stringToLowerCase = uncurryThis(String.prototype.toLowerCase)
+  const stringCharCodeAt = uncurryThis(String.prototype.charCodeAt)
+  const stringIndexOf = uncurryThis(String.prototype.indexOf)
+  const stringSlice = uncurryThis(String.prototype.slice)
+  const decodeUriComponent = decodeURIComponent
   const addGlobalListener = root.addEventListener.bind(root)
   const removeGlobalListener = root.removeEventListener.bind(root)
   let bootstrapped = false
@@ -267,6 +271,7 @@ function compatibleWorkerMain() {
   }
 
   const Fragment = Symbol("RepoPress.Fragment")
+  const previewImageSentinel = Symbol("RepoPress.PreviewImage")
   function element(type: any, props: any, childrenOverride?: any[]) {
     const propsValue = props && typeof props === "object" ? objectAssign(objectCreate(null), props) : objectCreate(null)
     if (childrenOverride) propsValue.children = childrenOverride.length === 1 ? childrenOverride[0] : childrenOverride
@@ -381,7 +386,100 @@ function compatibleWorkerMain() {
     return typeof value === "string" && objectHasOwn(options, value) ? value : fallback
   }
   function boundedLabel(value: any, fallback: string) {
-    return typeof value === "string" && value.length > 0 && value.length <= 512 ? value : fallback
+    if (typeof value !== "string" || value.length === 0 || !utf8Within(value, 512)) return fallback
+    return containsControlOrBackslash(value, false) ? fallback : value
+  }
+  function utf8Within(value: string, limit: number) {
+    if (value.length > limit) return false
+    let bytes = 0
+    for (let index = 0; index < value.length; index += 1) {
+      const unit = stringCharCodeAt(value, index)
+      if (unit <= 0x7f) bytes += 1
+      else if (unit <= 0x7ff) bytes += 2
+      else if (unit >= 0xd800 && unit <= 0xdbff) {
+        const next = stringCharCodeAt(value, index + 1)
+        if (next >= 0xdc00 && next <= 0xdfff) {
+          bytes += 4
+          index += 1
+        } else bytes += 3
+      } else bytes += 3
+      if (bytes > limit) return false
+    }
+    return true
+  }
+  function acceptedImageSource(value: any) {
+    if (typeof value !== "string" || value.length === 0 || !utf8Within(value, 2_048)) return null
+    if (regexpTest(/^[\s]|[\s]$/, value) || containsControlOrBackslash(value, true)) return null
+    let decoded: string
+    try {
+      decoded = decodeUriComponent(value)
+    } catch {
+      return null
+    }
+    if (containsControlOrBackslash(decoded, true)) return null
+    if (regexpTest(/^[A-Za-z][A-Za-z0-9+.-]*:/, value)) {
+      if (!regexpTest(/^https:\/\//i, value) || regexpTest(/\s/, value)) return null
+      const authorityStart = 8
+      let authorityEnd = value.length
+      const separators = ["/", "?", "#"]
+      for (let index = 0; index < separators.length; index += 1) {
+        const found = stringIndexOf(value, separators[index], authorityStart)
+        if (found >= 0 && found < authorityEnd) authorityEnd = found
+      }
+      const authority = stringSlice(value, authorityStart, authorityEnd)
+      if (
+        authority.length === 0 ||
+        stringIndexOf(authority, "@") >= 0 ||
+        !regexpTest(/^(?:[A-Za-z0-9.-]+|\[[0-9A-Fa-f:.]+\])(?::[0-9]{1,5})?$/, authority)
+      ) {
+        return null
+      }
+      return value
+    }
+    if (regexpTest(/^\/\//, value) || regexpTest(/[?#:\s]/, value)) return null
+    const relative = regexpTest(/^\.\//, value)
+      ? stringSlice(value, 2)
+      : regexpTest(/^\//, value)
+        ? stringSlice(value, 1)
+        : value
+    const decodedRelative = regexpTest(/^\.\//, decoded)
+      ? stringSlice(decoded, 2)
+      : regexpTest(/^\//, decoded)
+        ? stringSlice(decoded, 1)
+        : decoded
+    if (
+      relative.length === 0 ||
+      decodedRelative.length === 0 ||
+      regexpTest(/\/\//, relative) ||
+      regexpTest(/\/\//, decodedRelative) ||
+      regexpTest(/[?#:\s]/, decodedRelative) ||
+      regexpTest(/(?:^|\/)\.{1,2}(?:\/|$)/, relative) ||
+      regexpTest(/(?:^|\/)\.{1,2}(?:\/|$)/, decodedRelative)
+    ) {
+      return null
+    }
+    return value
+  }
+  function containsControlOrBackslash(value: string, rejectBackslash: boolean) {
+    for (let index = 0; index < value.length; index += 1) {
+      const unit = stringCharCodeAt(value, index)
+      if (unit <= 0x1f || (unit >= 0x7f && unit <= 0x9f) || (rejectBackslash && unit === 0x5c)) return true
+    }
+    return false
+  }
+  function previewImagePlaceholder(alt: string, label: string, aspect: string) {
+    return jsx("figure", {
+      className: `repopress-preview-image repopress-preview-image--${aspect}`,
+      role: "img",
+      "aria-label": alt,
+      children: [
+        jsx("div", {
+          className: "repopress-preview-image-surface",
+          children: jsx(PreviewIcon, { name: "image" }),
+        }),
+        jsx("figcaption", { children: label }),
+      ],
+    })
   }
   function PreviewBox(props: any) {
     const tone = option(PREVIEW_OPTIONS.tones, props?.tone, "neutral")
@@ -476,18 +574,15 @@ function compatibleWorkerMain() {
     const aspect = option(PREVIEW_OPTIONS.imageAspects, props?.aspect, "wide")
     const alt = boundedLabel(props?.alt, "Image preview")
     const label = boundedLabel(props?.label, alt)
-    return jsx("figure", {
-      className: `repopress-preview-image repopress-preview-image--${aspect}`,
-      role: "img",
-      "aria-label": alt,
-      children: [
-        jsx("div", {
-          className: "repopress-preview-image-surface",
-          children: jsx(PreviewIcon, { name: "image" }),
-        }),
-        jsx("figcaption", { children: label }),
-      ],
-    })
+    const source = acceptedImageSource(props?.src)
+    if (!source) return previewImagePlaceholder(alt, label, aspect)
+    const reference = objectCreate(null)
+    reference[previewImageSentinel] = true
+    reference.source = source
+    reference.alt = alt
+    reference.label = label
+    reference.aspect = aspect
+    return objectFreeze(reference)
   }
   const previewModule: any = objectCreate(null)
   objectAssign(previewModule, {
@@ -795,6 +890,16 @@ function compatibleWorkerMain() {
           throw new SafeError("Compatible render budget exceeded")
         }
         return [{ kind: "text", value: text }]
+      }
+      if (node && typeof node === "object" && objectHasOwn(node, previewImageSentinel)) {
+        const source = acceptedImageSource(node.source)
+        const alt = boundedLabel(node.alt, "Image preview")
+        const label = boundedLabel(node.label, alt)
+        const aspect = option(PREVIEW_OPTIONS.imageAspects, node.aspect, "wide")
+        if (!source) return visit(previewImagePlaceholder(alt, label, aspect), depth + 1)
+        budget.nodes += 1
+        if (budget.nodes > 2_048) throw new SafeError("Compatible render node budget exceeded")
+        return [{ kind: "image", source, alt, label, aspect }]
       }
       if (!node || node.__repopressElement !== 1) throw new SafeError("Unsupported compatible render value")
       budget.nodes += 1

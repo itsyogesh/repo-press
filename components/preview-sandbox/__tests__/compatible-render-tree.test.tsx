@@ -124,4 +124,74 @@ describe("compatible inert render tree", () => {
     expect(screen.getByRole("note")).toHaveTextContent("Open letter")
     expect(container.querySelector("a, button, img")).toBeNull()
   })
+
+  it("retains only bounded inert image references and renders a transport-free placeholder", () => {
+    const tree = sanitizeCompatibleRenderTree([
+      {
+        kind: "image",
+        source: "https://cdn.example/cover.png",
+        alt: "Printable Santa letter templates",
+        label: "Free Santa letter templates",
+        aspect: "wide",
+        src: "https://evil.test/dom-src",
+        className: "attacker-class",
+        style: "background:url(https://evil.test/style)",
+        onLoad: "steal()",
+      },
+    ])
+
+    expect(tree).toEqual([
+      {
+        kind: "image",
+        source: "https://cdn.example/cover.png",
+        alt: "Printable Santa letter templates",
+        label: "Free Santa letter templates",
+        aspect: "wide",
+      },
+    ])
+    expect(Object.isFrozen(tree)).toBe(true)
+    expect(Object.isFrozen(tree?.[0])).toBe(true)
+
+    const { container } = render(<CompatibleRenderTreeView tree={tree ?? []} />)
+    expect(screen.getByRole("img", { name: "Printable Santa letter templates" })).toHaveTextContent(
+      "Free Santa letter templates",
+    )
+    expect(container.querySelector("img")).toBeNull()
+    expect(container.innerHTML).not.toMatch(/cdn\.example|evil\.test|attacker-class|onload|style=/i)
+  })
+
+  it.each([
+    null,
+    42,
+    "https://user:secret@cdn.example/cover.png",
+    "data:image/png;base64,AAAA",
+    "javascript:alert(1)",
+    "file:///tmp/cover.png",
+    "blob:https://app.example/id",
+    "http://cdn.example/cover.png",
+    "//cdn.example/cover.png",
+    "../private/cover.png",
+    "%2e%2e/private/cover.png",
+    "images\\cover.png",
+    "images/cover.png\u0000.jpg",
+    "🖼️".repeat(700),
+    "x".repeat(2_049),
+  ])("replaces a rejected image source with the existing placeholder contract: %s", (source) => {
+    const tree = sanitizeCompatibleRenderTree([
+      {
+        kind: "image",
+        source,
+        alt: "Safe alt",
+        label: "Safe label",
+        aspect: "wide",
+      },
+    ])
+
+    const serialized = JSON.stringify(tree)
+    expect(serialized).not.toContain('"kind":"image"')
+    if (typeof source === "string" && source.length > 0) expect(serialized).not.toContain(source)
+    const { container } = render(<CompatibleRenderTreeView tree={tree ?? []} />)
+    expect(container.querySelector('[role="img"][aria-label="Safe alt"]')).toHaveTextContent("Safe label")
+    expect(container.querySelector("img")).toBeNull()
+  })
 })

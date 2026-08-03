@@ -1,5 +1,11 @@
 import * as React from "react"
 import { type CompatibleFidelityLossCode, mergeCompatibleFidelityLosses } from "@/lib/preview/compatible-diagnostics"
+import {
+  PREVIEW_IMAGE_ASPECTS,
+  PREVIEW_IMAGE_SOURCE_MAX_BYTES,
+  PREVIEW_IMAGE_TEXT_MAX_BYTES,
+  type PreviewImageAspect,
+} from "@/lib/preview/preview-capabilities"
 
 export const COMPATIBLE_RENDER_MAX_NODES = 2_048
 export const COMPATIBLE_RENDER_MAX_DEPTH = 32
@@ -104,6 +110,13 @@ const CLASS_TOKEN_PATTERN = /^[A-Za-z0-9_:/.[\]%-]+$/
 export type CompatibleRenderNode =
   | Readonly<{ kind: "text"; value: string }>
   | Readonly<{
+      kind: "image"
+      source: string
+      alt: string
+      label: string
+      aspect: PreviewImageAspect
+    }>
+  | Readonly<{
       kind: "element"
       tag: string
       props: Readonly<Record<string, string | number | boolean>>
@@ -140,6 +153,106 @@ function utf8BytesWithin(value: string, limit: number): number | null {
     if (bytes > limit) return null
   }
   return bytes
+}
+
+const URI_SCHEME_PATTERN = /^[A-Za-z][A-Za-z0-9+.-]*:/
+const RELATIVE_TRAVERSAL_PATTERN = /(?:^|\/)\.{1,2}(?:\/|$)/
+
+function containsControlCharacter(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const unit = value.charCodeAt(index)
+    if (unit <= 0x1f || (unit >= 0x7f && unit <= 0x9f)) return true
+  }
+  return false
+}
+
+/** Validates references only. Resolution and all network access remain host-owned. */
+export function sanitizeCompatibleImageSource(input: unknown): string | null {
+  if (typeof input !== "string" || utf8BytesWithin(input, PREVIEW_IMAGE_SOURCE_MAX_BYTES) === null) return null
+  if (input.length === 0 || input.trim() !== input || containsControlCharacter(input) || input.includes("\\")) {
+    return null
+  }
+  let decoded: string
+  try {
+    decoded = decodeURIComponent(input)
+  } catch {
+    return null
+  }
+  if (containsControlCharacter(decoded) || decoded.includes("\\")) return null
+
+  if (URI_SCHEME_PATTERN.test(input)) {
+    let parsed: URL
+    try {
+      parsed = new URL(input)
+    } catch {
+      return null
+    }
+    if (parsed.protocol !== "https:" || parsed.username || parsed.password || !parsed.hostname) return null
+    return input
+  }
+
+  if (input.startsWith("//") || /[?#:]/.test(input) || /\s/.test(input)) return null
+  const relative = input.startsWith("./") ? input.slice(2) : input.startsWith("/") ? input.slice(1) : input
+  const decodedRelative = decoded.startsWith("./")
+    ? decoded.slice(2)
+    : decoded.startsWith("/")
+      ? decoded.slice(1)
+      : decoded
+  if (
+    relative.length === 0 ||
+    decodedRelative.length === 0 ||
+    relative.includes("//") ||
+    decodedRelative.includes("//") ||
+    /[?#:]/.test(decodedRelative) ||
+    /\s/.test(decodedRelative) ||
+    RELATIVE_TRAVERSAL_PATTERN.test(relative) ||
+    RELATIVE_TRAVERSAL_PATTERN.test(decodedRelative)
+  ) {
+    return null
+  }
+  return input
+}
+
+function sanitizeImageText(input: unknown, fallback: string): string {
+  return typeof input === "string" &&
+    input.length > 0 &&
+    utf8BytesWithin(input, PREVIEW_IMAGE_TEXT_MAX_BYTES) !== null &&
+    !containsControlCharacter(input)
+    ? input
+    : fallback
+}
+
+function imagePlaceholderInput(alt: string, label: string, aspect: PreviewImageAspect) {
+  return {
+    kind: "element",
+    tag: "figure",
+    props: {
+      className: `repopress-preview-image repopress-preview-image--${aspect}`,
+      role: "img",
+      "aria-label": alt,
+    },
+    children: [
+      {
+        kind: "element",
+        tag: "div",
+        props: { className: "repopress-preview-image-surface" },
+        children: [
+          {
+            kind: "element",
+            tag: "span",
+            props: { className: "repopress-preview-icon repopress-preview-icon--image", "aria-hidden": true },
+            children: [{ kind: "text", value: "▧" }],
+          },
+        ],
+      },
+      {
+        kind: "element",
+        tag: "figcaption",
+        props: {},
+        children: [{ kind: "text", value: label }],
+      },
+    ],
+  }
 }
 
 function sanitizeClassName(value: string): string | null {
@@ -230,6 +343,17 @@ export function sanitizeCompatibleRenderTreeWithDiagnostics(
       budget.textBytes += bytes
       return [{ kind: "text", value: text }]
     }
+    if (kind === "image") {
+      const alt = sanitizeImageText(ownData(value, "alt"), "Image preview")
+      const label = sanitizeImageText(ownData(value, "label"), alt)
+      const rawAspect = ownData(value, "aspect")
+      const aspect = PREVIEW_IMAGE_ASPECTS.includes(rawAspect as PreviewImageAspect)
+        ? (rawAspect as PreviewImageAspect)
+        : "wide"
+      const source = sanitizeCompatibleImageSource(ownData(value, "source"))
+      if (!source) return visit(imagePlaceholderInput(alt, label, aspect), depth)
+      return [{ kind: "image", source, alt, label, aspect }]
+    }
     if (kind !== "element") throw new TypeError("Unknown compatible render node")
     const tagValue = ownData(value, "tag")
     const childValues = ownData(value, "children")
@@ -274,6 +398,23 @@ export function sanitizeCompatibleRenderTree(input: unknown): CompatibleRenderTr
 
 function renderNode(node: CompatibleRenderNode, key: string): React.ReactNode {
   if (node.kind === "text") return node.value
+  if (node.kind === "image") {
+    return (
+      <figure
+        key={key}
+        className={`repopress-preview-image repopress-preview-image--${node.aspect}`}
+        role="img"
+        aria-label={node.alt}
+      >
+        <div className="repopress-preview-image-surface">
+          <span className="repopress-preview-icon repopress-preview-icon--image" aria-hidden="true">
+            ▧
+          </span>
+        </div>
+        <figcaption>{node.label}</figcaption>
+      </figure>
+    )
+  }
   if (!ALLOWED_TAGS.has(node.tag)) return null
   if (VOID_TAGS.has(node.tag)) return React.createElement(node.tag, { ...node.props, key })
   return React.createElement(

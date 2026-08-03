@@ -18,6 +18,8 @@ export const PREVIEW_TEXT_TONES = Object.freeze(["default", "muted", "accent"] a
 export const PREVIEW_LIST_STYLES = Object.freeze(["bullet", "check", "ordered", "plain"] as const)
 export const PREVIEW_ACTION_TONES = Object.freeze(["primary", "secondary"] as const)
 export const PREVIEW_IMAGE_ASPECTS = Object.freeze(["wide", "square", "portrait"] as const)
+export const PREVIEW_IMAGE_SOURCE_MAX_BYTES = 2_048
+export const PREVIEW_IMAGE_TEXT_MAX_BYTES = 512
 export const PREVIEW_ICON_NAMES = Object.freeze([
   "info",
   "tip",
@@ -68,6 +70,7 @@ export type PreviewImageProps = Readonly<{
   alt: string
   aspect?: PreviewImageAspect
   label?: string
+  /** HTTPS or repository-relative reference. RepoPress resolves bytes outside the compatible worker. */
   src?: string
 }>
 export type PreviewIconProps = Readonly<{ label?: string; name: PreviewIconName }>
