@@ -14,7 +14,7 @@ const faqs = [
   {
     question: "Which frameworks does it work with?",
     answer:
-      "RepoPress automatically detects and supports Next.js (including Fumadocs and Nextra), Astro, Hugo, Docusaurus, Jekyll, and any project using MDX or Markdown files.",
+      "RepoPress automatically detects and supports Blume, Next.js (including Fumadocs and Nextra), Astro, Hugo, Docusaurus, Jekyll, and any project using MDX or Markdown files.",
   },
   {
     question: "What happens when I hit publish?",

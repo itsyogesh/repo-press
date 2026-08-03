@@ -95,6 +95,8 @@ export type NamingStrategy = "slug" | "index-if-empty" | "date-slug"
 export type FrameworkAdapter = {
   id: string
   displayName: string
+  /** Content type used when loading an already-detected project without rerunning repository detection. */
+  defaultContentType?: ContentType
   detect: (ctx: DetectionContext) => Promise<DetectionResult> | DetectionResult
   /** Optional folder-level detection that runs when a contentRoot is specified. Score adds to repo-level score. */
   detectInFolder?: (ctx: DetectionContext) => Promise<DetectionResult> | DetectionResult

@@ -1,6 +1,6 @@
 import { FileText, GitBranch, PanelTopOpen, Sparkles } from "lucide-react"
 
-const frameworks = ["Next.js", "Astro", "Fumadocs", "Nextra", "Docusaurus", "Hugo"]
+const frameworks = ["Next.js", "Blume", "Astro", "Fumadocs", "Nextra", "Docusaurus", "Hugo"]
 
 const historyMoments = [
   { label: "Current", detail: "Updated the getting started guide", time: "2m ago" },

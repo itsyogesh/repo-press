@@ -1,5 +1,6 @@
 import type { FrameworkAdapter } from "../types"
 import { astroAdapter } from "./astro"
+import { blumeAdapter } from "./blume"
 import { contentlayerAdapter } from "./contentlayer"
 import { customAdapter } from "./custom"
 import { docusaurusAdapter } from "./docusaurus"
@@ -10,6 +11,7 @@ import { nextMdxAdapter } from "./next-mdx"
 import { nextraAdapter } from "./nextra"
 
 export const allAdapters: FrameworkAdapter[] = [
+  blumeAdapter,
   fumadocsAdapter,
   nextraAdapter,
   astroAdapter,
@@ -23,6 +25,7 @@ export const allAdapters: FrameworkAdapter[] = [
 
 export {
   astroAdapter,
+  blumeAdapter,
   contentlayerAdapter,
   customAdapter,
   docusaurusAdapter,

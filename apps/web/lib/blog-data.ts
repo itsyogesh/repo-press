@@ -49,14 +49,15 @@ We're building real-time collaboration, advanced search, and custom workflow plu
 
 RepoPress looks at three things in your repository:
 
-1. **Your dependencies** - It checks your package.json for framework-specific packages (like next, astro, or gatsby).
-2. **Configuration files** - It looks for files like next.config.js, astro.config.mjs, or hugo.toml.
+1. **Your dependencies** - It checks your package.json for framework-specific packages (like blume, next, or astro).
+2. **Configuration files** - It looks for files like blume.config.ts, next.config.js, astro.config.mjs, or hugo.toml.
 3. **Content structure** - It identifies where your content files live based on the conventions your framework uses.
 
 ## Supported frameworks
 
 RepoPress currently supports:
 
+- **Blume**
 - **Next.js** (including Fumadocs and Nextra)
 - **Astro**
 - **Hugo**

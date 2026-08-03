@@ -16,6 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 
 const FRAMEWORK_OPTIONS = [
   { value: "auto", label: "Auto-detect" },
+  { value: "blume", label: "Blume" },
   { value: "fumadocs", label: "Fumadocs" },
   { value: "nextra", label: "Nextra" },
   { value: "astro", label: "Astro" },

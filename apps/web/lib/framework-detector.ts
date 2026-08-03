@@ -10,6 +10,7 @@ export type { FrameworkConfig, FrontmatterFieldDef } from "./framework-adapters/
 
 /** @deprecated Use string type instead. Kept for backward compatibility. */
 export type DetectedFramework =
+  | "blume"
   | "fumadocs"
   | "nextra"
   | "astro"

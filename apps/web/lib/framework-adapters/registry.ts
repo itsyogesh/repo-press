@@ -196,7 +196,7 @@ export function getFrameworkConfig(frameworkId: string): FrameworkConfig {
     return adapterToConfig(custom, { contentType: "custom" })
   }
   return adapterToConfig(adapter, {
-    contentType: adapter.fields.length > 3 ? "blog" : "custom",
+    contentType: adapter.defaultContentType ?? (adapter.fields.length > 3 ? "blog" : "custom"),
     suggestedContentRoots: adapter.defaultContentRoots,
   })
 }
