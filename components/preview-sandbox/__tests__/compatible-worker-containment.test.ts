@@ -67,6 +67,48 @@ function defaultDocumentChildren(response: { tree: RenderNode[] }): RenderNode[]
   return response.tree[0].children ?? []
 }
 
+async function renderWorkerArtifact(input: {
+  adapterSource: string
+  artifactId: string
+  documentSource?: string
+  requestIdCharacter: string
+}) {
+  const job = await prepareCompatibleWorkerJob({
+    artifactId: input.artifactId,
+    documentSource: input.documentSource ?? "# Original document body",
+    adapter: {
+      entryPath: "mdx-preview.tsx",
+      sources: { "mdx-preview.tsx": input.adapterSource },
+    },
+  })
+  const sent: unknown[] = []
+  const listeners: Array<(event: { data?: unknown; ports?: unknown[] }) => void | Promise<void>> = []
+  const port = {
+    onmessage: null as ((event: { data: unknown }) => void) | null,
+    close() {},
+    postMessage(message: unknown) {
+      sent.push(message)
+    },
+    start() {},
+  }
+  const context = vm.createContext({
+    addEventListener: (_type: string, listener: (event: { data?: unknown; ports?: unknown[] }) => void) =>
+      listeners.push(listener),
+    removeEventListener() {},
+  })
+  vm.runInContext(createCompatibleWorkerSource(), context, { timeout: 1_000 })
+  await listeners[0]({ ports: [port] })
+  port.onmessage?.({
+    data: {
+      type: "repopress:render-compatible",
+      requestId: input.requestIdCharacter.repeat(43),
+      job,
+    },
+  })
+  expect(sent).toHaveLength(1)
+  return sent[0] as { type: string; fidelityLosses?: string[]; tree: RenderNode[] }
+}
+
 describe("compatible worker containment", () => {
   it("agrees with the iframe sanitizer's bounded image source corpus", async () => {
     const job = await prepareCompatibleWorkerJob({
@@ -907,7 +949,140 @@ describe("compatible worker containment", () => {
     expect(JSON.stringify(sent[0])).not.toContain("must-not-cross")
   })
 
-  it("sanitizes malicious adapter Document output through the ordinary inert tree", async () => {
+  it("merges an own named Document with an exact default adapter export", async () => {
+    const response = await renderWorkerArtifact({
+      artifactId: "artifact-default-plus-named-document",
+      requestIdCharacter: "E",
+      adapterSource: `
+        import { PreviewDocument } from "@repopress/preview"
+        const components = {}
+        export default { components }
+        export function Document({ children }) {
+          return <PreviewDocument layout="wide" tone="warm">{children}</PreviewDocument>
+        }
+      `,
+    })
+
+    expect(response).toMatchObject({
+      type: "repopress:rendered-compatible",
+      fidelityLosses: [],
+      tree: [
+        expect.objectContaining({
+          tag: "article",
+          props: {
+            className: "repopress-preview-document repopress-preview-document--wide repopress-preview-document--warm",
+          },
+        }),
+      ],
+    })
+    expect(JSON.stringify(response)).toContain("Original document body")
+  })
+
+  it.each([
+    {
+      name: "inherited",
+      source: `
+        import { PreviewDocument } from "@repopress/preview"
+        const inherited = { Document: ({ children }) => <PreviewDocument tone="warm">{children}</PreviewDocument> }
+        export const adapter = Object.create(inherited)
+      `,
+    },
+    {
+      name: "accessor",
+      source: `
+        import { PreviewDocument } from "@repopress/preview"
+        export const adapter = {
+          get Document() { throw new Error("ACCESSOR_EXECUTED") },
+          components: {},
+        }
+      `,
+    },
+    {
+      name: "proxy",
+      source: `
+        import { PreviewDocument } from "@repopress/preview"
+        const target = { Document: ({ children }) => <PreviewDocument tone="warm">{children}</PreviewDocument> }
+        export const adapter = new Proxy(target, {
+          getOwnPropertyDescriptor() { throw new Error("PROXY_DESCRIPTOR_EXECUTED") },
+          get() { throw new Error("PROXY_GET_EXECUTED") },
+        })
+      `,
+    },
+  ])("rejects $name adapter Document values without losing the original document", async ({ name, source }) => {
+    const response = await renderWorkerArtifact({
+      artifactId: `artifact-rejected-${name}`,
+      requestIdCharacter: name[0].toUpperCase(),
+      adapterSource: source,
+    })
+
+    expect(response).toMatchObject({ type: "repopress:rendered-compatible", fidelityLosses: [] })
+    const children = defaultDocumentChildren(response)
+    expect(JSON.stringify(children)).toContain("Original document body")
+    expect(JSON.stringify(response)).not.toMatch(/ACCESSOR_EXECUTED|PROXY_(?:DESCRIPTOR|GET)_EXECUTED/u)
+  })
+
+  it("snapshots Document before MDX evaluation can pollute Object.prototype", async () => {
+    const response = await renderWorkerArtifact({
+      artifactId: "artifact-document-prototype-pollution",
+      requestIdCharacter: "O",
+      adapterSource: `export const adapter = { components: {} }`,
+      documentSource:
+        'export const pollution = Object.prototype.Document = () => "POLLUTED_ROOT"\n\n# Original document body',
+    })
+
+    expect(response).toMatchObject({ type: "repopress:rendered-compatible", fidelityLosses: [] })
+    const children = defaultDocumentChildren(response)
+    const serialized = JSON.stringify(children)
+    expect(serialized).toContain("Original document body")
+    expect(serialized).not.toContain("POLLUTED_ROOT")
+  })
+
+  it.each([
+    {
+      name: "arbitrary-root",
+      source: `
+        export default { Document: ({ children }) => <article><p>REPLACED_ROOT</p>{children}</article> }
+      `,
+    },
+    {
+      name: "omitted-children",
+      source: `
+        import { PreviewDocument } from "@repopress/preview"
+        export default { Document: () => <PreviewDocument tone="warm" /> }
+      `,
+    },
+    {
+      name: "duplicated-children",
+      source: `
+        import { PreviewDocument } from "@repopress/preview"
+        export default { Document: ({ children }) => <PreviewDocument tone="warm">{children}{children}</PreviewDocument> }
+      `,
+    },
+    {
+      name: "throwing",
+      source: `export default { Document: () => { throw new Error("DOCUMENT_THROW") } }`,
+    },
+    {
+      name: "recursive",
+      source: `
+        function Document(props) { return Document(props) }
+        export default { Document }
+      `,
+    },
+  ])("falls back to one worker-owned default article for $name Document output", async ({ name, source }) => {
+    const response = await renderWorkerArtifact({
+      artifactId: `artifact-document-${name}`,
+      requestIdCharacter: "F",
+      adapterSource: source,
+    })
+
+    expect(response).toMatchObject({ type: "repopress:rendered-compatible", fidelityLosses: [] })
+    const serialized = JSON.stringify(defaultDocumentChildren(response))
+    expect(serialized.match(/Original document body/gu)).toHaveLength(1)
+    expect(serialized).not.toMatch(/REPLACED_ROOT|DOCUMENT_THROW/u)
+  })
+
+  it("ignores malicious adapter Document output and keeps the worker-owned document", async () => {
     const job = await prepareCompatibleWorkerJob({
       artifactId: "artifact-malicious-document",
       documentSource: "# Safe document body",
@@ -954,26 +1129,20 @@ describe("compatible worker containment", () => {
     expect(sent).toHaveLength(1)
     expect(sent[0]).toMatchObject({
       type: "repopress:rendered-compatible",
-      fidelityLosses: expect.arrayContaining([
-        "STATIC_INERT_ACTIVE_CONTENT",
-        "STATIC_INERT_LINK",
-        "STATIC_INERT_STYLE",
-        "STATIC_INERT_EVENT",
-      ]),
+      fidelityLosses: [],
       tree: [
         expect.objectContaining({
           tag: "article",
           props: expect.objectContaining({
             className:
-              "repopress-preview-document repopress-preview-document--article repopress-preview-document--warm",
+              "repopress-preview-document repopress-preview-document--article repopress-preview-document--default",
           }),
         }),
       ],
     })
     const serialized = JSON.stringify(sent[0])
     expect(serialized).toContain("Safe document body")
-    expect(serialized).toContain("Unsafe link text")
-    expect(serialized).not.toMatch(/evil\.test|script|src|href|style|onClick|STOLEN/u)
+    expect(serialized).not.toMatch(/Unsafe link text|evil\.test|script|src|href|style|onClick|STOLEN/u)
   })
 
   it("preserves signed fidelity accounting when repository code poisons intrinsics and hook properties", async () => {

@@ -276,6 +276,7 @@ function compatibleWorkerMain() {
   const Fragment = Symbol("RepoPress.Fragment")
   const ownedElements = new WeakSet<object>()
   const previewImageReferences = new WeakSet<object>()
+  const previewDocumentSelections = new WeakSet<object>()
   function element(type: any, props: any, childrenOverride?: any[]) {
     const propsValue = props && typeof props === "object" ? objectAssign(objectCreate(null), props) : objectCreate(null)
     if (childrenOverride) propsValue.children = childrenOverride.length === 1 ? childrenOverride[0] : childrenOverride
@@ -693,10 +694,12 @@ function compatibleWorkerMain() {
   function PreviewDocument(props: any) {
     const layout = option(PREVIEW_OPTIONS.documentLayouts, props?.layout, "article")
     const tone = option(PREVIEW_OPTIONS.documentTones, props?.tone, "default")
-    return jsx("article", {
-      className: `repopress-preview-document repopress-preview-document--${layout} repopress-preview-document--${tone}`,
-      children: props?.children,
-    })
+    const selection = objectCreate(null)
+    selection.layout = layout
+    selection.tone = tone
+    selection.children = props?.children
+    weakSetAdd(previewDocumentSelections, selection)
+    return objectFreeze(selection)
   }
   const previewModule: any = objectCreate(null)
   objectAssign(previewModule, {
@@ -741,8 +744,39 @@ function compatibleWorkerMain() {
   deepFreezeOwned(jsxRuntime)
   deepFreezeOwned(shimModules)
 
+  function stableOwnData(input: any, key: string) {
+    if ((typeof input !== "object" && typeof input !== "function") || input === null) return undefined
+    try {
+      const first = objectGetOwnPropertyDescriptor(input, key)
+      const second = objectGetOwnPropertyDescriptor(input, key)
+      if (
+        !first ||
+        !second ||
+        !objectHasOwn(first, "value") ||
+        !objectHasOwn(second, "value") ||
+        first.value !== second.value ||
+        first.enumerable !== second.enumerable ||
+        first.configurable !== second.configurable ||
+        first.writable !== second.writable
+      ) {
+        return undefined
+      }
+      return first.value
+    } catch {
+      return undefined
+    }
+  }
+
+  function firstStableAdapterValue(output: any, adapterExport: any, defaultExport: any, key: string) {
+    const named = stableOwnData(output, key)
+    if (named !== undefined) return named
+    const adapterValue = stableOwnData(adapterExport, key)
+    if (adapterValue !== undefined) return adapterValue
+    return stableOwnData(defaultExport, key)
+  }
+
   function evaluateAdapter(code: string | null) {
-    if (!code) return {}
+    if (!code) return objectFreeze(objectCreate(null))
     const exports: any = {}
     const module: any = { exports }
     const requireModule = (name: string) => {
@@ -759,15 +793,54 @@ function compatibleWorkerMain() {
     for (let index = 0; index < blockedNames.length; index += 1) arrayPush(values, undefined)
     reflectApply(execute, undefined, values)
     const output = module.exports || exports
-    return (
-      output.adapter ||
-      output.default || {
-        components: output.components,
-        scope: output.scope,
-        allowImports: output.allowImports,
-        Document: output.Document,
+    const adapterExport = stableOwnData(output, "adapter")
+    const defaultExport = stableOwnData(output, "default")
+    const snapshot = objectCreate(null)
+    snapshot.components = firstStableAdapterValue(output, adapterExport, defaultExport, "components")
+    snapshot.scope = firstStableAdapterValue(output, adapterExport, defaultExport, "scope")
+    snapshot.allowImports = firstStableAdapterValue(output, adapterExport, defaultExport, "allowImports")
+    const Document = firstStableAdapterValue(output, adapterExport, defaultExport, "Document")
+    snapshot.Document = typeof Document === "function" ? Document : undefined
+    return objectFreeze(snapshot)
+  }
+
+  const documentChildrenToken = objectFreeze(objectCreate(null))
+  const defaultDocumentPresentation = objectFreeze({ layout: "article", tone: "default" })
+
+  function resolveDocumentPresentation(Document: any) {
+    if (typeof Document !== "function") return defaultDocumentPresentation
+    try {
+      const props = objectCreate(null)
+      props.children = documentChildrenToken
+      const output = reflectApply(Document, undefined, [objectFreeze(props)])
+      let selection: any = output
+      if (output && typeof output === "object" && weakSetHas(ownedElements, output)) {
+        const ownedOutput: any = output
+        if (ownedOutput.type !== PreviewDocument) return defaultDocumentPresentation
+        selection = reflectApply(PreviewDocument, undefined, [ownedOutput.props])
       }
-    )
+      if (
+        !selection ||
+        typeof selection !== "object" ||
+        !weakSetHas(previewDocumentSelections, selection) ||
+        selection.children !== documentChildrenToken
+      ) {
+        return defaultDocumentPresentation
+      }
+      return objectFreeze({
+        layout: option(PREVIEW_OPTIONS.documentLayouts, selection.layout, "article"),
+        tone: option(PREVIEW_OPTIONS.documentTones, selection.tone, "default"),
+      })
+    } catch {
+      return defaultDocumentPresentation
+    }
+  }
+
+  function presentDocument(children: any, presentation: any) {
+    return jsx("article", {
+      className: `repopress-preview-document repopress-preview-document--${presentation.layout} repopress-preview-document--${presentation.tone}`,
+      children,
+    })
   }
 
   function evaluateDocument(job: any, adapter: any) {
@@ -1079,9 +1152,9 @@ function compatibleWorkerMain() {
       lockDownRealm()
       try {
         const adapter = evaluateAdapter(job.adapterCode)
+        const presentation = resolveDocumentPresentation(adapter.Document)
         const rendered = evaluateDocument(job, adapter)
-        const Document = typeof adapter.Document === "function" ? adapter.Document : PreviewDocument
-        const document = jsx(Document, { children: rendered })
+        const document = presentDocument(rendered, presentation)
         try {
           const tree = renderTree(document)
           send({
