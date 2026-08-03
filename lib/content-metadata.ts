@@ -482,7 +482,7 @@ function staticValue(node: Expression, depth: number, budget: ParseBudget): unkn
         throw new Error("Metadata object exceeds limit")
       }
       const key = propertyKey(entry, budget)
-      if (Object.hasOwn(record, key)) throw new Error("Duplicate metadata key")
+      if (Object.getOwnPropertyDescriptor(record, key) !== undefined) throw new Error("Duplicate metadata key")
       Object.defineProperty(record, key, {
         value: staticValue(entry.value, depth + 1, budget),
         enumerable: true,

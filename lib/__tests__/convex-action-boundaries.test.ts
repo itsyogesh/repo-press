@@ -698,6 +698,46 @@ describe("public Convex GitHub action boundaries", () => {
     })
   })
 
+  it("re-reads a Git-backed route placeholder so metadata-export titles can replace page", async () => {
+    const ctx = actionCtx()
+    authorizeEditor(ctx, [
+      {
+        _id: "document_1",
+        projectId: "project_1",
+        filePath: "article/page.mdx",
+        pathRepresentation: "content_relative_v1",
+        title: "page",
+        githubSha: "f".repeat(40),
+      },
+    ])
+    mockAuthorizedTitlePayload(
+      utf8ContentPayload(`export const metadata = {
+  title: "Free Printable Santa Letter Templates",
+}
+
+# Santa letters
+`),
+    )
+
+    await (syncTreeTitles as any).handler(ctx, {
+      projectId: "project_1",
+      readRef: BASE_SHA,
+      files: [{ path: "article/page.mdx", sha: "f".repeat(40) }],
+      githubToken: "editor-token",
+    })
+
+    expect(ctx.runMutation.mock.calls[1][1]).toEqual({
+      projectId: "project_1",
+      documents: [
+        {
+          filePath: "article/page.mdx",
+          title: "Free Printable Santa Letter Templates",
+          githubSha: "f".repeat(40),
+        },
+      ],
+    })
+  })
+
   it.each([
     [
       "a non-integer declared size",
@@ -1602,6 +1642,10 @@ describe("title sync batch persistence", () => {
       rows.push({ _id: id, ...value })
       return id
     })
+    const patch = vi.fn().mockImplementation(async (id, value) => {
+      const row = rows.find((candidate) => candidate._id === id)
+      if (row) Object.assign(row, value)
+    })
     const ctx = {
       db: {
         query: vi.fn().mockReturnValue({
@@ -1627,6 +1671,7 @@ describe("title sync batch persistence", () => {
           }),
         }),
         insert,
+        patch,
       },
     }
 
@@ -1652,6 +1697,52 @@ describe("title sync batch persistence", () => {
         pathRepresentation: "content_relative_v1",
         title: "Second",
         githubSha: "e".repeat(40),
+      }),
+    )
+  })
+
+  it("refreshes a Git-backed placeholder title without inserting a second document", async () => {
+    const found = {
+      _id: "document_1",
+      projectId: "project_1",
+      filePath: "article/page.mdx",
+      pathRepresentation: "content_relative_v1",
+      title: "page",
+      githubSha: "f".repeat(40),
+    }
+    const patch = vi.fn()
+    const insert = vi.fn()
+    const ctx = {
+      db: {
+        query: vi.fn().mockReturnValue({
+          withIndex: vi.fn().mockReturnValue({
+            filter: vi.fn().mockReturnValue({ first: vi.fn().mockResolvedValue(found) }),
+          }),
+        }),
+        insert,
+        patch,
+      },
+    }
+
+    const result = await (getOrCreateTitleSyncBatchInternal as any).handler(ctx, {
+      projectId: "project_1",
+      documents: [
+        {
+          filePath: "article/page.mdx",
+          title: "Free Printable Santa Letter Templates",
+          githubSha: "f".repeat(40),
+        },
+      ],
+    })
+
+    expect(result).toEqual({ inserted: 0, existing: 1 })
+    expect(insert).not.toHaveBeenCalled()
+    expect(patch).toHaveBeenCalledWith(
+      "document_1",
+      expect.objectContaining({
+        title: "Free Printable Santa Letter Templates",
+        githubSha: "f".repeat(40),
+        updatedAt: expect.any(Number),
       }),
     )
   })

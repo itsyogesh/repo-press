@@ -41,6 +41,25 @@ describe("parseContentFile", () => {
     expect(Object.isFrozen(result.metadata.alternates)).toBe(true)
   })
 
+  it("parses static metadata when the ES2022 Object.hasOwn helper is unavailable", () => {
+    const descriptor = Object.getOwnPropertyDescriptor(Object, "hasOwn")
+    Object.defineProperty(Object, "hasOwn", { configurable: true, value: undefined })
+    let result: ReturnType<typeof parseContentFile>
+
+    try {
+      result = parseContentFile('export const metadata = { title: "Hello" }\n\n# Body\n', "docs/a.mdx")
+    } finally {
+      if (descriptor) Object.defineProperty(Object, "hasOwn", descriptor)
+    }
+
+    expect(result).toEqual({
+      body: "# Body\n",
+      metadata: { title: "Hello" },
+      metadataSource: "metadata-export",
+      editable: true,
+    })
+  })
+
   it("continues to parse YAML frontmatter", () => {
     const result = parseContentFile("---\ntitle: Hello\ntags:\n  - docs\n---\n\n# Body\n", "docs/a.md")
 

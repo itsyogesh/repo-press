@@ -61,10 +61,14 @@ function normalizeBoundedTitle(value: string): string | null {
   return title
 }
 
-function titleFromContent(filePath: string, content: string): string {
+function fallbackTitleFromPath(filePath: string): string {
   const fileName = filePath.split("/").pop() ?? filePath
   const fileNameStem = fileName.replace(/\.(mdx?|markdown)$/i, "")
-  const fallbackTitle = normalizeBoundedTitle(fileNameStem) ?? "Untitled"
+  return normalizeBoundedTitle(fileNameStem) ?? "Untitled"
+}
+
+function titleFromContent(filePath: string, content: string): string {
+  const fallbackTitle = fallbackTitleFromPath(filePath)
   const parsedTitle = parseContentFile(content, filePath).metadata.title
   if (typeof parsedTitle !== "string") return fallbackTitle
   return normalizeBoundedTitle(parsedTitle) ?? fallbackTitle
@@ -444,6 +448,17 @@ export const getOrCreateTitleSyncBatchInternal = internalMutation({
         .first()
       if (found) {
         existing += 1
+        if (
+          found.body === undefined &&
+          found.frontmatter === undefined &&
+          (found.title !== document.title || found.githubSha !== document.githubSha)
+        ) {
+          await ctx.db.patch(found._id, {
+            title: document.title,
+            githubSha: document.githubSha,
+            updatedAt: Date.now(),
+          })
+        }
         continue
       }
 
@@ -1070,25 +1085,33 @@ export const syncTreeTitles = action({
     const existingDocs = await ctx.runQuery(internal.documents.listByProjectInternal, {
       projectId: args.projectId,
     })
-    const existingPaths = new Set(
+    const existingByPath = new Map(
       existingDocs.flatMap((document) => {
         const contentPath = tryResolveStoredContentPath(
           project.contentRoot,
           document.filePath,
           document.pathRepresentation as StoredPathRepresentation | undefined,
         )
-        return contentPath ? [contentPath] : []
+        return contentPath ? [[contentPath, document] as const] : []
       }),
     )
 
-    const missingFiles = files.filter((f) => !existingPaths.has(f.path))
-    if (missingFiles.length === 0) return
+    const filesToSync = files.filter((file) => {
+      const existing = existingByPath.get(file.path)
+      if (!existing) return true
+      const isGitBackedPlaceholder =
+        existing.body === undefined &&
+        existing.frontmatter === undefined &&
+        (existing.githubSha !== file.sha || existing.title === fallbackTitleFromPath(file.path))
+      return isGitBackedPlaceholder
+    })
+    if (filesToSync.length === 0) return
 
     // Fetch and validate every missing file before opening the single write transaction.
     const BATCH_SIZE = 5
     const normalizedDocuments: NormalizedTitleSyncDocument[] = []
-    for (let i = 0; i < missingFiles.length; i += BATCH_SIZE) {
-      const batch = missingFiles.slice(i, i + BATCH_SIZE)
+    for (let i = 0; i < filesToSync.length; i += BATCH_SIZE) {
+      const batch = filesToSync.slice(i, i + BATCH_SIZE)
       const normalizedBatch = await Promise.all(
         batch.map(async (file) => {
           let response: Response
