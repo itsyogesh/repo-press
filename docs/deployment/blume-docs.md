@@ -21,7 +21,12 @@ Keep Vercel's access to files outside the Root Directory enabled. npm must be ab
 
 The static docs project requires no Convex, GitHub, Better Auth, preview-signing, or capability secrets. Do not copy web-project variables into it. The only canonical-origin configuration lives in `blume.config.ts` and contains no secret.
 
-The existing RepoPress Vercel project changes its Root Directory to `apps/web`; all existing web variables remain attached only to that project.
+Both existing Next.js Vercel projects change their Root Directory to `apps/web` and switch their install/build commands from Bun to npm:
+
+- `repo-press` (`repopress.org`);
+- `repo-press-preview` (`preview.repopress.org`).
+
+Use `npm ci` as the install command and `npm run build` as the build command. All existing web variables remain attached only to those projects. Update both projects before expecting Git-connected previews from the monorepo branch.
 
 ## Pre-domain verification
 
