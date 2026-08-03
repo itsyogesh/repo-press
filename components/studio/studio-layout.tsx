@@ -104,6 +104,14 @@ function inferTitleFromPath(path: string) {
   return fileName.replace(/\.(mdx?|markdown)$/i, "")
 }
 
+export function getDocumentHydrationKey(
+  document: { _id?: unknown; updatedAt?: unknown; contentVersion?: unknown } | null | undefined,
+  selectedPath: string | null | undefined,
+) {
+  if (!document || !selectedPath) return null
+  return `${selectedPath}:${String(document._id ?? "")}:${String(document.updatedAt ?? "")}:${String(document.contentVersion ?? "")}`
+}
+
 function freezePreviewData<T>(value: T): T {
   if (value === null || typeof value !== "object" || Object.isFrozen(value)) return value
   for (const key of Object.keys(value)) freezePreviewData(Object.getOwnPropertyDescriptor(value, key)?.value)
@@ -549,19 +557,20 @@ function StudioLayoutInner({
 
   const canMutateExplorer = Boolean(userId || projectAccessToken)
 
-  const hydratedForPath = React.useRef<string | null>(null)
+  const hydratedDocumentKey = React.useRef<string | null>(null)
 
   React.useEffect(() => {
     const selectedPath = selectedFile?.path ?? null
     if (!selectedPath) {
-      hydratedForPath.current = null
+      hydratedDocumentKey.current = null
       return
     }
-    if (!document || hydratedForPath.current === selectedPath) return
+    const hydrationKey = getDocumentHydrationKey(document, selectedPath)
+    if (!document || !hydrationKey || hydratedDocumentKey.current === hydrationKey) return
 
     const draftStatuses = new Set(["draft", "in_review", "approved"])
     if (draftStatuses.has(document.status) && hydrateFromDocument(document)) {
-      hydratedForPath.current = selectedPath
+      hydratedDocumentKey.current = hydrationKey
     }
   }, [document, selectedFile?.path, hydrateFromDocument])
 
