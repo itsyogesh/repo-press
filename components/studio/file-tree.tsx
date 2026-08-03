@@ -12,14 +12,12 @@ import {
   useSensors,
 } from "@dnd-kit/core"
 import { sortableKeyboardCoordinates } from "@dnd-kit/sortable"
-import { BookOpen, File, PenLine, Plus, Search, Tag, User, X } from "lucide-react"
+import { Plus, Search, X } from "lucide-react"
 import * as React from "react"
 import { Button } from "@/components/ui/button"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import type { OverlayTreeNode } from "@/lib/explorer-tree-overlay"
 import { filterTree } from "@/lib/explorer-tree-overlay"
-import { getFolderContext } from "@/lib/framework-adapters/folder-context"
 import type { FrameworkAdapter } from "@/lib/framework-adapters/types"
 import type { FileTreeNode } from "@/lib/github"
 import { buildRouteDocumentTree, type RouteDocumentTreeItem } from "@/lib/studio/route-document-tree"
@@ -39,7 +37,7 @@ interface FileTreeProps {
   onMoveFile?: (oldPath: string, newParentPath: string) => void
   owner?: string
   repo?: string
-  /** Framework adapter used to derive human-readable folder labels in the + menu */
+  /** Framework adapter used by contextual creation flows. */
   adapter?: FrameworkAdapter | null
   /** Set of full repo-relative file paths that have unsaved edits */
   dirtyPaths?: Set<string>
@@ -140,7 +138,6 @@ export function FileTree({
   onMoveFile,
   owner,
   repo,
-  adapter,
   dirtyPaths,
 }: FileTreeProps) {
   const [searchQuery, setSearchQuery] = React.useState("")
@@ -403,75 +400,22 @@ export function FileTree({
     return countFiles(tree)
   }, [tree])
 
-  const topLevelFolders = React.useMemo(
-    () =>
-      tree
-        .filter((node) => {
-          if (node.type !== "dir") return false
-          const overlayNode = node as OverlayTreeNode
-          return !overlayNode.isDeleted
-        })
-        .map((node) => ({ path: node.path, name: node.name })),
-    [tree],
-  )
-
-  /** Derive smart label + icon for each top-level folder using the framework adapter. */
-  const folderMenuItems = React.useMemo(() => {
-    return topLevelFolders.map((folder) => {
-      const ctx = adapter ? getFolderContext(folder.path, adapter) : null
-      const label = ctx ? `New ${ctx.contentLabel}` : `Create in ${folder.name}`
-
-      let Icon: React.ElementType = File
-      if (ctx) {
-        const cl = ctx.contentLabel.toLowerCase()
-        if (cl.includes("post") || cl.includes("blog")) Icon = PenLine
-        else if (cl.includes("doc") || cl.includes("page") || cl.includes("tutorial") || cl.includes("faq"))
-          Icon = BookOpen
-        else if (cl.includes("author") || cl.includes("people")) Icon = User
-        else if (cl.includes("release") || cl.includes("changelog")) Icon = Tag
-      }
-
-      return { path: folder.path, label, Icon }
-    })
-  }, [topLevelFolders, adapter])
-
   return (
     <div ref={treeRootRef} className="h-full flex flex-col bg-studio-canvas text-studio-fg text-sm">
       <div className="p-2 border-b border-studio-border text-xs font-medium text-studio-fg uppercase tracking-wider flex items-center justify-between sticky top-0 bg-studio-canvas z-10">
         <span>Explorer ({totalFiles})</span>
         <div className="flex items-center gap-1">
           {onCreateFile && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6 rounded-md hover:bg-studio-canvas-inset"
-                  title="New file"
-                >
-                  <Plus className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                {folderMenuItems.map((item) => (
-                  <DropdownMenuItem key={item.path} onClick={() => onCreateFile(item.path)}>
-                    <item.Icon className="mr-2 h-4 w-4" />
-                    {item.label}
-                  </DropdownMenuItem>
-                ))}
-                {folderMenuItems.length === 0 ? (
-                  <DropdownMenuItem onClick={handleCreateRootFile}>
-                    <File className="mr-2 h-4 w-4" />
-                    New File
-                  </DropdownMenuItem>
-                ) : (
-                  <DropdownMenuItem onClick={handleCreateRootFile}>
-                    <File className="mr-2 h-4 w-4" />
-                    New file at root
-                  </DropdownMenuItem>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 rounded-md hover:bg-studio-canvas-inset"
+              title="New file"
+              aria-label="New file"
+              onClick={handleCreateRootFile}
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
           )}
         </div>
       </div>

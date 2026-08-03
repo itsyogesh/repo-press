@@ -93,6 +93,8 @@ interface PreviewBaseProps {
   scrollContainerRef?: React.RefObject<HTMLDivElement | null>
   onScroll?: () => void
   onCompilingChange?: (isCompiling: boolean) => void
+  /** Render only the verified surface when embedded in another authoring control. */
+  compact?: boolean
 }
 
 type PreviewProps = PreviewBaseProps &
@@ -178,6 +180,7 @@ export function Preview({
   scrollContainerRef,
   onScroll,
   onCompilingChange,
+  compact = false,
   compatibleResolution,
   compatibleAuthority,
 }: PreviewProps) {
@@ -315,11 +318,15 @@ export function Preview({
   const visibleDowngradeDiagnostics = compatibleDowngraded ? compatibleDiagnostics : downgradeDiagnostics
   const warnings = React.useMemo(() => {
     if (compatibleDowngraded) return [...compatibleDiagnostics]
-    if (displayedFidelity === "Compatible") {
-      return [`${COMPATIBLE_RENDERER_PROFILE} renders only supported static, inert content.`, ...downgradeDiagnostics]
-    }
     return downgradeDiagnostics
-  }, [compatibleDiagnostics, compatibleDowngraded, displayedFidelity, downgradeDiagnostics])
+  }, [compatibleDiagnostics, compatibleDowngraded, downgradeDiagnostics])
+  const previewProfile =
+    displayedFidelity === "Compatible" && !compatibleDowngraded
+      ? {
+          label: "Safe preview",
+          description: "Actions explain their configured destination without navigating or running application code.",
+        }
+      : undefined
   const handleCompatibleMessage = React.useCallback(
     (message: SandboxMessage) => {
       if (!activeCompatibleAttemptKey) return
@@ -422,6 +429,8 @@ export function Preview({
     </section>
   )
 
+  if (compact) return <div className="h-full min-h-0 w-full overflow-hidden">{previewContent}</div>
+
   if (isFullScreen) {
     return (
       <div className="fixed inset-0 z-50 bg-studio-canvas flex flex-col font-sans">
@@ -437,7 +446,7 @@ export function Preview({
             <p className="text-sm text-studio-fg-muted">See the polished reading experience while you edit.</p>
           </div>
           <div className="flex items-center gap-3">
-            <PreviewStatus isCompiling={isCompiling} warnings={warnings} />
+            <PreviewStatus isCompiling={isCompiling} warnings={warnings} profile={previewProfile} />
             <ViewportToggle value={viewport} onChange={setViewport} />
             <Button
               variant="ghost"
@@ -471,7 +480,7 @@ export function Preview({
           <p className="text-sm text-studio-fg-muted">Live rendering with device-aware framing.</p>
         </div>
         <div className="flex items-center gap-3">
-          <PreviewStatus isCompiling={isCompiling} warnings={warnings} />
+          <PreviewStatus isCompiling={isCompiling} warnings={warnings} profile={previewProfile} />
           <ViewportToggle value={viewport} onChange={setViewport} />
           <Button
             variant="ghost"

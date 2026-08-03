@@ -316,10 +316,7 @@ export function Editor({
 
   const errorBoundaryResetKey = React.useMemo(() => `${filePath}:${sanitizedContent}`, [filePath, sanitizedContent])
 
-  const getEditSource = React.useCallback(
-    () => editorRef.current?.getMarkdown() ?? sanitizedContent,
-    [sanitizedContent],
-  )
+  const getEditSource = React.useCallback(() => sanitizedContent, [sanitizedContent])
   const applyEditedSource = React.useCallback(
     (source: string) => {
       if (readOnly) return

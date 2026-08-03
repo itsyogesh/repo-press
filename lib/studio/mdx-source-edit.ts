@@ -123,6 +123,24 @@ function isPlainDataRecord(value: unknown): value is Record<string, unknown> {
   return prototype === Object.prototype || prototype === null
 }
 
+function canonicalExpressionLiteral(value: unknown): boolean | number | undefined {
+  try {
+    if (!isPlainDataRecord(value) || dataValue(value, "type") !== "mdxJsxAttributeValueExpression") {
+      return undefined
+    }
+    const expression = dataValue(value, "value")
+    if (typeof expression !== "string") return undefined
+    const literal = expression.trim()
+    if (literal === "true") return true
+    if (literal === "false") return false
+    if (!/^-?(?:0|[1-9]\d*)(?:\.\d+)?$/u.test(literal)) return undefined
+    const number = Number(literal)
+    return Number.isFinite(number) ? number : undefined
+  } catch {
+    return undefined
+  }
+}
+
 function openingTagFor(source: string, node: MdxElement): { start: number; end: number; source: string } | null {
   const start = node.position?.start?.offset
   if (!Number.isSafeInteger(start) || (start as number) < 0 || typeof node.name !== "string") return null
@@ -492,11 +510,13 @@ export function prepareComponentPropEdit(
 
   const attributes = new Map<string, MdxAttribute>()
   for (const attribute of node.attributes ?? []) {
+    if (attribute.type !== "mdxJsxAttribute" || typeof attribute.name !== "string" || attributes.has(attribute.name)) {
+      return refuse(source)
+    }
     if (
-      attribute.type !== "mdxJsxAttribute" ||
-      typeof attribute.name !== "string" ||
-      attributes.has(attribute.name) ||
-      (typeof attribute.value === "object" && attribute.value !== null)
+      typeof attribute.value === "object" &&
+      attribute.value !== null &&
+      canonicalExpressionLiteral(attribute.value) === undefined
     ) {
       return refuse(source)
     }
@@ -522,11 +542,19 @@ export function prepareComponentPropEdit(
       continue
     }
     if (prop.type === "boolean") {
-      if (attribute.value !== null && attribute.value !== undefined) return refuse(source)
-      initialProps[prop.name] = true
+      const value =
+        attribute.value === null || attribute.value === undefined ? true : canonicalExpressionLiteral(attribute.value)
+      if (typeof value !== "boolean") return refuse(source)
+      initialProps[prop.name] = value
       continue
     }
-    if (prop.type === "number" || typeof attribute.value !== "string") return refuse(source)
+    if (prop.type === "number") {
+      const value = canonicalExpressionLiteral(attribute.value)
+      if (typeof value !== "number") return refuse(source)
+      initialProps[prop.name] = value
+      continue
+    }
+    if (typeof attribute.value !== "string") return refuse(source)
     initialProps[prop.name] = attribute.value
   }
 
@@ -538,9 +566,9 @@ export function prepareComponentPropEdit(
   })
 }
 
-function literalAttributeValue(attribute: MdxAttribute): string | boolean | undefined {
+function literalAttributeValue(attribute: MdxAttribute): string | number | boolean | undefined {
   if (attribute.value === null || attribute.value === undefined) return true
-  return typeof attribute.value === "string" ? attribute.value : undefined
+  return typeof attribute.value === "string" ? attribute.value : canonicalExpressionLiteral(attribute.value)
 }
 
 function quoteAndValueRange(
@@ -647,8 +675,8 @@ export function editComponentProp(source: string, target: unknown, changes: unkn
     const start = attribute.position?.start?.offset
     const end = attribute.position?.end?.offset
     if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end)) return refuse(source)
-    if (typeof attribute.value === "object" && attribute.value !== null) return refuse(source)
     const current = literalAttributeValue(attribute)
+    if (typeof attribute.value === "object" && attribute.value !== null && current === undefined) return refuse(source)
     if (change.value !== null && change.value !== undefined && Object.is(current, change.value)) continue
 
     if (change.value === null || change.value === undefined) {

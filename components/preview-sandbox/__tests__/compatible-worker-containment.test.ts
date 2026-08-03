@@ -8,6 +8,7 @@ import {
   createCompatibleWorkerSource,
   prepareCompatibleWorkerJob,
 } from "../compatible-worker"
+import { ACTION_DESTINATION_CORPUS } from "./compatible-action-destination-corpus"
 
 const IMAGE_SOURCE_CORPUS = [
   { id: "relative", source: "images/cover.png", accepted: true },
@@ -61,7 +62,8 @@ function defaultDocumentChildren(response: { tree: RenderNode[] }): RenderNode[]
     kind: "element",
     tag: "article",
     props: {
-      className: "repopress-preview-document repopress-preview-document--article repopress-preview-document--default",
+      className:
+        "typeset typeset-preview repopress-preview-document repopress-preview-document--article repopress-preview-document--default",
     },
   })
   return response.tree[0].children ?? []
@@ -110,6 +112,60 @@ async function renderWorkerArtifact(input: {
 }
 
 describe("compatible worker containment", () => {
+  it("charges PreviewAction labels against the global UTF-8 text budget", async () => {
+    const label = "é".repeat(256)
+    const response = await renderWorkerArtifact({
+      artifactId: "artifact-action-text-budget",
+      documentSource: "<ActionTextBudget />",
+      requestIdCharacter: "B",
+      adapterSource: `
+        import { PreviewAction, PreviewStack } from "@repopress/preview"
+        const label = ${JSON.stringify(label)}
+        function ActionGroup({ offset }) {
+          return <PreviewStack>{Array.from({ length: 100 }, (_, index) => (
+            <PreviewAction key={offset + index} label={label} />
+          ))}</PreviewStack>
+        }
+        function ActionTextBudget() {
+          return <PreviewStack>
+            <ActionGroup offset={0} />
+            <ActionGroup offset={100} />
+            <ActionGroup offset={200} />
+            <ActionGroup offset={300} />
+          </PreviewStack>
+        }
+        export default { components: { ActionTextBudget } }
+      `,
+    })
+
+    expect(response).toMatchObject({ type: "repopress:compatible-error" })
+  })
+
+  it("applies the shared bounded action destination corpus inside the worker", async () => {
+    const response = await renderWorkerArtifact({
+      artifactId: "artifact-action-destination-corpus",
+      documentSource: "<ActionDestinationCorpus />",
+      requestIdCharacter: "A",
+      adapterSource: `
+        import { PreviewAction, PreviewStack } from "@repopress/preview"
+        const entries = ${JSON.stringify(ACTION_DESTINATION_CORPUS)}
+        function ActionDestinationCorpus() {
+          return <PreviewStack>{entries.map((entry) => (
+            <PreviewAction key={entry.id} label={entry.id} href={entry.destination} />
+          ))}</PreviewStack>
+        }
+        export default { components: { ActionDestinationCorpus } }
+      `,
+    })
+    const serialized = JSON.stringify(response.tree)
+
+    for (const entry of ACTION_DESTINATION_CORPUS) {
+      expect(serialized).toContain(`"label":"${entry.id}"`)
+      if (entry.accepted) expect(serialized).toContain(`"destination":${JSON.stringify(entry.destination)}`)
+      else expect(serialized).not.toContain(`"destination":${JSON.stringify(entry.destination)}`)
+    }
+  })
+
   it("agrees with the iframe sanitizer's bounded image source corpus", async () => {
     const job = await prepareCompatibleWorkerJob({
       artifactId: "artifact-image-source-corpus",
@@ -227,9 +283,10 @@ describe("compatible worker containment", () => {
                   </PreviewPaper>
                   <PreviewAction
                     label="Open letter"
-                    href="https://evil.test/leave"
+                    href="javascript:alert('blocked')"
                     onClick={() => { throw new Error("must never cross") }}
                   />
+                  <PreviewAction label="Open safe letter" href="/letters?template=classic" />
                   <PreviewText tone="muted">{sealed ? "SEALED_CAPABILITIES" : "MUTABLE_CAPABILITIES"}</PreviewText>
                 </PreviewStack>
               </PreviewBox>
@@ -272,6 +329,9 @@ describe("compatible worker containment", () => {
     expect(serialized).toContain("First item")
     expect(serialized).toContain("Printable Santa letter templates")
     expect(serialized).toContain("Open letter")
+    expect(serialized).toContain("Open safe letter")
+    expect(serialized).toContain('"kind":"action"')
+    expect(serialized).toContain('"destination":"/letters?template=classic"')
     expect(serialized).toContain("Paper preview")
     expect(serialized).toContain("Portable paper body")
     expect(serialized).toContain("Open the stationery")
@@ -300,7 +360,7 @@ describe("compatible worker containment", () => {
       ]),
     )
     expect(serialized).toContain("https://cdn.example/cover.png")
-    expect(serialized).not.toMatch(/evil\.test|href|"src"|onClick|onLoad|style|attacker-class|attacker-paper/)
+    expect(serialized).not.toMatch(/javascript:|href|"src"|onClick|onLoad|style|attacker-class|attacker-paper/)
   })
 
   it("renders a bounded semantic PreviewPaper variant matrix without dynamic headings", async () => {
@@ -360,20 +420,7 @@ describe("compatible worker containment", () => {
         { tag: "div", children: [{ kind: "text", value: "Letter body" }] },
         {
           tag: "div",
-          children: [
-            {
-              tag: "span",
-              props: {
-                className: "repopress-preview-action repopress-preview-action--secondary",
-                role: "note",
-                "aria-label": `Inert preview action: ${exactAction}`,
-              },
-              children: [
-                { kind: "text", value: exactAction },
-                { tag: "small", children: [{ kind: "text", value: "Preview only" }] },
-              ],
-            },
-          ],
+          children: [{ kind: "action", label: exactAction, tone: "secondary" }],
         },
       ],
     })
@@ -882,7 +929,7 @@ describe("compatible worker containment", () => {
           tag: "article",
           props: {
             className:
-              "repopress-preview-document repopress-preview-document--article repopress-preview-document--default",
+              "typeset typeset-preview repopress-preview-document repopress-preview-document--article repopress-preview-document--default",
           },
           children: expect.arrayContaining([expect.objectContaining({ kind: "element", tag: "h1" })]),
         }),
@@ -940,7 +987,7 @@ describe("compatible worker containment", () => {
           tag: "article",
           props: {
             className:
-              "repopress-preview-document repopress-preview-document--article repopress-preview-document--default",
+              "typeset typeset-preview repopress-preview-document repopress-preview-document--article repopress-preview-document--default",
           },
           children: expect.arrayContaining([expect.objectContaining({ kind: "element", tag: "h1" })]),
         },
@@ -970,7 +1017,8 @@ describe("compatible worker containment", () => {
         expect.objectContaining({
           tag: "article",
           props: {
-            className: "repopress-preview-document repopress-preview-document--wide repopress-preview-document--warm",
+            className:
+              "typeset typeset-preview repopress-preview-document repopress-preview-document--wide repopress-preview-document--warm",
           },
         }),
       ],
@@ -1135,7 +1183,7 @@ describe("compatible worker containment", () => {
           tag: "article",
           props: expect.objectContaining({
             className:
-              "repopress-preview-document repopress-preview-document--article repopress-preview-document--default",
+              "typeset typeset-preview repopress-preview-document repopress-preview-document--article repopress-preview-document--default",
           }),
         }),
       ],

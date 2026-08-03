@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import type { PreviewResult } from "@/lib/preview/contracts"
+import { buildGenericRenderModel } from "@/lib/preview/generic-render-model"
 import {
   type AuthoringCatalog,
   type AuthoringComponent,
@@ -25,96 +27,109 @@ import { resolveStudioAssetUrl } from "@/lib/studio/media-resolve"
 import { cn } from "@/lib/utils"
 import { ComponentPreview } from "./component-preview"
 import { ComponentPropForm, type PropFormState, validateFormState } from "./component-prop-form"
+import { useCompatiblePreview } from "./hooks/use-compatible-preview"
+import { Preview } from "./preview"
 import { useStudio } from "./studio-context"
-import { VideoPreview as StudioVideoPreview } from "./video-preview"
 
 // ---------------------------------------------------------------------------
-// LiveConfigurePreview - reacts to formState for known component types
+// Declarative previews - product-specific visuals arrive through metadata and literals
 // ---------------------------------------------------------------------------
 
-function LiveConfigurePreview({ def, formState }: { def: AuthoringComponent; formState: PropFormState }) {
-  const studio = useStudio()
-  const normalizedName = def.mdxName.replace(/Adapter$/i, "").toLowerCase()
+function componentPreviewSessionId(source: string): string {
+  let hash = 2_166_136_261
+  for (let index = 0; index < source.length; index += 1) {
+    hash ^= source.charCodeAt(index)
+    hash = Math.imul(hash, 16_777_619)
+  }
+  return `component-preview-${(hash >>> 0).toString(16)}`
+}
 
-  // DocsImage / image component - show actual image when src is provided
-  if (
-    (normalizedName === "docsimage" || normalizedName === "image") &&
-    typeof formState.src === "string" &&
-    formState.src
-  ) {
-    const resolvedSrc = resolveStudioAssetUrl(
-      formState.src as string,
-      studio.projectId,
-      studio.userId,
-      studio.selectedFilePath,
-      studio.projectAccessToken,
-      studio.contentRoot,
-    )
+function serializePreviewSource(component: AuthoringComponent, values: PropFormState): string {
+  try {
+    return serializeComponentNode(buildComponentNode(component, values))
+  } catch {
+    return ""
+  }
+}
+
+function LiveComponentPreview({
+  component,
+  values,
+  source,
+  resolveImageSource,
+  className,
+}: {
+  component: AuthoringComponent
+  values: PropFormState
+  source: string
+  resolveImageSource: (source: string) => string
+  className?: string
+}) {
+  const { projectId, selectedFilePath, baseCommitSha, previewEntry } = useStudio()
+  const fallbackSource = source || `<${component.mdxName} />`
+  const genericPreviewResult = React.useMemo<PreviewResult>(
+    () => ({
+      fidelity: "generic",
+      sessionId: componentPreviewSessionId(fallbackSource),
+      snapshotVersion: 1,
+      status: "ready",
+      target: { kind: "safe-fallback", renderModel: buildGenericRenderModel(fallbackSource) },
+      diagnostics: [],
+      downgradeReasons: ["NATIVE_UNAVAILABLE", "COMPATIBLE_UNAVAILABLE"],
+      cache: { hit: false },
+    }),
+    [fallbackSource],
+  )
+  const compatible = useCompatiblePreview({
+    projectId,
+    filePath: selectedFilePath,
+    baseCommitSha,
+    previewEntry: source ? previewEntry : undefined,
+    documentSource: fallbackSource,
+    genericPreviewResult,
+  })
+
+  if (compatible.compatibleResolution && compatible.compatibleAuthority) {
     return (
-      <div className="w-full flex flex-col items-center gap-2">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          key={resolvedSrc}
-          src={resolvedSrc}
-          alt={typeof formState.alt === "string" ? formState.alt : "Preview"}
-          className="w-full h-auto max-h-56 object-contain rounded-lg"
+      <div className={cn("h-full min-h-56 w-full overflow-hidden rounded-lg border border-studio-border", className)}>
+        <Preview
+          compact
+          previewResult={compatible.previewResult}
+          fallbackResult={genericPreviewResult}
+          frontmatter={{}}
+          projectId={projectId}
+          filePath={selectedFilePath}
+          compatibleResolution={compatible.compatibleResolution}
+          compatibleAuthority={compatible.compatibleAuthority}
         />
-        {typeof formState.alt === "string" && formState.alt && (
-          <p className="text-xs text-studio-fg-muted text-center italic">{formState.alt}</p>
-        )}
-        {typeof formState.caption === "string" && formState.caption && (
-          <p className="text-xs text-studio-fg/60 text-center">{formState.caption}</p>
-        )}
       </div>
     )
   }
 
-  // DocsVideo / video component - show actual embedded player
-  if (
-    (normalizedName === "docsvideo" || normalizedName === "video") &&
-    typeof formState.src === "string" &&
-    formState.src
-  ) {
-    return (
-      <div className="w-full max-w-sm space-y-3">
-        <div className="w-full aspect-video rounded-lg border border-studio-border overflow-hidden bg-studio-canvas-inset">
-          <StudioVideoPreview url={formState.src} className="w-full h-full rounded-lg" />
-        </div>
-        {typeof formState.title === "string" && formState.title && (
-          <p className="text-xs font-medium text-studio-fg text-center">{formState.title}</p>
-        )}
-      </div>
-    )
+  return (
+    <ComponentPreview
+      component={component}
+      values={values}
+      resolveImageSource={resolveImageSource}
+      className={className}
+    />
+  )
+}
+
+function defaultFormState(def: AuthoringComponent): PropFormState {
+  const defaults: PropFormState = {}
+  for (const prop of def.props) {
+    if (prop.default !== undefined) defaults[prop.name] = prop.default
   }
+  return defaults
+}
 
-  // Callout - show a styled live callout preview
-  if (normalizedName === "callout") {
-    const variant = formState.variant === "accent" ? "accent" : "default"
-    const title = typeof formState.title === "string" ? formState.title : ""
-    const style =
-      variant === "accent"
-        ? { background: "bg-studio-accent/5", border: "border-studio-accent/20" }
-        : { background: "bg-studio-canvas-inset", border: "border-studio-border" }
+function fieldCountLabel(count: number): string {
+  return `${count} ${count === 1 ? "field" : "fields"}`
+}
 
-    return (
-      <div className={cn("w-full max-w-sm rounded-lg border p-4 space-y-2", style.background, style.border)}>
-        <div className="flex items-center gap-2">
-          <span aria-hidden="true" className="text-sm">
-            ℹ
-          </span>
-          <p className="text-xs font-medium text-studio-fg">{title || "Callout"}</p>
-        </div>
-        <div className="space-y-1.5 pl-5">
-          <div className="w-full h-1.5 rounded-full bg-studio-fg/10" />
-          <div className="w-4/5 h-1.5 rounded-full bg-studio-fg/10" />
-          <div className="w-3/5 h-1.5 rounded-full bg-studio-fg/10" />
-        </div>
-      </div>
-    )
-  }
-
-  // Default fallback - static wireframe preview
-  return <ComponentPreview name={def.mdxName} className="shadow-none border-none bg-transparent" />
+function slotCountLabel(count: number): string {
+  return `${count} content ${count === 1 ? "slot" : "slots"}`
 }
 
 // ---------------------------------------------------------------------------
@@ -194,8 +209,10 @@ export function ComponentInsertModal({
   repoContext,
   onInsert,
 }: ComponentInsertModalProps) {
+  const studio = useStudio()
   // -- Registry & catalog (recomputed when inputs change) --
   const catalog = React.useMemo(() => buildComponentCatalog(authoringCatalog), [authoringCatalog])
+  const firstCatalogName = catalog[0]?.mdxName
 
   // -- Modal state --
   const [step, setStep] = React.useState<ModalStep>("pick")
@@ -203,6 +220,19 @@ export function ComponentInsertModal({
   const [formState, setFormState] = React.useState<PropFormState>({})
   const [searchQuery, setSearchQuery] = React.useState("")
   const [activeCategory, setActiveCategory] = React.useState<ComponentCategory | "All">("All")
+  const [pickerSelectionName, setPickerSelectionName] = React.useState<string | null>(catalog[0]?.mdxName ?? null)
+  const resolveImageSource = React.useCallback(
+    (source: string) =>
+      resolveStudioAssetUrl(
+        source,
+        repoContext?.projectId ?? studio.projectId,
+        repoContext?.userId ?? studio.userId,
+        repoContext?.selectedFilePath ?? studio.selectedFilePath,
+        studio.projectAccessToken,
+        studio.contentRoot,
+      ),
+    [repoContext, studio],
+  )
 
   // -- Recently-used components --
   const [recentNames, setRecentNames] = React.useState<string[]>([])
@@ -261,6 +291,10 @@ export function ComponentInsertModal({
     const recentNameSet = new Set(recentCatalog.map((c) => c.mdxName))
     return filteredCatalog.filter((c) => !recentNameSet.has(c.mdxName))
   }, [filteredCatalog, recentCatalog, searchQuery, activeCategory])
+  const pickerSelection = React.useMemo(
+    () => filteredCatalog.find((def) => def.mdxName === pickerSelectionName) ?? filteredCatalog[0] ?? null,
+    [filteredCatalog, pickerSelectionName],
+  )
 
   // Reset state when modal opens/closes
   React.useEffect(() => {
@@ -270,22 +304,18 @@ export function ComponentInsertModal({
       setFormState({})
       setSearchQuery("")
       setActiveCategory("All")
+      setPickerSelectionName(firstCatalogName ?? null)
       setShowPreview(false)
       setRecentNames(getRecentComponents())
     }
-  }, [open])
+  }, [open, firstCatalogName])
 
   // -- Handlers --
   const handleSelectComponent = React.useCallback(
     (def: AuthoringComponent) => {
       setSelectedDef(def)
       // Pre-populate with defaults
-      const defaults: PropFormState = {}
-      for (const prop of def.props) {
-        if (prop.default !== undefined) {
-          defaults[prop.name] = prop.default
-        }
-      }
+      const defaults = defaultFormState(def)
       setFormState(defaults)
 
       // If no configurable props and no children, insert immediately
@@ -397,27 +427,81 @@ export function ComponentInsertModal({
                 })}
               </div>
 
-              <ScrollArea className="flex-1 px-6 py-5 min-h-0">
-                {recentCatalog.length > 0 && !searchQuery && activeCategory === "All" && (
-                  <div className="mb-5">
-                    <h4 className="text-[10px] font-medium uppercase tracking-widest text-studio-fg/35 mb-3 px-1 select-none">
-                      Recently used
-                    </h4>
-                    <CatalogGallery catalog={recentCatalog} onSelect={handleSelectComponent} />
-                  </div>
-                )}
-                {/* Suppress main grid when all components are already shown in Recently used */}
-                {(mainCatalog.length > 0 || recentCatalog.length === 0 || searchQuery || activeCategory !== "All") && (
-                  <>
-                    {recentCatalog.length > 0 && !searchQuery && activeCategory === "All" && mainCatalog.length > 0 && (
-                      <h4 className="text-[10px] font-medium uppercase tracking-widest text-studio-fg/35 mb-3 px-1 select-none">
-                        All components
+              <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+                <ScrollArea className="min-h-0 flex-1 px-6 py-5">
+                  {recentCatalog.length > 0 && !searchQuery && activeCategory === "All" && (
+                    <div className="mb-5">
+                      <h4 className="mb-3 px-1 text-[10px] font-medium uppercase tracking-widest text-studio-fg/35 select-none">
+                        Recently used
                       </h4>
-                    )}
-                    <CatalogGallery catalog={mainCatalog} onSelect={handleSelectComponent} />
-                  </>
-                )}
-              </ScrollArea>
+                      <CatalogGallery
+                        catalog={recentCatalog}
+                        selectedName={pickerSelection?.mdxName ?? null}
+                        onPreviewSelect={(def) => setPickerSelectionName(def.mdxName)}
+                      />
+                    </div>
+                  )}
+                  {/* Suppress main grid when all components are already shown in Recently used */}
+                  {(mainCatalog.length > 0 ||
+                    recentCatalog.length === 0 ||
+                    searchQuery ||
+                    activeCategory !== "All") && (
+                    <>
+                      {recentCatalog.length > 0 &&
+                        !searchQuery &&
+                        activeCategory === "All" &&
+                        mainCatalog.length > 0 && (
+                          <h4 className="mb-3 px-1 text-[10px] font-medium uppercase tracking-widest text-studio-fg/35 select-none">
+                            All components
+                          </h4>
+                        )}
+                      <CatalogGallery
+                        catalog={mainCatalog}
+                        selectedName={pickerSelection?.mdxName ?? null}
+                        onPreviewSelect={(def) => setPickerSelectionName(def.mdxName)}
+                      />
+                    </>
+                  )}
+                </ScrollArea>
+
+                <aside
+                  aria-label="Selected component details"
+                  className="w-full shrink-0 border-t border-studio-border bg-studio-canvas-inset/30 p-5 md:w-[42%] md:border-t-0 md:border-l"
+                >
+                  {pickerSelection ? (
+                    <div className="flex h-full flex-col gap-4">
+                      <div className="min-h-0 flex-1">
+                        <LiveComponentPreview
+                          component={pickerSelection}
+                          values={defaultFormState(pickerSelection)}
+                          source={serializePreviewSource(pickerSelection, defaultFormState(pickerSelection))}
+                          resolveImageSource={resolveImageSource}
+                          className="min-h-56 p-0"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <h3 className="text-sm font-semibold text-studio-fg">{getComponentLabel(pickerSelection)}</h3>
+                        {pickerSelection.description ? (
+                          <p className="text-xs leading-relaxed text-studio-fg-muted">{pickerSelection.description}</p>
+                        ) : null}
+                        <p className="text-xs text-studio-fg-muted">
+                          {fieldCountLabel(pickerSelection.props.length)}
+                          {pickerSelection.slots.length > 0 ? ` · ${slotCountLabel(pickerSelection.slots.length)}` : ""}
+                        </p>
+                      </div>
+                      <Button type="button" size="sm" onClick={() => handleSelectComponent(pickerSelection)}>
+                        {pickerSelection.props.length === 0 && !componentAcceptsChildren(pickerSelection)
+                          ? "Insert component"
+                          : "Configure selected component"}
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex h-full min-h-48 items-center justify-center text-center text-sm text-studio-fg-muted">
+                      Select a component to see its details.
+                    </div>
+                  )}
+                </aside>
+              </div>
             </motion.div>
           ) : (
             <motion.div
@@ -449,7 +533,7 @@ export function ComponentInsertModal({
                       </DialogTitle>
                       {selectedDef && selectedDef.props.length > 0 && (
                         <span className="shrink-0 inline-flex items-center text-[10px] font-medium px-2 py-0.5 rounded-full bg-studio-accent/10 text-studio-accent border border-studio-accent/15">
-                          {selectedDef.props.length} prop{selectedDef.props.length !== 1 ? "s" : ""}
+                          {fieldCountLabel(selectedDef.props.length)}
                         </span>
                       )}
                     </div>
@@ -479,7 +563,13 @@ export function ComponentInsertModal({
                         transition={{ duration: 0.18, ease: "easeOut" }}
                         className="w-full flex items-center justify-center p-4"
                       >
-                        <LiveConfigurePreview def={selectedDef} formState={formState} />
+                        <LiveComponentPreview
+                          component={selectedDef}
+                          values={formState}
+                          source={jsxPreview}
+                          resolveImageSource={resolveImageSource}
+                          className="border-none bg-transparent shadow-none"
+                        />
                       </motion.div>
                     )}
                   </div>
@@ -596,7 +686,19 @@ const categoryStyles = {
   },
 } as const
 
-function ComponentCard({ def, onSelect }: { def: AuthoringComponent; onSelect: (def: AuthoringComponent) => void }) {
+function ComponentCard({
+  def,
+  selected,
+  buttonRef,
+  onPreviewSelect,
+  onKeyDown,
+}: {
+  def: AuthoringComponent
+  selected: boolean
+  buttonRef: (node: HTMLButtonElement | null) => void
+  onPreviewSelect: (def: AuthoringComponent) => void
+  onKeyDown: (event: React.KeyboardEvent<HTMLButtonElement>) => void
+}) {
   const category = deriveCategory(def)
   const label = getComponentLabel(def)
   const style = categoryStyles[category]
@@ -604,11 +706,15 @@ function ComponentCard({ def, onSelect }: { def: AuthoringComponent; onSelect: (
 
   return (
     <button
+      ref={buttonRef}
       type="button"
-      onClick={() => onSelect(def)}
+      aria-pressed={selected}
+      onClick={() => onPreviewSelect(def)}
+      onFocus={() => onPreviewSelect(def)}
+      onKeyDown={onKeyDown}
       className={cn(
         "group flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left outline-none cursor-pointer",
-        "hover:bg-studio-canvas-inset",
+        selected ? "bg-studio-accent-muted" : "hover:bg-studio-canvas-inset",
         "transition-colors duration-150",
         "focus-visible:ring-2 focus-visible:ring-studio-accent focus-visible:ring-offset-1",
       )}
@@ -622,7 +728,7 @@ function ComponentCard({ def, onSelect }: { def: AuthoringComponent; onSelect: (
       </div>
       {def.props.length > 0 && (
         <span className="shrink-0 rounded-sm bg-studio-canvas-inset px-1.5 py-0.5 text-[10px] font-medium text-studio-fg/40">
-          {def.props.length}p
+          {fieldCountLabel(def.props.length)}
         </span>
       )}
     </button>
@@ -631,11 +737,15 @@ function ComponentCard({ def, onSelect }: { def: AuthoringComponent; onSelect: (
 
 function CatalogGallery({
   catalog,
-  onSelect,
+  selectedName,
+  onPreviewSelect,
 }: {
   catalog: AuthoringComponent[]
-  onSelect: (def: AuthoringComponent) => void
+  selectedName: string | null
+  onPreviewSelect: (def: AuthoringComponent) => void
 }) {
+  const buttonRefs = React.useRef<Array<HTMLButtonElement | null>>([])
+
   if (catalog.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-center">
@@ -647,11 +757,32 @@ function CatalogGallery({
   }
 
   return (
-    <div className="space-y-0.5">
-      {catalog.map((def) => (
-        <ComponentCard key={def.mdxName} def={def} onSelect={onSelect} />
+    <fieldset className="min-w-0 space-y-0.5 border-0 p-0">
+      <legend className="sr-only">Available components</legend>
+      {catalog.map((def, index) => (
+        <ComponentCard
+          key={def.mdxName}
+          def={def}
+          selected={selectedName === def.mdxName}
+          buttonRef={(node) => {
+            buttonRefs.current[index] = node
+          }}
+          onPreviewSelect={onPreviewSelect}
+          onKeyDown={(event) => {
+            let nextIndex: number | null = null
+            if (event.key === "ArrowDown") nextIndex = (index + 1) % catalog.length
+            else if (event.key === "ArrowUp") nextIndex = (index - 1 + catalog.length) % catalog.length
+            else if (event.key === "Home") nextIndex = 0
+            else if (event.key === "End") nextIndex = catalog.length - 1
+            if (nextIndex === null) return
+            event.preventDefault()
+            const next = catalog[nextIndex]
+            if (next) onPreviewSelect(next)
+            buttonRefs.current[nextIndex]?.focus()
+          }}
+        />
       ))}
-    </div>
+    </fieldset>
   )
 }
 

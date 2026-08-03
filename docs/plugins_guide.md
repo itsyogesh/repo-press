@@ -1,7 +1,7 @@
 # RepoPress Extensions and Compatibility Overrides
 
 > **Status:** Registry components and signed product preview extensions are supported. Arbitrary repo-local plugins remain legacy inputs.
-> **Last updated:** 2026-08-03
+> **Last updated:** 2026-08-04
 
 RepoPress extends MDX through integrity-pinned registry items and repository-native runtime maps. This keeps installed code in the repository, exposes reviewable changes through a GitHub pull request, and separates Studio authoring metadata from sandbox-only executable bindings.
 
@@ -51,8 +51,9 @@ JWK stays server-only in `PREVIEW_APPROVAL_PRIVATE_KEY_JWK`; the matching public
 `NEXT_PUBLIC_PREVIEW_ORIGIN`.
 
 Compatible fidelity is structural, not pixel-identical. RepoPress always owns the semantic document root; an adapter
-may select only the bounded portable layout and tone variants exposed by `PreviewDocument`. Actions remain visibly
-inert. Approved repository and HTTPS image sources are resolved by the authenticated Studio host, checked against the
+may select only the bounded portable layout and tone variants exposed by `PreviewDocument`. A `PreviewAction` becomes
+a sandbox-owned button that explains its declared destination when clicked, but never navigates, fetches, submits, or
+calls repository code. Approved repository and HTTPS image sources are resolved by the authenticated Studio host, checked against the
 exact Git commit, MIME and decoded-work limits, and a durable per-user/project budget, then transferred as bytes to
 short-lived `blob:` URLs. The opaque-origin sandbox keeps `connect-src 'none'` and cannot fetch those assets itself.
 Arbitrary CSS, navigation, timers, portals, framework loaders, and relative source imports remain outside the first

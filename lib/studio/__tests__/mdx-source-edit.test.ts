@@ -132,6 +132,54 @@ describe("source-preserving MDX component prop edits", () => {
     }
   })
 
+  it("prepares and edits canonical boolean and numeric expression literals", () => {
+    const source = "<Widget enabled={false} count={2.5} />"
+    const def = buildAuthoringCatalog({
+      metadata: {
+        Widget: {
+          props: [
+            { name: "enabled", type: "boolean" },
+            { name: "count", type: "number" },
+          ],
+          hasChildren: false,
+        },
+      },
+    })[0]
+    const prepared = prepareComponentPropEdit(source, { name: "Widget", start: 0, sourceSnapshot: source }, def)
+
+    expect(prepared).toMatchObject({ ok: true, initialProps: { enabled: false, count: 2.5 } })
+    if (!prepared.ok) throw new Error("expected canonical literals to be editable")
+    expect(editComponentProp(source, prepared.target, { enabled: true })).toEqual({
+      ok: true,
+      source: "<Widget enabled={true} count={2.5} />",
+    })
+  })
+
+  it("continues to refuse non-canonical and non-finite expression values", () => {
+    const def = buildAuthoringCatalog({
+      metadata: {
+        Widget: {
+          props: [
+            { name: "enabled", type: "boolean" },
+            { name: "count", type: "number" },
+          ],
+          hasChildren: false,
+        },
+      },
+    })[0]
+    for (const source of [
+      "<Widget enabled={computeEnabled()} count={2} />",
+      "<Widget enabled={false} count={Infinity} />",
+      "<Widget enabled={flag} count={2} />",
+    ]) {
+      expect(prepareComponentPropEdit(source, { name: "Widget", start: 0, sourceSnapshot: source }, def)).toEqual({
+        ok: false,
+        source,
+        code: "UNSAFE_TO_PRESERVE",
+      })
+    }
+  })
+
   it("refuses a retained position when its node snapshot differs from current source", () => {
     const source = '<Callout title="Alpha" />\n<Callout title="Bravo" />'
     const swapped = '<Callout title="Bravo" />\n<Callout title="Alpha" />'

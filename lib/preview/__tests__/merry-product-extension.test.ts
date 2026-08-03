@@ -103,10 +103,11 @@ describe("Merry product extension pilot", () => {
       "repopress-preview-box--tip",
       "repopress-preview-list--check",
       "repopress-preview-paper--letter",
-      "repopress-preview-action--primary",
     ]) {
       expect(output).toContain(className)
     }
+    expect(output).toContain('"kind":"action"')
+    expect(output).toContain('"tone":"primary"')
     const tree = (
       sent[0] as { tree: Array<{ kind: string; tag?: string; props?: { className?: string }; children?: unknown[] }> }
     ).tree
@@ -115,7 +116,8 @@ describe("Merry product extension pilot", () => {
       kind: "element",
       tag: "article",
       props: {
-        className: "repopress-preview-document repopress-preview-document--article repopress-preview-document--warm",
+        className:
+          "typeset typeset-preview repopress-preview-document repopress-preview-document--article repopress-preview-document--warm",
       },
       children: expect.arrayContaining([expect.objectContaining({ kind: "element", tag: "h1" })]),
     })
@@ -160,7 +162,9 @@ describe("Merry product extension pilot", () => {
     })
     expect(MERRY_ADAPTER_SOURCE).toContain('headingLevel="none"')
     expect(MERRY_ADAPTER_SOURCE).not.toContain("templateText ?")
-    expect(output).not.toMatch(/href|"src"|utm_source|template=preview/u)
+    expect(output).not.toContain('"href"')
+    expect(output).toContain('"kind":"action"')
+    expect(output).toContain('"destination":"/letters-to-santa?utm_source=repopress_preview"')
   })
 
   it("retains all five Generic placeholders when compatible execution is unavailable", () => {

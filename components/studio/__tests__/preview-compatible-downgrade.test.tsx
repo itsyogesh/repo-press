@@ -135,6 +135,8 @@ describe("Studio compatible downgrade", () => {
 
     expect(await screen.findByTitle("Compatible component preview")).toBeInTheDocument()
     expect(screen.getByText(/static-inert-v1/i)).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /safe preview/i })).toBeInTheDocument()
+    expect(screen.queryByText(/1 issues/i)).not.toBeInTheDocument()
     expect(screen.queryByRole("heading", { name: "Generic fallback" })).not.toBeInTheDocument()
   })
 

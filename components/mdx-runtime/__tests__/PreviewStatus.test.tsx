@@ -23,4 +23,23 @@ describe("PreviewStatus fidelity guidance", () => {
     expect(screen.queryByText(/fully optimized/i)).toBeNull()
     expect(screen.queryByText(/everything looks perfect/i)).toBeNull()
   })
+
+  it("presents the compatible security profile as a safe neutral state instead of an issue", () => {
+    render(
+      <PreviewStatus
+        isCompiling={false}
+        warnings={[]}
+        profile={{
+          label: "Safe preview",
+          description: "Actions explain their configured destination without navigating or running application code.",
+        }}
+      />,
+    )
+
+    expect(screen.getByRole("button", { name: /safe preview/i })).toBeInTheDocument()
+    expect(screen.queryByText(/issues/i)).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: /safe preview/i }))
+    expect(screen.getByText(/without navigating or running application code/i)).toBeInTheDocument()
+  })
 })

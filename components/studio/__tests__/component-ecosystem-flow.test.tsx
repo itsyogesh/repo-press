@@ -54,10 +54,16 @@ function compatibleResult(authority: CompatiblePreviewAuthorityContext): Preview
   }
 }
 
-function renderModal(catalog: AuthoringCatalog, onInsert = vi.fn()) {
+function renderModal(
+  catalog: AuthoringCatalog,
+  onInsert = vi.fn(),
+  contextOverrides: Partial<React.ComponentProps<typeof StudioProvider>["value"]> = {},
+) {
   const adapterState = createStudioAdapterState({ authoringCatalog: catalog, nativeComponentNames: [] })
+  const onOpenChange = vi.fn()
   return {
     onInsert,
+    onOpenChange,
     ...render(
       <StudioProvider
         value={{
@@ -68,10 +74,11 @@ function renderModal(catalog: AuthoringCatalog, onInsert = vi.fn()) {
           contentRoot: "",
           tree: [],
           role: "owner",
+          ...contextOverrides,
         }}
       >
         <StudioAdapterProvider value={adapterState}>
-          <ComponentInsertModal open onOpenChange={vi.fn()} authoringCatalog={catalog} onInsert={onInsert} />
+          <ComponentInsertModal open onOpenChange={onOpenChange} authoringCatalog={catalog} onInsert={onInsert} />
         </StudioAdapterProvider>
       </StudioProvider>,
     ),
@@ -98,9 +105,78 @@ afterEach(() => {
   cleanup()
   localStorage.clear()
   vi.unstubAllEnvs()
+  vi.unstubAllGlobals()
 })
 
 describe("official Callout Studio ecosystem", () => {
+  it("selects a zero-field component for inspection before an explicit insert", () => {
+    const catalog = buildAuthoringCatalog({
+      metadata: {
+        Divider: {
+          displayName: "Divider",
+          description: "Separates two sections.",
+          props: [],
+          hasChildren: false,
+        },
+      },
+    })
+    const { onInsert, onOpenChange } = renderModal(catalog)
+
+    fireEvent.click(screen.getByRole("button", { name: /Divider Separates two sections/iu }))
+
+    expect(onInsert).not.toHaveBeenCalled()
+    expect(onOpenChange).not.toHaveBeenCalled()
+    expect(screen.getByRole("complementary", { name: "Selected component details" })).toHaveTextContent(
+      "Separates two sections.",
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Insert component" }))
+    expect(onInsert).toHaveBeenCalledOnce()
+    expect(onInsert.mock.calls[0]?.[0]).toBe("<Divider />")
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+
+  it("uses plain-language field counts and keyboard selection to update persistent picker details", () => {
+    const catalog = buildAuthoringCatalog({
+      metadata: {
+        ArticleCard: {
+          displayName: "Article card",
+          description: "Presents an article summary.",
+          props: [
+            { name: "title", type: "string", label: "Title" },
+            { name: "description", type: "string", label: "Description" },
+            { name: "href", type: "string", label: "Destination" },
+            { name: "featured", type: "boolean", label: "Featured" },
+          ],
+          hasChildren: false,
+        },
+        CoverArtwork: {
+          displayName: "Cover artwork",
+          description: "Displays a repository cover image.",
+          props: [{ name: "source", type: "image", label: "Image" }],
+          hasChildren: false,
+        },
+      },
+    })
+
+    renderModal(catalog)
+
+    const article = screen.getByRole("button", { name: /Article card.*4 fields/iu })
+    const cover = screen.getByRole("button", { name: /Cover artwork.*1 field/iu })
+    expect(screen.queryByText("4p")).not.toBeInTheDocument()
+    expect(screen.getByRole("complementary", { name: "Selected component details" })).toHaveTextContent("Article card")
+    expect(article).toHaveAttribute("aria-pressed", "true")
+
+    article.focus()
+    fireEvent.keyDown(article, { key: "ArrowDown" })
+
+    expect(cover).toHaveFocus()
+    expect(cover).toHaveAttribute("aria-pressed", "true")
+    expect(screen.getByRole("complementary", { name: "Selected component details" })).toHaveTextContent(
+      "Displays a repository cover image.",
+    )
+  })
+
   it("drives the normalized catalog through palette, schema form, and import-free insertion", async () => {
     const catalog = loadOfficialCatalog()
     expectDeclarative(catalog)
@@ -108,6 +184,7 @@ describe("official Callout Studio ecosystem", () => {
 
     const { onInsert } = renderModal(catalog)
     fireEvent.click(screen.getByRole("button", { name: /Callout/i }))
+    fireEvent.click(screen.getByRole("button", { name: "Configure selected component" }))
 
     expect(await screen.findByLabelText("Title")).toBeInTheDocument()
     expect(screen.getByLabelText("Title ID")).toBeInTheDocument()
@@ -132,6 +209,64 @@ describe("official Callout Studio ecosystem", () => {
     expectDeclarative(node)
   })
 
+  it("uses one signed Compatible sandbox for the selected component and sends its serialized defaults", async () => {
+    const signer = await createSignedCompatibleFixture()
+    vi.stubEnv("NEXT_PUBLIC_PREVIEW_APPROVAL_PUBLIC_KEY_JWK", JSON.stringify(signer.publicKey))
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const request = JSON.parse(String(init?.body)) as {
+        projectId: string
+        filePath: string
+        baseCommitSha: string
+        snapshotVersion: number
+        documentSource: string
+      }
+      const fixture = await createSignedCompatibleFixture({
+        keyPair: signer.keyPair,
+        projectId: request.projectId,
+        baseCommit: request.baseCommitSha,
+        documentPath: request.filePath,
+        snapshotVersion: request.snapshotVersion,
+        documentSource: request.documentSource,
+      })
+      return new Response(
+        JSON.stringify({
+          previewResult: compatibleResult(fixture.expectedAuthority),
+          resolution: fixture.wire,
+          authority: fixture.expectedAuthority,
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      )
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const catalog = buildAuthoringCatalog({
+      metadata: {
+        ActionPanel: {
+          displayName: "Action panel",
+          props: [
+            { name: "label", type: "string", default: "Open writer" },
+            { name: "href", type: "string", default: "/letters/new" },
+          ],
+          hasChildren: false,
+        },
+      },
+    })
+
+    renderModal(catalog, vi.fn(), {
+      projectId: "project-modal",
+      selectedFilePath: "content/example.mdx",
+      previewEntry: ".repopress/mdx-preview.tsx",
+    })
+
+    expect(await screen.findByTitle("Compatible component preview")).toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+      projectId: "project-modal",
+      filePath: "content/example.mdx",
+      baseCommitSha: "a".repeat(40),
+      documentSource: '<ActionPanel href="/letters/new" label="Open writer" />',
+    })
+  })
+
   it("requires one explicit true-or-false choice for required boolean props", async () => {
     const catalog = buildAuthoringCatalog({
       metadata: {
@@ -145,6 +280,7 @@ describe("official Callout Studio ecosystem", () => {
     const { onInsert } = renderModal(catalog)
 
     fireEvent.click(screen.getByRole("button", { name: /Toggle/i }))
+    fireEvent.click(screen.getByRole("button", { name: "Configure selected component" }))
 
     const booleanChoice = await screen.findByRole("combobox", { name: "Enabled" })
     expect(booleanChoice).toHaveTextContent("Select...")

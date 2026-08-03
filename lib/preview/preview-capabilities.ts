@@ -81,6 +81,7 @@ export type PreviewListProps = Readonly<{
   style?: PreviewListStyle
 }>
 export type PreviewActionProps = Readonly<{
+  /** Published destination. Compatible preview explains it but never navigates. */
   href?: string
   label: string
   tone?: PreviewActionTone
