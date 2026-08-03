@@ -9,7 +9,80 @@ import {
   prepareCompatibleWorkerJob,
 } from "../compatible-worker"
 
+const IMAGE_SOURCE_CORPUS = [
+  { id: "relative", source: "images/cover.png", accepted: true },
+  { id: "root-relative", source: "/images/cover.png", accepted: true },
+  { id: "dot-relative", source: "./images/cover.png", accepted: true },
+  { id: "https-query", source: "https://cdn.example/cover.png?width=1200&fit=cover", accepted: true },
+  { id: "ascii-exact", source: "a".repeat(2_048), accepted: true },
+  { id: "utf8-exact", source: "é".repeat(1_024), accepted: true },
+  { id: "ascii-over", source: "a".repeat(2_049), accepted: false },
+  { id: "utf8-over", source: "é".repeat(1_025), accepted: false },
+  { id: "raw-scheme-relative", source: "//evil.test/cover.png", accepted: false },
+  { id: "encoded-scheme-relative", source: "%2f%2fevil.test/cover.png", accepted: false },
+  { id: "double-scheme-relative", source: "%252f%252fevil.test%252fcover.png", accepted: false },
+  { id: "credentials", source: "https://user:secret@cdn.example/cover.png", accepted: false },
+  { id: "invalid-port", source: "https://cdn.example:99999/cover.png", accepted: false },
+  { id: "invalid-host", source: "https://-cdn..example/cover.png", accepted: false },
+  { id: "raw-control", source: "images/cover.png\u0000.jpg", accepted: false },
+  { id: "encoded-control", source: "images/cover.png%0a.jpg", accepted: false },
+  { id: "raw-traversal", source: "../private/cover.png", accepted: false },
+  { id: "encoded-traversal", source: "%2e%2e/private/cover.png", accepted: false },
+  { id: "double-traversal", source: "%252e%252e%252fprivate/cover.png", accepted: false },
+  { id: "raw-backslash", source: "images\\cover.png", accepted: false },
+  { id: "encoded-backslash", source: "images%5ccover.png", accepted: false },
+  { id: "double-backslash", source: "images%255ccover.png", accepted: false },
+] as const
+
 describe("compatible worker containment", () => {
+  it("agrees with the iframe sanitizer's bounded image source corpus", async () => {
+    const job = await prepareCompatibleWorkerJob({
+      artifactId: "artifact-image-source-corpus",
+      documentSource: "<ImageSourceCorpus />",
+      adapter: {
+        entryPath: "mdx-preview.tsx",
+        sources: {
+          "mdx-preview.tsx": `
+            import { PreviewImage } from "@repopress/preview"
+            const cases = ${JSON.stringify(IMAGE_SOURCE_CORPUS)}
+            function ImageSourceCorpus() {
+              return <>{cases.map((item) => (
+                <PreviewImage key={item.id} src={item.source} alt={item.id} label={item.id} />
+              ))}</>
+            }
+            export default { components: { ImageSourceCorpus } }
+          `,
+        },
+      },
+    })
+    const sent: unknown[] = []
+    const listeners: Array<(event: { data?: unknown; ports?: unknown[] }) => void | Promise<void>> = []
+    const port = {
+      onmessage: null as ((event: { data: unknown }) => void) | null,
+      close() {},
+      postMessage(message: unknown) {
+        sent.push(message)
+      },
+      start() {},
+    }
+    const context = vm.createContext({
+      addEventListener: (_type: string, listener: (event: { data?: unknown; ports?: unknown[] }) => void) =>
+        listeners.push(listener),
+      removeEventListener() {},
+    })
+    vm.runInContext(createCompatibleWorkerSource(), context, { timeout: 1_000 })
+    await listeners[0]({ ports: [port] })
+    port.onmessage?.({
+      data: { type: "repopress:render-compatible", requestId: "V".repeat(43), job },
+    })
+
+    expect(sent).toHaveLength(1)
+    const response = sent[0] as { type: string; tree: Array<{ kind: string }> }
+    expect(response.type).toBe("repopress:rendered-compatible")
+    expect(response.tree).toHaveLength(IMAGE_SOURCE_CORPUS.length)
+    expect(response.tree.map((node) => node.kind === "image")).toEqual(IMAGE_SOURCE_CORPUS.map((item) => item.accepted))
+  })
+
   it("renders frozen framework-neutral named and namespace preview capabilities", async () => {
     const job = await prepareCompatibleWorkerJob({
       artifactId: "artifact-portable-capabilities",
@@ -243,6 +316,119 @@ describe("compatible worker containment", () => {
       expect.objectContaining({ type: "repopress:compatible-error", code: "COMPATIBLE_RENDER_FAILED" }),
     ])
     expect(JSON.stringify(sent)).not.toContain("forged.png")
+  })
+
+  it("does not accept a reflectively cloned PreviewImage brand", async () => {
+    const job = await prepareCompatibleWorkerJob({
+      artifactId: "artifact-cloned-image-brand",
+      documentSource: "<ClonedImageBrand />",
+      adapter: {
+        entryPath: "mdx-preview.tsx",
+        sources: {
+          "mdx-preview.tsx": `
+            import { PreviewImage } from "@repopress/preview"
+            function ClonedImageBrand() {
+              const legitimate = PreviewImage({ src: "https://cdn.example/cover.png", alt: "Legitimate" })
+              const clone = Object.create(null)
+              for (const key of Reflect.ownKeys(legitimate)) {
+                Object.defineProperty(clone, key, Object.getOwnPropertyDescriptor(legitimate, key))
+              }
+              return clone
+            }
+            export default { components: { ClonedImageBrand } }
+          `,
+        },
+      },
+    })
+    const sent: unknown[] = []
+    const listeners: Array<(event: { data?: unknown; ports?: unknown[] }) => void | Promise<void>> = []
+    const port = {
+      onmessage: null as ((event: { data: unknown }) => void) | null,
+      close() {},
+      postMessage(message: unknown) {
+        sent.push(message)
+      },
+      start() {},
+    }
+    const context = vm.createContext({
+      addEventListener: (_type: string, listener: (event: { data?: unknown; ports?: unknown[] }) => void) =>
+        listeners.push(listener),
+      removeEventListener() {},
+    })
+    vm.runInContext(createCompatibleWorkerSource(), context, { timeout: 1_000 })
+    await listeners[0]({ ports: [port] })
+    port.onmessage?.({
+      data: { type: "repopress:render-compatible", requestId: "B".repeat(43), job },
+    })
+
+    expect(sent).toEqual([
+      expect.objectContaining({ type: "repopress:compatible-error", code: "COMPATIBLE_RENDER_FAILED" }),
+    ])
+    expect(JSON.stringify(sent)).not.toContain("cdn.example")
+  })
+
+  it("rejects image proxy and accessor forgeries without touching their traps", async () => {
+    const job = await prepareCompatibleWorkerJob({
+      artifactId: "artifact-image-traps",
+      documentSource: "<ImageTraps />",
+      adapter: {
+        entryPath: "mdx-preview.tsx",
+        sources: {
+          "mdx-preview.tsx": `
+            import { PreviewImage } from "@repopress/preview"
+            function ImageTraps() {
+              const legitimate = PreviewImage({ src: "https://cdn.example/cover.png", alt: "Legitimate" })
+              const proxy = new Proxy(legitimate, {
+                get(target, key) { markTrap(); return Reflect.get(target, key) },
+                getOwnPropertyDescriptor(target, key) { markTrap(); return Reflect.getOwnPropertyDescriptor(target, key) },
+              })
+              const accessorClone = Object.create(null)
+              for (const key of Object.getOwnPropertySymbols(legitimate)) accessorClone[key] = true
+              Object.defineProperty(accessorClone, "source", { get() { markAccessor(); return "https://cdn.example/forged.png" } })
+              accessorClone.alt = "Forged"
+              accessorClone.label = "Forged"
+              accessorClone.aspect = "wide"
+              return [proxy, accessorClone]
+            }
+            export default { components: { ImageTraps } }
+          `,
+        },
+      },
+    })
+    const sent: unknown[] = []
+    let trapReads = 0
+    let accessorReads = 0
+    const listeners: Array<(event: { data?: unknown; ports?: unknown[] }) => void | Promise<void>> = []
+    const port = {
+      onmessage: null as ((event: { data: unknown }) => void) | null,
+      close() {},
+      postMessage(message: unknown) {
+        sent.push(message)
+      },
+      start() {},
+    }
+    const context = vm.createContext({
+      markTrap: () => {
+        trapReads += 1
+      },
+      markAccessor: () => {
+        accessorReads += 1
+      },
+      addEventListener: (_type: string, listener: (event: { data?: unknown; ports?: unknown[] }) => void) =>
+        listeners.push(listener),
+      removeEventListener() {},
+    })
+    vm.runInContext(createCompatibleWorkerSource(), context, { timeout: 1_000 })
+    await listeners[0]({ ports: [port] })
+    port.onmessage?.({
+      data: { type: "repopress:render-compatible", requestId: "X".repeat(43), job },
+    })
+
+    expect(sent).toEqual([
+      expect.objectContaining({ type: "repopress:compatible-error", code: "COMPATIBLE_RENDER_FAILED" }),
+    ])
+    expect(trapReads).toBe(0)
+    expect(accessorReads).toBe(0)
   })
 
   it("binds namespace imports as frozen null-prototype copies of the approved export map", async () => {

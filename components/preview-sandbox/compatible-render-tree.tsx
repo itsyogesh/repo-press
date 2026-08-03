@@ -157,6 +157,8 @@ function utf8BytesWithin(value: string, limit: number): number | null {
 
 const URI_SCHEME_PATTERN = /^[A-Za-z][A-Za-z0-9+.-]*:/
 const RELATIVE_TRAVERSAL_PATTERN = /(?:^|\/)\.{1,2}(?:\/|$)/
+const ENCODED_AMBIGUOUS_DELIMITER_PATTERN = /%(?:2f|5c|3f|23|3a|40)/i
+const MAX_IMAGE_SOURCE_DECODE_ROUNDS = 2
 
 function containsControlCharacter(value: string): boolean {
   for (let index = 0; index < value.length; index += 1) {
@@ -166,49 +168,71 @@ function containsControlCharacter(value: string): boolean {
   return false
 }
 
+function decodeImageSourceForms(value: string): readonly string[] | null {
+  const forms = [value]
+  let current = value
+  for (let round = 0; round < MAX_IMAGE_SOURCE_DECODE_ROUNDS; round += 1) {
+    if (ENCODED_AMBIGUOUS_DELIMITER_PATTERN.test(current)) return null
+    let decoded: string
+    try {
+      decoded = decodeURIComponent(current)
+    } catch {
+      return null
+    }
+    if (decoded === current) return forms
+    forms.push(decoded)
+    current = decoded
+  }
+  if (ENCODED_AMBIGUOUS_DELIMITER_PATTERN.test(current)) return null
+  try {
+    return decodeURIComponent(current) === current ? forms : null
+  } catch {
+    return null
+  }
+}
+
+function isValidImageHostname(hostname: string): boolean {
+  if (hostname.length === 0 || hostname.length > 253 || hostname.startsWith("[") || hostname.endsWith("]")) return false
+  const labels = hostname.split(".")
+  return labels.every(
+    (label) => label.length > 0 && label.length <= 63 && /^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/.test(label),
+  )
+}
+
+function isValidHttpsImageSource(value: string): boolean {
+  if (!/^https:\/\//i.test(value) || /\s/.test(value)) return false
+  let parsed: URL
+  try {
+    parsed = new URL(value)
+  } catch {
+    return false
+  }
+  return (
+    parsed.protocol === "https:" &&
+    parsed.username.length === 0 &&
+    parsed.password.length === 0 &&
+    isValidImageHostname(parsed.hostname)
+  )
+}
+
+function isValidRelativeImageSource(value: string): boolean {
+  if (value.startsWith("//") || URI_SCHEME_PATTERN.test(value) || /[?#:\s]/.test(value)) return false
+  const relative = value.startsWith("./") ? value.slice(2) : value.startsWith("/") ? value.slice(1) : value
+  return relative.length > 0 && !relative.includes("//") && !RELATIVE_TRAVERSAL_PATTERN.test(relative)
+}
+
 /** Validates references only. Resolution and all network access remain host-owned. */
 export function sanitizeCompatibleImageSource(input: unknown): string | null {
   if (typeof input !== "string" || utf8BytesWithin(input, PREVIEW_IMAGE_SOURCE_MAX_BYTES) === null) return null
   if (input.length === 0 || input.trim() !== input || containsControlCharacter(input) || input.includes("\\")) {
     return null
   }
-  let decoded: string
-  try {
-    decoded = decodeURIComponent(input)
-  } catch {
-    return null
-  }
-  if (containsControlCharacter(decoded) || decoded.includes("\\")) return null
-
-  if (URI_SCHEME_PATTERN.test(input)) {
-    let parsed: URL
-    try {
-      parsed = new URL(input)
-    } catch {
-      return null
-    }
-    if (parsed.protocol !== "https:" || parsed.username || parsed.password || !parsed.hostname) return null
-    return input
-  }
-
-  if (input.startsWith("//") || /[?#:]/.test(input) || /\s/.test(input)) return null
-  const relative = input.startsWith("./") ? input.slice(2) : input.startsWith("/") ? input.slice(1) : input
-  const decodedRelative = decoded.startsWith("./")
-    ? decoded.slice(2)
-    : decoded.startsWith("/")
-      ? decoded.slice(1)
-      : decoded
-  if (
-    relative.length === 0 ||
-    decodedRelative.length === 0 ||
-    relative.includes("//") ||
-    decodedRelative.includes("//") ||
-    /[?#:]/.test(decodedRelative) ||
-    /\s/.test(decodedRelative) ||
-    RELATIVE_TRAVERSAL_PATTERN.test(relative) ||
-    RELATIVE_TRAVERSAL_PATTERN.test(decodedRelative)
-  ) {
-    return null
+  const forms = decodeImageSourceForms(input)
+  if (!forms) return null
+  const absolute = URI_SCHEME_PATTERN.test(input)
+  for (const form of forms) {
+    if (containsControlCharacter(form) || form.includes("\\")) return null
+    if (absolute ? !isValidHttpsImageSource(form) : !isValidRelativeImageSource(form)) return null
   }
   return input
 }

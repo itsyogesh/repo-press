@@ -2,11 +2,41 @@ import { render, screen } from "@testing-library/react"
 import { describe, expect, it } from "vitest"
 import {
   CompatibleRenderTreeView,
+  sanitizeCompatibleImageSource,
   sanitizeCompatibleRenderTree,
   sanitizeCompatibleRenderTreeWithDiagnostics,
 } from "../compatible-render-tree"
 
+const IMAGE_SOURCE_CORPUS = [
+  { id: "relative", source: "images/cover.png", accepted: true },
+  { id: "root-relative", source: "/images/cover.png", accepted: true },
+  { id: "dot-relative", source: "./images/cover.png", accepted: true },
+  { id: "https-query", source: "https://cdn.example/cover.png?width=1200&fit=cover", accepted: true },
+  { id: "ascii-exact", source: "a".repeat(2_048), accepted: true },
+  { id: "utf8-exact", source: "é".repeat(1_024), accepted: true },
+  { id: "ascii-over", source: "a".repeat(2_049), accepted: false },
+  { id: "utf8-over", source: "é".repeat(1_025), accepted: false },
+  { id: "raw-scheme-relative", source: "//evil.test/cover.png", accepted: false },
+  { id: "encoded-scheme-relative", source: "%2f%2fevil.test/cover.png", accepted: false },
+  { id: "double-scheme-relative", source: "%252f%252fevil.test%252fcover.png", accepted: false },
+  { id: "credentials", source: "https://user:secret@cdn.example/cover.png", accepted: false },
+  { id: "invalid-port", source: "https://cdn.example:99999/cover.png", accepted: false },
+  { id: "invalid-host", source: "https://-cdn..example/cover.png", accepted: false },
+  { id: "raw-control", source: "images/cover.png\u0000.jpg", accepted: false },
+  { id: "encoded-control", source: "images/cover.png%0a.jpg", accepted: false },
+  { id: "raw-traversal", source: "../private/cover.png", accepted: false },
+  { id: "encoded-traversal", source: "%2e%2e/private/cover.png", accepted: false },
+  { id: "double-traversal", source: "%252e%252e%252fprivate/cover.png", accepted: false },
+  { id: "raw-backslash", source: "images\\cover.png", accepted: false },
+  { id: "encoded-backslash", source: "images%5ccover.png", accepted: false },
+  { id: "double-backslash", source: "images%255ccover.png", accepted: false },
+] as const
+
 describe("compatible inert render tree", () => {
+  it.each(IMAGE_SOURCE_CORPUS)("agrees with the bounded image source corpus: $id", ({ source, accepted }) => {
+    expect(sanitizeCompatibleImageSource(source) !== null).toBe(accepted)
+  })
+
   it("strips navigation, network, event, style URL, and active-content output", () => {
     const tree = sanitizeCompatibleRenderTree([
       {

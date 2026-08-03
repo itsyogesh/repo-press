@@ -154,7 +154,9 @@ function compatibleWorkerMain() {
   const stringToLowerCase = uncurryThis(String.prototype.toLowerCase)
   const stringCharCodeAt = uncurryThis(String.prototype.charCodeAt)
   const stringIndexOf = uncurryThis(String.prototype.indexOf)
+  const stringLastIndexOf = uncurryThis(String.prototype.lastIndexOf)
   const stringSlice = uncurryThis(String.prototype.slice)
+  const stringSplit = uncurryThis(String.prototype.split)
   const decodeUriComponent = decodeURIComponent
   const addGlobalListener = root.addEventListener.bind(root)
   const removeGlobalListener = root.removeEventListener.bind(root)
@@ -271,11 +273,16 @@ function compatibleWorkerMain() {
   }
 
   const Fragment = Symbol("RepoPress.Fragment")
-  const previewImageSentinel = Symbol("RepoPress.PreviewImage")
+  const ownedElements = new WeakSet<object>()
+  const previewImageReferences = new WeakSet<object>()
   function element(type: any, props: any, childrenOverride?: any[]) {
     const propsValue = props && typeof props === "object" ? objectAssign(objectCreate(null), props) : objectCreate(null)
     if (childrenOverride) propsValue.children = childrenOverride.length === 1 ? childrenOverride[0] : childrenOverride
-    return { __repopressElement: 1, type, props: propsValue }
+    const output = objectCreate(null)
+    output.type = type
+    output.props = objectFreeze(propsValue)
+    weakSetAdd(ownedElements, output)
+    return objectFreeze(output)
   }
   function createElement(type: any, props: any, ...children: any[]) {
     return element(type, props, children)
@@ -332,7 +339,7 @@ function compatibleWorkerMain() {
     createContext,
     createElement,
     forwardRef,
-    isValidElement: (value: any) => booleanFrom(value && value.__repopressElement === 1),
+    isValidElement: (value: any) => booleanFrom(value && typeof value === "object" && weakSetHas(ownedElements, value)),
     memo: (component: any) => {
       recordFidelityLoss("STATIC_INERT_UNSUPPORTED_COMPONENT")
       return component
@@ -410,55 +417,88 @@ function compatibleWorkerMain() {
   function acceptedImageSource(value: any) {
     if (typeof value !== "string" || value.length === 0 || !utf8Within(value, 2_048)) return null
     if (regexpTest(/^[\s]|[\s]$/, value) || containsControlOrBackslash(value, true)) return null
-    let decoded: string
+    const forms = decodeImageSourceForms(value)
+    if (!forms) return null
+    const absolute = regexpTest(/^[A-Za-z][A-Za-z0-9+.-]*:/, value)
+    for (let index = 0; index < forms.length; index += 1) {
+      const form = forms[index]
+      if (containsControlOrBackslash(form, true)) return null
+      if (absolute ? !isValidHttpsImageSource(form) : !isValidRelativeImageSource(form)) return null
+    }
+    return value
+  }
+  function decodeImageSourceForms(value: string) {
+    const forms = [value]
+    let current = value
+    for (let round = 0; round < 2; round += 1) {
+      if (regexpTest(/%(?:2f|5c|3f|23|3a|40)/i, current)) return null
+      let decoded: string
+      try {
+        decoded = decodeUriComponent(current)
+      } catch {
+        return null
+      }
+      if (decoded === current) return forms
+      arrayPush(forms, decoded)
+      current = decoded
+    }
+    if (regexpTest(/%(?:2f|5c|3f|23|3a|40)/i, current)) return null
     try {
-      decoded = decodeUriComponent(value)
+      return decodeUriComponent(current) === current ? forms : null
     } catch {
       return null
     }
-    if (containsControlOrBackslash(decoded, true)) return null
-    if (regexpTest(/^[A-Za-z][A-Za-z0-9+.-]*:/, value)) {
-      if (!regexpTest(/^https:\/\//i, value) || regexpTest(/\s/, value)) return null
-      const authorityStart = 8
-      let authorityEnd = value.length
-      const separators = ["/", "?", "#"]
-      for (let index = 0; index < separators.length; index += 1) {
-        const found = stringIndexOf(value, separators[index], authorityStart)
-        if (found >= 0 && found < authorityEnd) authorityEnd = found
-      }
-      const authority = stringSlice(value, authorityStart, authorityEnd)
-      if (
-        authority.length === 0 ||
-        stringIndexOf(authority, "@") >= 0 ||
-        !regexpTest(/^(?:[A-Za-z0-9.-]+|\[[0-9A-Fa-f:.]+\])(?::[0-9]{1,5})?$/, authority)
-      ) {
-        return null
-      }
-      return value
+  }
+  function isValidImageHostname(hostname: string) {
+    if (hostname.length === 0 || hostname.length > 253 || regexpTest(/^\[/, hostname) || regexpTest(/\]$/, hostname)) {
+      return false
     }
-    if (regexpTest(/^\/\//, value) || regexpTest(/[?#:\s]/, value)) return null
+    const labels = stringSplit(hostname, ".")
+    for (let index = 0; index < labels.length; index += 1) {
+      const label = labels[index]
+      if (label.length === 0 || label.length > 63 || !regexpTest(/^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/, label)) {
+        return false
+      }
+    }
+    return true
+  }
+  function isValidPort(port: string) {
+    if (port.length === 0 || port.length > 5) return false
+    let numeric = 0
+    for (let index = 0; index < port.length; index += 1) {
+      const unit = stringCharCodeAt(port, index)
+      if (unit < 0x30 || unit > 0x39) return false
+      numeric = numeric * 10 + unit - 0x30
+    }
+    return numeric <= 65_535
+  }
+  function isValidHttpsImageSource(value: string) {
+    if (!regexpTest(/^https:\/\//i, value) || regexpTest(/\s/, value)) return false
+    const authorityStart = 8
+    let authorityEnd = value.length
+    const separators = ["/", "?", "#"]
+    for (let index = 0; index < separators.length; index += 1) {
+      const found = stringIndexOf(value, separators[index], authorityStart)
+      if (found >= 0 && found < authorityEnd) authorityEnd = found
+    }
+    const authority = stringSlice(value, authorityStart, authorityEnd)
+    if (authority.length === 0 || stringIndexOf(authority, "@") >= 0) return false
+    const colon = stringLastIndexOf(authority, ":")
+    if (colon >= 0 && stringIndexOf(authority, ":") !== colon) return false
+    const hostname = colon >= 0 ? stringSlice(authority, 0, colon) : authority
+    const port = colon >= 0 ? stringSlice(authority, colon + 1) : null
+    return isValidImageHostname(hostname) && (port === null || isValidPort(port))
+  }
+  function isValidRelativeImageSource(value: string) {
+    if (regexpTest(/^\/\//, value) || regexpTest(/^[A-Za-z][A-Za-z0-9+.-]*:/, value) || regexpTest(/[?#:\s]/, value)) {
+      return false
+    }
     const relative = regexpTest(/^\.\//, value)
       ? stringSlice(value, 2)
       : regexpTest(/^\//, value)
         ? stringSlice(value, 1)
         : value
-    const decodedRelative = regexpTest(/^\.\//, decoded)
-      ? stringSlice(decoded, 2)
-      : regexpTest(/^\//, decoded)
-        ? stringSlice(decoded, 1)
-        : decoded
-    if (
-      relative.length === 0 ||
-      decodedRelative.length === 0 ||
-      regexpTest(/\/\//, relative) ||
-      regexpTest(/\/\//, decodedRelative) ||
-      regexpTest(/[?#:\s]/, decodedRelative) ||
-      regexpTest(/(?:^|\/)\.{1,2}(?:\/|$)/, relative) ||
-      regexpTest(/(?:^|\/)\.{1,2}(?:\/|$)/, decodedRelative)
-    ) {
-      return null
-    }
-    return value
+    return relative.length > 0 && !regexpTest(/\/\//, relative) && !regexpTest(/(?:^|\/)\.{1,2}(?:\/|$)/, relative)
   }
   function containsControlOrBackslash(value: string, rejectBackslash: boolean) {
     for (let index = 0; index < value.length; index += 1) {
@@ -577,11 +617,11 @@ function compatibleWorkerMain() {
     const source = acceptedImageSource(props?.src)
     if (!source) return previewImagePlaceholder(alt, label, aspect)
     const reference = objectCreate(null)
-    reference[previewImageSentinel] = true
     reference.source = source
     reference.alt = alt
     reference.label = label
     reference.aspect = aspect
+    weakSetAdd(previewImageReferences, reference)
     return objectFreeze(reference)
   }
   const previewModule: any = objectCreate(null)
@@ -891,7 +931,7 @@ function compatibleWorkerMain() {
         }
         return [{ kind: "text", value: text }]
       }
-      if (node && typeof node === "object" && objectHasOwn(node, previewImageSentinel)) {
+      if (node && typeof node === "object" && weakSetHas(previewImageReferences, node)) {
         const source = acceptedImageSource(node.source)
         const alt = boundedLabel(node.alt, "Image preview")
         const label = boundedLabel(node.label, alt)
@@ -901,7 +941,9 @@ function compatibleWorkerMain() {
         if (budget.nodes > 2_048) throw new SafeError("Compatible render node budget exceeded")
         return [{ kind: "image", source, alt, label, aspect }]
       }
-      if (!node || node.__repopressElement !== 1) throw new SafeError("Unsupported compatible render value")
+      if (!node || typeof node !== "object" || !weakSetHas(ownedElements, node)) {
+        throw new SafeError("Unsupported compatible render value")
+      }
       budget.nodes += 1
       if (budget.nodes > 2_048) throw new SafeError("Compatible render node budget exceeded")
       const props = node.props && typeof node.props === "object" ? node.props : {}
