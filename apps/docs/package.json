@@ -1,0 +1,24 @@
+{
+  "name": "@repopress/docs",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "blume dev",
+    "build": "blume build",
+    "preview": "blume preview",
+    "typecheck": "blume check --strict",
+    "validate": "node scripts/validate-content.mjs && blume validate --strict",
+    "doctor": "blume doctor"
+  },
+  "dependencies": {
+    "blume": "1.3.1",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0"
+  }
+}
