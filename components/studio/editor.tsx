@@ -304,8 +304,8 @@ export function Editor({
 
   // Handle content change from editor
   const handleContentChange = React.useCallback(
-    (markdown: string) => {
-      if (readOnly) return
+    (markdown: string, initialMarkdownNormalize: boolean) => {
+      if (readOnly || initialMarkdownNormalize) return
       onChangeContent(markdown)
     },
     [onChangeContent, readOnly],

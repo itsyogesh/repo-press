@@ -1,13 +1,21 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { buildAuthoringCatalog } from "@/lib/studio/authoring-catalog"
 import { Editor } from "../editor"
 import { createStudioAdapterState, StudioAdapterProvider } from "../studio-adapter-context"
 
+const { initialNormalizeMock } = vi.hoisted(() => ({
+  initialNormalizeMock: vi.fn(),
+}))
+
 vi.mock("../forward-ref-editor", async () => {
   const React = await import("react")
   return {
     ForwardRefEditor: React.forwardRef(function ForwardRefEditorMock(props: any, _ref) {
+      React.useEffect(() => {
+        initialNormalizeMock()
+        props.onChange(`${props.markdown}\n`, true)
+      }, [props.markdown, props.onChange])
       return (
         <textarea
           aria-label="MDX source editor"
@@ -62,5 +70,41 @@ describe("Editor source preservation", () => {
     fireEvent.change(screen.getByLabelText("title"), { target: { value: "Changed" } })
     expect(onChangeContent).not.toHaveBeenCalled()
     expect(onChangeFrontmatter).not.toHaveBeenCalled()
+  })
+
+  it("ignores MDXEditor initial normalization but forwards a real user edit", async () => {
+    initialNormalizeMock.mockClear()
+    const onChangeContent = vi.fn()
+    const adapter = createStudioAdapterState({
+      authoringCatalog: buildAuthoringCatalog({ metadata: {} }),
+      nativeComponentNames: [],
+    })
+
+    render(
+      <StudioAdapterProvider value={adapter}>
+        <Editor
+          content="# Body"
+          frontmatter={{}}
+          onChangeContent={onChangeContent}
+          onChangeFrontmatter={vi.fn()}
+          onSaveDraft={vi.fn()}
+          onPublish={vi.fn()}
+          isSaving={false}
+          isPublishing={false}
+          canPublish={false}
+          statusBadge={null}
+          owner="acme"
+          repo="docs"
+          branch="main"
+        />
+      </StudioAdapterProvider>,
+    )
+
+    await waitFor(() => expect(initialNormalizeMock).toHaveBeenCalled())
+    expect(onChangeContent).not.toHaveBeenCalled()
+    fireEvent.change(screen.getByRole("textbox", { name: "MDX source editor" }), {
+      target: { value: "# User edit" },
+    })
+    expect(onChangeContent).toHaveBeenCalledWith("# User edit")
   })
 })
