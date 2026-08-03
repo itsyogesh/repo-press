@@ -172,14 +172,14 @@ function CTABox({ title, description, buttonText, buttonHref }: { title?: string
   )
 }
 
-function LetterPaper({ children, title = "Letter to Santa", showStamp = true, templateText }: ChildrenProps & { title?: string; showStamp?: boolean; templateText?: string }) {
+function LetterPaper({ children, title = "Letter to Santa", showStamp = true }: ChildrenProps & { title?: string; showStamp?: boolean; templateText?: string }) {
   return (
     <PreviewPaper
       variant="letter"
       title={title}
-      headingLevel={2}
+      headingLevel="none"
       showStamp={showStamp}
-      actionLabel={templateText ? "Want Santa to reply? Write your letter now!" : undefined}
+      actionLabel="Want Santa to reply? Write your letter now!"
     >
       {children}
     </PreviewPaper>

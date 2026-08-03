@@ -148,7 +148,7 @@ describe("Merry product extension pilot", () => {
           children: [
             expect.objectContaining({
               kind: "element",
-              tag: "h2",
+              tag: "p",
               props: { className: "repopress-preview-paper-title" },
             }),
             expect.anything(),
@@ -158,6 +158,8 @@ describe("Merry product extension pilot", () => {
         expect.anything(),
       ],
     })
+    expect(MERRY_ADAPTER_SOURCE).toContain('headingLevel="none"')
+    expect(MERRY_ADAPTER_SOURCE).not.toContain("templateText ?")
     expect(output).not.toMatch(/href|"src"|utm_source|template=preview/u)
   })
 

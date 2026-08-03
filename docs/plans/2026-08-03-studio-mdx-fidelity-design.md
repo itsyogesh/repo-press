@@ -186,4 +186,3 @@ Against RepoPress and Merry Magic Mail:
 RepoPress and Merry ship as separate pull requests. RepoPress merges first because the Merry adapter depends on the new capability contract. The Merry PR then activates the pilot without changing production rendering.
 
 Every new compatible capability is additive. If media transport causes a production problem, disable the asset bridge and `PreviewImage` falls back to its current labelled placeholder while metadata, tree compaction, and edge-to-edge layout remain functional. If metadata-export parsing rejects a document, the raw source stays intact and Generic editing remains available.
-
