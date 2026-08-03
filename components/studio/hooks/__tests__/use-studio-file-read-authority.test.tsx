@@ -175,6 +175,89 @@ describe("useStudioFile immutable read authority", () => {
     consoleError.mockRestore()
   })
 
+  it("preserves an in-flight Convex draft through an ambiguous failure and supported retry", async () => {
+    studioContext.tree = []
+    const firstResponse = deferred<Response>()
+    const retryResponse = deferred<Response>()
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined)
+    vi.mocked(fetch).mockReturnValueOnce(firstResponse.promise).mockReturnValueOnce(retryResponse.promise)
+    const { result } = renderHook(() => useStudioFile(null, ""))
+
+    act(() => result.current.navigateToFile("content/retry.mdx"))
+    await waitFor(() => expect(fetch).toHaveBeenCalledOnce())
+    act(() => {
+      result.current.hydrateFromDocument({ body: "# Convex draft", frontmatter: { title: "Draft title" } })
+    })
+
+    await act(async () => firstResponse.resolve({ ok: false, status: 500 } as Response))
+    await waitFor(() => expect(result.current.isFileLoading).toBe(false))
+    expect(result.current.content).toBe("# Convex draft")
+    expect(result.current.frontmatter).toEqual({ title: "Draft title" })
+    expect(result.current.sourceAuthority).toBe("unknown")
+    expect(result.current.isSourceEditable).toBe(false)
+
+    act(() => result.current.navigateToFile("content/retry.mdx"))
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
+    expect(result.current.content).toBe("# Convex draft")
+    expect(result.current.frontmatter).toEqual({ title: "Draft title" })
+    expect(result.current.sourceAuthority).toBe("unknown")
+
+    await act(async () =>
+      retryResponse.resolve({
+        ok: true,
+        json: async () => ({
+          path: "content/retry.mdx",
+          name: "retry.mdx",
+          sha: "b".repeat(40),
+          content: "# Supported Git source",
+        }),
+      } as Response),
+    )
+    await waitFor(() => expect(result.current.sourceAuthority).toBe("editable"))
+    expect(result.current.content).toBe("# Convex draft")
+    expect(result.current.frontmatter).toEqual({ title: "Draft title" })
+    consoleError.mockRestore()
+  })
+
+  it("lets an unsupported retry outrank an in-flight Convex draft cached with unknown authority", async () => {
+    studioContext.tree = []
+    const firstResponse = deferred<Response>()
+    const retryResponse = deferred<Response>()
+    const unsupported = "export const metadata = { title: makeTitle() }\n\n# Git source\n"
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined)
+    vi.mocked(fetch).mockReturnValueOnce(firstResponse.promise).mockReturnValueOnce(retryResponse.promise)
+    const { result } = renderHook(() => useStudioFile(null, ""))
+
+    act(() => result.current.navigateToFile("content/retry.mdx"))
+    await waitFor(() => expect(fetch).toHaveBeenCalledOnce())
+    act(() => {
+      result.current.hydrateFromDocument({ body: "# Convex draft", frontmatter: { title: "Draft title" } })
+    })
+    await act(async () => firstResponse.resolve({ ok: false, status: 500 } as Response))
+    await waitFor(() => expect(result.current.isFileLoading).toBe(false))
+
+    act(() => result.current.navigateToFile("content/retry.mdx"))
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
+    await act(async () =>
+      retryResponse.resolve({
+        ok: true,
+        json: async () => ({
+          path: "content/retry.mdx",
+          name: "retry.mdx",
+          sha: "c".repeat(40),
+          content: unsupported,
+        }),
+      } as Response),
+    )
+
+    await waitFor(() => expect(result.current.isFileLoading).toBe(false))
+    expect(result.current.content).toBe(unsupported)
+    expect(result.current.frontmatter).toEqual({})
+    expect(result.current.sourceAuthority).toBe("read-only")
+    expect(result.current.sourceDiagnostic).toBe("UNSUPPORTED_METADATA_EXPORT")
+    consoleError.mockRestore()
+  })
+
   it("opens Merry metadata exports as editable body content with nested properties", async () => {
     const source = `export const metadata = {
   title: "Free Printable Santa Letter Templates",

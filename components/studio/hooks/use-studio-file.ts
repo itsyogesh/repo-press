@@ -336,6 +336,11 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
           if (pendingHydration) {
             if (remotePathAbsent) {
               applyDocumentHydration(requestStartCached ?? emptySnapshot, pendingHydration)
+            } else {
+              applyDocumentHydration(
+                requestStartCached ?? { ...emptySnapshot, sourceAuthority: "unknown" },
+                pendingHydration,
+              )
             }
             return
           }
