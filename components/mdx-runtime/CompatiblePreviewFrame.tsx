@@ -480,7 +480,7 @@ export function CompatiblePreviewFrame({
       sandbox="allow-scripts"
       referrerPolicy="no-referrer"
       onLoad={handleLoad}
-      className={cn("h-full min-h-80 w-full rounded-lg border border-border bg-background", className)}
+      className={cn("h-full min-h-0 w-full rounded-none border-0 bg-background", className)}
     />
   )
 }

@@ -56,6 +56,9 @@ describe("SandboxRuntime", () => {
   it("renders only the RepoPress-owned inert Task 9 shell", () => {
     const { container } = render(<SandboxRuntime />)
 
+    const main = container.querySelector("main")
+    expect(main).not.toBeNull()
+    expect(main).not.toHaveClass("p-6")
     expect(screen.getByText("Compatible preview sandbox ready.")).toHaveAttribute(
       "data-repopress-sandbox-shell",
       "inert",

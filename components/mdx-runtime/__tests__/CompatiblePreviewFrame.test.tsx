@@ -198,6 +198,8 @@ describe("CompatiblePreviewFrame", () => {
     expect(frame).toHaveAttribute("referrerpolicy", "no-referrer")
     expect(frame).toHaveAttribute("src", "https://preview.repopress.test/preview/sandbox")
     expect(frame.getAttribute("src")).not.toMatch(/capability|token|session/i)
+    expect(frame).toHaveClass("h-full", "w-full", "min-h-0", "border-0", "rounded-none")
+    expect(frame).not.toHaveClass("min-h-80", "rounded-lg", "border-border")
   })
 
   it("retries the same bootstrap offer when the sandbox listener starts after iframe load", () => {
@@ -660,7 +662,7 @@ describe("CompatiblePreviewFrame", () => {
     const { rerender } = render(<Preview previewResult={fallbackResult} frontmatter={{ title: "Safe" }} />)
 
     expect(screen.queryByTitle("Compatible component preview")).not.toBeInTheDocument()
-    expect(screen.getAllByRole("heading", { name: "Safe" })).toHaveLength(2)
+    expect(screen.getAllByRole("heading", { name: "Safe" })).toHaveLength(1)
 
     rerender(
       <Preview
@@ -670,7 +672,7 @@ describe("CompatiblePreviewFrame", () => {
       />,
     )
     expect(screen.queryByTitle("Compatible component preview")).not.toBeInTheDocument()
-    expect(screen.getAllByRole("heading", { name: "Safe" })).toHaveLength(2)
+    expect(screen.getAllByRole("heading", { name: "Safe" })).toHaveLength(1)
 
     rerender(
       <Preview
@@ -682,7 +684,7 @@ describe("CompatiblePreviewFrame", () => {
       />,
     )
     await waitFor(() => expect(screen.queryByTitle("Compatible component preview")).not.toBeInTheDocument())
-    expect(screen.getAllByRole("heading", { name: "Safe" })).toHaveLength(2)
+    expect(screen.getAllByRole("heading", { name: "Safe" })).toHaveLength(1)
 
     for (const mismatch of [
       { tenantId: "tenant-2" },
@@ -814,7 +816,7 @@ describe("CompatiblePreviewFrame", () => {
     )
 
     await waitFor(() => expect(screen.queryByTitle("Compatible component preview")).not.toBeInTheDocument())
-    expect(screen.getAllByRole("heading", { name: "Safe" })).toHaveLength(2)
+    expect(screen.getAllByRole("heading", { name: "Safe" })).toHaveLength(1)
   })
 })
 

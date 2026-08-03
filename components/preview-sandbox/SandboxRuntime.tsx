@@ -429,7 +429,7 @@ export function SandboxRuntime() {
   }, [])
 
   return (
-    <main className="min-h-screen bg-background p-6 text-foreground">
+    <main className="min-h-screen bg-background text-foreground">
       {renderTree ? (
         <CompatibleRenderErrorBoundary onError={reportHostRenderFailure}>
           <CompatibleRenderTreeView tree={renderTree} />
