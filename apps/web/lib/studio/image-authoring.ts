@@ -1,5 +1,3 @@
-import path from "node:path"
-
 type ImageUsage = "frontmatter" | "component" | "editor"
 
 interface GetAuthoredImageValueArgs {
@@ -25,9 +23,14 @@ function isBlogCoverField(fieldName?: string, semanticRole?: string): boolean {
   return semanticRole === "image" || normalizedField === "image" || normalizedField === "coverimage"
 }
 
+function getRepoBasename(repoPath: string): string {
+  const normalizedPath = repoPath.replace(/\/+$/, "")
+  return normalizedPath.slice(normalizedPath.lastIndexOf("/") + 1)
+}
+
 export function getAuthoredImageValue({ repoPath, usage, fieldName, semanticRole }: GetAuthoredImageValueArgs): string {
   if (usage === "frontmatter" && isBlogCoverField(fieldName, semanticRole)) {
-    return path.posix.basename(repoPath)
+    return getRepoBasename(repoPath)
   }
 
   return toPublicAssetPath(repoPath)
