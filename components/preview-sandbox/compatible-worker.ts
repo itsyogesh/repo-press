@@ -157,6 +157,7 @@ function compatibleWorkerMain() {
   const stringLastIndexOf = uncurryThis(String.prototype.lastIndexOf)
   const stringSlice = uncurryThis(String.prototype.slice)
   const stringSplit = uncurryThis(String.prototype.split)
+  const stringTrim = uncurryThis(String.prototype.trim)
   const decodeUriComponent = decodeURIComponent
   const addGlobalListener = root.addEventListener.bind(root)
   const removeGlobalListener = root.removeEventListener.bind(root)
@@ -388,6 +389,7 @@ function compatibleWorkerMain() {
   PREVIEW_OPTIONS.actionTones = frozenOptionSet(["primary", "secondary"])
   PREVIEW_OPTIONS.imageAspects = frozenOptionSet(["wide", "square", "portrait"])
   PREVIEW_OPTIONS.paperVariants = frozenOptionSet(["letter", "note", "worksheet"])
+  PREVIEW_OPTIONS.paperHeadingLevels = frozenOptionSet(["2", "3", "none"])
   PREVIEW_OPTIONS.iconNames = frozenOptionSet(["info", "tip", "warning", "check", "mail", "stamp", "image", "arrow"])
 
   function option(options: any, value: any, fallback: string) {
@@ -397,9 +399,17 @@ function compatibleWorkerMain() {
     if (typeof value !== "string" || value.length === 0 || !utf8Within(value, 512)) return fallback
     return containsControlOrBackslash(value, false) ? fallback : value
   }
-  function optionalBoundedLabel(value: any) {
-    if (typeof value !== "string" || value.length === 0 || !utf8Within(value, 512)) return null
-    return containsControlOrBackslash(value, false) ? null : value
+  function boundedPaperText(value: any, fallback: string) {
+    if (typeof value !== "string") return fallback
+    const normalized = stringTrim(value)
+    if (normalized.length === 0 || !utf8Within(normalized, 512)) return fallback
+    return containsControlOrBackslash(normalized, false) ? fallback : normalized
+  }
+  function optionalBoundedPaperText(value: any) {
+    if (typeof value !== "string") return null
+    const normalized = stringTrim(value)
+    if (normalized.length === 0 || !utf8Within(normalized, 512)) return null
+    return containsControlOrBackslash(normalized, false) ? null : normalized
   }
   function utf8Within(value: string, limit: number) {
     if (value.length > limit) return false
@@ -648,15 +658,16 @@ function compatibleWorkerMain() {
   }
   function PreviewPaper(props: any) {
     const variant = option(PREVIEW_OPTIONS.paperVariants, props?.variant, "letter")
-    const title = boundedLabel(props?.title, "Paper preview")
-    const actionLabel = optionalBoundedLabel(props?.actionLabel)
+    const title = boundedPaperText(props?.title, "Paper preview")
+    const actionLabel = optionalBoundedPaperText(props?.actionLabel)
+    const titleTag = props?.headingLevel === 3 ? "h3" : props?.headingLevel === "none" ? "p" : "h2"
     return jsx("article", {
       className: `repopress-preview-paper repopress-preview-paper--${variant}`,
       children: [
         jsx("div", {
           className: "repopress-preview-paper-header",
           children: [
-            jsx("h3", { className: "repopress-preview-paper-title", children: title }),
+            jsx(titleTag, { className: "repopress-preview-paper-title", children: title }),
             props?.showStamp === true
               ? jsx("span", {
                   className: "repopress-preview-paper-stamp",
@@ -671,12 +682,7 @@ function compatibleWorkerMain() {
         actionLabel
           ? jsx("div", {
               className: "repopress-preview-paper-footer",
-              children: jsx("span", {
-                className: "repopress-preview-paper-action",
-                role: "note",
-                "aria-label": `Inert preview action: ${actionLabel}`,
-                children: actionLabel,
-              }),
+              children: jsx(PreviewAction, { label: actionLabel, tone: "secondary" }),
             })
           : null,
       ],

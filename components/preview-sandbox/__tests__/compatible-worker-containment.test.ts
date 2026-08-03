@@ -234,6 +234,109 @@ describe("compatible worker containment", () => {
     expect(serialized).not.toMatch(/evil\.test|href|"src"|onClick|onLoad|style|attacker-class|attacker-paper/)
   })
 
+  it("renders a bounded semantic PreviewPaper variant matrix without dynamic headings", async () => {
+    const exactTitle = "T".repeat(512)
+    const exactAction = "A".repeat(512)
+    const job = await prepareCompatibleWorkerJob({
+      artifactId: "artifact-portable-paper-matrix",
+      documentSource: "<PaperMatrix />",
+      adapter: {
+        entryPath: "mdx-preview.tsx",
+        sources: {
+          "mdx-preview.tsx": `
+            import { PreviewPaper } from "@repopress/preview"
+            const exactTitle = ${JSON.stringify(` ${exactTitle} `)}
+            const exactAction = ${JSON.stringify(` ${exactAction} `)}
+            function PaperMatrix() {
+              return <>
+                <PreviewPaper title={exactTitle} actionLabel={exactAction}>Letter body</PreviewPaper>
+                <PreviewPaper variant="note" title=" Note title " headingLevel={3} showStamp>Note body</PreviewPaper>
+                <PreviewPaper variant="worksheet" title="Worksheet title" headingLevel="none">Worksheet body</PreviewPaper>
+                <PreviewPaper title="   " actionLabel="   " headingLevel={"h1"}>Fallback body</PreviewPaper>
+              </>
+            }
+            export default { components: { PaperMatrix } }
+          `,
+        },
+      },
+    })
+    const sent: unknown[] = []
+    const listeners: Array<(event: { data?: unknown; ports?: unknown[] }) => void | Promise<void>> = []
+    const port = {
+      onmessage: null as ((event: { data: unknown }) => void) | null,
+      close() {},
+      postMessage(message: unknown) {
+        sent.push(message)
+      },
+      start() {},
+    }
+    const context = vm.createContext({
+      addEventListener: (_type: string, listener: (event: { data?: unknown; ports?: unknown[] }) => void) =>
+        listeners.push(listener),
+      removeEventListener() {},
+    })
+    vm.runInContext(createCompatibleWorkerSource(), context, { timeout: 1_000 })
+    await listeners[0]({ ports: [port] })
+    port.onmessage?.({ data: { type: "repopress:render-compatible", requestId: "P".repeat(43), job } })
+
+    expect(sent).toHaveLength(1)
+    expect(sent[0]).toMatchObject({ type: "repopress:rendered-compatible", fidelityLosses: [] })
+    const tree = (sent[0] as { tree: Array<Record<string, unknown>> }).tree
+    expect(tree).toHaveLength(4)
+    expect(tree[0]).toMatchObject({
+      tag: "article",
+      props: { className: "repopress-preview-paper repopress-preview-paper--letter" },
+      children: [
+        { tag: "div", children: [{ tag: "h2", children: [{ kind: "text", value: exactTitle }] }] },
+        { tag: "div", children: [{ kind: "text", value: "Letter body" }] },
+        {
+          tag: "div",
+          children: [
+            {
+              tag: "span",
+              props: {
+                className: "repopress-preview-action repopress-preview-action--secondary",
+                role: "note",
+                "aria-label": `Inert preview action: ${exactAction}`,
+              },
+              children: [
+                { kind: "text", value: exactAction },
+                { tag: "small", children: [{ kind: "text", value: "Preview only" }] },
+              ],
+            },
+          ],
+        },
+      ],
+    })
+    expect(tree[1]).toMatchObject({
+      props: { className: "repopress-preview-paper repopress-preview-paper--note" },
+      children: [
+        {
+          children: [
+            { tag: "h3", children: [{ kind: "text", value: "Note title" }] },
+            { tag: "span", props: { className: "repopress-preview-paper-stamp", role: "img" } },
+          ],
+        },
+        expect.anything(),
+      ],
+    })
+    expect(tree[2]).toMatchObject({
+      props: { className: "repopress-preview-paper repopress-preview-paper--worksheet" },
+      children: [
+        { children: [{ tag: "p", children: [{ kind: "text", value: "Worksheet title" }] }] },
+        expect.anything(),
+      ],
+    })
+    expect(tree[3]).toMatchObject({
+      children: [
+        { children: [{ tag: "h2", children: [{ kind: "text", value: "Paper preview" }] }] },
+        expect.anything(),
+      ],
+    })
+    expect(JSON.stringify(tree[3])).not.toContain("repopress-preview-paper-footer")
+    expect(JSON.stringify(tree)).not.toMatch(/<h1|"tag":"h1"|"tag":"h4"/u)
+  })
+
   it("keeps rejected PreviewImage sources as inert labelled placeholders", async () => {
     const rejectedSources = [
       null,

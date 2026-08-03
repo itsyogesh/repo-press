@@ -119,6 +119,31 @@ describe("Merry product extension pilot", () => {
     ]) {
       expect(output).toContain(className)
     }
+    const tree = (
+      sent[0] as { tree: Array<{ kind: string; tag?: string; props?: { className?: string }; children?: unknown[] }> }
+    ).tree
+    expect(tree[0]).toMatchObject({ kind: "element", tag: "h1" })
+    const paper = tree.find((node) => node.props?.className?.includes("repopress-preview-paper--letter"))
+    expect(paper).toMatchObject({
+      kind: "element",
+      tag: "article",
+      children: [
+        {
+          kind: "element",
+          tag: "div",
+          children: [
+            expect.objectContaining({
+              kind: "element",
+              tag: "h2",
+              props: { className: "repopress-preview-paper-title" },
+            }),
+            expect.anything(),
+          ],
+        },
+        expect.anything(),
+        expect.anything(),
+      ],
+    })
     expect(output).not.toMatch(/href|"src"|utm_source|template=preview/u)
   })
 

@@ -13,6 +13,7 @@ import {
   PREVIEW_IMAGE_SOURCE_MAX_BYTES,
   PREVIEW_IMAGE_TEXT_MAX_BYTES,
   PREVIEW_LIST_STYLES,
+  PREVIEW_PAPER_HEADING_LEVELS,
   PREVIEW_PAPER_TEXT_MAX_BYTES,
   PREVIEW_PAPER_VARIANTS,
   PREVIEW_TEXT_SIZES,
@@ -41,6 +42,7 @@ describe("portable preview capability contract", () => {
       PREVIEW_ICON_NAMES,
       PREVIEW_IMAGE_ASPECTS,
       PREVIEW_LIST_STYLES,
+      PREVIEW_PAPER_HEADING_LEVELS,
       PREVIEW_PAPER_VARIANTS,
       PREVIEW_TEXT_SIZES,
       PREVIEW_TEXT_TONES,
@@ -76,8 +78,25 @@ describe("portable preview capability contract", () => {
 
   it("publishes a small immutable paper vocabulary and text budget", () => {
     expect(PREVIEW_PAPER_VARIANTS).toEqual(["letter", "note", "worksheet"])
+    expect(PREVIEW_PAPER_HEADING_LEVELS).toEqual([2, 3, "none"])
     expect(Object.isFrozen(PREVIEW_PAPER_VARIANTS)).toBe(true)
+    expect(Object.isFrozen(PREVIEW_PAPER_HEADING_LEVELS)).toBe(true)
     expect(PREVIEW_PAPER_TEXT_MAX_BYTES).toBe(512)
+  })
+
+  it("keeps long paper copy inside narrow preview surfaces", () => {
+    const css = fs.readFileSync(path.join(process.cwd(), "app/typeset.css"), "utf8")
+    const rule = (selector: string) => {
+      const start = css.indexOf(`${selector} {`)
+      expect(start).toBeGreaterThanOrEqual(0)
+      return css.slice(start, css.indexOf("}", start) + 1)
+    }
+    expect(rule("[data-compatible-preview] .repopress-preview-paper")).toContain("min-width: 0;")
+    expect(rule("[data-compatible-preview] .repopress-preview-paper-title")).toContain("min-width: 0;")
+    expect(rule("[data-compatible-preview] .repopress-preview-paper-title")).toContain("overflow-wrap: anywhere;")
+    expect(rule("[data-compatible-preview] .repopress-preview-action")).toContain("max-width: 100%;")
+    expect(rule("[data-compatible-preview] .repopress-preview-action")).toContain("overflow-wrap: anywhere;")
+    expect(css).toContain("@media (max-width: 30rem)")
   })
 
   it("publishes the raw fail-closed HTTPS authority policy", () => {

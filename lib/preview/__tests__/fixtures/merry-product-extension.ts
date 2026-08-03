@@ -172,6 +172,7 @@ function LetterPaper({ children, title = "Letter to Santa", showStamp = true, te
     <PreviewPaper
       variant="letter"
       title={title}
+      headingLevel={2}
       showStamp={showStamp}
       actionLabel={templateText ? "Want Santa to reply? Write your letter now!" : undefined}
     >

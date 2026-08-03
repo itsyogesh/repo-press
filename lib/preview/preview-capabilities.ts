@@ -22,6 +22,8 @@ export const PREVIEW_IMAGE_ASPECTS = Object.freeze(["wide", "square", "portrait"
 export const PREVIEW_IMAGE_SOURCE_MAX_BYTES = 2_048
 export const PREVIEW_IMAGE_TEXT_MAX_BYTES = 512
 export const PREVIEW_PAPER_VARIANTS = Object.freeze(["letter", "note", "worksheet"] as const)
+export const PREVIEW_PAPER_HEADING_LEVELS = Object.freeze([2, 3, "none"] as const)
+/** Title and action labels are trimmed before this UTF-8 byte budget is applied. */
 export const PREVIEW_PAPER_TEXT_MAX_BYTES = 512
 export const PREVIEW_IMAGE_HTTPS_AUTHORITY_POLICY = Object.freeze({
   host: "ascii-dns-or-canonical-ipv4",
@@ -50,6 +52,7 @@ export type PreviewListStyle = (typeof PREVIEW_LIST_STYLES)[number]
 export type PreviewActionTone = (typeof PREVIEW_ACTION_TONES)[number]
 export type PreviewImageAspect = (typeof PREVIEW_IMAGE_ASPECTS)[number]
 export type PreviewPaperVariant = (typeof PREVIEW_PAPER_VARIANTS)[number]
+export type PreviewPaperHeadingLevel = (typeof PREVIEW_PAPER_HEADING_LEVELS)[number]
 export type PreviewIconName = (typeof PREVIEW_ICON_NAMES)[number]
 
 export type PreviewBoxProps = Readonly<{ children?: ReactNode; tone?: PreviewBoxTone }>
@@ -87,6 +90,7 @@ export type PreviewImageProps = Readonly<{
 export type PreviewPaperProps = Readonly<{
   actionLabel?: string
   children?: ReactNode
+  headingLevel?: PreviewPaperHeadingLevel
   showStamp?: boolean
   title?: string
   variant?: PreviewPaperVariant
