@@ -64,18 +64,19 @@ export function TreeItem({
 }: TreeItemProps) {
   const node = item.source
   const isRouteDocument = item.kind === "route-document"
+  const canRename = !isRouteDocument || item.canRename
   const overlay = node as OverlayTreeNode
   const isNew = overlay.isNew
   const isDeleted = overlay.isDeleted
   const isModified = !isNew && !isDeleted && node.type === "file" && !!dirtyPaths?.has(node.path)
   const isOpen = node.type === "dir" ? expandedDirs.has(node.path) : false
-  const isRenaming = !isRouteDocument && renamingPath === node.path
+  const isRenaming = canRename && renamingPath === node.path
 
   const displayTitle = isRouteDocument ? item.label : titleMap?.[node.path]
   const secondaryLabel = isRouteDocument ? item.secondaryLabel : displayTitle ? node.name : undefined
 
   // Drag and Drop (Files only, Folders can be dropped into)
-  const isDraggable = node.type === "file" && !isDeleted
+  const isDraggable = node.type === "file" && !isDeleted && (!isRouteDocument || item.canDrag)
   const isDroppable = node.type === "dir" && !isDeleted
 
   const {
@@ -106,17 +107,17 @@ export function TreeItem({
   const handleRenameSubmit = React.useCallback(
     (newName: string) => {
       onCancelRename()
-      if (isRouteDocument || !onRenameFile || newName === node.name) return
+      if (!canRename || !onRenameFile || newName === node.name) return
       const parentPath = node.path.split("/").slice(0, -1).join("/")
       const newPath = parentPath ? `${parentPath}/${newName}` : newName
       onRenameFile(node.path, newPath)
     },
-    [isRouteDocument, onCancelRename, onRenameFile, node.path, node.name],
+    [canRename, onCancelRename, onRenameFile, node.path, node.name],
   )
 
   // Context menu handlers
   const handleOpen = () => onSelect(node)
-  const handleRename = isRouteDocument ? undefined : () => onStartRename(node.path)
+  const handleRename = canRename ? () => onStartRename(node.path) : undefined
   const handleDelete = () => onDeleteFile?.(node.path, node.sha)
   const handleUndoDelete = () => onUndoDelete?.(node.path)
   const handleNewFile = () =>
@@ -270,7 +271,11 @@ export function TreeItem({
           <button
             type="button"
             {...draggableButtonProps}
-            aria-label={isRouteDocument ? `${item.label} ${item.secondaryLabel}` : undefined}
+            aria-label={
+              isRouteDocument
+                ? `${item.label} ${item.secondaryLabel}${isNew ? " New" : isModified ? " Edited" : ""}`
+                : undefined
+            }
             className={cn(
               "relative flex w-full select-none items-center justify-start gap-1 rounded-md p-1 pr-12 font-normal text-studio-fg transition-[background-color,box-shadow,color] duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-studio-accent/60",
               displayTitle ? "h-auto min-h-[32px] py-1" : "h-8",
@@ -301,7 +306,7 @@ export function TreeItem({
             }}
             onDoubleClick={(e) => {
               e.stopPropagation()
-              if (!isRouteDocument && !isDeleted && onRenameFile) {
+              if (canRename && !isDeleted && onRenameFile) {
                 onStartRename(node.path)
               }
             }}

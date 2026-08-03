@@ -16,6 +16,8 @@ export type RouteDocumentTreeItem =
       source: FileTreeNode
       label: string
       secondaryLabel: string
+      canDrag: false
+      canRename: false
     }
 
 export interface BuildRouteDocumentTreeOptions {
@@ -34,9 +36,7 @@ function humanizeRouteSegment(segment: string): string {
 }
 
 function isRouteDocumentLeaf(node: FileTreeNode): boolean {
-  return (
-    node.type === "file" && ROUTE_DOCUMENT_NAMES.has(node.name.toLowerCase()) && !(node as OverlayTreeNode).isDeleted
-  )
+  return node.type === "file" && ROUTE_DOCUMENT_NAMES.has(node.name) && !(node as OverlayTreeNode).isDeleted
 }
 
 function buildNode(node: FileTreeNode, options: BuildRouteDocumentTreeOptions): RouteDocumentTreeItem {
@@ -56,6 +56,8 @@ function buildNode(node: FileTreeNode, options: BuildRouteDocumentTreeOptions): 
       source,
       label: options.titleMap?.[source.path] || humanizeRouteSegment(segment),
       secondaryLabel: segment,
+      canDrag: false,
+      canRename: false,
     }
   }
 

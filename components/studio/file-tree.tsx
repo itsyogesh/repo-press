@@ -105,15 +105,24 @@ function collectTreePaths(nodes: FileTreeNode[], result = new Set<string>()): Se
 function filterRouteDocumentTree(
   items: RouteDocumentTreeItem[],
   visiblePaths: ReadonlySet<string>,
+  query: string,
 ): RouteDocumentTreeItem[] {
   const result: RouteDocumentTreeItem[] = []
+  const lowerQuery = query.trim().toLowerCase()
   for (const item of items) {
     if (item.kind === "route-document") {
-      if (visiblePaths.has(item.routePath) || visiblePaths.has(item.source.path)) result.push(item)
+      if (
+        visiblePaths.has(item.routePath) ||
+        visiblePaths.has(item.source.path) ||
+        item.label.toLowerCase().includes(lowerQuery) ||
+        item.secondaryLabel.toLowerCase().includes(lowerQuery)
+      )
+        result.push(item)
       continue
     }
-    if (!visiblePaths.has(item.source.path)) continue
-    result.push(item.children ? { ...item, children: filterRouteDocumentTree(item.children, visiblePaths) } : item)
+    const children = item.children ? filterRouteDocumentTree(item.children, visiblePaths, query) : undefined
+    if (!visiblePaths.has(item.source.path) && (!children || children.length === 0)) continue
+    result.push(children ? { ...item, children } : item)
   }
   return result
 }
@@ -152,7 +161,7 @@ export function FileTree({
   )
   const displayTree = React.useMemo(() => {
     if (!searchQuery) return routeDocumentTree
-    return filterRouteDocumentTree(routeDocumentTree, collectTreePaths(filteredTree))
+    return filterRouteDocumentTree(routeDocumentTree, collectTreePaths(filteredTree), searchQuery)
   }, [filteredTree, routeDocumentTree, searchQuery])
   const searchActive = searchQuery.trim().length > 0
 
@@ -314,7 +323,7 @@ export function FileTree({
         const focused = getFocusedItem()
         if (
           !focused ||
-          focused.item.item.kind === "route-document" ||
+          (focused.item.item.kind === "route-document" && !focused.item.item.canRename) ||
           focused.item.item.source.type !== "file" ||
           !onRenameFile
         )

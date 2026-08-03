@@ -31,6 +31,7 @@ describe("FileTree route document rows", () => {
   it("renders one accessible article row and selects the real leaf by click and keyboard", () => {
     const { tree, source } = routeTree()
     const onSelect = vi.fn()
+    const onMoveFile = vi.fn()
 
     render(
       <FileTree
@@ -38,13 +39,22 @@ describe("FileTree route document rows", () => {
         detectedFramework="next-mdx"
         titleMap={{ [source.path]: "A Better Beginning" }}
         onSelect={onSelect}
+        onMoveFile={onMoveFile}
       />,
     )
 
     const row = screen.getByRole("button", { name: /A Better Beginning getting-started/i })
     expect(screen.getAllByRole("button")).toEqual([row])
     expect(screen.queryByText("page.mdx")).not.toBeInTheDocument()
+    expect(row).toHaveAttribute("title", "A Better Beginning")
     expect(row).not.toHaveAttribute("aria-expanded")
+    expect(row).not.toHaveAttribute("aria-roledescription", "draggable")
+    expect(row).not.toHaveAttribute("aria-describedby", "studio-file-tree-dnd")
+
+    fireEvent.pointerDown(row, { clientX: 10, clientY: 10 })
+    fireEvent.pointerMove(row, { clientX: 30, clientY: 30 })
+    fireEvent.pointerUp(row)
+    expect(onMoveFile).not.toHaveBeenCalled()
 
     fireEvent.click(row)
     fireEvent.keyDown(row, { key: "Enter" })
@@ -63,15 +73,17 @@ describe("FileTree route document rows", () => {
       <FileTree tree={tree} detectedFramework="next-mdx" onSelect={vi.fn()} dirtyPaths={new Set()} />,
     )
     expect(screen.getByText("NEW")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /Getting Started getting-started New/i })).toBeInTheDocument()
 
     delete source.isNew
     rerender(
       <FileTree tree={tree} detectedFramework="next-mdx" onSelect={vi.fn()} dirtyPaths={new Set([source.path])} />,
     )
     expect(screen.getByText("EDITED")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /Getting Started getting-started Edited/i })).toBeInTheDocument()
   })
 
-  it("deletes the real leaf and disables route-bundle rename gestures", () => {
+  it("deletes the real leaf and omits route-bundle rename interactions", async () => {
     const { tree, source } = routeTree()
     const onDeleteFile = vi.fn()
     const onRenameFile = vi.fn()
@@ -91,6 +103,10 @@ describe("FileTree route document rows", () => {
     fireEvent.doubleClick(row)
     expect(screen.queryByRole("textbox", { name: /rename/i })).not.toBeInTheDocument()
     expect(onRenameFile).not.toHaveBeenCalled()
+
+    fireEvent.contextMenu(row)
+    expect(await screen.findByRole("menuitem", { name: "Open" })).toBeInTheDocument()
+    expect(screen.queryByRole("menuitem", { name: /Rename/ })).not.toBeInTheDocument()
 
     fireEvent.keyDown(row, { key: "Delete" })
     expect(onDeleteFile).toHaveBeenCalledWith(source.path, source.sha)
@@ -136,5 +152,59 @@ describe("FileTree route document rows", () => {
 
     expect(screen.getByText("getting-started")).toBeInTheDocument()
     expect(screen.getByText("page.mdx")).toBeInTheDocument()
+  })
+
+  it("finds a compact route by its visible humanized fallback label", () => {
+    const { tree } = routeTree()
+
+    render(<FileTree tree={tree} detectedFramework="next-mdx" onSelect={vi.fn()} />)
+
+    fireEvent.change(screen.getByPlaceholderText("Search files..."), { target: { value: "Getting Started" } })
+
+    expect(screen.getByRole("button", { name: /Getting Started getting-started/i })).toBeInTheDocument()
+  })
+
+  it("keeps ordinary folders expandable and ordinary files draggable and renameable", async () => {
+    const onMoveFile = vi.fn()
+    const onRenameFile = vi.fn()
+    const tree: OverlayTreeNode[] = [
+      {
+        name: "guides",
+        path: "content/guides",
+        sha: "guides-sha",
+        type: "dir",
+        children: [
+          {
+            name: "notes.mdx",
+            path: "content/guides/notes.mdx",
+            sha: "notes-sha",
+            type: "file",
+          },
+        ],
+      },
+    ]
+
+    render(
+      <FileTree
+        tree={tree}
+        detectedFramework="next-mdx"
+        onSelect={vi.fn()}
+        onMoveFile={onMoveFile}
+        onRenameFile={onRenameFile}
+      />,
+    )
+
+    const folder = screen.getByRole("button", { name: "guides" })
+    expect(folder.querySelector(".lucide-chevron-down")).toBeInTheDocument()
+
+    const fileButton = document.querySelector<HTMLButtonElement>('button[title="notes.mdx"]')
+    expect(fileButton).not.toBeNull()
+    const draggable = fileButton?.closest('[aria-roledescription="draggable"]')
+    expect(draggable).toHaveAttribute("role", "button")
+    expect(draggable).toHaveAttribute("tabindex", "0")
+
+    fireEvent.contextMenu(fileButton!)
+    expect(await screen.findByRole("menuitem", { name: /Rename/ })).toBeInTheDocument()
+    expect(onMoveFile).not.toHaveBeenCalled()
   })
 })

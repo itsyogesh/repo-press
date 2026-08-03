@@ -46,6 +46,8 @@ describe("buildRouteDocumentTree", () => {
         source,
         label: "A Better Beginning",
         secondaryLabel: "getting-started",
+        canDrag: false,
+        canRename: false,
       },
     ])
     expect(result[0]?.source).toBe(source)
@@ -57,6 +59,19 @@ describe("buildRouteDocumentTree", () => {
     const route = dir("content/getting-started", [source])
 
     expect(buildRouteDocumentTree([route], { detectedFramework: "fumadocs" })).toEqual([
+      {
+        kind: "node",
+        source: route,
+        children: [{ kind: "node", source }],
+      },
+    ])
+  })
+
+  it.each(["PAGE.MDX", "Index.md"])("does not compact case-variant route leaf %s", (fileName) => {
+    const source = file(`content/getting-started/${fileName}`)
+    const route = dir("content/getting-started", [source])
+
+    expect(buildRouteDocumentTree([route], { detectedFramework: "next-mdx" })).toEqual([
       {
         kind: "node",
         source: route,
@@ -116,6 +131,8 @@ describe("buildRouteDocumentTree", () => {
         source,
         label: "Getting Started",
         secondaryLabel: "getting-started",
+        canDrag: false,
+        canRename: false,
       },
     ])
   })
