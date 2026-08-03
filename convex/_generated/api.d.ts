@@ -35,6 +35,7 @@ import type * as lib_publishCleanupAuthority from "../lib/publishCleanupAuthorit
 import type * as mediaAssets from "../mediaAssets.js";
 import type * as mediaGallery from "../mediaGallery.js";
 import type * as mediaOps from "../mediaOps.js";
+import type * as previewAssetBudgets from "../previewAssetBudgets.js";
 import type * as projects from "../projects.js";
 import type * as publishAttemptCleanups from "../publishAttemptCleanups.js";
 import type * as publishAttempts from "../publishAttempts.js";
@@ -77,6 +78,7 @@ declare const fullApi: ApiFromModules<{
   mediaAssets: typeof mediaAssets;
   mediaGallery: typeof mediaGallery;
   mediaOps: typeof mediaOps;
+  previewAssetBudgets: typeof previewAssetBudgets;
   projects: typeof projects;
   publishAttemptCleanups: typeof publishAttemptCleanups;
   publishAttempts: typeof publishAttempts;

@@ -92,6 +92,7 @@
     "remark-parse": "11.0.0",
     "remotion": "^4.0.447",
     "server-only": "^0.0.1",
+    "sharp": "0.34.5",
     "sonner": "latest",
     "tailwind-merge": "^2.5.5",
     "undici": "6.28.0",
