@@ -110,6 +110,12 @@ const CLASS_TOKEN_PATTERN = /^[A-Za-z0-9_:/.[\]%-]+$/
 export type CompatibleRenderNode =
   | Readonly<{ kind: "text"; value: string }>
   | Readonly<{
+      kind: "action"
+      label: string
+      destination?: string
+      tone: "primary" | "secondary"
+    }>
+  | Readonly<{
       kind: "image"
       source: string
       alt: string
@@ -164,6 +170,35 @@ function containsControlCharacter(value: string): boolean {
 }
 
 export { sanitizeCompatibleImageSource }
+
+export function sanitizeCompatibleActionDestination(input: unknown): string | null {
+  if (typeof input !== "string" || input.length === 0 || utf8BytesWithin(input, 2_048) === null) return null
+  if (input.trim() !== input || /[\s\\]/u.test(input) || containsControlCharacter(input)) return null
+  if (/^https:\/\//iu.test(input)) return sanitizeCompatibleImageSource(input)
+
+  let current = input
+  for (let round = 0; round <= 3; round += 1) {
+    const path = current.split(/[?#]/u, 1)[0] ?? ""
+    if (
+      /^\/\//u.test(current) ||
+      /^[A-Za-z][A-Za-z0-9+.-]*:/u.test(current) ||
+      /[\\\s]/u.test(current) ||
+      containsControlCharacter(current) ||
+      /(?:^|\/)\.{1,2}(?:\/|$)/u.test(path)
+    )
+      return null
+    let decoded: string
+    try {
+      decoded = decodeURIComponent(current)
+    } catch {
+      return null
+    }
+    if (decoded === current) return input
+    if (round === 3) return null
+    current = decoded
+  }
+  return null
+}
 
 function sanitizeImageText(input: unknown, fallback: string): string {
   return typeof input === "string" &&
@@ -295,6 +330,20 @@ export function sanitizeCompatibleRenderTreeWithDiagnostics(
       budget.textBytes += bytes
       return [{ kind: "text", value: text }]
     }
+    if (kind === "action") {
+      const rawLabel = ownData(value, "label")
+      const rawTone = ownData(value, "tone")
+      const label = sanitizeImageText(rawLabel, "Preview action")
+      const remaining = COMPATIBLE_RENDER_MAX_TEXT_BYTES - budget.textBytes
+      const labelBytes = utf8BytesWithin(label, remaining)
+      if (labelBytes === null) throw new RangeError("Compatible render text exceeds its budget")
+      budget.textBytes += labelBytes
+      const tone = rawTone === "secondary" ? "secondary" : "primary"
+      const destination = sanitizeCompatibleActionDestination(
+        Object.hasOwn(value, "destination") ? ownData(value, "destination") : undefined,
+      )
+      return [{ kind: "action", label, ...(destination ? { destination } : {}), tone }]
+    }
     if (kind === "image") {
       const alt = sanitizeImageText(ownData(value, "alt"), "Image preview")
       const label = sanitizeImageText(ownData(value, "label"), alt)
@@ -356,8 +405,23 @@ function renderNode(
   assetUrls: ReadonlyMap<string, string>,
   assetFailures: ReadonlyMap<string, string>,
   onAssetFailure?: (source: string, assetUrl: string, reason: CompatibleAssetFailureReason) => void,
+  onAction?: (action: Extract<CompatibleRenderNode, { kind: "action" }>) => void,
 ): React.ReactNode {
   if (node.kind === "text") return node.value
+  if (node.kind === "action") {
+    return (
+      <button
+        key={key}
+        type="button"
+        aria-label={node.label}
+        className={`repopress-preview-action repopress-preview-action--${node.tone}`}
+        onClick={() => onAction?.(node)}
+      >
+        {node.label}
+        <small>Preview action</small>
+      </button>
+    )
+  }
   if (node.kind === "image") {
     const mappedAssetUrl = assetUrls.get(node.source)
     const failure = assetFailures.get(node.source)
@@ -400,7 +464,9 @@ function renderNode(
   return React.createElement(
     node.tag,
     { ...node.props, key },
-    node.children.map((child, index) => renderNode(child, `${key}.${index}`, assetUrls, assetFailures, onAssetFailure)),
+    node.children.map((child, index) =>
+      renderNode(child, `${key}.${index}`, assetUrls, assetFailures, onAssetFailure, onAction),
+    ),
   )
 }
 
@@ -415,9 +481,30 @@ export function CompatibleRenderTreeView({
   assetFailures?: ReadonlyMap<string, string>
   onAssetFailure?: (source: string, assetUrl: string, reason: CompatibleAssetFailureReason) => void
 }) {
+  const [actionSelection, setActionSelection] = React.useState<{
+    tree: CompatibleRenderTree
+    action: Extract<CompatibleRenderNode, { kind: "action" }>
+  } | null>(null)
+  const selectedAction = actionSelection?.tree === tree ? actionSelection.action : null
+  const selectAction = React.useCallback(
+    (action: Extract<CompatibleRenderNode, { kind: "action" }>) => setActionSelection({ tree, action }),
+    [tree],
+  )
   return (
     <div data-compatible-preview>
-      {tree.map((node, index) => renderNode(node, String(index), assetUrls, assetFailures, onAssetFailure))}
+      {tree.map((node, index) =>
+        renderNode(node, String(index), assetUrls, assetFailures, onAssetFailure, selectAction),
+      )}
+      {selectedAction ? (
+        <output className="repopress-preview-action-explanation">
+          <strong>Published action</strong>
+          <span>
+            {selectedAction.destination
+              ? `Would open ${selectedAction.destination}`
+              : "No destination is configured. Update the component's action prop."}
+          </span>
+        </output>
+      ) : null}
     </div>
   )
 }

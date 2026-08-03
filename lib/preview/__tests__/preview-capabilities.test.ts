@@ -98,9 +98,12 @@ describe("portable preview capability contract", () => {
     expect(rule("[data-compatible-preview] .repopress-preview-document > :where(* + *)")).toContain(
       "margin-block-start:",
     )
-    expect(rule("[data-compatible-preview] .repopress-preview-document :where(h1, h2, h3, h4, h5, h6)")).toMatch(
-      /font-weight: 600;/,
-    )
+    const documentRule = rule("[data-compatible-preview] .repopress-preview-document")
+    expect(documentRule).toContain("--typeset-flow:")
+    expect(documentRule).toContain("--typeset-leading:")
+    const headingRule = rule("[data-compatible-preview] .repopress-preview-document :where(h1, h2, h3, h4, h5, h6)")
+    expect(headingRule).toMatch(/font-weight: 600;/)
+    expect(headingRule).not.toMatch(/margin-block:\s*0/)
     expect(rule("[data-compatible-preview] .repopress-preview-document :where(p, li)")).toContain("line-height:")
     expect(rule("[data-compatible-preview] .repopress-preview-document :where(ul, ol)")).toContain(
       "padding-inline-start:",

@@ -7,6 +7,7 @@ import { buildAuthoringCatalog } from "@/lib/studio/authoring-catalog"
 import { ComponentEditProvider } from "../component-edit-context"
 import { GenericJsxEditor } from "../jsx-component-descriptors"
 import { createStudioAdapterState, StudioAdapterProvider } from "../studio-adapter-context"
+import { StudioProvider } from "../studio-context"
 
 function officialCatalog() {
   const registry = JSON.parse(fs.readFileSync(path.join(process.cwd(), "registry.json"), "utf8")) as {
@@ -45,6 +46,156 @@ function renderEditor(source: string, occurrence = 0, mdastSource = source) {
 afterEach(cleanup)
 
 describe("position-bound Studio component editing", () => {
+  it("renders a safe visual card from declared literal props without evaluating expressions", () => {
+    const source =
+      '<StoryCard cover="https://cdn.example.test/story.png" title="North Pole news" pages={3} featured={true} action={globalThis.__repopressExecuted = true} />'
+    const catalog = buildAuthoringCatalog({
+      metadata: {
+        StoryCard: {
+          displayName: "Story card",
+          description: "A product-defined story presentation.",
+          props: [
+            { name: "cover", type: "image", label: "Cover" },
+            { name: "title", type: "string", label: "Title" },
+            { name: "subtitle", type: "string", label: "Subtitle" },
+            { name: "pages", type: "number", label: "Pages" },
+            { name: "featured", type: "boolean", label: "Featured" },
+            { name: "action", type: "expression", label: "Action" },
+          ],
+          hasChildren: false,
+        },
+      },
+    })
+    const adapter = createStudioAdapterState({ authoringCatalog: catalog, nativeComponentNames: [] })
+    const expressionExecuted = vi.fn()
+    Object.defineProperty(globalThis, "__repopressExecuted", {
+      configurable: true,
+      set: expressionExecuted,
+    })
+
+    try {
+      render(
+        <StudioAdapterProvider value={adapter}>
+          <ComponentEditProvider
+            authoringCatalog={catalog}
+            identitySource={source}
+            getSource={() => source}
+            applySource={vi.fn()}
+          >
+            <GenericJsxEditor
+              mdastNode={
+                {
+                  type: "mdxJsxFlowElement",
+                  name: "StoryCard",
+                  position: { start: { offset: 0 } },
+                  attributes: [
+                    { type: "mdxJsxAttribute", name: "cover", value: "https://cdn.example.test/story.png" },
+                    { type: "mdxJsxAttribute", name: "title", value: "North Pole news" },
+                    {
+                      type: "mdxJsxAttribute",
+                      name: "subtitle",
+                      value: { type: "mdxJsxAttributeValueExpression", value: "story.subtitle" },
+                    },
+                    {
+                      type: "mdxJsxAttribute",
+                      name: "pages",
+                      value: { type: "mdxJsxAttributeValueExpression", value: "3" },
+                    },
+                    {
+                      type: "mdxJsxAttribute",
+                      name: "featured",
+                      value: { type: "mdxJsxAttributeValueExpression", value: "true" },
+                    },
+                    {
+                      type: "mdxJsxAttribute",
+                      name: "action",
+                      value: {
+                        type: "mdxJsxAttributeValueExpression",
+                        value: "globalThis.__repopressExecuted = true",
+                      },
+                    },
+                  ],
+                } as never
+              }
+              descriptor={{ name: "StoryCard" } as never}
+            />
+          </ComponentEditProvider>
+        </StudioAdapterProvider>,
+      )
+
+      expect(screen.getByText("Story card")).toBeInTheDocument()
+      expect(screen.queryByRole("img", { name: "Story card preview" })).not.toBeInTheDocument()
+      expect(screen.getByText("Image preview unavailable")).toBeInTheDocument()
+      const card = screen.getByRole("region", { name: "Story card component" })
+      expect(card).toHaveTextContent(/Title:\s*North Pole news/u)
+      expect(card).toHaveTextContent(/Subtitle:\s*Value unavailable in visual editor/u)
+      expect(card).toHaveTextContent(/Pages:\s*3/u)
+      expect(card).toHaveTextContent(/Featured:\s*Yes/u)
+      expect(screen.queryByText(/__repopressExecuted/u)).not.toBeInTheDocument()
+      expect(expressionExecuted).not.toHaveBeenCalled()
+      expect(screen.getByRole("button", { name: "Edit Story card" })).toBeInTheDocument()
+    } finally {
+      Reflect.deleteProperty(globalThis, "__repopressExecuted")
+    }
+  })
+
+  it("loads repository images only through the RepoPress media resolver", () => {
+    const source = '<StoryCard cover="images/story.png" />'
+    const catalog = buildAuthoringCatalog({
+      metadata: {
+        StoryCard: {
+          displayName: "Story card",
+          props: [{ name: "cover", type: "image", label: "Cover" }],
+          hasChildren: false,
+        },
+      },
+    })
+    const adapter = createStudioAdapterState({ authoringCatalog: catalog, nativeComponentNames: [] })
+
+    render(
+      <StudioProvider
+        value={{
+          owner: "repo-owner",
+          repo: "docs",
+          branch: "main",
+          baseCommitSha: "a".repeat(40),
+          projectId: "project-1",
+          userId: "user-1",
+          selectedFilePath: "content/posts/story.mdx",
+          contentRoot: "content",
+          tree: [],
+          role: "owner",
+        }}
+      >
+        <StudioAdapterProvider value={adapter}>
+          <ComponentEditProvider
+            authoringCatalog={catalog}
+            identitySource={source}
+            getSource={() => source}
+            applySource={vi.fn()}
+          >
+            <GenericJsxEditor
+              mdastNode={
+                {
+                  type: "mdxJsxFlowElement",
+                  name: "StoryCard",
+                  position: { start: { offset: 0 } },
+                  attributes: [{ type: "mdxJsxAttribute", name: "cover", value: "images/story.png" }],
+                } as never
+              }
+              descriptor={{ name: "StoryCard" } as never}
+            />
+          </ComponentEditProvider>
+        </StudioAdapterProvider>
+      </StudioProvider>,
+    )
+
+    const image = screen.getByRole("img", { name: "Story card preview" })
+    expect(image.getAttribute("src")).toMatch(/^\/api\/media\/resolve\?/u)
+    expect(image.getAttribute("src")).toContain("projectId=project-1")
+    expect(image.getAttribute("src")).not.toContain("cdn.example")
+  })
+
   it("keeps a uniquely attributed component editable when MDXEditor drops source positions", async () => {
     const source = '<Callout title="First" variant="accent" />\n\n<Callout title="Second" variant="accent" />'
     const catalog = officialCatalog()

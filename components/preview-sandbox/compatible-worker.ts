@@ -276,6 +276,7 @@ function compatibleWorkerMain() {
   const Fragment = Symbol("RepoPress.Fragment")
   const ownedElements = new WeakSet<object>()
   const previewImageReferences = new WeakSet<object>()
+  const previewActionReferences = new WeakSet<object>()
   const previewDocumentSelections = new WeakSet<object>()
   function element(type: any, props: any, childrenOverride?: any[]) {
     const propsValue = props && typeof props === "object" ? objectAssign(objectCreate(null), props) : objectCreate(null)
@@ -414,8 +415,8 @@ function compatibleWorkerMain() {
     if (normalized.length === 0 || !utf8Within(normalized, 512)) return null
     return containsControlOrBackslash(normalized, false) ? null : normalized
   }
-  function utf8Within(value: string, limit: number) {
-    if (value.length > limit) return false
+  function utf8LengthWithin(value: string, limit: number) {
+    if (value.length > limit) return null
     let bytes = 0
     for (let index = 0; index < value.length; index += 1) {
       const unit = stringCharCodeAt(value, index)
@@ -428,9 +429,12 @@ function compatibleWorkerMain() {
           index += 1
         } else bytes += 3
       } else bytes += 3
-      if (bytes > limit) return false
+      if (bytes > limit) return null
     }
-    return true
+    return bytes
+  }
+  function utf8Within(value: string, limit: number) {
+    return utf8LengthWithin(value, limit) !== null
   }
   function acceptedImageSource(value: any) {
     if (typeof value !== "string" || value.length === 0 || !utf8Within(value, 2_048)) return null
@@ -444,6 +448,40 @@ function compatibleWorkerMain() {
       if (absolute ? !isValidHttpsImageSource(form) : !isValidRelativeImageSource(form)) return null
     }
     return value
+  }
+  function acceptedActionDestination(value: any) {
+    if (typeof value !== "string" || value.length === 0 || !utf8Within(value, 2_048)) return null
+    if (stringTrim(value) !== value || regexpTest(/[\s\\]/, value) || containsControlOrBackslash(value, true))
+      return null
+    if (regexpTest(/^https:\/\//i, value)) return acceptedImageSource(value)
+    let current = value
+    for (let round = 0; round <= 3; round += 1) {
+      const query = stringIndexOf(current, "?")
+      const hash = stringIndexOf(current, "#")
+      let pathEnd = current.length
+      if (query >= 0 && query < pathEnd) pathEnd = query
+      if (hash >= 0 && hash < pathEnd) pathEnd = hash
+      const path = stringSlice(current, 0, pathEnd)
+      if (
+        regexpTest(/^\/\//, current) ||
+        regexpTest(/^[A-Za-z][A-Za-z0-9+.-]*:/, current) ||
+        regexpTest(/[\\\s]/, current) ||
+        containsControlOrBackslash(current, true) ||
+        regexpTest(/(?:^|\/)\.{1,2}(?:\/|$)/, path)
+      ) {
+        return null
+      }
+      let decoded: string
+      try {
+        decoded = decodeUriComponent(current)
+      } catch {
+        return null
+      }
+      if (decoded === current) return value
+      if (round === 3) return null
+      current = decoded
+    }
+    return null
   }
   function decodeImageSourceForms(value: string) {
     const forms = [value]
@@ -638,12 +676,13 @@ function compatibleWorkerMain() {
   function PreviewAction(props: any) {
     const tone = option(PREVIEW_OPTIONS.actionTones, props?.tone, "primary")
     const label = boundedLabel(props?.label, "Preview action")
-    return jsx("span", {
-      className: `repopress-preview-action repopress-preview-action--${tone}`,
-      role: "note",
-      "aria-label": `Inert preview action: ${label}`,
-      children: [label, jsx("small", { children: "Preview only" })],
-    })
+    const destination = acceptedActionDestination(props?.href)
+    const reference = objectCreate(null)
+    reference.label = label
+    reference.tone = tone
+    if (destination) reference.destination = destination
+    weakSetAdd(previewActionReferences, reference)
+    return objectFreeze(reference)
   }
   function PreviewImage(props: any) {
     const aspect = option(PREVIEW_OPTIONS.imageAspects, props?.aspect, "wide")
@@ -838,7 +877,7 @@ function compatibleWorkerMain() {
 
   function presentDocument(children: any, presentation: any) {
     return jsx("article", {
-      className: `repopress-preview-document repopress-preview-document--${presentation.layout} repopress-preview-document--${presentation.tone}`,
+      className: `typeset typeset-preview repopress-preview-document repopress-preview-document--${presentation.layout} repopress-preview-document--${presentation.tone}`,
       children,
     })
   }
@@ -1060,7 +1099,7 @@ function compatibleWorkerMain() {
   }
 
   function renderTree(value: any) {
-    const budget = { nodes: 0, text: 0 }
+    const budget = { nodes: 0, textBytes: 0 }
     const visit = (node: any, depth: number): any[] => {
       if (depth > 32) throw new SafeError("Compatible render depth exceeded")
       if (node === null || node === undefined || typeof node === "boolean") return []
@@ -1075,8 +1114,10 @@ function compatibleWorkerMain() {
       if (typeof node === "string" || typeof node === "number" || typeof node === "bigint") {
         const text = stringFrom(node)
         budget.nodes += 1
-        budget.text += text.length
-        if (budget.nodes > 2_048 || budget.text > 192 * 1_024) {
+        const textBytes = utf8LengthWithin(text, 192 * 1_024 - budget.textBytes)
+        if (textBytes === null) throw new SafeError("Compatible render budget exceeded")
+        budget.textBytes += textBytes
+        if (budget.nodes > 2_048) {
           throw new SafeError("Compatible render budget exceeded")
         }
         return [{ kind: "text", value: text }]
@@ -1090,6 +1131,17 @@ function compatibleWorkerMain() {
         budget.nodes += 1
         if (budget.nodes > 2_048) throw new SafeError("Compatible render node budget exceeded")
         return [{ kind: "image", source, alt, label, aspect }]
+      }
+      if (node && typeof node === "object" && weakSetHas(previewActionReferences, node)) {
+        const label = boundedLabel(node.label, "Preview action")
+        const tone = option(PREVIEW_OPTIONS.actionTones, node.tone, "primary")
+        const destination = acceptedActionDestination(node.destination)
+        budget.nodes += 1
+        const labelBytes = utf8LengthWithin(label, 192 * 1_024 - budget.textBytes)
+        if (labelBytes === null) throw new SafeError("Compatible render budget exceeded")
+        budget.textBytes += labelBytes
+        if (budget.nodes > 2_048) throw new SafeError("Compatible render node budget exceeded")
+        return [{ kind: "action", label, ...(destination ? { destination } : {}), tone }]
       }
       if (!node || typeof node !== "object" || !weakSetHas(ownedElements, node)) {
         throw new SafeError("Unsupported compatible render value")

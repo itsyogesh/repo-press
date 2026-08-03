@@ -10,6 +10,7 @@ interface StudioContextValue {
   baseCommitSha: string
   projectId?: string
   projectAccessToken?: string
+  previewEntry?: string
   userId?: string
   selectedFilePath?: string
   contentRoot: string
@@ -24,9 +25,13 @@ export function StudioProvider({ children, value }: { children: React.ReactNode;
 }
 
 export function useStudio() {
-  const context = React.useContext(StudioContext)
+  const context = useOptionalStudio()
   if (!context) {
     throw new Error("useStudio must be used within a StudioProvider")
   }
   return context
+}
+
+export function useOptionalStudio() {
+  return React.useContext(StudioContext)
 }

@@ -543,15 +543,18 @@
   }
 
   [data-compatible-preview] .repopress-preview-document {
+    --typeset-font-body: var(--font-sans);
+    --typeset-font-heading: var(--font-sans);
+    --typeset-font-mono: var(--font-mono);
+    --typeset-size: 0.9375rem;
+    --typeset-leading: 1.75;
+    --typeset-flow: 1.35em;
     width: 100%;
     min-height: 100vh;
     margin-inline: auto;
     padding: clamp(1.5rem, 5vw, 4rem);
     color: var(--foreground);
     background: var(--background);
-    font-family: var(--font-sans);
-    font-size: 1rem;
-    line-height: 1.75;
     overflow-wrap: anywhere;
   }
 
@@ -568,11 +571,10 @@
   }
 
   [data-compatible-preview] .repopress-preview-document > :where(* + *) {
-    margin-block-start: 1.5rem;
+    margin-block-start: var(--typeset-flow);
   }
 
   [data-compatible-preview] .repopress-preview-document :where(h1, h2, h3, h4, h5, h6) {
-    margin-block: 0;
     color: var(--foreground);
     font-family: var(--font-sans);
     font-weight: 600;
@@ -600,12 +602,10 @@
   }
 
   [data-compatible-preview] .repopress-preview-document :where(p, li) {
-    margin-block: 0;
-    line-height: 1.75;
+    line-height: var(--typeset-leading);
   }
 
   [data-compatible-preview] .repopress-preview-document :where(ul, ol) {
-    margin-block: 0;
     padding-inline-start: 1.5rem;
   }
 
@@ -813,6 +813,9 @@
     padding: 0.5rem 1rem;
     font-size: 0.8125rem;
     font-weight: 500;
+    font-family: inherit;
+    text-align: start;
+    cursor: pointer;
     overflow-wrap: anywhere;
     white-space: normal;
   }
@@ -832,6 +835,27 @@
     border-color: var(--border);
     background: var(--background);
     color: var(--foreground);
+  }
+
+  [data-compatible-preview] .repopress-preview-action:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  [data-compatible-preview] .repopress-preview-action-explanation {
+    position: sticky;
+    inset-block-end: 1rem;
+    display: grid;
+    gap: 0.25rem;
+    width: min(32rem, calc(100% - 2rem));
+    margin: 1rem auto 0;
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    background: var(--popover);
+    padding: 0.75rem 1rem;
+    color: var(--popover-foreground);
+    box-shadow: 0 0.5rem 2rem rgb(0 0 0 / 12%);
+    font-size: 0.75rem;
   }
 
   [data-compatible-preview] .repopress-preview-image {

@@ -28,6 +28,39 @@ function routeTree(overrides: Partial<OverlayTreeNode> = {}): { tree: OverlayTre
 afterEach(cleanup)
 
 describe("FileTree route document rows", () => {
+  it("creates at the content root without repeating route-document folders in a menu", () => {
+    const articleNames = ["getting-started", "winter-activities", "holiday-gift-guide"]
+    const tree: OverlayTreeNode[] = articleNames.map((name) => ({
+      name,
+      path: `content/${name}`,
+      sha: `${name}-dir-sha`,
+      type: "dir",
+      children: [
+        {
+          name: "page.mdx",
+          path: `content/${name}/page.mdx`,
+          sha: `${name}-leaf-sha`,
+          type: "file",
+        },
+      ],
+    }))
+    const onCreateFile = vi.fn()
+
+    render(<FileTree tree={tree} detectedFramework="next-mdx" onSelect={vi.fn()} onCreateFile={onCreateFile} />)
+
+    const createButton = screen.getByRole("button", { name: "New file" })
+    expect(screen.getAllByRole("button", { name: "New file" })).toHaveLength(1)
+
+    fireEvent.click(createButton)
+
+    expect(onCreateFile).toHaveBeenCalledOnce()
+    expect(onCreateFile).toHaveBeenCalledWith("")
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument()
+    for (const articleName of articleNames) {
+      expect(screen.queryByRole("menuitem", { name: new RegExp(articleName, "i") })).not.toBeInTheDocument()
+    }
+  })
+
   it("renders one accessible article row and selects the real leaf by click and keyboard", () => {
     const { tree, source } = routeTree()
     const onSelect = vi.fn()

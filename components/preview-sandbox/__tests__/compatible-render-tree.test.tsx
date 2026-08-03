@@ -1,11 +1,13 @@
-import { render, screen } from "@testing-library/react"
+import { fireEvent, render, screen } from "@testing-library/react"
 import { describe, expect, it } from "vitest"
 import {
   CompatibleRenderTreeView,
+  sanitizeCompatibleActionDestination,
   sanitizeCompatibleImageSource,
   sanitizeCompatibleRenderTree,
   sanitizeCompatibleRenderTreeWithDiagnostics,
 } from "../compatible-render-tree"
+import { ACTION_DESTINATION_CORPUS } from "./compatible-action-destination-corpus"
 
 const IMAGE_SOURCE_CORPUS = [
   { id: "relative", source: "images/cover.png", accepted: true },
@@ -47,6 +49,23 @@ const IMAGE_SOURCE_CORPUS = [
 ] as const
 
 describe("compatible inert render tree", () => {
+  it("charges inert action labels against the global UTF-8 text budget", () => {
+    const actions = Array.from({ length: 385 }, (_, index) => ({
+      kind: "action",
+      label: `${index}`.padEnd(512, "é"),
+      tone: "primary",
+    }))
+
+    expect(sanitizeCompatibleRenderTree(actions)).toBeNull()
+  })
+
+  it.each(ACTION_DESTINATION_CORPUS)("agrees with the bounded action destination corpus: $id", ({
+    destination,
+    accepted,
+  }) => {
+    expect(sanitizeCompatibleActionDestination(destination) !== null).toBe(accepted)
+  })
+
   it.each(IMAGE_SOURCE_CORPUS)("agrees with the bounded image source corpus: $id", ({ source, accepted }) => {
     expect(sanitizeCompatibleImageSource(source) !== null).toBe(accepted)
   })
@@ -167,6 +186,64 @@ describe("compatible inert render tree", () => {
     expect(screen.getByRole("img", { name: "Merry cover" })).toBeInTheDocument()
     expect(screen.getByRole("note")).toHaveTextContent("Open letter")
     expect(container.querySelector("a, button, img")).toBeNull()
+  })
+
+  it("renders only an approved action node and explains its published destination without navigating", () => {
+    const tree = sanitizeCompatibleRenderTree([
+      {
+        kind: "action",
+        label: "Open the letter writer",
+        destination: "/letters?template=classic",
+        tone: "primary",
+        href: "https://evil.test/not-authoritative",
+        onClick: "steal()",
+      },
+    ])
+
+    expect(tree).toEqual([
+      {
+        kind: "action",
+        label: "Open the letter writer",
+        destination: "/letters?template=classic",
+        tone: "primary",
+      },
+    ])
+
+    const { container } = render(<CompatibleRenderTreeView tree={tree ?? []} />)
+    const action = screen.getByRole("button", { name: "Open the letter writer" })
+    fireEvent.click(action)
+
+    expect(screen.getByRole("status")).toHaveTextContent("Published action")
+    expect(screen.getByRole("status")).toHaveTextContent("/letters?template=classic")
+    expect(container.querySelector("a, form")).toBeNull()
+    expect(container.innerHTML).not.toMatch(/evil\.test|onclick=/iu)
+  })
+
+  it("clears a published-action explanation when the preview tree changes", () => {
+    const initialTree = sanitizeCompatibleRenderTree([
+      { kind: "action", label: "Open writer", destination: "/letters/old", tone: "primary" },
+    ])
+    const nextTree = sanitizeCompatibleRenderTree([
+      { kind: "action", label: "Open writer", destination: "/letters/new", tone: "primary" },
+    ])
+    const view = render(<CompatibleRenderTreeView tree={initialTree ?? []} />)
+
+    fireEvent.click(view.getByRole("button", { name: "Open writer" }))
+    expect(view.container.querySelector("output")).toHaveTextContent("/letters/old")
+
+    view.rerender(<CompatibleRenderTreeView tree={nextTree ?? []} />)
+    expect(view.container.querySelector("output")).toBeNull()
+  })
+
+  it.each([
+    "javascript:alert(1)",
+    "data:text/html,boom",
+    "//evil.test/path",
+    "../secret",
+    " /space",
+  ])("omits a rejected action destination while retaining the explanatory action: %s", (destination) => {
+    const tree = sanitizeCompatibleRenderTree([{ kind: "action", label: "Continue", destination, tone: "secondary" }])
+    expect(tree).toEqual([{ kind: "action", label: "Continue", tone: "secondary" }])
   })
 
   it("retains only bounded inert image references and renders a transport-free placeholder", () => {

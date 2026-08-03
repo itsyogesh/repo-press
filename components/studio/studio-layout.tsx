@@ -1974,7 +1974,7 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
   // 2. Queries hook - pass the local tree state so overlayTree uses the async-fetched
   // tree rather than the outer StudioProvider's empty initialTree.
   const studioQueries = useStudioQueries(selectedFile?.path, { tree })
-  const { statusSyncLane, userId, components: componentSchema } = studioQueries
+  const { statusSyncLane, userId, components: componentSchema, previewEntry } = studioQueries
 
   // Verify the active publish lane's PR is still open on GitHub.
   // Corrects state drift when the closed/merged webhook was never delivered.
@@ -2050,6 +2050,7 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
       baseCommitSha,
       projectId,
       projectAccessToken,
+      previewEntry,
       userId,
       selectedFilePath: selectedFile?.path,
       contentRoot,
@@ -2063,6 +2064,7 @@ function StudioProviderWrapper(props: StudioLayoutProps) {
       baseCommitSha,
       projectId,
       projectAccessToken,
+      previewEntry,
       userId,
       selectedFile?.path,
       contentRoot,
