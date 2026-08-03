@@ -1,6 +1,6 @@
 "use client"
 
-import { ConvexBetterAuthProvider } from "@convex-dev/better-auth/react"
+import { ConvexBetterAuthProvider, type AuthClient as ConvexProviderAuthClient } from "@convex-dev/better-auth/react"
 import { ConvexReactClient } from "convex/react"
 import { type ReactNode, useEffect, useRef } from "react"
 import { authClient } from "@/lib/auth-client"
@@ -37,8 +37,14 @@ export function DashboardProviders({ children, initialToken }: { children: React
     return <>{children}</>
   }
 
+  // @convex-dev/better-auth@0.12.5's provider type is incompatible with the
+  // named ReactAuthClient type introduced in better-auth >=1.6.22. The runtime
+  // contract is unchanged and this client follows the package's documented
+  // convexClient() setup. Remove this bridge when github.com/get-convex/better-auth/issues/420 lands.
+  const providerAuthClient = authClient as unknown as ConvexProviderAuthClient
+
   return (
-    <ConvexBetterAuthProvider client={convexRef.current} authClient={authClient} initialToken={initialToken}>
+    <ConvexBetterAuthProvider client={convexRef.current} authClient={providerAuthClient} initialToken={initialToken}>
       {children}
     </ConvexBetterAuthProvider>
   )

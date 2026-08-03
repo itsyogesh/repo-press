@@ -21,6 +21,10 @@ Keep Vercel's access to files outside the Root Directory enabled. npm must be ab
 
 The static docs project requires no Convex, GitHub, Better Auth, preview-signing, or capability secrets. Do not copy web-project variables into it. The only canonical-origin configuration lives in `blume.config.ts` and contains no secret.
 
+## Dependency audit exception
+
+Blume 1.3.1 currently brings `@astrojs/vercel` into its build toolchain even when the site uses Astro's static output. That adapter pins `@vercel/routing-utils`, which in turn pins a vulnerable `path-to-regexp` 6.1.0. RepoPress does not deploy the adapter or its route compiler: the docs build emits static files from `dist`, and Vercel serves those files directly. Treat the remaining `npm audit --omit=dev` finding as a tracked, build-time-only upstream exception until Blume updates its dependency tree. Do not use `npm audit fix --force`, and re-evaluate the exception on every Blume upgrade.
+
 Both existing Next.js Vercel projects change their Root Directory to `apps/web` and switch their install/build commands from Bun to npm:
 
 - `repo-press` (`repopress.org`);
