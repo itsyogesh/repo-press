@@ -65,6 +65,7 @@ import { StudioProvider, useStudio } from "./studio-context"
 import { StudioFooter } from "./studio-footer"
 import { StudioHeader } from "./studio-header"
 import { resolveStudioPreviewPanelMode } from "./studio-preview-panel-mode"
+import { handleStudioSaveShortcut } from "./studio-save-shortcut"
 import { useViewMode, ViewModeProvider } from "./view-mode-context"
 
 export interface StudioLayoutProps {
@@ -481,6 +482,7 @@ function StudioLayoutInner({
     frontmatter,
     sha,
     isFileLoading,
+    sourceAuthority,
     isSourceEditable,
     sourceDiagnostic,
     navigateToFile,
@@ -492,6 +494,7 @@ function StudioLayoutInner({
     setFrontmatterKey,
     hydrateFromDocument,
   } = studioFile
+  const canEditSource = sourceAuthority === "editable"
 
   // Destructure studioQueries
   const {
@@ -595,9 +598,9 @@ function StudioLayoutInner({
     sha,
   })
   const saveDraft = React.useCallback(() => {
-    if (!isSourceEditable) return
+    if (!canEditSource) return
     return saveDraftUnsafe()
-  }, [isSourceEditable, saveDraftUnsafe])
+  }, [canEditSource, saveDraftUnsafe])
 
   // 4. Publish logic
   const {
@@ -614,7 +617,7 @@ function StudioLayoutInner({
     projectAccessToken,
     documentUpdatedAt: document?.updatedAt,
     ensureDocumentRecord,
-    selectedFile: isSourceEditable ? selectedFile : null,
+    selectedFile: canEditSource ? selectedFile : null,
     content,
     frontmatter,
     defaultPublishMode: publishLaneViewModel.defaultMode,
@@ -1234,7 +1237,7 @@ function StudioLayoutInner({
 
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "j") {
         e.preventDefault()
-        if (!isSourceEditable) return
+        if (!canEditSource) return
         setInsertComponentModalOpen(true)
         return
       }
@@ -1264,11 +1267,7 @@ function StudioLayoutInner({
         return
       }
 
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
-        e.preventDefault()
-        saveDraft()
-        return
-      }
+      if (handleStudioSaveShortcut(e, canEditSource, saveDraft)) return
 
       if (isEditableTarget) return
 
@@ -1292,7 +1291,7 @@ function StudioLayoutInner({
     saveDraft,
     commandPaletteOpen,
     captureScrollPositions,
-    isSourceEditable,
+    canEditSource,
   ])
 
   const isSidebarCollapsed = !isMobile && sidebarState === "collapsed"
@@ -1380,7 +1379,7 @@ function StudioLayoutInner({
   return (
     <InsertComponentModalProvider
       open={insertComponentModalOpen}
-      canInsert={isSourceEditable}
+      canInsert={canEditSource}
       onOpenChange={setInsertComponentModalOpen}
     >
       <div
@@ -1399,7 +1398,7 @@ function StudioLayoutInner({
             currentStatus={currentStatus}
             onSave={saveDraft}
             isSaving={isSaving || isFileLoading}
-            canSave={isSourceEditable}
+            canSave={canEditSource}
           />
         </div>
 
@@ -1621,7 +1620,7 @@ function StudioLayoutInner({
                         filePath={selectedFile.path}
                         contentRoot={contentRoot}
                         tree={overlayTree}
-                        readOnly={!isSourceEditable}
+                        readOnly={!canEditSource}
                         sourceDiagnostic={sourceDiagnostic}
                       />
                     )
@@ -1873,8 +1872,8 @@ function StudioLayoutInner({
           recentFiles={recentFiles}
           onNavigateToFile={navigateToFile}
           onSaveDraft={saveDraft}
-          canSaveDraft={isSourceEditable}
-          canInsertComponent={isSourceEditable}
+          canSaveDraft={canEditSource}
+          canInsertComponent={canEditSource}
         />
 
         <AlertDialog

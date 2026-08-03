@@ -18,7 +18,7 @@ interface CachedFileSnapshot {
   frontmatter: Record<string, unknown>
   sha: string | null
   isDirty: boolean
-  isSourceEditable: boolean
+  sourceAuthority: SourceAuthority
   sourceDiagnostic?: ParsedContentFile["diagnostic"]
 }
 
@@ -44,6 +44,8 @@ interface PendingDocumentHydration {
   frontmatter: Record<string, unknown> | null
 }
 
+export type SourceAuthority = "unknown" | "editable" | "read-only"
+
 function parseFileSnapshot(rawContent: string, sha: string | null, filePath: string): CachedFileSnapshot {
   const parsed = parseContentFile(rawContent, filePath)
   return {
@@ -51,7 +53,7 @@ function parseFileSnapshot(rawContent: string, sha: string | null, filePath: str
     frontmatter: normalizeFrontmatterDates(parsed.metadata as Record<string, unknown>),
     sha,
     isDirty: false,
-    isSourceEditable: parsed.editable,
+    sourceAuthority: parsed.editable ? "editable" : "read-only",
     sourceDiagnostic: parsed.diagnostic,
   }
 }
@@ -81,7 +83,8 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
   const [sha, setSha] = React.useState<string | null>(null)
   const [isDirty, setIsDirty] = React.useState(false)
   const [isFileLoading, setIsFileLoading] = React.useState(false)
-  const [isSourceEditable, setIsSourceEditable] = React.useState(true)
+  const [sourceAuthority, setSourceAuthority] = React.useState<SourceAuthority>("unknown")
+  const isSourceEditable = sourceAuthority === "editable"
   const [sourceDiagnostic, setSourceDiagnostic] = React.useState<ParsedContentFile["diagnostic"]>()
 
   const fileCacheRef = React.useRef<Map<string, CachedFileSnapshot>>(new Map())
@@ -146,7 +149,7 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
       setFrontmatter(snapshot.frontmatter)
       setSha(snapshot.sha)
       setIsDirty(snapshot.isDirty)
-      setIsSourceEditable(snapshot.isSourceEditable)
+      setSourceAuthority(snapshot.sourceAuthority)
       setSourceDiagnostic(snapshot.sourceDiagnostic)
     },
     [resolveFileNode],
@@ -161,7 +164,7 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
       setSha(null)
       setIsDirty(false)
       setIsFileLoading(false)
-      setIsSourceEditable(true)
+      setSourceAuthority("unknown")
       setSourceDiagnostic(undefined)
       try {
         localStorage.removeItem(selectedFileStorageKey)
@@ -186,7 +189,7 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
           : {},
         sha: snapshot.sha ?? null,
         isDirty: snapshot.isDirty ?? false,
-        isSourceEditable: snapshot.isSourceEditable ?? true,
+        sourceAuthority: snapshot.isSourceEditable === false ? "read-only" : "editable",
         sourceDiagnostic: snapshot.sourceDiagnostic,
       }
 
@@ -231,18 +234,24 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
         frontmatter: {},
         sha: null,
         isDirty: false,
-        isSourceEditable: true,
+        sourceAuthority: "editable",
       }
 
-      // Prevent stale editor data from the previous file while a new file is loading.
-      setSelectedFile(resolvedNode)
-      setContent("")
-      setFrontmatter({})
-      setSha(null)
-      setIsDirty(false)
+      // A cached snapshot has already established source authority, so keep
+      // it visible and writable while validating the remote path. A cold
+      // existing-file read stays non-writable until its bytes are parsed.
+      if (requestStartCached) {
+        applySnapshot(filePath, requestStartCached)
+      } else {
+        setSelectedFile(resolvedNode)
+        setContent("")
+        setFrontmatter({})
+        setSha(null)
+        setIsDirty(false)
+        setSourceAuthority("unknown")
+        setSourceDiagnostic(undefined)
+      }
       setIsFileLoading(true)
-      setIsSourceEditable(true)
-      setSourceDiagnostic(undefined)
       remoteReadVersionRef.current.set(filePath, requestVersion)
 
       const takePendingDocumentHydration = () => {
@@ -271,6 +280,7 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
         return true
       }
 
+      let remotePathAbsent = false
       try {
         const params = new URLSearchParams({
           owner,
@@ -285,6 +295,7 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
         })
 
         if (!response.ok) {
+          remotePathAbsent = response.status === 404
           throw new Error(`Failed to fetch file (${response.status})`)
         }
 
@@ -293,7 +304,7 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
 
         const snapshot = parseFileSnapshot(file.content, file.sha, filePath)
         const pendingHydration = takePendingDocumentHydration()
-        if (!snapshot.isSourceEditable) {
+        if (snapshot.sourceAuthority === "read-only") {
           writeCachedSnapshot(filePath, snapshot)
           applySnapshot(filePath, snapshot)
           return
@@ -301,6 +312,16 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
         if (applyNewerLocalSnapshot()) return
         if (pendingHydration) {
           applyDocumentHydration(snapshot, pendingHydration)
+          return
+        }
+        if (requestStartCached?.sourceAuthority === "unknown" && requestStartCached.sha === null) {
+          const resolvedDraft = {
+            ...requestStartCached,
+            sourceAuthority: "editable" as const,
+            sourceDiagnostic: undefined,
+          }
+          writeCachedSnapshot(filePath, resolvedDraft)
+          applySnapshot(filePath, resolvedDraft)
           return
         }
         writeCachedSnapshot(filePath, snapshot)
@@ -313,12 +334,20 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
             return
           }
           if (pendingHydration) {
-            applyDocumentHydration(requestStartCached ?? emptySnapshot, pendingHydration)
+            if (remotePathAbsent) {
+              applyDocumentHydration(requestStartCached ?? emptySnapshot, pendingHydration)
+            }
             return
           }
           if (requestStartCached && requestStartHasLocalSnapshot) {
-            applySnapshot(filePath, requestStartCached)
-          } else {
+            if (remotePathAbsent && requestStartCached.sourceAuthority === "unknown") {
+              const resolvedDraft = { ...requestStartCached, sourceAuthority: "editable" as const }
+              writeCachedSnapshot(filePath, resolvedDraft)
+              applySnapshot(filePath, resolvedDraft)
+            } else {
+              applySnapshot(filePath, requestStartCached)
+            }
+          } else if (remotePathAbsent) {
             applySnapshot(filePath, emptySnapshot)
           }
         }
@@ -581,7 +610,7 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
         if (!activePath) return false
 
         const cached = fileCacheRef.current.get(activePath)
-        if (cached?.isSourceEditable === false) return false
+        if (cached?.sourceAuthority === "read-only") return false
         // The editor is interactive before the Convex query necessarily
         // settles. Never let a late saved draft overwrite newer local input.
         if (cached?.isDirty) return true
@@ -618,7 +647,7 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
           frontmatter: nextFrontmatter,
           sha: currentSha,
           isDirty: false,
-          isSourceEditable: cached?.isSourceEditable ?? true,
+          sourceAuthority: cached?.sourceAuthority ?? sourceAuthority,
           sourceDiagnostic: cached?.sourceDiagnostic,
         })
 
@@ -629,7 +658,7 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
         return false
       }
     },
-    [selectedFile?.path, writeCachedSnapshot],
+    [selectedFile?.path, sourceAuthority, writeCachedSnapshot],
   )
 
   const handleContentChange = React.useCallback(
@@ -643,12 +672,12 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
           frontmatter,
           sha,
           isDirty: true,
-          isSourceEditable,
+          sourceAuthority,
           sourceDiagnostic,
         })
       }
     },
-    [selectedFile?.path, frontmatter, sha, isSourceEditable, sourceDiagnostic, writeCachedSnapshot],
+    [selectedFile?.path, frontmatter, sha, isSourceEditable, sourceAuthority, sourceDiagnostic, writeCachedSnapshot],
   )
 
   const handleFrontmatterChangeKey = React.useCallback(
@@ -662,7 +691,7 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
             frontmatter: next,
             sha,
             isDirty: true,
-            isSourceEditable,
+            sourceAuthority,
             sourceDiagnostic,
           })
         }
@@ -670,7 +699,7 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
       })
       setIsDirty(true)
     },
-    [selectedFile?.path, content, sha, isSourceEditable, sourceDiagnostic, writeCachedSnapshot],
+    [selectedFile?.path, content, sha, isSourceEditable, sourceAuthority, sourceDiagnostic, writeCachedSnapshot],
   )
 
   const handleFrontmatterChangeAll = React.useCallback(
@@ -684,12 +713,12 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
           frontmatter: nextFrontmatter,
           sha,
           isDirty: true,
-          isSourceEditable,
+          sourceAuthority,
           sourceDiagnostic,
         })
       }
     },
-    [selectedFile?.path, content, sha, isSourceEditable, sourceDiagnostic, writeCachedSnapshot],
+    [selectedFile?.path, content, sha, isSourceEditable, sourceAuthority, sourceDiagnostic, writeCachedSnapshot],
   )
 
   const navigateToFile = React.useCallback(
@@ -709,6 +738,7 @@ export function useStudioFile(initialFile: InitialFile | null | undefined, curre
     sha,
     isDirty,
     isFileLoading,
+    sourceAuthority,
     isSourceEditable,
     sourceDiagnostic,
     navigateToFile,

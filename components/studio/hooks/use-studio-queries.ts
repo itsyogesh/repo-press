@@ -27,7 +27,18 @@ type TitleSyncEntry = {
 }
 
 const EMPTY_TITLE_SYNC: TitleSyncSnapshot = "idle"
+const MAX_TITLE_SYNC_ENTRIES = 24
 const titleSyncStore = new Map<string, TitleSyncEntry>()
+
+function pruneTitleSyncStore(protectedKey?: string) {
+  if (titleSyncStore.size <= MAX_TITLE_SYNC_ENTRIES) return
+
+  for (const [key, entry] of titleSyncStore) {
+    if (key === protectedKey || entry.listeners.size > 0 || entry.promise) continue
+    titleSyncStore.delete(key)
+    if (titleSyncStore.size <= MAX_TITLE_SYNC_ENTRIES) return
+  }
+}
 
 function getTitleSyncEntry(key: string) {
   let entry = titleSyncStore.get(key)
@@ -38,8 +49,22 @@ function getTitleSyncEntry(key: string) {
       promise: null,
     }
     titleSyncStore.set(key, entry)
+    pruneTitleSyncStore(key)
+  } else {
+    // Map insertion order doubles as the least-recently-used order.
+    titleSyncStore.delete(key)
+    titleSyncStore.set(key, entry)
   }
   return entry
+}
+
+export function __resetTitleSyncStoreForTests() {
+  titleSyncStore.clear()
+}
+
+export function __getTitleSyncStoreStatsForTests() {
+  pruneTitleSyncStore()
+  return { size: titleSyncStore.size, maxEntries: MAX_TITLE_SYNC_ENTRIES }
 }
 
 function emitTitleSync(entry: TitleSyncEntry) {
@@ -98,6 +123,7 @@ async function syncTitlesForTree(
     .finally(() => {
       entry.promise = null
       emitTitleSync(entry)
+      pruneTitleSyncStore()
     })
 }
 
@@ -121,6 +147,7 @@ function subscribeTitleSync(
 
   return () => {
     entry.listeners.delete(listener)
+    pruneTitleSyncStore()
   }
 }
 

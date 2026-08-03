@@ -111,6 +111,41 @@ describe("useStudioQueries path ingress", () => {
     consoleError.mockRestore()
   })
 
+  it("bounds inactive title-sync entries", async () => {
+    const modulePath = "../use-studio-queries"
+    const titleSyncModule = (await import(/* @vite-ignore */ modulePath)) as Record<string, unknown>
+    expect(typeof titleSyncModule.__resetTitleSyncStoreForTests).toBe("function")
+    expect(typeof titleSyncModule.__getTitleSyncStoreStatsForTests).toBe("function")
+    if (
+      typeof titleSyncModule.__resetTitleSyncStoreForTests !== "function" ||
+      typeof titleSyncModule.__getTitleSyncStoreStatsForTests !== "function"
+    ) {
+      return
+    }
+
+    titleSyncModule.__resetTitleSyncStoreForTests()
+    useQueryMock.mockReturnValue(undefined)
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 200 }))
+
+    for (let index = 0; index < 40; index += 1) {
+      studioContextMock.tree = [
+        {
+          name: `page-${index}.mdx`,
+          path: `content/docs/page-${index}.mdx`,
+          sha: index.toString(16).padStart(40, "0"),
+          type: "file",
+        },
+      ]
+      const view = renderHook(() => useStudioQueries())
+      await waitFor(() => expect(fetch).toHaveBeenCalledTimes(index + 1))
+      view.unmount()
+    }
+
+    const stats = titleSyncModule.__getTitleSyncStoreStatsForTests() as { size: number; maxEntries: number }
+    expect(stats.size).toBeLessThanOrEqual(stats.maxEntries)
+    expect(stats.maxEntries).toBeLessThan(40)
+  })
+
   it("queries canonical state and normalizes legacy rows at the Studio boundary", () => {
     useQueryMock
       .mockReturnValueOnce({ _id: "user_1" })

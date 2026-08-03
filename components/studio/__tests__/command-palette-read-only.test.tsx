@@ -1,6 +1,6 @@
-import { fireEvent, render, screen } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import type * as React from "react"
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { CommandPalette } from "../command-palette"
 
 const { insertModal } = vi.hoisted(() => ({
@@ -37,6 +37,8 @@ vi.mock("@/components/ui/command", () => ({
   ),
 }))
 
+afterEach(cleanup)
+
 describe("CommandPalette read-only insertion", () => {
   it("disables the Insert component command and does not open its modal", () => {
     render(
@@ -55,5 +57,24 @@ describe("CommandPalette read-only insertion", () => {
     expect(insertCommand).toHaveAttribute("aria-label", "Insert unavailable for read-only source")
     fireEvent.click(insertCommand)
     expect(insertModal.setOpen).not.toHaveBeenCalled()
+  })
+
+  it("does not run Save draft while source authority is unresolved", () => {
+    const onSaveDraft = vi.fn()
+    render(
+      <CommandPalette
+        open
+        onOpenChange={vi.fn()}
+        tree={[]}
+        onNavigateToFile={vi.fn()}
+        onSaveDraft={onSaveDraft}
+        canSaveDraft={false}
+      />,
+    )
+
+    const saveCommand = screen.getByRole("button", { name: /Save draft/i })
+    expect(saveCommand).toBeDisabled()
+    fireEvent.click(saveCommand)
+    expect(onSaveDraft).not.toHaveBeenCalled()
   })
 })

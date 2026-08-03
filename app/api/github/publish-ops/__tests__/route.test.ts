@@ -1479,6 +1479,175 @@ describe("POST /api/github/publish-ops", () => {
       )
     })
 
+    it("rejects a stale empty draft over malformed pinned YAML before an attempt or commit", async () => {
+      mockPublishQueries({
+        dirtyDocs: [{ _id: "doc_1", filePath: "posts/hello.mdx", body: "", frontmatter: {}, updatedAt: 10 }],
+      })
+      vi.mocked(getFileForPublish).mockResolvedValue({
+        status: "found",
+        file: {
+          content: "---\ntitle: [unterminated\n---\n# Existing\n",
+          sha: "sha-malformed",
+          name: "hello.mdx",
+          path: "content/posts/hello.mdx",
+        },
+      } as never)
+
+      const response = await POST(buildRequest({ projectId: "project_123" }))
+      const payload = await response.json()
+
+      expect(response.status).toBe(409)
+      expect(payload.conflicts).toEqual([
+        expect.objectContaining({ path: "content/posts/hello.mdx", reason: expect.stringMatching(/unsupported/i) }),
+      ])
+      expect(batchCommitPublishLaneAtExpectedHead).not.toHaveBeenCalled()
+      expect(
+        convexMutationMock.mock.calls.some(([, args]) => args && typeof args === "object" && "planDigest" in args),
+      ).toBe(false)
+    })
+
+    it("rejects a changed dirty draft over an unsupported pinned metadata export without githubSha", async () => {
+      const existing = "export const metadata = { title: makeTitle() }\n\n# Existing\n"
+      const changed = "export const metadata = { title: makeTitle() }\n\n# Changed draft\n"
+      mockPublishQueries({
+        dirtyDocs: [{ _id: "doc_1", filePath: "posts/hello.mdx", body: changed, frontmatter: {}, updatedAt: 10 }],
+      })
+      vi.mocked(getFileForPublish).mockResolvedValue({
+        status: "found",
+        file: { content: existing, sha: "sha-unsupported", name: "hello.mdx", path: "content/posts/hello.mdx" },
+      } as never)
+
+      const response = await POST(buildRequest({ projectId: "project_123" }))
+      const payload = await response.json()
+
+      expect(response.status).toBe(409)
+      expect(payload.conflicts).toEqual([
+        expect.objectContaining({ path: "content/posts/hello.mdx", reason: expect.stringMatching(/unsupported/i) }),
+      ])
+      expect(batchCommitPublishLaneAtExpectedHead).not.toHaveBeenCalled()
+      expect(
+        convexMutationMock.mock.calls.some(([, args]) => args && typeof args === "object" && "planDigest" in args),
+      ).toBe(false)
+    })
+
+    it("reconciles a byte-identical unsupported pinned source without a commit", async () => {
+      const existing = "export const metadata = { title: makeTitle() }\n\n# Existing\n"
+      mockPublishQueries({
+        currentPublishBranch: null,
+        dirtyDocs: [
+          {
+            _id: "doc_1",
+            filePath: "posts/hello.mdx",
+            body: existing,
+            frontmatter: {},
+            updatedAt: 10,
+            contentVersion: 2,
+          },
+        ],
+      })
+      vi.mocked(getFileForPublish).mockResolvedValue({
+        status: "found",
+        file: { content: existing, sha: "sha-unsupported", name: "hello.mdx", path: "content/posts/hello.mdx" },
+      } as never)
+      convexMutationMock.mockResolvedValue({ synchronized: true })
+
+      const response = await POST(buildRequest({ projectId: "project_123" }))
+      const payload = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(payload.synchronizedOnly).toBe(true)
+      expect(batchCommitPublishLaneAtExpectedHead).not.toHaveBeenCalled()
+      expect(
+        convexMutationMock.mock.calls.some(([, args]) => args && typeof args === "object" && "planDigest" in args),
+      ).toBe(false)
+    })
+
+    it.each([
+      ["malformed YAML", "---\ntitle: [unterminated\n---\n# Existing\n"],
+      ["dangerous YAML keys", "---\n__proto__:\n  polluted: true\n---\n# Existing\n"],
+    ])("reconciles byte-identical %s without parsing it through the serializer", async (_label, existing) => {
+      mockPublishQueries({
+        currentPublishBranch: null,
+        dirtyDocs: [
+          {
+            _id: "doc_1",
+            filePath: "posts/hello.mdx",
+            body: existing,
+            frontmatter: {},
+            updatedAt: 10,
+            contentVersion: 2,
+          },
+        ],
+      })
+      vi.mocked(getFileForPublish).mockResolvedValue({
+        status: "found",
+        file: { content: existing, sha: "sha-unsupported", name: "hello.mdx", path: "content/posts/hello.mdx" },
+      } as never)
+      convexMutationMock.mockResolvedValue({ synchronized: true })
+
+      const response = await POST(buildRequest({ projectId: "project_123" }))
+      const payload = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(payload.synchronizedOnly).toBe(true)
+      expect(batchCommitPublishLaneAtExpectedHead).not.toHaveBeenCalled()
+    })
+
+    it.each([
+      ["unsupported metadata export", "export const metadata = { title: makeTitle() }\n\n# New\n"],
+      ["malformed YAML", "---\ntitle: [unterminated\n---\n# New\n"],
+    ])("rejects a new file with %s before an attempt or commit", async (_label, initialBody) => {
+      mockPublishQueries({
+        pendingOps: [
+          {
+            _id: "op_create",
+            opType: "create",
+            filePath: "posts/new.mdx",
+            initialBody,
+            initialFrontmatter: {},
+            createdAt: 1,
+          },
+        ],
+        dirtyDocs: [],
+      })
+
+      const response = await POST(buildRequest({ projectId: "project_123" }))
+      const payload = await response.json()
+
+      expect(response.status).toBe(409)
+      expect(payload.conflicts).toEqual([
+        expect.objectContaining({ path: "content/posts/new.mdx", reason: expect.stringMatching(/unsupported/i) }),
+      ])
+      expect(batchCommitPublishLaneAtExpectedHead).not.toHaveBeenCalled()
+      expect(
+        convexMutationMock.mock.calls.some(([, args]) => args && typeof args === "object" && "planDigest" in args),
+      ).toBe(false)
+    })
+
+    it("continues publishing a supported Merry metadata export", async () => {
+      const existing = 'export const metadata = { title: "Old", alternates: { canonical: "/old" } }\n\n# Existing\n'
+      const changed = 'export const metadata = { title: "New", alternates: { canonical: "/new" } }\n\n# Changed\n'
+      mockPublishQueries({
+        dirtyDocs: [{ _id: "doc_1", filePath: "posts/hello.mdx", body: changed, frontmatter: {}, updatedAt: 10 }],
+      })
+      vi.mocked(getFileForPublish).mockResolvedValue({
+        status: "found",
+        file: { content: existing, sha: "sha-supported", name: "hello.mdx", path: "content/posts/hello.mdx" },
+      } as never)
+
+      const response = await POST(buildRequest({ projectId: "project_123" }))
+
+      expect(response.status).toBe(200)
+      expect(batchCommitPublishLaneAtExpectedHead).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+        expect.arrayContaining([expect.objectContaining({ content: changed, action: "update" })]),
+        expect.anything(),
+      )
+    })
+
     it("preserves a metadata-export document verbatim instead of prepending YAML", async () => {
       const body = 'export const metadata = {\n  "title": "Hello"\n}\n\n# Body (edited)\n'
       mockPublishQueries({
@@ -1550,7 +1719,7 @@ describe("POST /api/github/publish-ops", () => {
       expect(operations[0].content).toBe(`${existingMetadata}\n\n# Body (edited)\n`)
     })
 
-    it("restores a BOM-prefixed typed metadata export together with its required import", async () => {
+    it("rejects a changed BOM-prefixed typed export whose pinned metadata is dynamic", async () => {
       const existingPreamble =
         '\uFEFFimport type { Metadata } from "next"\r\nimport { site } from "./config"\r\n\r\nexport const metadata: Metadata = {\r\n  title: site.name,\r\n}'
       mockPublishQueries({
@@ -1567,10 +1736,13 @@ describe("POST /api/github/publish-ops", () => {
       } as never)
 
       const response = await POST(buildRequest({ projectId: "project_123" }))
+      const payload = await response.json()
 
-      expect(response.status).toBe(200)
-      const operations = vi.mocked(batchCommitPublishLaneAtExpectedHead).mock.calls[0][4]
-      expect(operations[0].content).toBe(`${existingPreamble}\n\n# Body (edited)\n`)
+      expect(response.status).toBe(409)
+      expect(payload.conflicts).toEqual([
+        expect.objectContaining({ path: "content/posts/hello.mdx", reason: expect.stringMatching(/unsupported/i) }),
+      ])
+      expect(batchCommitPublishLaneAtExpectedHead).not.toHaveBeenCalled()
     })
 
     it("returns 409 for a stripped draft when the pinned metadata declaration is unsupported", async () => {
@@ -1592,7 +1764,7 @@ describe("POST /api/github/publish-ops", () => {
 
       expect(response.status).toBe(409)
       expect(payload.conflicts).toEqual([
-        expect.objectContaining({ reason: expect.stringMatching(/recover.*metadata export/i) }),
+        expect.objectContaining({ reason: expect.stringMatching(/unsupported metadata export/i) }),
       ])
       expect(batchCommitPublishLaneAtExpectedHead).not.toHaveBeenCalled()
     })

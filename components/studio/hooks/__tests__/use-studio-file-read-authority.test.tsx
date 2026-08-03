@@ -82,6 +82,99 @@ describe("useStudioFile immutable read authority", () => {
     expect(result.current.sha).toBe("b".repeat(40))
   })
 
+  it("keeps a cold existing-file read non-writable until immutable source authority resolves", async () => {
+    studioContext.tree = []
+    const response = deferred<Response>()
+    vi.mocked(fetch).mockReturnValueOnce(response.promise)
+    const { result } = renderHook(() => useStudioFile(null, ""))
+
+    act(() => result.current.navigateToFile("content/cold.mdx"))
+    await waitFor(() => expect(fetch).toHaveBeenCalledOnce())
+
+    expect(result.current.sourceAuthority).toBe("unknown")
+    expect(result.current.isSourceEditable).toBe(false)
+    act(() => {
+      result.current.setContent("# Premature edit")
+      result.current.setFrontmatterKey("title", "Premature")
+      result.current.setFrontmatter({ title: "Premature" })
+    })
+    expect(result.current.content).toBe("")
+    expect(result.current.frontmatter).toEqual({})
+    expect(result.current.isDirty).toBe(false)
+
+    await act(async () =>
+      response.resolve({
+        ok: true,
+        json: async () => ({
+          path: "content/cold.mdx",
+          name: "cold.mdx",
+          sha: "b".repeat(40),
+          content: "# Supported remote",
+        }),
+      } as Response),
+    )
+    await waitFor(() => expect(result.current.sourceAuthority).toBe("editable"))
+    expect(result.current.isSourceEditable).toBe(true)
+  })
+
+  it("keeps a cold existing-file read unresolved when GitHub cannot establish source authority", async () => {
+    studioContext.tree = []
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined)
+    vi.mocked(fetch).mockResolvedValueOnce({ ok: false, status: 500 } as Response)
+    const { result } = renderHook(() => useStudioFile(null, ""))
+
+    act(() => result.current.navigateToFile("content/unavailable.mdx"))
+    await waitFor(() => expect(result.current.isFileLoading).toBe(false))
+
+    expect(result.current.sourceAuthority).toBe("unknown")
+    expect(result.current.isSourceEditable).toBe(false)
+    act(() => result.current.setContent("# Premature edit"))
+    expect(result.current.content).toBe("")
+    expect(result.current.isDirty).toBe(false)
+    consoleError.mockRestore()
+  })
+
+  it("does not promote a late Convex draft to cached authority after a failed cold read", async () => {
+    studioContext.tree = []
+    const retryResponse = deferred<Response>()
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined)
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({ ok: false, status: 500 } as Response)
+      .mockReturnValueOnce(retryResponse.promise)
+    const { result } = renderHook(() => useStudioFile(null, ""))
+
+    act(() => result.current.navigateToFile("content/unavailable.mdx"))
+    await waitFor(() => expect(result.current.isFileLoading).toBe(false))
+    act(() => {
+      result.current.hydrateFromDocument({ body: "# Saved draft", frontmatter: { title: "Saved" } })
+    })
+    expect(result.current.sourceAuthority).toBe("unknown")
+
+    act(() => result.current.navigateToFile("content/unavailable.mdx"))
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
+    expect(result.current.sourceAuthority).toBe("unknown")
+    expect(result.current.isSourceEditable).toBe(false)
+
+    expect(result.current.content).toBe("# Saved draft")
+    expect(result.current.frontmatter).toEqual({ title: "Saved" })
+
+    await act(async () =>
+      retryResponse.resolve({
+        ok: true,
+        json: async () => ({
+          path: "content/unavailable.mdx",
+          name: "unavailable.mdx",
+          sha: "b".repeat(40),
+          content: "# Supported Git source",
+        }),
+      } as Response),
+    )
+    await waitFor(() => expect(result.current.sourceAuthority).toBe("editable"))
+    expect(result.current.content).toBe("# Saved draft")
+    expect(result.current.frontmatter).toEqual({ title: "Saved" })
+    consoleError.mockRestore()
+  })
+
   it("opens Merry metadata exports as editable body content with nested properties", async () => {
     const source = `export const metadata = {
   title: "Free Printable Santa Letter Templates",
@@ -381,7 +474,7 @@ describe("useStudioFile immutable read authority", () => {
     consoleError.mockRestore()
   })
 
-  it("preserves a late Convex draft and its dirty editor state when the cold read returns 404", async () => {
+  it("holds a late Convex draft non-writable until the cold read confirms the path is absent", async () => {
     studioContext.tree = []
     const response = deferred<Response>()
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined)
@@ -398,20 +491,21 @@ describe("useStudioFile immutable read authority", () => {
     })
     await waitFor(() => expect(result.current.frontmatter).toEqual({ title: "Draft title" }))
     act(() => result.current.setContent("# Unsaved local edit"))
-    expect(result.current.isDirty).toBe(true)
+    expect(result.current.isDirty).toBe(false)
 
     await act(async () => response.resolve({ ok: false, status: 404 } as Response))
     await waitFor(() => expect(result.current.isFileLoading).toBe(false))
 
-    expect(result.current.content).toBe("# Unsaved local edit")
+    expect(result.current.content).toBe("# Saved Convex draft")
     expect(result.current.frontmatter).toEqual({ title: "Draft title" })
     expect(result.current.sha).toBeNull()
-    expect(result.current.isDirty).toBe(true)
+    expect(result.current.isDirty).toBe(false)
+    expect(result.current.sourceAuthority).toBe("editable")
     expect(consoleError).toHaveBeenCalledWith("Failed to open file", expect.any(Error))
     consoleError.mockRestore()
   })
 
-  it("preserves a late Convex draft and its dirty editor state when the cold read returns 200", async () => {
+  it("holds a Convex draft non-writable until a supported cold read returns 200", async () => {
     studioContext.tree = []
     const response = deferred<Response>()
     vi.mocked(fetch).mockReturnValueOnce(response.promise)
@@ -427,6 +521,7 @@ describe("useStudioFile immutable read authority", () => {
     })
     await waitFor(() => expect(result.current.frontmatter).toEqual({ title: "Draft title" }))
     act(() => result.current.setFrontmatterKey("description", "Unsaved description"))
+    expect(result.current.isDirty).toBe(false)
 
     await act(async () =>
       response.resolve({
@@ -444,9 +539,47 @@ describe("useStudioFile immutable read authority", () => {
     expect(result.current.content).toBe("# Saved Convex draft")
     expect(result.current.frontmatter).toEqual({
       title: "Draft title",
-      description: "Unsaved description",
     })
     expect(result.current.sha).toBeNull()
+    expect(result.current.isDirty).toBe(false)
+    expect(result.current.sourceAuthority).toBe("editable")
+  })
+
+  it("keeps an authoritative cached supported snapshot writable during remote validation", async () => {
+    studioContext.tree = []
+    const response = deferred<Response>()
+    vi.mocked(fetch).mockReturnValueOnce(response.promise)
+    const { result } = renderHook(() => useStudioFile(null, ""))
+
+    act(() => {
+      result.current.primeFileSnapshot("content/local.mdx", {
+        content: "# Cached supported draft",
+        frontmatter: { title: "Cached" },
+        sha: null,
+        isSourceEditable: true,
+      })
+      result.current.navigateToFile("content/local.mdx")
+    })
+    await waitFor(() => expect(fetch).toHaveBeenCalledOnce())
+
+    expect(result.current.sourceAuthority).toBe("editable")
+    expect(result.current.isSourceEditable).toBe(true)
+    act(() => result.current.setContent("# Newer local edit"))
+    expect(result.current.isDirty).toBe(true)
+
+    await act(async () =>
+      response.resolve({
+        ok: true,
+        json: async () => ({
+          path: "content/local.mdx",
+          name: "local.mdx",
+          sha: "b".repeat(40),
+          content: "# Supported remote",
+        }),
+      } as Response),
+    )
+    await waitFor(() => expect(result.current.isFileLoading).toBe(false))
+    expect(result.current.content).toBe("# Newer local edit")
     expect(result.current.isDirty).toBe(true)
   })
 
