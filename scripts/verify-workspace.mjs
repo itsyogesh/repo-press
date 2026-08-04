@@ -33,6 +33,7 @@ function findLockfiles(directory, lockfiles = []) {
 
 const errors = []
 const rootManifest = readManifest(join(repositoryRoot, "package.json"))
+const lockfile = readManifest(join(repositoryRoot, "package-lock.json"))
 const ciWorkflow = readFileSync(join(repositoryRoot, ".github/workflows/ci.yml"), "utf8")
 
 if (rootManifest.private !== true) errors.push("the root package must be private")
@@ -54,6 +55,59 @@ for (const application of expectedApplications) {
 
   const manifest = readManifest(manifestPath)
   if (manifest.private !== true) errors.push(`${application} must be private`)
+}
+
+const manifestPaths = [join(repositoryRoot, "package.json")]
+for (const workspaceDirectory of ["apps", "packages"]) {
+  const directory = join(repositoryRoot, workspaceDirectory)
+  if (!existsSync(directory)) continue
+
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const manifestPath = join(directory, entry.name, "package.json")
+    if (entry.isDirectory() && existsSync(manifestPath)) manifestPaths.push(manifestPath)
+  }
+}
+
+const dependencySections = [
+  "dependencies",
+  "devDependencies",
+  "optionalDependencies",
+  "peerDependencies",
+]
+const remotionDependencies = manifestPaths.flatMap((manifestPath) => {
+  const manifest = readManifest(manifestPath)
+  return dependencySections.flatMap((section) =>
+    Object.entries(manifest[section] ?? {}).filter(
+      ([name]) => name === "remotion" || name.startsWith("@remotion/"),
+    ),
+  )
+})
+const remotionVersions = new Set(remotionDependencies.map(([, version]) => version))
+const [remotionVersion] = remotionVersions
+
+if (
+  remotionDependencies.length === 0 ||
+  remotionVersions.size !== 1 ||
+  !/^\d+\.\d+\.\d+$/.test(remotionVersion ?? "")
+) {
+  errors.push("all Remotion dependencies must use one identical exact version")
+}
+
+const lockedRemotionVersions = new Set(
+  Object.entries(lockfile.packages ?? {})
+    .filter(
+      ([path]) =>
+        path.endsWith("node_modules/remotion") || /node_modules\/@remotion\/[^/]+$/.test(path),
+    )
+    .map(([, manifest]) => manifest.version)
+    .filter(Boolean),
+)
+
+if (
+  remotionVersion &&
+  (lockedRemotionVersions.size !== 1 || !lockedRemotionVersions.has(remotionVersion))
+) {
+  errors.push("package-lock.json must resolve the entire Remotion family to the pinned version")
 }
 
 const unexpectedApplicationManifests = existsSync(join(repositoryRoot, "apps"))
